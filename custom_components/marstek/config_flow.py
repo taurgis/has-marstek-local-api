@@ -6,7 +6,6 @@ import asyncio
 import logging
 from typing import Any
 
-from .pymarstek import MarstekUDPClient
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -68,7 +67,6 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Marstek."""
 
     VERSION = 1
-    domain = DOMAIN
     discovered_devices: list[dict[str, Any]]
     _discovered_ip: str | None = None
 
@@ -346,9 +344,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data={**entry.data, CONF_HOST: discovery_info.ip},
                     )
                     # Reload the entry to use new IP
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(entry.entry_id)
-                    )
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 else:
                     _LOGGER.debug(
                         "DHCP discovery: Device %s IP unchanged (%s)",
