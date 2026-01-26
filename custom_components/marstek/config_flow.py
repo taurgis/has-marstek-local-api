@@ -114,8 +114,20 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.discovered_devices = devices
             _LOGGER.info("Discovered %d devices", len(devices))
 
-            # Show device selection form with detailed device information
+            # Get already configured device MACs for comparison
+            configured_macs = set()
+            for entry in self._async_current_entries(include_ignore=False):
+                entry_mac = (
+                    entry.data.get("ble_mac")
+                    or entry.data.get(CONF_MAC)
+                    or entry.data.get("wifi_mac")
+                )
+                if entry_mac:
+                    configured_macs.add(format_mac(entry_mac))
+
+            # Build device options, separating new and already-configured devices
             device_options = {}
+            already_configured_names = []
             for i, device in enumerate(devices):
                 # Build detailed device display name with all important info
                 device_name = (
@@ -124,7 +136,35 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     f"({device.get('wifi_name', 'No WiFi')}) "
                     f"- {device.get('ip', 'Unknown')}"
                 )
-                device_options[str(i)] = device_name
+                # Check if this device is already configured
+                device_mac = (
+                    device.get("ble_mac")
+                    or device.get("mac")
+                    or device.get("wifi_mac")
+                )
+                is_configured = (
+                    device_mac and format_mac(device_mac) in configured_macs
+                )
+                if is_configured:
+                    already_configured_names.append(f"{device_name} (already added)")
+                else:
+                    device_options[str(i)] = device_name
+
+            # If all discovered devices are already configured, show manual entry
+            if not device_options:
+                _LOGGER.info("All discovered devices are already configured")
+                return await self.async_step_manual(
+                    errors={"base": "all_devices_configured"}
+                )
+
+            # Build description showing already configured devices if any
+            description_lines = [f"- {name}" for name in device_options.values()]
+            if already_configured_names:
+                description_lines.append("")
+                description_lines.append("Already configured:")
+                description_lines.extend(
+                    [f"- {name}" for name in already_configured_names]
+                )
 
             return self.async_show_form(
                 step_id="user",
@@ -132,9 +172,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {vol.Required("device"): vol.In(device_options)}
                 ),
                 description_placeholders={
-                    "devices": "\n".join(
-                        [f"- {name}" for name in device_options.values()]
-                    )
+                    "devices": "\n".join(description_lines)
                 },
             )
 

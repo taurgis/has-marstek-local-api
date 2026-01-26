@@ -9,7 +9,8 @@
       "device_not_found": "Device not found at the specified IP address",
       "discovery_failed": "Failed to discover devices. Please check your network connection and try again.",
       "no_devices_found": "No Marstek devices found on the network. Please ensure your device is powered on and connected to the same network, then submit to retry.",
-      "invalid_discovery_info": "Invalid discovery information received from the device"
+      "invalid_discovery_info": "Invalid discovery information received from the device",
+      "all_devices_configured": "All discovered devices are already configured. Enter an IP address manually or ensure additional devices are on the network."
     },
     "step": {
       "user": {

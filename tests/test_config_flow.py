@@ -124,13 +124,13 @@ async def test_user_flow_invalid_discovery_info(hass: HomeAssistant) -> None:
 async def test_already_configured_unique_id(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Test that duplicate devices abort flow."""
+    """Test that already-configured devices are filtered from selection."""
     mock_config_entry.add_to_hass(hass)
 
     devices = [
         {
             "ip": "1.2.3.99",  # different IP
-            "ble_mac": "AA:BB:CC:DD:EE:FF",  # same BLE MAC
+            "ble_mac": "AA:BB:CC:DD:EE:FF",  # same BLE MAC as mock_config_entry
             "mac": "AA:BB:CC:DD:EE:FF",
             "device_type": "Venus",
             "version": 3,
@@ -143,12 +143,58 @@ async def test_already_configured_unique_id(
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": "user"}
         )
+
+    # All discovered devices are already configured, redirects to manual step
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert result["errors"] == {"base": "all_devices_configured"}
+
+
+async def test_mixed_configured_and_new_devices(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test that only new devices are selectable when some are already configured."""
+    mock_config_entry.add_to_hass(hass)
+
+    devices = [
+        {
+            "ip": "1.2.3.99",  # Already configured device (same MAC)
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+        {
+            "ip": "1.2.3.100",  # New device (different MAC)
+            "ble_mac": "BB:CC:DD:EE:FF:00",
+            "mac": "BB:CC:DD:EE:FF:00",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek2",
+            "wifi_mac": "22:33:44:55:66:77",
+            "model": "Venus",
+            "firmware": "3.0",
+        },
+    ]
+
+    with _patch_discovery(devices):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "user"
+
+        # Only the new device (index 1) should be selectable
+        # The configured device is filtered out but its index is preserved
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], user_input={"device": "0"}
+            result["flow_id"], user_input={"device": "1"}
         )
 
-    assert result["type"] == FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["host"] == "1.2.3.100"
+    assert format_mac(result["data"]["ble_mac"]) == "bb:cc:dd:ee:ff:00"
 
 
 async def test_dhcp_updates_ip(
