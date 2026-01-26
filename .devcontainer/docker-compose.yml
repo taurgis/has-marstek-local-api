@@ -8,6 +8,7 @@ services:
       - WORKSPACE_DIRECTORY=/workspaces/ha_marstek
     volumes:
       - ..:/workspaces/ha_marstek:cached
+      - ha_config:/config
       - ../custom_components:/config/custom_components:cached
     ports:
       - "8123:8123"
@@ -61,3 +62,7 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/16
+
+volumes:
+  ha_config:
+    name: marstek-ha-config
