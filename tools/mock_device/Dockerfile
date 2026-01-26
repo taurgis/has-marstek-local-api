@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY mock_marstek.py .
 
-# Run the mock device
-CMD ["python", "mock_marstek.py"]
+# Copy the entire mock_device package
+COPY . /app/mock_device/
+
+# Run the mock device as a module
+CMD ["python", "-m", "mock_device"]

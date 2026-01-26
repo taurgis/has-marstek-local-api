@@ -2,6 +2,24 @@
 
 A mock Marstek device for testing the Home Assistant integration without a real device. Includes realistic battery simulation with dynamic SOC changes, power fluctuations, and mode transitions.
 
+## Package Structure
+
+```
+mock_device/
+├── __init__.py           # Package exports
+├── __main__.py           # CLI entry point
+├── const.py              # Constants and defaults
+├── device.py             # UDP server (MockMarstekDevice)
+├── handlers.py           # API method handlers
+├── utils.py              # Utility functions
+├── mock_marstek.py       # Backwards compatibility shim
+└── simulators/
+    ├── __init__.py
+    ├── battery.py        # BatterySimulator
+    ├── household.py      # HouseholdSimulator
+    └── wifi.py           # WiFiSimulator
+```
+
 ## Features
 
 - **Dynamic Battery Simulation**: SOC increases/decreases based on power flow
@@ -9,22 +27,31 @@ A mock Marstek device for testing the Home Assistant integration without a real 
 - **Mode Support**: Auto, AI, Manual, and Passive modes with proper behavior
 - **Passive Mode Timer**: Automatic expiration after configured duration
 - **Manual Schedules**: Supports schedule slots with day/time configuration
+- **Household Simulation**: Realistic time-of-day consumption patterns
 - **Status Display**: Periodic console output showing current battery state
 
 ## Usage
 
-### Standalone (for testing on your machine)
+### As a Module (Recommended)
 
 ```bash
-cd /Users/thomastheunen/Documents/Projects/ha_marstek
-python3 tools/mock_device/mock_marstek.py
+cd /workspaces/ha_marstek/tools
+python -m mock_device [OPTIONS]
 ```
 
-Options:
+### Standalone (Backwards Compatible)
+
+```bash
+cd /workspaces/ha_marstek
+python3 tools/mock_device/mock_marstek.py [OPTIONS]
+```
+
+### Options
+
 - `--port PORT` - UDP port (default: 30000)
 - `--ip IP` - Override reported IP address
 - `--device TYPE` - Device type (default: "VenusE 3.0")
-- `--ble-mac MAC` - BLE MAC address
+- `--ble-mac MAC` - BLE MAC address (unique per device)
 - `--wifi-mac MAC` - WiFi MAC address
 - `--soc PERCENT` - Initial battery SOC percentage (default: 50)
 - `--no-simulate` - Disable dynamic simulation (static values only)
@@ -32,82 +59,83 @@ Options:
 ### Examples
 
 ```bash
-# Start with 30% battery (will start charging in Auto mode)
-python3 tools/mock_device/mock_marstek.py --soc 30
+# Start with 30% battery
+python -m mock_device --soc 30
 
-# Start with 90% battery (will start discharging in Auto mode)
-python3 tools/mock_device/mock_marstek.py --soc 90
+# Start with custom MAC (for multi-device testing)
+python -m mock_device --ble-mac 009b08a5bb40 --soc 75
 
-# Static mode (no simulation, useful for predictable testing)
-python3 tools/mock_device/mock_marstek.py --no-simulate
+# Static mode (no simulation)
+python -m mock_device --no-simulate
 ```
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer automatically starts a mock device at `172.28.0.20`.
+The devcontainer runs 3 mock devices with unique, clearly-fake MAC addresses:
 
-When you open the devcontainer:
-1. Home Assistant runs at `172.28.0.10` (accessible at http://localhost:8123)
-2. Mock Marstek device runs at `172.28.0.20:30000`
+| Device | IP | BLE MAC | WiFi MAC | Initial SOC |
+|--------|-----|---------|----------|-------------|
+| mock-marstek | 172.28.0.20 | 02deadbeef01 | 02cafebabe01 | 50% |
+| mock-marstek-2 | 172.28.0.21 | 02deadbeef02 | 02cafebabe02 | 75% |
+| mock-marstek-3 | 172.28.0.22 | 02deadbeef03 | 02cafebabe03 | 30% |
 
-To add the mock device in Home Assistant:
+> **Note:** MAC addresses use the locally-administered range (`02:xx:xx:xx:xx:xx`) with memorable patterns (`deadbeef`, `cafebabe`) to clearly distinguish mock devices from real hardware.
+
+To add devices in Home Assistant:
 1. Go to Settings → Devices & Services
 2. Add Integration → Marstek
-3. If discovery doesn't find it, use manual entry with IP: `172.28.0.20`
+3. Use manual entry with IP: `172.28.0.20`, `172.28.0.21`, or `172.28.0.22`
 
 ## Simulation Behavior
 
 ### Auto Mode
-- SOC < 30%: Charges at ~1500W
-- SOC > 80%: Discharges at ~800W
-- Otherwise: Idle
+Discharges to offset simulated household consumption, keeping grid power near 0.
 
 ### AI Mode
-- Similar to Auto with random variations
-- SOC < 25%: Charges at 1000-2000W
-- SOC > 85%: Discharges at 500-1000W
+Like Auto, but saves energy during low-usage periods for evening peaks.
 
 ### Passive Mode
-- Uses configured power and duration
-- Automatically switches back to Auto when timer expires
+Uses configured power for set duration, then reverts to Auto.
 
 ### Manual Mode
-- Follows configured schedule slots
-- Checks current day/time against schedule settings
+Follows configured schedule slots with day/time/power settings.
 
 ### SOC Limits
 - Cannot discharge below 5% SOC
 - Cannot charge above 100% SOC
-- Power tapers as approaching limits
+- Power tapers near limits (below 10%, above 90%)
 
-## Supported Methods
+## Supported API Methods
 
-The mock device responds to:
-- `Marstek.GetDevice` - Returns device info (used for discovery)
-- `ES.GetStatus` - Returns battery status (SOC, power, mode, status)
-- `ES.GetMode` - Returns current mode configuration with power readings
-- `ES.SetMode` - Updates mode with passive_cfg or manual_cfg support
-- `PV.GetStatus` - Returns PV panel status (always 0 in mock)
+| Method | Description |
+|--------|-------------|
+| `Marstek.GetDevice` | Device info (discovery) |
+| `ES.GetStatus` | Battery status (SOC, power, energy) |
+| `ES.GetMode` | Current operating mode |
+| `ES.SetMode` | Change mode with config |
+| `PV.GetStatus` | PV panel readings |
+| `Wifi.GetStatus` | WiFi signal and network info |
+| `EM.GetStatus` | CT clamp / energy meter |
+| `Bat.GetStatus` | Battery temperature and flags |
 
 ## Testing Discovery
 
-From inside the devcontainer:
 ```bash
 # Test broadcast discovery
 python3 /workspaces/ha_marstek/tools/debug_udp_discovery.py --verbose
 
-# Test direct query
+# Query specific device
 python3 /workspaces/ha_marstek/tools/query_device.py 172.28.0.20
 ```
 
 ## Console Output
 
-When running with simulation enabled, every 5 seconds you'll see:
+Status updates every 5 seconds:
 ```
-[STATUS] SOC: 45% | Power: -1523W | Mode: Auto | ⚡ Charging
+[STATUS] SOC: 45% | Batt: 523W | 🏠 650W | ⚖️ Balanced | Mode: Auto | 🔋 Discharging
 ```
 
-Whenever a request is received:
+Request logging:
 ```
 [14:32:05] Request from 172.28.0.10:54321
    Method: ES.GetMode
@@ -115,8 +143,22 @@ Whenever a request is received:
    -> Sent response: ES.GetMode
 ```
 
-Mode changes are logged:
-```
-[SIM] Mode set to: Passive
-[SIM] Passive: power=-2000W, duration=3600s
+## Programmatic Usage
+
+```python
+from mock_device import MockMarstekDevice, BatterySimulator
+
+# Create device with custom config
+device = MockMarstekDevice(
+    port=30000,
+    device_config={"ble_mac": "custom_mac"},
+    initial_soc=75,
+)
+device.start()
+
+# Or use simulators directly for testing
+sim = BatterySimulator(initial_soc=50)
+sim.start()
+state = sim.get_state()
+print(f"SOC: {state['soc']}%")
 ```

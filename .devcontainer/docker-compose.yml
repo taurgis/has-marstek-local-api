@@ -16,6 +16,7 @@ services:
         ipv4_address: 172.28.0.10
     command: python -m homeassistant -c /config
 
+  # Mock device 1 - uses defaults from const.py (02deadbeef01, 02cafebabe01)
   mock-marstek:
     build:
       context: ../tools/mock_device
@@ -26,9 +27,9 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.20
-    # Override command to use the container's IP
-    command: ["python", "mock_marstek.py", "--ip", "172.28.0.20"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.20", "--soc", "50"]
 
+  # Mock device 2 - unique mock MACs
   mock-marstek-2:
     build:
       context: ../tools/mock_device
@@ -39,8 +40,9 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.21
-    command: ["python", "mock_marstek.py", "--ip", "172.28.0.21", "--ble-mac", "009b08a5bb40", "--wifi-mac", "7483c2315cf9", "--soc", "75"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.21", "--ble-mac", "02deadbeef02", "--wifi-mac", "02cafebabe02", "--soc", "75"]
 
+  # Mock device 3 - unique mock MACs
   mock-marstek-3:
     build:
       context: ../tools/mock_device
@@ -51,7 +53,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.22
-    command: ["python", "mock_marstek.py", "--ip", "172.28.0.22", "--ble-mac", "009b08a5cc41", "--wifi-mac", "7483c2315cfa", "--soc", "30"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--ble-mac", "02deadbeef03", "--wifi-mac", "02cafebabe03", "--soc", "30"]
 
 networks:
   marstek_net:
