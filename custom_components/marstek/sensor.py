@@ -558,6 +558,7 @@ async def async_setup_entry(
 
     data_keys = set(coordinator.data or {})
 
+    # Core sensors - always created, show unavailable until data arrives
     sensors: list[MarstekSensor] = [
         MarstekBatterySensor(coordinator, device_info, config_entry),
         MarstekPowerSensor(coordinator, device_info, config_entry),
@@ -570,63 +571,24 @@ async def async_setup_entry(
         MarstekDeviceInfoSensor(coordinator, device_info, "ble_mac", config_entry),
         MarstekDeviceInfoSensor(coordinator, device_info, "wifi_mac", config_entry),
         MarstekDeviceInfoSensor(coordinator, device_info, "mac", config_entry),
+        # Slow-tier sensors - always created to avoid orphaned entities on reload
+        MarstekWiFiRSSISensor(coordinator, device_info, config_entry),
+        MarstekCTConnectionSensor(coordinator, device_info, config_entry),
+        MarstekBatteryTemperatureSensor(coordinator, device_info, config_entry),
+        # Energy meter sensors - always created
+        MarstekGridPowerSensor(coordinator, device_info, config_entry),
+        MarstekPhasePowerSensor(coordinator, device_info, "a", config_entry),
+        MarstekPhasePowerSensor(coordinator, device_info, "b", config_entry),
+        MarstekPhasePowerSensor(coordinator, device_info, "c", config_entry),
+        # Energy total sensors - always created for Energy Dashboard
+        MarstekTotalPVEnergySensor(coordinator, device_info, config_entry),
+        MarstekGridOutputEnergySensor(coordinator, device_info, config_entry),
+        MarstekGridInputEnergySensor(coordinator, device_info, config_entry),
+        MarstekLoadEnergySensor(coordinator, device_info, config_entry),
     ]
 
-    # Add WiFi RSSI sensor if data is available
-    if "wifi_rssi" in data_keys and coordinator.data.get("wifi_rssi") is not None:
-        sensors.append(
-            MarstekWiFiRSSISensor(coordinator, device_info, config_entry)
-        )
-
-    # Add CT connection sensor if data is available
-    if "ct_connected" in data_keys and coordinator.data.get("ct_connected") is not None:
-        sensors.append(
-            MarstekCTConnectionSensor(coordinator, device_info, config_entry)
-        )
-
-    # Add battery temperature sensor if data is available
-    if "bat_temp" in data_keys and coordinator.data.get("bat_temp") is not None:
-        sensors.append(
-            MarstekBatteryTemperatureSensor(coordinator, device_info, config_entry)
-        )
-
-    # Add grid total power sensor if data is available
-    if "em_total_power" in data_keys and coordinator.data.get("em_total_power") is not None:
-        sensors.append(
-            MarstekGridPowerSensor(coordinator, device_info, config_entry)
-        )
-
-    # Add phase power sensors if data is available (for 3-phase systems)
-    for phase in ("a", "b", "c"):
-        phase_key = f"em_{phase}_power"
-        if phase_key in data_keys and coordinator.data.get(phase_key) is not None:
-            sensors.append(
-                MarstekPhasePowerSensor(coordinator, device_info, phase, config_entry)
-            )
-
-    # Add energy total sensors if data is available (for Home Assistant Energy Dashboard)
-    if "total_pv_energy" in data_keys and coordinator.data.get("total_pv_energy") is not None:
-        sensors.append(
-            MarstekTotalPVEnergySensor(coordinator, device_info, config_entry)
-        )
-    
-    if "total_grid_output_energy" in data_keys and coordinator.data.get("total_grid_output_energy") is not None:
-        sensors.append(
-            MarstekGridOutputEnergySensor(coordinator, device_info, config_entry)
-        )
-    
-    if "total_grid_input_energy" in data_keys and coordinator.data.get("total_grid_input_energy") is not None:
-        sensors.append(
-            MarstekGridInputEnergySensor(coordinator, device_info, config_entry)
-        )
-    
-    if "total_load_energy" in data_keys and coordinator.data.get("total_load_energy") is not None:
-        sensors.append(
-            MarstekLoadEnergySensor(coordinator, device_info, config_entry)
-        )
-
     # Only register PV sensors when data is actually available
-    # Per API docs (Chapter 4): Only Venus D supports PV, Venus C/E do NOT
+    # PV is only supported by Venus A/D; Venus C/E do NOT have PV
     # The coordinator and data parser only include PV keys for supporting devices
     for pv_channel in range(1, 5):
         for metric_type in ("power", "voltage", "current", "state"):

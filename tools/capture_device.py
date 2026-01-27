@@ -19,8 +19,13 @@ from typing import Any
 # Important: Device needs ~10 seconds between requests for stability
 METHODS_TO_CAPTURE = [
     ("Marstek.GetDevice", {"ble_mac": "0"}),
-    ("ES.GetMode", {"id": 0}),  # Primary status method used by pymarstek
+    ("ES.GetMode", {"id": 0}),
+    ("ES.GetStatus", {"id": 0}),
     ("PV.GetStatus", {"id": 0}),
+    ("Wifi.GetStatus", {"id": 0}),
+    ("EM.GetStatus", {"id": 0}),
+    ("Bat.GetStatus", {"id": 0}),
+    ("BLE.GetStatus", {"id": 0}),
 ]
 
 # Delay between requests in seconds (device is unstable with fast requests)
