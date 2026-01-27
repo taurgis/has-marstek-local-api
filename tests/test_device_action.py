@@ -26,7 +26,8 @@ def _mock_client(status=None, mode_response=None):
     client = MagicMock()
     client.async_setup = AsyncMock(return_value=None)
     client.async_cleanup = AsyncMock(return_value=None)
-    client.send_request = AsyncMock(return_value=mode_response or {"result": {"mode": "Manual", "ongrid_power": -500}})
+    # Use bat_power for ES.GetStatus verification (not ongrid_power)
+    client.send_request = AsyncMock(return_value=mode_response or {"result": {"mode": "Manual", "bat_power": -500}})
     client.get_device_status = AsyncMock(return_value=status or {
         "device_mode": "SelfUse",
         "battery_soc": 55,
@@ -88,13 +89,13 @@ async def test_device_actions_pause_and_resume(
     """Test device actions pause polling during execution and resume after."""
     mock_config_entry.add_to_hass(hass)
 
-    # Mock response based on action type
+    # Mock response based on action type (using bat_power for ES.GetStatus verification)
     if expected_power_negative is True:
-        mode_response = {"result": {"mode": "Manual", "ongrid_power": -500}}
+        mode_response = {"result": {"mode": "Manual", "bat_power": -500}}
     elif expected_power_negative is False:
-        mode_response = {"result": {"mode": "Manual", "ongrid_power": 500}}
+        mode_response = {"result": {"mode": "Manual", "bat_power": 500}}
     else:
-        mode_response = {"result": {"mode": "Manual", "ongrid_power": 0}}
+        mode_response = {"result": {"mode": "Manual", "bat_power": 0}}
 
     client = _mock_client(mode_response=mode_response)
     with _patch_all(client=client):
