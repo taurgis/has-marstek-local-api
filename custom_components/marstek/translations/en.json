@@ -57,13 +57,15 @@
           "poll_interval_fast": "Fast polling interval (seconds)",
           "poll_interval_medium": "Medium polling interval (seconds)",
           "poll_interval_slow": "Slow polling interval (seconds)",
-          "request_delay": "Delay between API requests (seconds)"
+          "request_delay": "Delay between API requests (seconds)",
+          "request_timeout": "Request timeout (seconds)"
         },
         "data_description": {
           "poll_interval_fast": "How often to poll battery/power data (ES.GetMode, ES.GetStatus, EM.GetStatus)",
           "poll_interval_medium": "How often to poll solar/PV data",
           "poll_interval_slow": "How often to poll WiFi signal and battery temperature",
-          "request_delay": "Delay between consecutive API requests (device stability)"
+          "request_delay": "Delay between consecutive API requests (device stability)",
+          "request_timeout": "How long to wait for a response from the device before timing out"
         }
       }
     }

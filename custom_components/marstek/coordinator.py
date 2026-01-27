@@ -20,10 +20,12 @@ from .const import (
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
+    CONF_REQUEST_TIMEOUT,
     DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_POLL_INTERVAL_MEDIUM,
     DEFAULT_POLL_INTERVAL_SLOW,
     DEFAULT_REQUEST_DELAY,
+    DEFAULT_REQUEST_TIMEOUT,
     DEFAULT_UDP_PORT,
     DOMAIN,
     INITIAL_SETUP_REQUEST_DELAY,
@@ -117,6 +119,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
         )
 
+    def _get_request_timeout(self) -> float:
+        """Get timeout for API requests from options."""
+        return self.config_entry.options.get(
+            CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
+        )
+
     @property
     def device_ip(self) -> str:
         """Get current device IP from config entry (supports dynamic IP updates)."""
@@ -151,6 +159,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # WiFi and battery details - slow interval
         include_slow = (current_time - self._last_slow_fetch) >= slow_interval
         
+        # Get configured timeout
+        request_timeout = self._get_request_timeout()
+        
         _LOGGER.debug(
             "Polling tiers for %s: fast=always, pv=%s, wifi/bat=%s",
             current_ip,
@@ -165,7 +176,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device_status = await self.udp_client.get_device_status(
                 current_ip,
                 port=DEFAULT_UDP_PORT,
-                timeout=10.0,
+                timeout=request_timeout,
                 include_pv=include_pv,
                 include_wifi=include_slow,
                 include_em=True,  # Always fetch - fast tier

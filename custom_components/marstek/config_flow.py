@@ -42,10 +42,12 @@ from .const import (
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
+    CONF_REQUEST_TIMEOUT,
     DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_POLL_INTERVAL_MEDIUM,
     DEFAULT_POLL_INTERVAL_SLOW,
     DEFAULT_REQUEST_DELAY,
+    DEFAULT_REQUEST_TIMEOUT,
     DEFAULT_UDP_PORT,
     DOMAIN,
 )
@@ -479,6 +481,9 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
         current_delay = self.config_entry.options.get(
             CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
         )
+        current_timeout = self.config_entry.options.get(
+            CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
+        )
 
         return self.async_show_form(
             step_id="init",
@@ -528,6 +533,18 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
                             min=1.0,
                             max=30.0,
                             step=0.5,
+                            unit_of_measurement="seconds",
+                            mode=NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_REQUEST_TIMEOUT,
+                        default=current_timeout,
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=5.0,
+                            max=60.0,
+                            step=1.0,
                             unit_of_measurement="seconds",
                             mode=NumberSelectorMode.BOX,
                         )
