@@ -41,6 +41,16 @@ class MarstekScanner:
             cls._scanner = cls(hass)
         return cls._scanner
 
+    @classmethod
+    @callback
+    def async_reset(cls) -> None:
+        """Reset the singleton scanner instance.
+        
+        Should be called when the last config entry is unloaded to ensure
+        clean state on reload and avoid stale references during testing.
+        """
+        cls._scanner = None
+
     async def async_setup(self) -> None:
         """Initialize scanner and start periodic scanning."""
         _LOGGER.info("Initializing Marstek scanner")

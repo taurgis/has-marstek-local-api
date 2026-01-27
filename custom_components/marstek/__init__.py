@@ -175,7 +175,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
         ) from err
     
     # Reset initial setup flag - subsequent polls use normal configured delays
-    coordinator._is_initial_setup = False  # noqa: SLF001
+    coordinator.finish_initial_setup()
 
     # Store coordinator and device_info in runtime_data
     # Note: UDP client is shared via hass.data[DOMAIN][DATA_UDP_CLIENT]
@@ -209,6 +209,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
         udp_client = _get_shared_udp_client(hass)
         if udp_client:
             await udp_client.async_cleanup()
+        
+        # Reset scanner singleton to ensure clean state on reload
+        MarstekScanner.async_reset()
         
         # Remove domain data entirely when last entry is unloaded
         hass.data.pop(DOMAIN, None)

@@ -128,6 +128,14 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
         )
     
+    def finish_initial_setup(self) -> None:
+        """Mark initial setup as complete.
+        
+        Should be called after the first successful data fetch to switch 
+        from fast initial delays to normal configured delays.
+        """
+        self._is_initial_setup = False
+    
     def _get_request_delay(self) -> float:
         """Get delay between requests from options, or fast delay for initial setup."""
         if self._is_initial_setup:

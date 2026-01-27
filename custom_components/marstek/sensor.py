@@ -155,7 +155,9 @@ class MarstekPowerSensor(MarstekSensor):
 
     _attr_translation_key = "battery_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
 
     def __init__(
         self,
@@ -308,6 +310,7 @@ class MarstekWiFiRSSISensor(MarstekSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
+    _attr_suggested_display_precision = 0
 
     def __init__(
         self,
@@ -333,6 +336,7 @@ class MarstekBatteryTemperatureSensor(MarstekSensor):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
 
     def __init__(
         self,
@@ -358,6 +362,7 @@ class MarstekGridPowerSensor(MarstekSensor):
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
 
     def __init__(
         self,
@@ -382,6 +387,7 @@ class MarstekPhasePowerSensor(MarstekSensor):
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
 
     def __init__(
         self,

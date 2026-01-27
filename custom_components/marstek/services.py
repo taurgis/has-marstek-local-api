@@ -185,12 +185,23 @@ async def _send_mode_command(
     host: str,
     port: int,
     config: dict[str, Any],
+    *,
+    pause_polling: bool = True,
 ) -> None:
-    """Send a mode command with retries."""
+    """Send a mode command with retries.
+    
+    Args:
+        udp_client: UDP client for communication
+        host: Device IP address
+        port: Device port
+        config: Mode configuration payload
+        pause_polling: Whether to pause/resume polling (set False for batch ops)
+    """
     command = build_command(CMD_ES_SET_MODE, {"id": 0, "config": config})
 
-    # Pause polling while sending command
-    await udp_client.pause_polling(host)
+    # Pause polling while sending command (unless caller handles it)
+    if pause_polling:
+        await udp_client.pause_polling(host)
 
     try:
         success = False
@@ -230,7 +241,8 @@ async def _send_mode_command(
             )
 
     finally:
-        await udp_client.resume_polling(host)
+        if pause_polling:
+            await udp_client.resume_polling(host)
 
 
 async def async_set_passive_mode(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -315,6 +327,7 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
     
     Note: This clears all 10 schedule slots sequentially. Each slot requires
     a separate API call to the device due to protocol limitations.
+    Polling is paused once for all 10 commands to avoid race conditions.
     """
     device_id = _get_device_id_from_call(call)
 
@@ -322,22 +335,28 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
 
     _LOGGER.info("Clearing 10 manual schedule slots for device %s...", device_id)
     
-    # Clear all 10 schedule slots by setting them to disabled
-    for slot in range(10):
-        config = {
-            "mode": API_MODE_MANUAL,
-            "manual_cfg": {
-                "time_num": slot,
-                "start_time": "00:00",
-                "end_time": "00:00",
-                "week_set": 0,
-                "power": 0,
-                "enable": 0,
-            },
-        }
+    # Pause polling once for all 10 commands
+    await udp_client.pause_polling(host)
+    
+    try:
+        # Clear all 10 schedule slots by setting them to disabled
+        for slot in range(10):
+            config = {
+                "mode": API_MODE_MANUAL,
+                "manual_cfg": {
+                    "time_num": slot,
+                    "start_time": "00:00",
+                    "end_time": "00:00",
+                    "week_set": 0,
+                    "power": 0,
+                    "enable": 0,
+                },
+            }
 
-        await _send_mode_command(udp_client, host, port, config)
-        _LOGGER.debug("Cleared manual schedule slot %d/10 for device %s", slot + 1, device_id)
+            await _send_mode_command(udp_client, host, port, config, pause_polling=False)
+            _LOGGER.debug("Cleared manual schedule slot %d/10 for device %s", slot + 1, device_id)
+    finally:
+        await udp_client.resume_polling(host)
 
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
@@ -355,47 +374,56 @@ def _parse_time_string(time_str: str) -> str:
 
 
 async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle set_manual_schedules service call (batch configuration)."""
+    """Handle set_manual_schedules service call (batch configuration).
+    
+    Polling is paused once for all schedule commands to avoid race conditions.
+    """
     device_id = _get_device_id_from_call(call)
     schedules = call.data[ATTR_SCHEDULES]
 
     entry, udp_client, host, port = _get_entry_and_client_from_device_id(hass, device_id)
 
-    for schedule in schedules:
-        schedule_slot = schedule[ATTR_SCHEDULE_SLOT]
-        start_time_str = _parse_time_string(schedule[ATTR_START_TIME])
-        end_time_str = _parse_time_string(schedule[ATTR_END_TIME])
-        power = schedule.get(ATTR_POWER, 0)
-        days = schedule.get(ATTR_DAYS, ["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
-        enable = schedule.get(ATTR_ENABLE, True)
+    # Pause polling once for all schedule commands
+    await udp_client.pause_polling(host)
+    
+    try:
+        for schedule in schedules:
+            schedule_slot = schedule[ATTR_SCHEDULE_SLOT]
+            start_time_str = _parse_time_string(schedule[ATTR_START_TIME])
+            end_time_str = _parse_time_string(schedule[ATTR_END_TIME])
+            power = schedule.get(ATTR_POWER, 0)
+            days = schedule.get(ATTR_DAYS, ["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
+            enable = schedule.get(ATTR_ENABLE, True)
 
-        # Calculate week_set bitmask
-        week_set = _calculate_week_set(days)
+            # Calculate week_set bitmask
+            week_set = _calculate_week_set(days)
 
-        config = {
-            "mode": API_MODE_MANUAL,
-            "manual_cfg": {
-                "time_num": schedule_slot,
-                "start_time": start_time_str,
-                "end_time": end_time_str,
-                "week_set": week_set,
-                "power": power,
-                "enable": 1 if enable else 0,
-            },
-        }
+            config = {
+                "mode": API_MODE_MANUAL,
+                "manual_cfg": {
+                    "time_num": schedule_slot,
+                    "start_time": start_time_str,
+                    "end_time": end_time_str,
+                    "week_set": week_set,
+                    "power": power,
+                    "enable": 1 if enable else 0,
+                },
+            }
 
-        await _send_mode_command(udp_client, host, port, config)
+            await _send_mode_command(udp_client, host, port, config, pause_polling=False)
 
-        _LOGGER.debug(
-            "Set manual schedule slot %d: %s-%s, power=%dW, days=%s, enabled=%s for device %s",
-            schedule_slot,
-            start_time_str,
-            end_time_str,
-            power,
-            days,
-            enable,
-            device_id,
-        )
+            _LOGGER.debug(
+                "Set manual schedule slot %d: %s-%s, power=%dW, days=%s, enabled=%s for device %s",
+                schedule_slot,
+                start_time_str,
+                end_time_str,
+                power,
+                days,
+                enable,
+                device_id,
+            )
+    finally:
+        await udp_client.resume_polling(host)
 
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
