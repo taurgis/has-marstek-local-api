@@ -95,6 +95,19 @@ These values can be tuned to reduce network traffic or improve responsiveness.
 
 The integration uses a single `DataUpdateCoordinator` per device with tiered polling to avoid request bursts. Entities never perform their own I/O and always read from coordinator data.
 
+## Documentation
+
+Extended documentation (with screenshots) lives in `docs/`:
+
+- [Documentation index](docs/README.md)
+- [Installation](docs/installation.md)
+- [Configuration](docs/configuration.md)
+- [Options](docs/options.md)
+- [Entities](docs/entities.md)
+- [Services](docs/services.md)
+- [Repairs](docs/repairs.md)
+- [Troubleshooting](docs/troubleshooting.md)
+
 ## Supported Devices
 
 | Device | Status |
