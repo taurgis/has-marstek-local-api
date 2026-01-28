@@ -100,8 +100,6 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
     MarstekSensorEntityDescription(
         key="device_mode",
         translation_key="device_mode",
-        device_class=SensorDeviceClass.ENUM,
-        options=["Auto", "AI", "Manual", "Passive"],
         value_fn=lambda coordinator, _info, _entry: (
             _value_from_data("device_mode", coordinator.data or {})
         ),
