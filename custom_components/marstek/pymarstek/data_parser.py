@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-_LOGGER = None
+import logging
+
+_LOGGER: logging.Logger | None = None
 
 
-def _get_logger():
+def _get_logger() -> logging.Logger:
     """Lazy import logger to avoid circular imports."""
     global _LOGGER
     if _LOGGER is None:
-        import logging
         _LOGGER = logging.getLogger(__name__)
     return _LOGGER
 

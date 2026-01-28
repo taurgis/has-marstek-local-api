@@ -9,7 +9,9 @@ from typing import Any
 from .pymarstek import build_command, get_es_status
 import voluptuous as vol
 
-from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+from homeassistant.components.device_automation import (  # type: ignore[attr-defined]
+    InvalidDeviceAutomationConfig,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_HOST, CONF_PORT, CONF_TYPE
 from homeassistant.core import Context, HomeAssistant

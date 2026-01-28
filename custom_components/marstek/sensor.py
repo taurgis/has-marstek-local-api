@@ -27,22 +27,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-try:
-    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-except ImportError:
-    # Fallback for older Home Assistant versions
-    from collections.abc import Iterable
-    from typing import Protocol
-
-    class AddConfigEntryEntitiesCallback(Protocol):  # type: ignore[no-redef]
-        """Protocol type for EntityPlatform.add_entities callback (fallback)."""
-
-        def __call__(
-            self,
-            new_entities: Iterable,
-            update_before_add: bool = False,
-        ) -> None:
-            """Define add_entities type."""
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MarstekConfigEntry
 from .const import DOMAIN
@@ -53,7 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
-class MarstekSensorEntityDescription(SensorEntityDescription):
+class MarstekSensorEntityDescription(SensorEntityDescription):  # type: ignore[misc]
     """Marstek sensor entity description."""
 
     value_fn: Callable[[MarstekDataUpdateCoordinator, dict[str, Any], ConfigEntry | None], StateType]
@@ -79,9 +64,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda coordinator, _info, _entry: (
-            int(coordinator.data.get("battery_soc"))
-            if coordinator.data and coordinator.data.get("battery_soc") is not None
-            else None
+            _value_from_data("battery_soc", coordinator.data or {})
         ),
     ),
     MarstekSensorEntityDescription(
@@ -92,9 +75,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
         value_fn=lambda coordinator, _info, _entry: (
-            int(coordinator.data.get("battery_power"))
-            if coordinator.data and coordinator.data.get("battery_power") is not None
-            else None
+            _value_from_data("battery_power", coordinator.data or {})
         ),
     ),
     MarstekSensorEntityDescription(
@@ -400,10 +381,10 @@ def _pv_sensor_descriptions() -> tuple[MarstekSensorEntityDescription, ...]:
                         else None
                     ),
                     suggested_display_precision=precision,
-                    value_fn=lambda coordinator, _info, _entry, key=sensor_key: (
+                    value_fn=lambda coordinator, _info, _entry, key=sensor_key: (  # type: ignore[misc]
                         _value_from_data(key, coordinator.data or {})
                     ),
-                    exists_fn=lambda data, key=sensor_key: _exists_key_with_value(
+                    exists_fn=lambda data, key=sensor_key: _exists_key_with_value(  # type: ignore[misc]
                         key, data
                     ),
                 )
@@ -418,6 +399,7 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], SensorEntit
     """Representation of a Marstek sensor."""
 
     _attr_has_entity_name = True
+    entity_description: MarstekSensorEntityDescription
 
     def __init__(
         self,
@@ -446,7 +428,7 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], SensorEntit
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddConfigEntryEntitiesCallback,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Marstek sensors based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator

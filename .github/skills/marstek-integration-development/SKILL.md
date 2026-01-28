@@ -57,7 +57,23 @@ Avoid shortening intervals without validating device/network stability. The devi
 - Use the VS Code task “Start Home Assistant” to run a dev instance.
 - Watch logs for the `marstek` logger.
 - Run pytest with `pytest-homeassistant-custom-component`; keep manifests hassfest/HACS-clean and requirements pinned.
+## Verification After Changes (MANDATORY)
 
+**After every code modification**, run both checks:
+
+```bash
+# 1. Type checking (strict mode)
+python3 -m mypy --strict custom_components/marstek/
+
+# 2. All tests
+pytest tests/ -q
+```
+
+**Both must pass before considering any change complete.** The repository enforces strict typing with `mypy --strict`:
+- All functions need return type annotations
+- All parameters need type annotations  
+- Generic types need explicit parameters (`dict[str, Any]`, `Future[None]`)
+- Use `cast()` for type narrowing with mocked objects
 ## Common “gotchas”
 
 - Sending extra UDP requests per update loop can overload the device.

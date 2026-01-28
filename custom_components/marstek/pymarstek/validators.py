@@ -566,4 +566,5 @@ def validate_json_message(message: str) -> dict[str, Any]:
     # Validate command structure
     validate_command(command)
     
-    return command
+    # After validation, we know it's a valid dict
+    return dict(command)

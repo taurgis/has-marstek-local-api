@@ -168,7 +168,21 @@ Statuses: `done`, `todo`, `exempt` (with comment explaining why).
 - Coordinator/entities: mock transport; assert happy path + errors raise `UpdateFailed` and surface unavailable states; gate entities on data keys.
 - Actions/commands: verify polling is paused, retries fire, verification logic works, and failures bubble.
 - Snapshot/diagnostics (Gold path): use `syrupy` HA extension for diagnostics/device registry dumps; redact sensitive fields.
-- CI: hassfest + lint (ruff, mypy optional) + pytest with coverage threshold (e.g., `--cov-fail-under=95`); test latest supported Python versions.
+- CI: hassfest + lint (ruff, mypy) + pytest with coverage threshold (e.g., `--cov-fail-under=95`); test latest supported Python versions.
+
+## Verification After Changes (MANDATORY)
+
+**After every code change**, run both checks before considering the work complete:
+
+```bash
+# 1. Type checking (strict mode)
+python3 -m mypy --strict custom_components/<domain>/
+
+# 2. Tests
+pytest tests/ -q
+```
+
+Both must pass. Fix any errors and re-run until clean.
 
 ## Operational Hygiene
 - Debounce manual refreshes with `coordinator.async_request_refresh()`.
@@ -183,3 +197,5 @@ Statuses: `done`, `todo`, `exempt` (with comment explaining why).
 - [ ] Translations updated (strings + en.json)
 - [ ] Requirements pinned; manifest fields valid; hassfest/HACS clean
 - [ ] Tests cover config flow, coordinator happy-path and failure, and entity states
+- [ ] **mypy --strict passes with no errors**
+- [ ] **All tests pass (pytest tests/ -q)**

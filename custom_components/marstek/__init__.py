@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import Any, cast
 
 from .pymarstek import MarstekUDPClient, get_es_mode
 
@@ -67,7 +67,10 @@ def _clear_connection_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 def _get_shared_udp_client(hass: HomeAssistant) -> MarstekUDPClient | None:
     """Get the shared UDP client if it exists."""
-    return hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+    client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+    if client is not None:
+        return cast(MarstekUDPClient, client)
+    return None
 
 
 async def _get_or_create_shared_udp_client(hass: HomeAssistant) -> MarstekUDPClient:
@@ -86,7 +89,8 @@ async def _get_or_create_shared_udp_client(hass: HomeAssistant) -> MarstekUDPCli
         await udp_client.async_setup()
         hass.data[DOMAIN][DATA_UDP_CLIENT] = udp_client
     
-    return hass.data[DOMAIN][DATA_UDP_CLIENT]
+    client: MarstekUDPClient = hass.data[DOMAIN][DATA_UDP_CLIENT]
+    return client
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

@@ -17,19 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-try:
-    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-except ImportError:
-    from collections.abc import Iterable
-    from typing import Protocol
-
-    class AddConfigEntryEntitiesCallback(Protocol):
-        def __call__(
-            self,
-            new_entities: Iterable,
-            update_before_add: bool = False,
-        ) -> None:
-            """Define add_entities type."""
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MarstekConfigEntry
 from .const import (
@@ -54,7 +42,7 @@ RETRY_DELAY = 1.0
 
 
 @dataclass(kw_only=True)
-class MarstekSelectEntityDescription(SelectEntityDescription):
+class MarstekSelectEntityDescription(SelectEntityDescription):  # type: ignore[misc]
     """Marstek select entity description."""
 
     options_fn: Callable[[], list[str]]
@@ -74,7 +62,7 @@ SELECT_ENTITIES: tuple[MarstekSelectEntityDescription, ...] = (
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddConfigEntryEntitiesCallback,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Marstek select entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator

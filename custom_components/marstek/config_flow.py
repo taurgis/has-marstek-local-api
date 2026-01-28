@@ -26,7 +26,7 @@ try:
 except ImportError:
     # Fallback for older Home Assistant versions (pre-2025.1)
     try:
-        from homeassistant.components.dhcp import DhcpServiceInfo  # type: ignore[assignment,no-redef]
+        from homeassistant.components.dhcp import DhcpServiceInfo
     except ImportError:
         # If DHCP service info is not available, create a minimal stub
         from dataclasses import dataclass
@@ -402,41 +402,44 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         reauth_entry = self._get_reauth_entry()
 
         if user_input is not None:
-            host = user_input.get(CONF_HOST)
-            port = reauth_entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
+            host = str(user_input.get(CONF_HOST, ""))
+            port = int(reauth_entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
 
-            try:
-                device_info = await get_device_info(host=host, port=port)
-                if device_info:
-                    unique_id_mac = (
-                        device_info.get("ble_mac")
-                        or device_info.get("mac")
-                        or device_info.get("wifi_mac")
-                    )
-                    if not unique_id_mac:
-                        errors["base"] = "invalid_discovery_info"
-                    else:
-                        await self.async_set_unique_id(format_mac(unique_id_mac))
-                        self._abort_if_unique_id_mismatch()
-                        return self.async_update_reload_and_abort(
-                            reauth_entry,
-                            data_updates={CONF_HOST: host},
+            if not host:
+                errors["base"] = "cannot_connect"
+            else:
+                try:
+                    device_info = await get_device_info(host=host, port=port)
+                    if device_info:
+                        unique_id_mac = (
+                            device_info.get("ble_mac")
+                            or device_info.get("mac")
+                            or device_info.get("wifi_mac")
                         )
-                errors["base"] = "cannot_connect"
-            except (OSError, TimeoutError, ValueError):
-                errors["base"] = "cannot_connect"
+                        if not unique_id_mac:
+                            errors["base"] = "invalid_discovery_info"
+                        else:
+                            await self.async_set_unique_id(format_mac(unique_id_mac))
+                            self._abort_if_unique_id_mismatch()
+                            return self.async_update_reload_and_abort(
+                                reauth_entry,
+                                data_updates={CONF_HOST: host},
+                            )
+                    errors["base"] = "cannot_connect"
+                except (OSError, TimeoutError, ValueError):
+                    errors["base"] = "cannot_connect"
 
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_HOST, default=reauth_entry.data.get(CONF_HOST, "")
+                        CONF_HOST, default=str(reauth_entry.data.get(CONF_HOST, ""))
                     ): cv.string
                 }
             ),
             errors=errors,
-            description_placeholders={"host": reauth_entry.data.get(CONF_HOST, "")},
+            description_placeholders={"host": str(reauth_entry.data.get(CONF_HOST, ""))},
         )
 
     async def async_step_reconfigure_confirm(
@@ -447,47 +450,50 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         reconfigure_entry = self._get_reconfigure_entry()
 
         if user_input is not None:
-            host = user_input.get(CONF_HOST)
-            port = user_input.get(CONF_PORT, DEFAULT_UDP_PORT)
+            host = str(user_input.get(CONF_HOST, ""))
+            port = int(user_input.get(CONF_PORT, DEFAULT_UDP_PORT))
 
-            try:
-                device_info = await get_device_info(host=host, port=port)
-                if device_info:
-                    unique_id_mac = (
-                        device_info.get("ble_mac")
-                        or device_info.get("mac")
-                        or device_info.get("wifi_mac")
-                    )
-                    if not unique_id_mac:
-                        errors["base"] = "invalid_discovery_info"
-                    else:
-                        await self.async_set_unique_id(format_mac(unique_id_mac))
-                        self._abort_if_unique_id_mismatch()
-                        return self.async_update_reload_and_abort(
-                            reconfigure_entry,
-                            data_updates={CONF_HOST: host, CONF_PORT: port},
-                            reason="reconfigure_successful",
+            if not host:
+                errors["base"] = "cannot_connect"
+            else:
+                try:
+                    device_info = await get_device_info(host=host, port=port)
+                    if device_info:
+                        unique_id_mac = (
+                            device_info.get("ble_mac")
+                            or device_info.get("mac")
+                            or device_info.get("wifi_mac")
                         )
-                errors["base"] = "cannot_connect"
-            except (OSError, TimeoutError, ValueError):
-                errors["base"] = "cannot_connect"
+                        if not unique_id_mac:
+                            errors["base"] = "invalid_discovery_info"
+                        else:
+                            await self.async_set_unique_id(format_mac(unique_id_mac))
+                            self._abort_if_unique_id_mismatch()
+                            return self.async_update_reload_and_abort(
+                                reconfigure_entry,
+                                data_updates={CONF_HOST: host, CONF_PORT: port},
+                                reason="reconfigure_successful",
+                            )
+                    errors["base"] = "cannot_connect"
+                except (OSError, TimeoutError, ValueError):
+                    errors["base"] = "cannot_connect"
 
         return self.async_show_form(
             step_id="reconfigure_confirm",
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_HOST, default=reconfigure_entry.data.get(CONF_HOST, "")
+                        CONF_HOST, default=str(reconfigure_entry.data.get(CONF_HOST, ""))
                     ): cv.string,
                     vol.Required(
                         CONF_PORT,
-                        default=reconfigure_entry.data.get(CONF_PORT, DEFAULT_UDP_PORT),
+                        default=int(reconfigure_entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)),
                     ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
                 }
             ),
             errors=errors,
             description_placeholders={
-                "host": reconfigure_entry.data.get(CONF_HOST, "")
+                "host": str(reconfigure_entry.data.get(CONF_HOST, ""))
             },
         )
 

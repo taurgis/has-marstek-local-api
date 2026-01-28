@@ -155,7 +155,7 @@ def _get_device_id_from_call(call: ServiceCall) -> str:
             translation_domain=DOMAIN,
             translation_key="no_device_specified",
         )
-    return device_id
+    return str(device_id)
 
 
 def _get_entry_and_client_from_device_id(
@@ -208,9 +208,9 @@ def _validate_power_for_device(power: int, entry: MarstekConfigEntry) -> None:
             translation_domain=DOMAIN,
             translation_key="power_out_of_range",
             translation_placeholders={
-                "requested": power,
-                "min": min_power,
-                "max": max_power,
+                "requested": str(power),
+                "min": str(min_power),
+                "max": str(max_power),
             },
         )
 
@@ -465,9 +465,9 @@ async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> 
                     translation_domain=DOMAIN,
                     translation_key="power_out_of_range",
                     translation_placeholders={
-                        "requested": power,
-                        "min": min_power,
-                        "max": max_power,
+                        "requested": str(power),
+                        "min": str(min_power),
+                        "max": str(max_power),
                     },
                 )
             days = schedule.get(ATTR_DAYS, ["mon", "tue", "wed", "thu", "fri", "sat", "sun"])

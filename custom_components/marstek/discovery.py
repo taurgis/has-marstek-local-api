@@ -29,7 +29,7 @@ def _get_broadcast_addresses() -> list[str]:
     addresses: set[str] = {"255.255.255.255"}
 
     try:
-        import psutil  # type: ignore[import-untyped]
+        import psutil
 
         for addrs in psutil.net_if_addrs().values():
             for addr in addrs:
@@ -158,7 +158,9 @@ async def discover_devices(
                 timeout=0.5,
             )
 
-            sender_ip, sender_port = addr
+            # addr is tuple[str, int] for IPv4
+            sender_ip: str = addr[0]
+            sender_port = int(addr[1])
 
             try:
                 response = json.loads(data.decode("utf-8"))

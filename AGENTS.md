@@ -190,6 +190,28 @@ from .pymarstek import MAX_POWER_VALUE, MAX_PASSIVE_DURATION, MAX_TIME_SLOTS
 - Integration-grade hygiene: avoid per-entity I/O, keep one coordinator per device, debounce refreshes, and ensure options changes trigger reloads.
 - Testing/QA: prefer pytest + `pytest-homeassistant-custom-component`; keep manifest versions pinned and metadata valid for HACS/hassfest.
 
+## Verification after changes (MANDATORY)
+
+**After every code modification**, you MUST run both type checking and tests:
+
+```bash
+# 1. Type checking (strict mode enabled)
+python3 -m mypy --strict custom_components/marstek/
+
+# 2. Run all tests
+pytest tests/ -q
+```
+
+**Do not consider a change complete until both commands pass.** If either fails:
+1. Fix the type errors or test failures
+2. Re-run verification
+3. Repeat until both pass
+
+This ensures:
+- **Type safety**: The codebase uses `--strict` mypy; all functions need proper annotations
+- **No regressions**: Tests must pass to confirm existing functionality isn't broken
+- **CI alignment**: These are the same checks that run in GitHub Actions
+
 ## Testing and QA expectations
 
 - Aim for Bronze+ quality scale: 100% config_flow coverage, connection tested in setup, unload/reload covered.
@@ -197,8 +219,19 @@ from .pymarstek import MAX_POWER_VALUE, MAX_PASSIVE_DURATION, MAX_TIME_SLOTS
 - Use `pytest-homeassistant-custom-component` with pinned versions in `requirements_test.txt`; mock UDP I/O—no live devices.
 - Cover failures: cannot_connect, invalid_auth/invalid_discovery_info, already_configured, coordinator timeouts, action retries.
 - Mark coordinator failures with `UpdateFailed` to surface entity unavailability.
-- CI: run hassfest + lint (ruff/mypy) + pytest (coverage threshold) on latest supported Python versions.
+- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (coverage threshold) on latest supported Python versions.
 - Mock device available in `tools/mock_device/` for local testing.
+
+### Type checking requirements
+
+This repository enforces **strict typing** via `mypy --strict`. When adding or modifying code:
+
+- All functions must have return type annotations
+- All function parameters must have type annotations
+- Use `from __future__ import annotations` at the top of each file
+- Generic types need explicit parameters: `dict[str, Any]`, `list[int]`, `Future[None]`
+- Use `cast()` when type narrowing is needed for mocked objects in tests
+- EntityDescription dataclasses that inherit from frozen HA classes need `# type: ignore[misc]`
 
 ## Local development
 

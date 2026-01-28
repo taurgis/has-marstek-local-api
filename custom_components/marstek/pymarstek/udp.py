@@ -15,9 +15,9 @@ import socket
 from typing import Any
 
 try:
-    import psutil  # type: ignore[import-not-found]
+    import psutil
 except Exception:  # noqa: BLE001 - optional dependency
-    psutil = None  # type: ignore[assignment]
+    psutil = None
 
 from .command_builder import (
     discover,
@@ -59,9 +59,9 @@ class MarstekUDPClient:
     def __init__(self, port: int = DEFAULT_UDP_PORT) -> None:
         self._port = port
         self._socket: socket.socket | None = None
-        self._pending_requests: dict[int, asyncio.Future] = {}
+        self._pending_requests: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._response_cache: dict[int, dict[str, Any]] = {}
-        self._listen_task: asyncio.Task | None = None
+        self._listen_task: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
         self._discovery_cache: list[dict[str, Any]] | None = None
@@ -332,7 +332,7 @@ class MarstekUDPClient:
             except (json.JSONDecodeError, KeyError) as exc:
                 raise ValueError("Invalid message: missing id") from exc
 
-        future: asyncio.Future = asyncio.Future()
+        future: asyncio.Future[dict[str, Any]] = asyncio.Future()
         self._pending_requests[request_id] = future
 
         try:
@@ -423,7 +423,7 @@ class MarstekUDPClient:
         loop = self._loop or asyncio.get_running_loop()
         start_time = loop.time()
 
-        future: asyncio.Future = asyncio.Future()
+        future: asyncio.Future[dict[str, Any]] = asyncio.Future()
         self._pending_requests[request_id] = future
 
         try:

@@ -97,6 +97,10 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             always_update=False,
         )
         
+        # Store config entry reference that is guaranteed to be non-None
+        # (The parent class allows None, but we always pass a config entry)
+        self._entry: ConfigEntry = config_entry
+        
         # Log configured intervals
         medium_interval = self._get_medium_interval()
         slow_interval = self._get_slow_interval()
@@ -115,15 +119,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     
     def _get_medium_interval(self) -> int:
         """Get medium polling interval from options."""
-        return self.config_entry.options.get(
+        return int(self._entry.options.get(
             CONF_POLL_INTERVAL_MEDIUM, DEFAULT_POLL_INTERVAL_MEDIUM
-        )
+        ))
     
     def _get_slow_interval(self) -> int:
         """Get slow polling interval from options."""
-        return self.config_entry.options.get(
+        return int(self._entry.options.get(
             CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
-        )
+        ))
     
     def finish_initial_setup(self) -> None:
         """Mark initial setup as complete.
@@ -137,28 +141,26 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get delay between requests from options, or fast delay for initial setup."""
         if self._is_initial_setup:
             return INITIAL_SETUP_REQUEST_DELAY
-        return self.config_entry.options.get(
+        return float(self._entry.options.get(
             CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
-        )
+        ))
 
     def _get_request_timeout(self) -> float:
         """Get timeout for API requests from options."""
-        return self.config_entry.options.get(
+        return float(self._entry.options.get(
             CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-        )
+        ))
 
     def _get_failure_threshold(self) -> int:
         """Get failure threshold from options (failures before entities become unavailable)."""
         return int(
-            self.config_entry.options.get(
+            self._entry.options.get(
                 CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD
             )
         )
 
     def _is_wifi_status_enabled(self) -> bool:
         """Return True if any WiFi status entity is enabled for this entry."""
-        if not self.config_entry:
-            return False
         wifi_keys = {
             "wifi_rssi",
             "wifi_sta_ip",
@@ -168,7 +170,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         entity_registry = er.async_get(self.hass)
         entries = er.async_entries_for_config_entry(
-            entity_registry, self.config_entry.entry_id
+            entity_registry, self._entry.entry_id
         )
         for entry in entries:
             if not entry.unique_id:
@@ -182,16 +184,14 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def device_ip(self) -> str:
         """Get current device IP from config entry (supports dynamic IP updates)."""
-        if self.config_entry:
-            return self.config_entry.data.get(CONF_HOST, self._initial_device_ip)
-        return self._initial_device_ip
+        ip = self._entry.data.get(CONF_HOST)
+        return str(ip) if ip else self._initial_device_ip
 
     @property
     def device_port(self) -> int:
         """Get current device port from config entry (supports dynamic updates)."""
-        if self.config_entry:
-            return int(self.config_entry.data.get(CONF_PORT, self._initial_device_port))
-        return self._initial_device_port
+        port = self._entry.data.get(CONF_PORT)
+        return int(port) if port else self._initial_device_port
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data using library's get_device_status method with tiered polling.
@@ -362,7 +362,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self.data or {}
 
     def _issue_id(self) -> str:
-        return f"cannot_connect_{self.config_entry.entry_id}"
+        return f"cannot_connect_{self._entry.entry_id}"
 
     def _create_connection_issue(self, error: str) -> None:
         """Create a fixable connection issue for this entry."""
@@ -374,7 +374,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             severity=ir.IssueSeverity.ERROR,
             translation_key="cannot_connect",
             translation_placeholders={"host": self.device_ip, "error": error},
-            data={"entry_id": self.config_entry.entry_id},
+            data={"entry_id": self._entry.entry_id},
         )
 
     def _clear_connection_issue(self) -> None:

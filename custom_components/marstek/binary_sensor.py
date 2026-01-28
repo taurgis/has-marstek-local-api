@@ -16,19 +16,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-try:
-    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-except ImportError:
-    from collections.abc import Iterable
-    from typing import Protocol
-
-    class AddConfigEntryEntitiesCallback(Protocol):
-        def __call__(
-            self,
-            new_entities: Iterable,
-            update_before_add: bool = False,
-        ) -> None:
-            """Define add_entities type."""
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MarstekConfigEntry
 from .coordinator import MarstekDataUpdateCoordinator
@@ -36,7 +24,7 @@ from .device_info import build_device_info, get_device_identifier
 
 
 @dataclass(kw_only=True)
-class MarstekBinarySensorEntityDescription(BinarySensorEntityDescription):
+class MarstekBinarySensorEntityDescription(BinarySensorEntityDescription):  # type: ignore[misc]
     """Marstek binary sensor entity description."""
 
     value_fn: Callable[[dict[str, Any]], bool | None]
@@ -121,7 +109,7 @@ class MarstekBinarySensor(
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddConfigEntryEntitiesCallback,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Marstek binary sensors based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator

@@ -24,9 +24,11 @@ class CannotConnectRepairFlow(RepairsFlow):
     ) -> data_entry_flow.FlowResult:
         """Handle the first step of the repair flow."""
         # Get entry_id from the issue data (set by RepairsFlowManager)
-        entry_id = self.data.get("entry_id") if self.data else None
-        if not entry_id:
+        entry_id_raw = self.data.get("entry_id") if self.data else None
+        if not entry_id_raw or not isinstance(entry_id_raw, str):
             return self.async_abort(reason="missing_config")
+        
+        entry_id: str = entry_id_raw
 
         entry = self.hass.config_entries.async_get_entry(entry_id)
         if entry is None:
@@ -36,7 +38,8 @@ class CannotConnectRepairFlow(RepairsFlow):
 
         if user_input is not None:
             host = user_input.get(CONF_HOST)
-            port = user_input.get(CONF_PORT, DEFAULT_UDP_PORT)
+            port_raw = user_input.get(CONF_PORT, DEFAULT_UDP_PORT)
+            port = int(port_raw) if port_raw else DEFAULT_UDP_PORT
 
             if not host:
                 errors["base"] = "cannot_connect"

@@ -52,10 +52,29 @@ Use this skill to design and implement tests/CI for a custom integration targeti
 - Device registry snapshot: manufacturer/model/identifiers/connections are correct and stable.
 
 ## CI Pipeline
-- hassfest before tests; lint with `ruff` (and optionally `mypy`).
+- hassfest before tests; lint with `ruff` and **`mypy --strict`** (required, not optional).
 - Matrix on latest supported Python versions.
 - Pin test deps in `requirements_test.txt` to avoid drift.
 - Optional: upload coverage (e.g., Codecov) for PR diffs.
+
+## Verification After Changes (MANDATORY)
+
+**After every code modification**, you MUST run verification:
+
+```bash
+# 1. Type checking (strict mode enforced)
+python3 -m mypy --strict custom_components/<domain>/
+
+# 2. Run all tests
+pytest tests/ -q
+```
+
+Do not consider work complete until both pass. This catches:
+- Type annotation errors (missing return types, wrong argument types)
+- Regressions in existing functionality
+- Integration issues between components
+
+Fix failures immediately before moving on.
 
 ## Quick Checklist
 - [ ] Config flow tests cover success + cannot_connect + invalid_auth + invalid_discovery_info + already_configured
@@ -65,3 +84,5 @@ Use this skill to design and implement tests/CI for a custom integration targeti
 - [ ] Actions pause polling, retry, and verify outcomes
 - [ ] Snapshots for diagnostics/device registry (if diagnostics enabled)
 - [ ] CI runs hassfest, lint, pytest with coverage gate
+- [ ] **mypy --strict passes (0 errors)**
+- [ ] **All tests pass (pytest tests/ -q)**

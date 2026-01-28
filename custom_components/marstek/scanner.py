@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any, ClassVar, Self
 
@@ -34,7 +34,7 @@ class MarstekScanner:
         """Initialize the scanner."""
         self._hass = hass
         self._track_interval: CALLBACK_TYPE | None = None
-        self._scan_task: asyncio.Task | None = None
+        self._scan_task: asyncio.Task[None] | None = None
 
     @classmethod
     @callback
@@ -89,7 +89,7 @@ class MarstekScanner:
             self._scan_task = None
 
     @callback
-    def async_scan(self, now=None) -> None:
+    def async_scan(self, now: datetime | None = None) -> None:
         """Periodically scan for devices and check IP changes."""
         # Cancel previous scan if still running (shouldn't happen normally)
         if self._scan_task is not None and not self._scan_task.done():
