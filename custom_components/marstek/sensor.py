@@ -14,7 +14,6 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONF_HOST,
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     EntityCategory,
@@ -25,7 +24,6 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo, format_mac
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -49,6 +47,7 @@ except ImportError:
 from . import MarstekConfigEntry
 from .const import DOMAIN
 from .coordinator import MarstekDataUpdateCoordinator
+from .device_info import build_device_info, get_device_identifier
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,29 +58,6 @@ class MarstekSensorEntityDescription(SensorEntityDescription):
 
     value_fn: Callable[[MarstekDataUpdateCoordinator, dict[str, Any], ConfigEntry | None], StateType]
     exists_fn: Callable[[dict[str, Any]], bool] = lambda data: True
-
-
-def _device_identifier(device_info: dict[str, Any]) -> str:
-    device_identifier_raw = (
-        device_info.get("ble_mac")
-        or device_info.get("mac")
-        or device_info.get("wifi_mac")
-    )
-    if not device_identifier_raw:
-        raise ValueError("Marstek device identifier (MAC) is required for stable entities")
-    return format_mac(device_identifier_raw)
-
-
-def _device_name(device_info: dict[str, Any], config_entry: ConfigEntry | None) -> str:
-    device_ip = (
-        config_entry.data.get(CONF_HOST)
-        if config_entry
-        else device_info.get("ip", "Unknown")
-    )
-    return (
-        f"Marstek {device_info['device_type']} "
-        f"v{device_info['version']} ({device_ip})"
-    )
 
 
 def _value_from_data(key: str, data: dict[str, Any]) -> StateType:
@@ -310,9 +286,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="device_ip",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda _coord, info, entry: (
-            entry.data.get(CONF_HOST, "") if entry else info.get("ip", "")
-        ),
+        value_fn=lambda _coord, info, _entry: info.get("ip", ""),
     ),
     MarstekSensorEntityDescription(
         key="device_version",
@@ -404,15 +378,9 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], SensorEntit
         self.entity_description = description
         self._device_info = device_info
         self._config_entry = config_entry
-        device_identifier = _device_identifier(device_info)
+        device_identifier = get_device_identifier(device_info)
         self._attr_unique_id = f"{device_identifier}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_identifier)},
-            name=_device_name(device_info, config_entry),
-            manufacturer="Marstek",
-            model=device_info["device_type"],
-            sw_version=str(device_info["version"]),
-        )
+        self._attr_device_info = build_device_info(device_info)
 
     @property
     def native_value(self) -> StateType:

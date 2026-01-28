@@ -12,8 +12,7 @@ from .pymarstek import MarstekUDPClient
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -113,10 +112,6 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             " [INITIAL SETUP - fast delays]" if is_initial_setup else "",
         )
 
-        # Register listener to update entity names when config entry changes
-        config_entry.async_on_unload(
-            config_entry.add_update_listener(self._async_config_entry_updated)
-        )
     
     def _get_medium_interval(self) -> int:
         """Get medium polling interval from options."""
@@ -388,76 +383,3 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         issue_id = self._issue_id()
         if issue_registry.async_get_issue(DOMAIN, issue_id):
             issue_registry.async_delete(DOMAIN, issue_id)
-
-    async def _async_config_entry_updated(
-        self, hass: HomeAssistant, entry: ConfigEntry
-    ) -> None:
-        """Handle config entry update - update entity names if IP changed."""
-        if not self.config_entry:
-            return
-        # Get old IP from coordinator's initial IP
-        old_ip = self._initial_device_ip
-        new_ip = entry.data.get(CONF_HOST, old_ip)
-
-        if new_ip != old_ip:
-            _LOGGER.info(
-                "Config entry updated, IP changed from %s to %s, updating entity names",
-                old_ip,
-                new_ip,
-            )
-            await self._update_entity_names(new_ip, old_ip)
-            # Update initial IP for future comparisons
-            self._initial_device_ip = new_ip
-
-    async def _update_entity_names(self, new_ip: str, old_ip: str) -> None:
-        """Update device and entity names in registry when IP changes."""
-        if not self.config_entry:
-            return
-        # Update device name in device registry
-        device_registry = dr.async_get(self.hass)
-        device_identifier = (
-            self.config_entry.data.get("ble_mac")
-            or self.config_entry.data.get("mac")
-            or self.config_entry.data.get("wifi_mac")
-        )
-        if device_identifier:
-            device = device_registry.async_get_device(
-                identifiers={(DOMAIN, device_identifier)}
-            )
-            if device and device.name and old_ip in device.name:
-                new_device_name = device.name.replace(old_ip, new_ip)
-                _LOGGER.info(
-                    "Updating device name from %s to %s",
-                    device.name,
-                    new_device_name,
-                )
-                device_registry.async_update_device(device.id, name=new_device_name)
-
-        # Update entity names in entity registry (if any entities have IP in name)
-        entity_registry = er.async_get(self.hass)
-        entities = er.async_entries_for_config_entry(
-            entity_registry, self.config_entry.entry_id
-        )
-
-        updated_count = 0
-        for entity_entry in entities:
-            if entity_entry.name and old_ip in entity_entry.name:
-                new_name = entity_entry.name.replace(old_ip, new_ip)
-                _LOGGER.debug(
-                    "Updating entity %s name from %s to %s",
-                    entity_entry.entity_id,
-                    entity_entry.name,
-                    new_name,
-                )
-                entity_registry.async_update_entity(
-                    entity_entry.entity_id, name=new_name
-                )
-                updated_count += 1
-
-        if updated_count > 0:
-            _LOGGER.info(
-                "Updated %d entity name(s) to reflect new IP: %s -> %s",
-                updated_count,
-                old_ip,
-                new_ip,
-            )

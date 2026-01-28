@@ -107,7 +107,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
-                title=f"Marstek {device['device_type']} ({device['ip']})",
+                title=f"Marstek {device['device_type']}",
                 data={
                     CONF_HOST: device["ip"],
                     CONF_PORT: DEFAULT_UDP_PORT,
@@ -251,7 +251,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
-                    title=f"Marstek {device_info.get('device_type', 'Device')} ({host})",
+                    title=f"Marstek {device_info.get('device_type', 'Device')}",
                     data={
                         CONF_HOST: host,
                         CONF_PORT: port,

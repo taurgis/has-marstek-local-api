@@ -9,9 +9,8 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, EntityCategory
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo, format_mac
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 try:
@@ -31,6 +30,7 @@ except ImportError:
 from . import MarstekConfigEntry
 from .const import DOMAIN
 from .coordinator import MarstekDataUpdateCoordinator
+from .device_info import build_device_info, get_device_identifier
 
 
 class MarstekCTConnectionBinarySensor(
@@ -55,29 +55,9 @@ class MarstekCTConnectionBinarySensor(
         self._device_info = device_info
         self._config_entry = config_entry
 
-        device_identifier_raw = (
-            device_info.get("ble_mac")
-            or device_info.get("mac")
-            or device_info.get("wifi_mac")
-        )
-        if not device_identifier_raw:
-            raise ValueError("Marstek device identifier (MAC) is required")
-        device_identifier = format_mac(device_identifier_raw)
-
-        device_ip = (
-            config_entry.data.get(CONF_HOST)
-            if config_entry
-            else device_info.get("ip", "Unknown")
-        )
-
+        device_identifier = get_device_identifier(device_info)
         self._attr_unique_id = f"{device_identifier}_ct_connection"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_identifier)},
-            name=f"Marstek {device_info['device_type']} v{device_info['version']} ({device_ip})",
-            manufacturer="Marstek",
-            model=device_info["device_type"],
-            sw_version=str(device_info["version"]),
-        )
+        self._attr_device_info = build_device_info(device_info)
 
     @property
     def is_on(self) -> bool | None:
@@ -112,29 +92,9 @@ class MarstekBatteryPermissionBinarySensor(
         self._value_key = key
         self._attr_translation_key = translation_key
 
-        device_identifier_raw = (
-            device_info.get("ble_mac")
-            or device_info.get("mac")
-            or device_info.get("wifi_mac")
-        )
-        if not device_identifier_raw:
-            raise ValueError("Marstek device identifier (MAC) is required")
-        device_identifier = format_mac(device_identifier_raw)
-
-        device_ip = (
-            config_entry.data.get(CONF_HOST)
-            if config_entry
-            else device_info.get("ip", "Unknown")
-        )
-
+        device_identifier = get_device_identifier(device_info)
         self._attr_unique_id = f"{device_identifier}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_identifier)},
-            name=f"Marstek {device_info['device_type']} v{device_info['version']} ({device_ip})",
-            manufacturer="Marstek",
-            model=device_info["device_type"],
-            sw_version=str(device_info["version"]),
-        )
+        self._attr_device_info = build_device_info(device_info)
 
     @property
     def is_on(self) -> bool | None:

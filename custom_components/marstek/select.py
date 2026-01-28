@@ -13,7 +13,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import DeviceInfo, format_mac
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 try:
@@ -39,6 +38,7 @@ from .const import (
     OPERATING_MODES,
 )
 from .coordinator import MarstekDataUpdateCoordinator
+from .device_info import build_device_info, get_device_identifier
 from .mode_config import build_mode_config
 
 _LOGGER = logging.getLogger(__name__)
@@ -96,28 +96,9 @@ class MarstekOperatingModeSelect(
         self._udp_client = udp_client
         self._config_entry = config_entry
 
-        # Use BLE-MAC as device identifier for stability
-        device_identifier_raw = (
-            device_info.get("ble_mac")
-            or device_info.get("mac")
-            or device_info.get("wifi_mac")
-        )
-        if not device_identifier_raw:
-            raise ValueError("Marstek device identifier (MAC) is required")
-
-        self._device_identifier = format_mac(device_identifier_raw)
+        self._device_identifier = get_device_identifier(device_info)
         self._attr_unique_id = f"{self._device_identifier}_operating_mode"
-
-        # Get current IP for device name
-        device_ip = config_entry.data.get(CONF_HOST, device_info.get("ip", "Unknown"))
-
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_identifier)},
-            name=f"Marstek {device_info['device_type']} v{device_info['version']} ({device_ip})",
-            manufacturer="Marstek",
-            model=device_info["device_type"],
-            sw_version=str(device_info["version"]),
-        )
+        self._attr_device_info = build_device_info(device_info)
 
     @property
     def options(self) -> list[str]:
