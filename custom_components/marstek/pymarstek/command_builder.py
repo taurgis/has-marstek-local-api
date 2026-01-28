@@ -20,7 +20,7 @@ from .const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
 )
-from .validators import ValidationError, validate_command, validate_device_id
+from .validators import ValidationError, validate_command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ def get_battery_status(device_id: int = 0) -> str:
     Raises:
         ValidationError: If device_id is invalid
     """
-    validate_device_id(device_id)
+    # Validation happens in build_command via validate_command
     return build_command(CMD_BATTERY_STATUS, {"id": device_id})
 
 
@@ -106,7 +106,7 @@ def get_es_status(device_id: int = 0) -> str:
     Raises:
         ValidationError: If device_id is invalid
     """
-    validate_device_id(device_id)
+    # Validation happens in build_command via validate_command
     return build_command(CMD_ES_STATUS, {"id": device_id})
 
 
@@ -122,7 +122,7 @@ def get_es_mode(device_id: int = 0) -> str:
     Raises:
         ValidationError: If device_id is invalid
     """
-    validate_device_id(device_id)
+    # Validation happens in build_command via validate_command
     return build_command(CMD_ES_MODE, {"id": device_id})
 
 
@@ -138,7 +138,7 @@ def get_pv_status(device_id: int = 0) -> str:
     Raises:
         ValidationError: If device_id is invalid
     """
-    validate_device_id(device_id)
+    # Validation happens in build_command via validate_command
     return build_command(CMD_PV_GET_STATUS, {"id": device_id})
 
 
@@ -186,7 +186,7 @@ def get_wifi_status(device_id: int = 0) -> str:
     Raises:
         ValidationError: If device_id is invalid
     """
-    validate_device_id(device_id)
+    # Validation happens in build_command via validate_command
     return build_command(CMD_WIFI_STATUS, {"id": device_id})
 
 
@@ -202,5 +202,5 @@ def get_em_status(device_id: int = 0) -> str:
     Raises:
         ValidationError: If device_id is invalid
     """
-    validate_device_id(device_id)
+    # Validation happens in build_command via validate_command
     return build_command(CMD_EM_STATUS, {"id": device_id})

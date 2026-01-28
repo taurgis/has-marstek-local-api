@@ -42,9 +42,19 @@ from .validators import ValidationError, validate_json_message
 
 _LOGGER = logging.getLogger(__name__)
 
+# Rate limiting - minimum interval between requests to same device
+MIN_REQUEST_INTERVAL: float = 0.3  # 300ms minimum between requests to same IP
+
 
 class MarstekUDPClient:
-    """UDP client for communicating with Marstek devices."""
+    """UDP client for communicating with Marstek devices.
+    
+    Features:
+    - Request validation before transmission (see validators.py)
+    - Rate limiting per device IP to prevent overwhelming devices
+    - Polling pause/resume for coordinated device control
+    - Discovery caching to reduce network traffic
+    """
 
     def __init__(self, port: int = DEFAULT_UDP_PORT) -> None:
         self._port = port
@@ -61,6 +71,15 @@ class MarstekUDPClient:
         self._local_send_ip: str = "0.0.0.0"
         self._polling_paused: dict[str, bool] = {}
         self._polling_lock: asyncio.Lock = asyncio.Lock()
+        
+        # Rate limiting: track last request time per device IP
+        self._last_request_time: dict[str, float] = {}
+        self._rate_limit_locks: dict[str, asyncio.Lock] = {}  # Per-IP locks
+        self._rate_limit_meta_lock: asyncio.Lock = asyncio.Lock()  # For creating per-IP locks
+        
+        # Cleanup: max tracked IPs before cleanup
+        self._max_tracked_ips: int = 100
+        self._rate_limit_cleanup_threshold: float = 300.0  # 5 minutes
 
     async def async_setup(self) -> None:
         """Prepare the UDP socket."""
@@ -128,10 +147,77 @@ class MarstekUDPClient:
         self._discovery_cache = None
         self._cache_timestamp = 0
 
+    async def _get_rate_limit_lock(self, target_ip: str) -> asyncio.Lock:
+        """Get or create a per-IP rate limit lock."""
+        async with self._rate_limit_meta_lock:
+            if target_ip not in self._rate_limit_locks:
+                self._rate_limit_locks[target_ip] = asyncio.Lock()
+            return self._rate_limit_locks[target_ip]
+
+    async def _cleanup_rate_limit_tracking(self) -> None:
+        """Remove stale entries from rate limit tracking to prevent memory leaks."""
+        loop = self._loop or asyncio.get_running_loop()
+        current_time = loop.time()
+        
+        async with self._rate_limit_meta_lock:
+            if len(self._last_request_time) <= self._max_tracked_ips:
+                return
+            
+            # Remove entries older than cleanup threshold
+            stale_ips = [
+                ip for ip, last_time in self._last_request_time.items()
+                if current_time - last_time > self._rate_limit_cleanup_threshold
+            ]
+            
+            for ip in stale_ips:
+                self._last_request_time.pop(ip, None)
+                self._rate_limit_locks.pop(ip, None)
+            
+            if stale_ips:
+                _LOGGER.debug("Cleaned up rate limit tracking for %d stale IPs", len(stale_ips))
+
+    async def _enforce_rate_limit(self, target_ip: str) -> None:
+        """Enforce minimum interval between requests to the same device.
+        
+        This prevents overwhelming Marstek devices which can be sensitive
+        to rapid request bursts. Uses per-IP locks to avoid blocking
+        requests to different devices.
+        """
+        loop = self._loop or asyncio.get_running_loop()
+        
+        # Get per-IP lock (creates one if needed)
+        ip_lock = await self._get_rate_limit_lock(target_ip)
+        
+        async with ip_lock:
+            current_time = loop.time()
+            last_time = self._last_request_time.get(target_ip, 0)
+            elapsed = current_time - last_time
+            
+            if elapsed < MIN_REQUEST_INTERVAL:
+                wait_time = MIN_REQUEST_INTERVAL - elapsed
+                _LOGGER.debug(
+                    "Rate limiting: waiting %.2fs before request to %s",
+                    wait_time,
+                    target_ip,
+                )
+                await asyncio.sleep(wait_time)
+            
+            # Update last request time
+            self._last_request_time[target_ip] = loop.time()
+        
+        # Periodically cleanup stale entries
+        if len(self._last_request_time) > self._max_tracked_ips:
+            await self._cleanup_rate_limit_tracking()
+
     async def _send_udp_message(self, message: str, target_ip: str, target_port: int) -> None:
         if not self._socket:
             await self.async_setup()
         assert self._socket is not None
+        
+        # Enforce rate limiting for non-broadcast addresses
+        if target_ip not in ("255.255.255.255",) and not target_ip.endswith(".255"):
+            await self._enforce_rate_limit(target_ip)
+        
         data = message.encode("utf-8")
         self._socket.sendto(data, (target_ip, target_port))
         _LOGGER.debug("Send: %s:%d | %s", target_ip, target_port, message)
@@ -172,21 +258,32 @@ class MarstekUDPClient:
         # Validate message before sending to protect device
         if validate:
             try:
-                validate_json_message(message)
+                command = validate_json_message(message)
             except ValidationError as err:
+                # Safely try to extract method for logging context
+                method_name = "unknown"
+                try:
+                    if message:
+                        method_name = json.loads(message).get("method", "unknown")
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
+                
                 _LOGGER.error(
-                    "Request validation failed for %s:%d - %s",
+                    "Request validation failed for %s:%d [method=%s, field=%s]: %s",
                     target_ip,
                     target_port,
+                    method_name,
+                    err.field or "unknown",
                     err.message,
                 )
                 raise
-
-        try:
-            message_obj = json.loads(message)
-            request_id = message_obj["id"]
-        except (json.JSONDecodeError, KeyError) as exc:
-            raise ValueError("Invalid message: missing id") from exc
+            request_id = command["id"]
+        else:
+            try:
+                message_obj = json.loads(message)
+                request_id = message_obj["id"]
+            except (json.JSONDecodeError, KeyError) as exc:
+                raise ValueError("Invalid message: missing id") from exc
 
         future: asyncio.Future = asyncio.Future()
         self._pending_requests[request_id] = future

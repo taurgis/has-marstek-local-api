@@ -68,7 +68,8 @@ If you add/modify device control:
 | Text/translations | `strings.json`, `translations/en.json` | Keep in sync; use translation keys in entities |
 | Icons | `icons.json` | Icon translations per entity |
 | Local API reference | `docs/marstek_device_openapi.MD` | UDP protocol + method list |
-| UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser |
+| UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators |
+| Request validation | `pymarstek/validators.py` | Validates methods, params, power/time ranges before transmission |
 
 ## Platforms & Entities
 
@@ -130,6 +131,54 @@ Configurable via options flow. The IP-change scanner runs separately (60s interv
 | `marstek.request_data_sync` | Trigger immediate coordinator refresh |
 
 Services are registered **once globally** (idempotent).
+
+## Validation & Security
+
+The `pymarstek/validators.py` module provides a **validation layer** that protects devices from invalid requests:
+
+### What is validated
+
+| Validation | Scope | Limit |
+|------------|-------|-------|
+| Method names | Only known API methods (`ES.GetStatus`, `ES.SetMode`, etc.) are allowed | |
+| Device ID | Must be 0-255 | `MAX_DEVICE_ID = 255` |
+| Power values | Prevents obviously invalid commands | `MAX_POWER_VALUE = 5000` |
+| Time format | HH:MM pattern enforced | |
+| Time range | End must be after start for enabled schedules | |
+| Week bitmask | Valid range 0-127 | `MAX_WEEK_SET = 127` |
+| Passive duration | Maximum 24 hours | `MAX_PASSIVE_DURATION = 86400` |
+| Schedule slots | 0-9 | `MAX_TIME_SLOTS = 10` |
+| Mode configs | Required fields checked per mode (manual_cfg, passive_cfg) | |
+
+### Where validation happens
+
+1. **`command_builder.build_command()`** – validates before building JSON
+2. **`MarstekUDPClient.send_request()`** – validates before UDP transmission
+3. **`MarstekUDPClient.send_broadcast_request()`** – same protection for broadcasts
+
+Invalid requests raise `ValidationError` with a clear message indicating the field.
+
+### Rate limiting
+
+The UDP client enforces a **minimum interval between requests** to the same device IP (`MIN_REQUEST_INTERVAL = 0.3s`) to prevent overwhelming devices.
+
+### Strict validation mode
+
+For development/testing, enable stricter validation that logs warnings for edge cases:
+
+```python
+from custom_components.marstek.pymarstek import enable_strict_mode
+
+enable_strict_mode(True)  # Warns on power >90% of max, very short schedules, etc.
+```
+
+### Unified constants
+
+Validation limits are defined once in `pymarstek/validators.py` and exported via `pymarstek/__init__.py`. Services and other modules import these constants to avoid duplication:
+
+```python
+from .pymarstek import MAX_POWER_VALUE, MAX_PASSIVE_DURATION, MAX_TIME_SLOTS
+```
 
 ## Quality and style expectations
 

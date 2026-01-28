@@ -9,7 +9,13 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from .pymarstek import MarstekUDPClient, build_command
+from .pymarstek import (
+    MAX_PASSIVE_DURATION,
+    MAX_POWER_VALUE,
+    MAX_TIME_SLOTS,
+    MarstekUDPClient,
+    build_command,
+)
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
@@ -63,10 +69,10 @@ SERVICE_SET_PASSIVE_MODE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_DEVICE_ID): cv.string,
         vol.Required(ATTR_POWER): vol.All(
-            vol.Coerce(int), vol.Range(min=-5000, max=5000)
+            vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
         ),
         vol.Optional(ATTR_DURATION, default=3600): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=86400)
+            vol.Coerce(int), vol.Range(min=0, max=MAX_PASSIVE_DURATION)
         ),
     }
 )
@@ -75,12 +81,30 @@ SERVICE_SET_MANUAL_SCHEDULE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_DEVICE_ID): cv.string,
         vol.Optional(ATTR_SCHEDULE_SLOT, default=0): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=9)
+            vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
         ),
         vol.Required(ATTR_START_TIME): cv.time,
         vol.Required(ATTR_END_TIME): cv.time,
         vol.Required(ATTR_POWER): vol.All(
-            vol.Coerce(int), vol.Range(min=-5000, max=5000)
+            vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
+        ),
+        vol.Optional(ATTR_DAYS, default=["mon", "tue", "wed", "thu", "fri", "sat", "sun"]): vol.All(
+            cv.ensure_list,
+            [vol.In(WEEKDAY_MAP.keys())],
+        ),
+        vol.Optional(ATTR_ENABLE, default=True): cv.boolean,
+    }
+)
+
+SCHEDULE_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_SCHEDULE_SLOT): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
+        ),
+        vol.Required(ATTR_START_TIME): cv.string,
+        vol.Required(ATTR_END_TIME): cv.string,
+        vol.Optional(ATTR_POWER, default=0): vol.All(
+            vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
         ),
         vol.Optional(ATTR_DAYS, default=["mon", "tue", "wed", "thu", "fri", "sat", "sun"]): vol.All(
             cv.ensure_list,
@@ -93,24 +117,6 @@ SERVICE_SET_MANUAL_SCHEDULE_SCHEMA = vol.Schema(
 SERVICE_CLEAR_MANUAL_SCHEDULES_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_DEVICE_ID): cv.string,
-    }
-)
-
-SCHEDULE_ITEM_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_SCHEDULE_SLOT): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=9)
-        ),
-        vol.Required(ATTR_START_TIME): cv.string,
-        vol.Required(ATTR_END_TIME): cv.string,
-        vol.Optional(ATTR_POWER, default=0): vol.All(
-            vol.Coerce(int), vol.Range(min=-5000, max=5000)
-        ),
-        vol.Optional(ATTR_DAYS, default=["mon", "tue", "wed", "thu", "fri", "sat", "sun"]): vol.All(
-            cv.ensure_list,
-            [vol.In(WEEKDAY_MAP.keys())],
-        ),
-        vol.Optional(ATTR_ENABLE, default=True): cv.boolean,
     }
 )
 

@@ -7,9 +7,12 @@ validation at multiple levels to ensure only well-formed commands are sent.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
+
+_LOGGER = logging.getLogger(__name__)
 
 from .const import (
     CMD_BATTERY_STATUS,
@@ -22,11 +25,47 @@ from .const import (
     CMD_WIFI_STATUS,
 )
 
-# Maximum reasonable values for validation
-MAX_POWER_VALUE = 10000  # 10kW max
-MAX_DEVICE_ID = 255
-MAX_TIME_SLOTS = 10
-MAX_WEEK_SET = 127  # 7 bits for 7 days
+# Validation limits - keep in sync with device capabilities
+MAX_POWER_VALUE: Final = 5000  # 5kW max (matches device specs)
+MAX_DEVICE_ID: Final = 255
+MAX_TIME_SLOTS: Final = 10  # Schedule slots 0-9
+MAX_WEEK_SET: Final = 127  # 7 bits for 7 days (all days = 127)
+MAX_PASSIVE_DURATION: Final = 86400  # 24 hours in seconds
+
+# Strict mode thresholds - values beyond these trigger warnings
+STRICT_POWER_WARN_THRESHOLD: Final = 4500  # Warn if power is >90% of max
+STRICT_MIN_SCHEDULE_DURATION: Final = 5  # Warn if schedule duration < 5 minutes
+
+# Global strict mode flag - set via enable_strict_mode()
+_strict_mode: bool = False
+
+
+def enable_strict_mode(enabled: bool = True) -> None:
+    """Enable or disable strict validation mode.
+    
+    In strict mode, additional warnings are logged for:
+    - Power values close to device limits (>90%)
+    - Very short schedule durations (<5 minutes)
+    - Potentially risky configurations
+    
+    Args:
+        enabled: Whether to enable strict mode
+    """
+    global _strict_mode  # noqa: PLW0603
+    _strict_mode = enabled
+    _LOGGER.info("Strict validation mode %s", "enabled" if enabled else "disabled")
+
+
+def is_strict_mode() -> bool:
+    """Check if strict validation mode is enabled."""
+    return _strict_mode
+
+
+def _strict_warn(message: str, field: str | None = None) -> None:
+    """Log a strict mode warning if strict mode is enabled."""
+    if _strict_mode:
+        field_info = f" (field: {field})" if field else ""
+        _LOGGER.warning("[STRICT] %s%s", message, field_info)
 
 
 class ValidationError(Exception):
@@ -98,11 +137,17 @@ VALID_METHODS: dict[str, MethodSpec] = {
     ),
 }
 
-# Valid operating modes
-VALID_MODES = frozenset({"Auto", "AI", "Manual", "Passive"})
+# Valid operating modes (as expected by Marstek device API)
+VALID_MODES: Final[frozenset[str]] = frozenset({"Auto", "AI", "Manual", "Passive"})
 
 # Time format pattern HH:MM
 TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def _time_to_minutes(time_str: str) -> int:
+    """Convert HH:MM time string to minutes since midnight."""
+    parts = time_str.split(":")
+    return int(parts[0]) * 60 + int(parts[1])
 
 
 def validate_time_format(time_str: str, field_name: str = "time") -> None:
@@ -121,6 +166,36 @@ def validate_time_format(time_str: str, field_name: str = "time") -> None:
         raise ValidationError(
             f"{field_name} must be in HH:MM format (got '{time_str}')", field_name
         )
+
+
+def validate_time_range(
+    start_time: str, end_time: str, *, allow_equal: bool = False
+) -> None:
+    """Validate that end_time is after start_time.
+    
+    Args:
+        start_time: Start time in HH:MM format (assumed already validated)
+        end_time: End time in HH:MM format (assumed already validated)
+        allow_equal: If True, allow start_time == end_time
+        
+    Raises:
+        ValidationError: If end_time is not after start_time
+    """
+    start_mins = _time_to_minutes(start_time)
+    end_mins = _time_to_minutes(end_time)
+    
+    if allow_equal:
+        if end_mins < start_mins:
+            raise ValidationError(
+                f"end_time ({end_time}) must be >= start_time ({start_time})",
+                "end_time",
+            )
+    else:
+        if end_mins <= start_mins:
+            raise ValidationError(
+                f"end_time ({end_time}) must be after start_time ({start_time})",
+                "end_time",
+            )
 
 
 def validate_device_id(device_id: Any, field_name: str = "id") -> None:
@@ -163,6 +238,13 @@ def validate_power_value(power: Any, field_name: str = "power") -> None:
     if abs(power) > MAX_POWER_VALUE:
         raise ValidationError(
             f"{field_name} must be between -{MAX_POWER_VALUE} and {MAX_POWER_VALUE} (got {power})",
+            field_name,
+        )
+    
+    # Strict mode: warn about high power values
+    if abs(power) > STRICT_POWER_WARN_THRESHOLD:
+        _strict_warn(
+            f"{field_name}={power}W is >90% of max ({MAX_POWER_VALUE}W) - verify this is intended",
             field_name,
         )
 
@@ -220,6 +302,21 @@ def validate_manual_config(config: dict[str, Any]) -> None:
     validate_time_format(config["start_time"], "start_time")
     validate_time_format(config["end_time"], "end_time")
     
+    # Validate time range (end must be after start, unless slot is disabled)
+    enable = config.get("enable")
+    if enable == 1:  # Only validate range for enabled slots
+        validate_time_range(config["start_time"], config["end_time"])
+        
+        # Strict mode: warn about very short schedules
+        start_mins = _time_to_minutes(config["start_time"])
+        end_mins = _time_to_minutes(config["end_time"])
+        duration_mins = end_mins - start_mins
+        if duration_mins < STRICT_MIN_SCHEDULE_DURATION:
+            _strict_warn(
+                f"Schedule duration is only {duration_mins} minutes - very short schedules may not be effective",
+                "duration",
+            )
+    
     # Validate week_set
     validate_week_set(config["week_set"])
     
@@ -264,9 +361,9 @@ def validate_passive_config(config: dict[str, Any]) -> None:
             f"cd_time must be an integer (got {type(cd_time).__name__})",
             "cd_time",
         )
-    if cd_time < 0 or cd_time > 86400:  # Max 24 hours
+    if cd_time < 0 or cd_time > MAX_PASSIVE_DURATION:
         raise ValidationError(
-            f"cd_time must be between 0 and 86400 seconds (got {cd_time})",
+            f"cd_time must be between 0 and {MAX_PASSIVE_DURATION} seconds (got {cd_time})",
             "cd_time",
         )
 
