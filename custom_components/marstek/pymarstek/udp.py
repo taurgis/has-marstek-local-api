@@ -80,6 +80,10 @@ class MarstekUDPClient:
         # Cleanup: max tracked IPs before cleanup
         self._max_tracked_ips: int = 100
         self._rate_limit_cleanup_threshold: float = 300.0  # 5 minutes
+        
+        # Response cache cleanup settings
+        self._response_cache_max_size: int = 50
+        self._response_cache_max_age: float = 30.0  # 30 seconds
 
     async def async_setup(self) -> None:
         """Prepare the UDP socket."""
@@ -97,7 +101,7 @@ class MarstekUDPClient:
         _LOGGER.debug("UDP client bound to %s:%s", sock.getsockname()[0], sock.getsockname()[1])
 
     async def async_cleanup(self) -> None:
-        """Close the UDP socket."""
+        """Close the UDP socket and clear all caches."""
         if self._listen_task and not self._listen_task.done():
             self._listen_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -105,6 +109,14 @@ class MarstekUDPClient:
         if self._socket:
             self._socket.close()
             self._socket = None
+        
+        # Clear caches to prevent memory retention after cleanup
+        self._pending_requests.clear()
+        self._response_cache.clear()
+        self._discovery_cache = None
+        self._last_request_time.clear()
+        self._rate_limit_locks.clear()
+        self._polling_paused.clear()
 
     def _get_broadcast_addresses(self) -> list[str]:
         addresses = {"255.255.255.255"}
@@ -175,6 +187,41 @@ class MarstekUDPClient:
             
             if stale_ips:
                 _LOGGER.debug("Cleaned up rate limit tracking for %d stale IPs", len(stale_ips))
+
+    def _cleanup_response_cache(self) -> None:
+        """Remove stale entries from response cache to prevent memory leaks.
+        
+        Called periodically during response listening to prevent unbounded growth
+        from late responses or orphaned cache entries.
+        """
+        if not self._response_cache:
+            return
+            
+        loop = self._loop or asyncio.get_running_loop()
+        current_time = loop.time()
+        
+        # Remove entries older than max age
+        stale_ids = [
+            request_id for request_id, cached in self._response_cache.items()
+            if current_time - cached.get("timestamp", 0) > self._response_cache_max_age
+        ]
+        
+        for request_id in stale_ids:
+            self._response_cache.pop(request_id, None)
+        
+        # If still too large, remove oldest entries
+        if len(self._response_cache) > self._response_cache_max_size:
+            sorted_entries = sorted(
+                self._response_cache.items(),
+                key=lambda x: x[1].get("timestamp", 0)
+            )
+            # Remove oldest half
+            to_remove = len(self._response_cache) - self._response_cache_max_size // 2
+            for request_id, _ in sorted_entries[:to_remove]:
+                self._response_cache.pop(request_id, None)
+            
+            if to_remove > 0:
+                _LOGGER.debug("Cleaned up %d stale response cache entries", to_remove + len(stale_ids))
 
     async def _enforce_rate_limit(self, target_ip: str) -> None:
         """Enforce minimum interval between requests to the same device.
@@ -306,6 +353,7 @@ class MarstekUDPClient:
     async def _listen_for_responses(self) -> None:
         assert self._socket is not None
         loop = self._loop or asyncio.get_running_loop()
+        cleanup_counter = 0
         while True:
             try:
                 data, addr = await loop.sock_recvfrom(self._socket, 4096)
@@ -325,6 +373,12 @@ class MarstekUDPClient:
                     future = self._pending_requests.pop(request_id, None)
                     if future and not future.done():
                         future.set_result(response)
+                
+                # Periodically cleanup response cache to prevent memory leaks
+                cleanup_counter += 1
+                if cleanup_counter >= 10:  # Every 10 responses
+                    cleanup_counter = 0
+                    self._cleanup_response_cache()
             except asyncio.CancelledError:
                 break
             except OSError as err:

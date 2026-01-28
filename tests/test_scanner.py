@@ -369,3 +369,61 @@ async def test_scanner_scan_impl_none_devices(hass: HomeAssistant):
     ):
         # Should not raise
         await scanner._async_scan_impl()
+
+
+async def test_scanner_async_unload_cancels_task(hass: HomeAssistant):
+    """Test async_unload cancels running scan task."""
+    import asyncio
+
+    scanner = MarstekScanner(hass)
+
+    # Setup the scanner first
+    with (
+        patch(
+            "custom_components.marstek.scanner.async_track_time_interval"
+        ) as mock_track,
+        patch.object(scanner, "async_scan"),
+    ):
+        mock_cancel = MagicMock()
+        mock_track.return_value = mock_cancel
+
+        await scanner.async_setup()
+
+        # Simulate a long-running scan task
+        async def slow_scan():
+            await asyncio.sleep(10)
+
+        scanner._scan_task = asyncio.create_task(slow_scan())
+
+        # Unload should cancel the task
+        await scanner.async_unload()
+
+        assert scanner._track_interval is None
+        assert scanner._scan_task is None
+        mock_cancel.assert_called_once()
+
+
+async def test_scanner_async_scan_skips_if_previous_running(hass: HomeAssistant):
+    """Test async_scan skips if previous scan task is still running."""
+    import asyncio
+
+    scanner = MarstekScanner(hass)
+
+    # Create a task that hasn't completed
+    async def slow_scan():
+        await asyncio.sleep(10)
+
+    scanner._scan_task = asyncio.create_task(slow_scan())
+
+    # Try to start a new scan - should skip
+    scanner.async_scan()
+
+    # Should still be the original task (not replaced)
+    assert not scanner._scan_task.done()
+
+    # Cleanup
+    scanner._scan_task.cancel()
+    try:
+        await scanner._scan_task
+    except asyncio.CancelledError:
+        pass
