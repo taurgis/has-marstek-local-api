@@ -19,5 +19,5 @@
   "loggers": ["marstek"],
   "quality_scale": "bronze",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "1.0.0-rc1"
 }

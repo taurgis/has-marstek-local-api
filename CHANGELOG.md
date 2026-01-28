@@ -1,0 +1,7 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [1.0.0-rc1] - 2026-01-28
+
+Initial release.
