@@ -11,14 +11,14 @@ If discovery doesn’t find your device (or all discovered devices are already c
 
 ### Discovery screen examples
 
-![Device discovery](screenshots/device-discovery.png)
-![Device list](screenshots/device-list.png)
+<img src="screenshots/device-discovery.png" alt="Device discovery" width="420" />
+<img src="screenshots/device-list.png" alt="Device list" width="420" />
 
 ## Device page
 
 After setup you’ll see a device page with sensors/entities grouped under the device.
 
-![Device details](screenshots/device-details.png)
+<img src="screenshots/device-details.png" alt="Device details" width="800" />
 
 ## IP changes
 

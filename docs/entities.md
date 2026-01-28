@@ -87,4 +87,4 @@ Created when the device reports those values (typically Venus A/D with PV channe
 
 Entities are grouped under one device, and unique IDs remain stable across IP changes.
 
-![Device details (Venus A)](screenshots/device-details-venusa.png)
+<img src="screenshots/device-details-venusa.png" alt="Device details (Venus A)" width="800" />
