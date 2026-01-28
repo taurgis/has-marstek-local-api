@@ -135,30 +135,13 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             return raw_value
 
-    def _scale_pv_voltage(raw_value: Any) -> Any:
-        """Scale PV voltage to volts (device reports decivolts)."""
-        if raw_value is None:
-            return None
-        try:
-            return float(raw_value) / 10
-        except (TypeError, ValueError):
-            return raw_value
-
-    def _scale_pv_current(raw_value: Any) -> Any:
-        """Scale PV current to amps (device reports deciamps)."""
-        if raw_value is None:
-            return None
-        try:
-            return float(raw_value) / 10
-        except (TypeError, ValueError):
-            return raw_value
     
     # Check for single-channel format (per API spec)
     if "pv_power" in result:
         # Single PV channel - map to pv1_* for consistency
         pv_data["pv1_power"] = _scale_pv_power(result.get("pv_power", 0))
-        pv_data["pv1_voltage"] = _scale_pv_voltage(result.get("pv_voltage", 0))
-        pv_data["pv1_current"] = _scale_pv_current(result.get("pv_current", 0))
+        pv_data["pv1_voltage"] = result.get("pv_voltage", 0)
+        pv_data["pv1_current"] = result.get("pv_current", 0)
         pv_data["pv1_state"] = 1 if result.get("pv_power", 0) > 0 else 0
     else:
         # Multi-channel format - extract data for each PV channel (1-4)
@@ -167,12 +150,8 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
             pv_data[f"{prefix}power"] = _scale_pv_power(
                 result.get(f"{prefix}power", 0)
             )
-            pv_data[f"{prefix}voltage"] = _scale_pv_voltage(
-                result.get(f"{prefix}voltage", 0)
-            )
-            pv_data[f"{prefix}current"] = _scale_pv_current(
-                result.get(f"{prefix}current", 0)
-            )
+            pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage", 0)
+            pv_data[f"{prefix}current"] = result.get(f"{prefix}current", 0)
             pv_data[f"{prefix}state"] = result.get(f"{prefix}state", 0)
     
     return pv_data

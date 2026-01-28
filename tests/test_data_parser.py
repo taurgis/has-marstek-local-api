@@ -182,12 +182,12 @@ class TestParsePvStatusResponse:
             "id": 1,
             "result": {
                 "pv1_power": 300,
-                "pv1_voltage": 350,
-                "pv1_current": 85,
+                "pv1_voltage": 35,
+                "pv1_current": 8.5,
                 "pv1_state": 1,
                 "pv2_power": 250,
-                "pv2_voltage": 340,
-                "pv2_current": 73,
+                "pv2_voltage": 34,
+                "pv2_current": 7.3,
                 "pv2_state": 1,
             },
         }
@@ -195,7 +195,7 @@ class TestParsePvStatusResponse:
         result = parse_pv_status_response(response)
 
         assert result["pv1_power"] == 30.0
-        assert result["pv1_voltage"] == 35.0
+        assert result["pv1_voltage"] == 35
         assert result["pv1_current"] == 8.5
         assert result["pv1_state"] == 1
         assert result["pv2_power"] == 25.0
@@ -206,8 +206,8 @@ class TestParsePvStatusResponse:
             "id": 1,
             "result": {
                 "pv_power": 500,
-                "pv_voltage": 360,
-                "pv_current": 138,
+                "pv_voltage": 36,
+                "pv_current": 13.8,
             },
         }
 
@@ -215,7 +215,7 @@ class TestParsePvStatusResponse:
 
         # Should be mapped to pv1_* for consistency
         assert result["pv1_power"] == 50.0
-        assert result["pv1_voltage"] == 36.0
+        assert result["pv1_voltage"] == 36
         assert result["pv1_current"] == 13.8
         assert result["pv1_state"] == 1  # Active since power > 0
 
