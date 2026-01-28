@@ -528,7 +528,13 @@ async def async_request_data_sync(hass: HomeAssistant, call: ServiceCall) -> Non
 
 
 async def async_setup_services(hass: HomeAssistant) -> None:
-    """Set up Marstek services."""
+    """Set up Marstek services.
+    
+    Services are registered once globally (idempotent registration).
+    """
+    # Guard: only register services once
+    if hass.services.has_service(DOMAIN, SERVICE_SET_PASSIVE_MODE):
+        return
 
     async def handle_set_passive_mode(call: ServiceCall) -> None:
         """Handle the set_passive_mode service call."""
@@ -541,6 +547,14 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_clear_manual_schedules(call: ServiceCall) -> None:
         """Handle the clear_manual_schedules service call."""
         await async_clear_manual_schedules(hass, call)
+
+    async def handle_set_manual_schedules(call: ServiceCall) -> None:
+        """Handle the set_manual_schedules service call."""
+        await async_set_manual_schedules(hass, call)
+
+    async def handle_request_data_sync(call: ServiceCall) -> None:
+        """Handle the request_data_sync service call."""
+        await async_request_data_sync(hass, call)
 
     hass.services.async_register(
         DOMAIN,
@@ -562,14 +576,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         handle_clear_manual_schedules,
         schema=SERVICE_CLEAR_MANUAL_SCHEDULES_SCHEMA,
     )
-
-    async def handle_set_manual_schedules(call: ServiceCall) -> None:
-        """Handle the set_manual_schedules service call."""
-        await async_set_manual_schedules(hass, call)
-
-    async def handle_request_data_sync(call: ServiceCall) -> None:
-        """Handle the request_data_sync service call."""
-        await async_request_data_sync(hass, call)
 
     hass.services.async_register(
         DOMAIN,

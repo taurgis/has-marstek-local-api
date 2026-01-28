@@ -327,14 +327,17 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
 
 
 def _pv_sensor_descriptions() -> tuple[MarstekSensorEntityDescription, ...]:
+    """Generate PV sensor descriptions with appropriate display precision."""
     descriptions: list[MarstekSensorEntityDescription] = []
     for pv_channel in range(1, 5):
-        for metric_type, unit, device_class in (
-            ("power", UnitOfPower.WATT, SensorDeviceClass.POWER),
-            ("voltage", UnitOfElectricPotential.VOLT, SensorDeviceClass.VOLTAGE),
-            ("current", UnitOfElectricCurrent.AMPERE, SensorDeviceClass.CURRENT),
-            ("state", None, None),
-        ):
+        # Define metrics with unit, device_class, and suggested_display_precision
+        pv_metrics: list[tuple[str, str | None, SensorDeviceClass | None, int | None]] = [
+            ("power", UnitOfPower.WATT, SensorDeviceClass.POWER, 0),
+            ("voltage", UnitOfElectricPotential.VOLT, SensorDeviceClass.VOLTAGE, 1),
+            ("current", UnitOfElectricCurrent.AMPERE, SensorDeviceClass.CURRENT, 2),
+            ("state", None, None, None),
+        ]
+        for metric_type, unit, device_class, precision in pv_metrics:
             sensor_key = f"pv{pv_channel}_{metric_type}"
             descriptions.append(
                 MarstekSensorEntityDescription(
@@ -347,6 +350,7 @@ def _pv_sensor_descriptions() -> tuple[MarstekSensorEntityDescription, ...]:
                         if metric_type != "state"
                         else None
                     ),
+                    suggested_display_precision=precision,
                     value_fn=lambda coordinator, _info, _entry, key=sensor_key: (
                         _value_from_data(key, coordinator.data or {})
                     ),

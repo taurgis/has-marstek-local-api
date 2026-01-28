@@ -75,3 +75,10 @@ rules:
     status: exempt
     comment: Integration uses UDP, not HTTP
   strict-typing: done
+
+  # Best Practices (additional notes)
+  # - Services registered idempotently in async_setup() with guard check
+  # - EntityDescriptions used for sensors and binary_sensors
+  # - suggested_display_precision set for numeric sensors (power=0, voltage=1, current=2, temp=1)
+  # - Cleanup via entry.async_on_unload() for update listeners
+  # - Shared UDP client pattern avoids port conflicts between multiple devices
