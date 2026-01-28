@@ -47,6 +47,25 @@ Configure multiple schedules at once (YAML list).
 
 > Replace `YOUR_DEVICE_ID` with the device ID from the device selector in the UI.
 
+#### What to paste into the **`schedules`** input field
+
+In the Home Assistant service UI, the `schedules` field expects **just the YAML list**. Example:
+
+```yaml
+- schedule_slot: 0
+	start_time: "10:00"
+	end_time: "15:30"
+	days: [mon, tue, wed, thu, fri]
+	power: -2000
+	enable: true
+- schedule_slot: 1
+	start_time: "18:00"
+	end_time: "22:30"
+	days: [mon, tue, wed, thu, fri]
+	power: 1200
+	enable: true
+```
+
 #### 1) Weekday daytime charging (solar/top-up) + evening discharge (peak shaving)
 
 ```yaml
