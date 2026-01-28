@@ -98,6 +98,55 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         ),
     ),
     MarstekSensorEntityDescription(
+        key="ongrid_power",
+        translation_key="grid_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda coordinator, _info, _entry: (
+            _value_from_data("ongrid_power", coordinator.data or {})
+        ),
+        exists_fn=lambda data: _exists_key_with_value("ongrid_power", data),
+    ),
+    MarstekSensorEntityDescription(
+        key="offgrid_power",
+        translation_key="offgrid_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda coordinator, _info, _entry: (
+            _value_from_data("offgrid_power", coordinator.data or {})
+        ),
+        exists_fn=lambda data: _exists_key_with_value("offgrid_power", data),
+    ),
+    MarstekSensorEntityDescription(
+        key="pv_power",
+        translation_key="pv_power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda coordinator, _info, _entry: (
+            _value_from_data("pv_power", coordinator.data or {})
+        ),
+        exists_fn=lambda data: _exists_key_with_value("pv_power", data),
+    ),
+    MarstekSensorEntityDescription(
+        key="bat_cap",
+        translation_key="battery_total_capacity",
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda coordinator, _info, _entry: (
+            _value_from_data("bat_cap", coordinator.data or {})
+        ),
+        exists_fn=lambda data: _exists_key_with_value("bat_cap", data),
+    ),
+    MarstekSensorEntityDescription(
         key="device_mode",
         translation_key="device_mode",
         value_fn=lambda coordinator, _info, _entry: (

@@ -297,6 +297,9 @@ async def test_all_new_sensors_with_full_status(
         "battery_power": 250,
         "battery_status": "discharging",
         "ongrid_power": -150,
+        "offgrid_power": 10,
+        "pv_power": 320,
+        "bat_cap": 2560,
         # WiFi
         "wifi_rssi": -58,
         "wifi_ssid": "TestNetwork",
@@ -389,6 +392,9 @@ async def test_all_new_sensors_with_full_status(
             hass.states.get("sensor.marstek_venus_v3_grid_total_power")
             is not None
         )
+        assert hass.states.get("sensor.marstek_venus_v3_grid_power") is not None
+        assert hass.states.get("sensor.marstek_venus_v3_off_grid_power") is not None
+        assert hass.states.get("sensor.marstek_venus_v3_pv_power") is not None
         assert (
             entity_registry.async_get(
                 "sensor.marstek_venus_v3_battery_remaining_capacity"
@@ -398,6 +404,12 @@ async def test_all_new_sensors_with_full_status(
         assert (
             entity_registry.async_get(
                 "sensor.marstek_venus_v3_battery_rated_capacity"
+            )
+            is not None
+        )
+        assert (
+            entity_registry.async_get(
+                "sensor.marstek_venus_v3_battery_total_capacity"
             )
             is not None
         )

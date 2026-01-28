@@ -27,6 +27,15 @@
       "grid_power": {
         "default": "mdi:flash"
       },
+      "offgrid_power": {
+        "default": "mdi:power-socket"
+      },
+      "pv_power": {
+        "default": "mdi:solar-power"
+      },
+      "battery_total_capacity": {
+        "default": "mdi:battery"
+      },
       "device_ip": {
         "default": "mdi:ip-network"
       },

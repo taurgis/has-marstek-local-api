@@ -120,6 +120,18 @@
       "battery_power": {
         "name": "Battery power"
       },
+      "grid_power": {
+        "name": "Grid power"
+      },
+      "offgrid_power": {
+        "name": "Off-grid power"
+      },
+      "pv_power": {
+        "name": "PV power"
+      },
+      "battery_total_capacity": {
+        "name": "Battery total capacity"
+      },
       "device_mode": {
         "name": "Device mode",
         "state": {
