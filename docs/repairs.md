@@ -16,6 +16,6 @@ If the unique ID doesn’t match, the repair refuses the update to prevent accid
 
 Repairs may also be used for other fixable issues over time, but the current primary flow is the connection repair above.
 
-<img src="screenshots/repair-list.png" alt="Repair list" width="420" />
-<img src="screenshots/repair-detail.png" alt="Repair detail" width="420" />
-<img src="screenshots/repair-fix.png" alt="Repair fix" width="420" />
+<img src="screenshots/repair-list.png" alt="Repair list" width="340" />
+<img src="screenshots/repair-detail.png" alt="Repair detail" width="340" />
+<img src="screenshots/repair-fix.png" alt="Repair fix" width="340" />

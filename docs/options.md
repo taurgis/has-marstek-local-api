@@ -10,7 +10,7 @@ The integration uses tiered polling to reduce device load:
 - **Medium** (default 60s): PV status (Venus A/D)
 - **Slow** (default 300s): WiFi + battery diagnostics
 
-<img src="screenshots/device-settings-polling.png" alt="Polling settings" width="800" />
+<img src="screenshots/device-settings-polling.png" alt="Polling settings" width="560" />
 
 ## Network & requests
 
@@ -20,7 +20,7 @@ Options also expose request timing knobs to avoid UDP bursts:
 - Request timeout (range 5–60s)
 - Failures before unavailable (range 1–10)
 
-<img src="screenshots/device-settings-network.png" alt="Network settings" width="800" />
+<img src="screenshots/device-settings-network.png" alt="Network settings" width="560" />
 
 ## Power / behavior
 
@@ -30,10 +30,10 @@ These settings affect automations and command validation:
 - Action discharge power (W): default power for the **Discharge** device action
 - Socket limit: toggles an internal power-limit model used to validate requested power (applies to services and actions)
 
-<img src="screenshots/device-settings-power.png" alt="Power settings" width="800" />
+<img src="screenshots/device-settings-power.png" alt="Power settings" width="560" />
 
 ## Reconfigure
 
 If you need to reconfigure the entry (e.g., after changes), use the device’s configure/reconfigure flow.
 
-<img src="screenshots/device-reconfigure.png" alt="Reconfigure flow" width="800" />
+<img src="screenshots/device-reconfigure.png" alt="Reconfigure flow" width="560" />

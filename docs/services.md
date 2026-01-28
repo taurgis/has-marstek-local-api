@@ -15,7 +15,7 @@ Set passive mode with a target power and duration.
 	- Input range is `-5000..5000`, but the effective limit is validated per device/model (and may depend on the **Socket limit** option).
 - `duration` (optional, seconds): how long to keep passive mode active (default `3600`, range `0..86400`)
 
-<img src="screenshots/automation-passive.png" alt="Passive automation" width="700" />
+<img src="screenshots/automation-passive.png" alt="Passive automation" width="520" />
 
 ## `marstek.set_manual_schedule`
 
@@ -31,7 +31,7 @@ Configure one schedule slot (0–9).
 	- Valid values: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`
 - `enable` (optional): enable/disable this slot (default `true`)
 
-<img src="screenshots/automation-manual-schedule-single.png" alt="Single schedule automation" width="700" />
+<img src="screenshots/automation-manual-schedule-single.png" alt="Single schedule automation" width="520" />
 
 ## `marstek.set_manual_schedules`
 
@@ -138,7 +138,7 @@ data:
 			enable: true
 ```
 
-<img src="screenshots/automation-manual-schedule-multiple.png" alt="Multiple schedules automation" width="700" />
+<img src="screenshots/automation-manual-schedule-multiple.png" alt="Multiple schedules automation" width="520" />
 
 ## `marstek.clear_manual_schedules`
 
@@ -148,7 +148,7 @@ Clear all manual schedule slots.
 
 Note: This clears all 10 slots sequentially (protocol limitation), so it may take a short while.
 
-<img src="screenshots/automation-clear-manual-schedule.png" alt="Clear schedules automation" width="700" />
+<img src="screenshots/automation-clear-manual-schedule.png" alt="Clear schedules automation" width="520" />
 
 ## `marstek.request_data_sync`
 
