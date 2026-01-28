@@ -67,7 +67,14 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     pv_power = result.get("pv_power", 0)  # Solar power
     ongrid_power = result.get("ongrid_power", 0)  # Grid power
     offgrid_power = result.get("offgrid_power", 0)
-    bat_power = result.get("bat_power", 0)  # Battery power (+ = charge, - = discharge)
+    bat_power = result.get("bat_power")  # Battery power (+ = charge, - = discharge)
+    if bat_power is None and "bat_power" not in result:
+        # Fallback when API omits bat_power (some devices):
+        # P_bat = -pv_power + ongrid_power
+        # Positive = charging, Negative = discharging
+        bat_power = -pv_power + ongrid_power
+    if bat_power is None:
+        bat_power = 0
     
     # Energy totals
     total_pv_energy = result.get("total_pv_energy", 0)

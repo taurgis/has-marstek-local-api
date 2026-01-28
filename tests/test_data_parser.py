@@ -504,6 +504,39 @@ class TestParseEsStatusResponse:
         assert result["battery_power"] == 0
         assert result["battery_status"] == "idle"
 
+    def test_parse_missing_bat_power_fallback(self):
+        """Test fallback calculation when bat_power is missing."""
+        response = {
+            "id": 1,
+            "result": {
+                "bat_soc": 55,
+                # bat_power omitted by device
+                "pv_power": 1200,
+                "ongrid_power": 200,
+            },
+        }
+
+        result = parse_es_status_response(response)
+
+        # P_bat = -pv_power + ongrid_power
+        assert result["battery_power"] == -1000
+        assert result["battery_status"] == "discharging"
+
+    def test_parse_bat_power_none_defaults_idle(self):
+        """Test bat_power None defaults to 0 and idle status."""
+        response = {
+            "id": 1,
+            "result": {
+                "bat_soc": 55,
+                "bat_power": None,
+            },
+        }
+
+        result = parse_es_status_response(response)
+
+        assert result["battery_power"] == 0
+        assert result["battery_status"] == "idle"
+
 
 class TestMergeDeviceStatusNoPV:
     """Tests for merge_device_status without PV data (Venus C/E devices)."""
