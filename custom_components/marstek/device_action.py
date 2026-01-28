@@ -22,10 +22,16 @@ from homeassistant.helpers.typing import ConfigType, TemplateVarsType
 from .const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_POLL_INTERVAL_FAST,
+    CONF_REQUEST_DELAY,
+    CONF_REQUEST_TIMEOUT,
     CONF_SOCKET_LIMIT,
     DATA_UDP_CLIENT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
+    DEFAULT_POLL_INTERVAL_FAST,
+    DEFAULT_REQUEST_DELAY,
+    DEFAULT_REQUEST_TIMEOUT,
     DEFAULT_UDP_PORT,
     DOMAIN,
     device_default_socket_limit,
@@ -45,14 +51,15 @@ ACTION_TYPES = {ACTION_CHARGE, ACTION_DISCHARGE, ACTION_STOP}
 CMD_ES_SET_MODE = "ES.SetMode"
 
 # Retry configuration
+# Timing is calculated from configured poll interval to ensure device has time to respond
 MAX_RETRY_ATTEMPTS = 8
-RETRY_TIMEOUTS = [2.4, 3.2, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-RETRY_BACKOFF_BASES = [0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8]
+BASE_REQUEST_TIMEOUT = 5.0  # Base timeout for UDP request
 
 # Verification configuration
-VERIFICATION_ATTEMPTS = 5
-VERIFICATION_TIMEOUT = 2.4
-VERIFICATION_DELAY = 0.5
+# Fast tier makes 3 calls: ES.GetMode, ES.GetStatus, EM.GetStatus
+FAST_TIER_CALL_COUNT = 3
+CALL_TIME_BUDGET = 5.0  # Seconds per API call
+VERIFICATION_ATTEMPTS = 3
 STOP_POWER_THRESHOLD = 50  # W
 
 STOP_POWER = 0  # W
@@ -164,65 +171,104 @@ async def async_call_action_from_config(
             translation_placeholders={"device_id": device_id},
         )
 
-    await udp_client.pause_polling(host)
-    try:
-        for attempt_idx, (timeout, backoff_base) in enumerate(
-            zip(RETRY_TIMEOUTS, RETRY_BACKOFF_BASES, strict=False), start=1
-        ):
-            try:
-                await udp_client.send_request(
-                    command,
-                    host,
-                    port,
-                    timeout=timeout,
-                    quiet_on_timeout=True,
-                )
-            except (TimeoutError, OSError, ValueError) as err:
-                _LOGGER.debug(
-                    "ES.SetMode send attempt %d/%d failed for %s: %s",
-                    attempt_idx,
-                    MAX_RETRY_ATTEMPTS,
-                    host,
-                    err,
-                )
+    # Calculate timeouts based on configured poll interval and request delays
+    # Device needs time to complete a full poll cycle before we can verify the mode change
+    # Worst case: poll_interval + (number_of_calls * (delay_between_calls + time_per_call))
+    poll_interval = entry.options.get(
+        CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST
+    )
+    request_delay = entry.options.get(
+        CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
+    )
+    request_timeout = entry.options.get(
+        CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
+    )
+    
+    # Time for device to complete a full fast-tier poll cycle
+    poll_cycle_time = poll_interval + (
+        FAST_TIER_CALL_COUNT * (request_delay + CALL_TIME_BUDGET)
+    )
+    # Verification delay is the full poll cycle time
+    verification_delay = poll_cycle_time
+    # Backoff between retry attempts also uses poll cycle time
+    backoff_base = poll_cycle_time
+    
+    _LOGGER.debug(
+        "Action timing for %s: poll_cycle=%.1fs, verification_delay=%.1fs",
+        host,
+        poll_cycle_time,
+        verification_delay,
+    )
+    
+    for attempt_idx in range(1, MAX_RETRY_ATTEMPTS + 1):
+        # Step 1: Send command (pause only during send)
+        await udp_client.pause_polling(host)
+        try:
+            await udp_client.send_request(
+                command,
+                host,
+                port,
+                timeout=request_timeout,
+                quiet_on_timeout=True,
+            )
+        except (TimeoutError, OSError, ValueError) as err:
+            _LOGGER.debug(
+                "ES.SetMode send attempt %d/%d failed for %s: %s",
+                attempt_idx,
+                MAX_RETRY_ATTEMPTS,
+                host,
+                err,
+            )
+        finally:
+            await udp_client.resume_polling(host)
 
-            try:
-                if await _verify_es_mode(hass, host, port, enable, power, udp_client):
-                    _LOGGER.info(
-                        "ES.SetMode action '%s' confirmed after attempt %d/%d for device %s",
-                        action_type,
-                        attempt_idx,
-                        MAX_RETRY_ATTEMPTS,
-                        host,
-                    )
-                    return
-            except (TimeoutError, OSError, ValueError) as err:
-                _LOGGER.debug(
-                    "ES.SetMode verification attempt %d/%d failed for %s: %s",
-                    attempt_idx,
-                    MAX_RETRY_ATTEMPTS,
-                    host,
-                    err,
-                )
+        # Step 2: Wait for device to settle (polling is ACTIVE during this wait)
+        await asyncio.sleep(verification_delay)
 
-            if attempt_idx < MAX_RETRY_ATTEMPTS:
-                jitter = 0.30 * attempt_idx
-                delay = backoff_base * attempt_idx + jitter
-                _LOGGER.warning(
-                    "ES.SetMode action '%s' not confirmed on attempt %d/%d for device %s, retrying in %.2fs",
+        # Step 3: Quick verification checks (pause only during checks)
+        await udp_client.pause_polling(host)
+        try:
+            if await _verify_es_mode_quick(
+                hass, host, port, enable, power, udp_client,
+                request_timeout=request_timeout,
+            ):
+                _LOGGER.info(
+                    "ES.SetMode action '%s' confirmed after attempt %d/%d for device %s",
                     action_type,
                     attempt_idx,
                     MAX_RETRY_ATTEMPTS,
                     host,
-                    delay,
                 )
-                await asyncio.sleep(delay)
+                return
+        except (TimeoutError, OSError, ValueError) as err:
+            _LOGGER.debug(
+                "ES.SetMode verification attempt %d/%d failed for %s: %s",
+                attempt_idx,
+                MAX_RETRY_ATTEMPTS,
+                host,
+                err,
+            )
+        finally:
+            await udp_client.resume_polling(host)
 
-        raise TimeoutError(
-            f"ES.SetMode action '{action_type}' not confirmed after {MAX_RETRY_ATTEMPTS} attempts for device {host}"
-        )
-    finally:
-        await udp_client.resume_polling(host)
+        if attempt_idx < MAX_RETRY_ATTEMPTS:
+            # Backoff is based on poll cycle time with small jitter
+            jitter = 0.30 * attempt_idx
+            delay = backoff_base + jitter
+            _LOGGER.warning(
+                "ES.SetMode action '%s' not confirmed on attempt %d/%d for device %s, retrying in %.2fs",
+                action_type,
+                attempt_idx,
+                MAX_RETRY_ATTEMPTS,
+                host,
+                delay,
+            )
+            # Polling is ACTIVE during backoff
+            await asyncio.sleep(delay)
+
+    raise TimeoutError(
+        f"ES.SetMode action '{action_type}' not confirmed after {MAX_RETRY_ATTEMPTS} attempts for device {host}"
+    )
 
 
 async def async_get_action_capabilities(
@@ -288,15 +334,19 @@ def _build_set_mode_command(power: int, enable: int) -> str:
     return build_command(CMD_ES_SET_MODE, payload)
 
 
-async def _verify_es_mode(
+async def _verify_es_mode_quick(
     hass: HomeAssistant,
     host: str,
     port: int,
     enable: int,
     power: int,
     udp_client: Any,
+    *,
+    request_timeout: float,
 ) -> bool:
-    """Verify that ES mode matches expected state.
+    """Verify that ES mode matches expected state with quick retries.
+
+    Performs quick verification checks (no long delay - caller handles that).
 
     Rules:
     - Mode should be "Manual" (if present)
@@ -304,17 +354,18 @@ async def _verify_es_mode(
     - enable=1 and power<0 (charge): battery_power should be negative
     - enable=1 and power>0 (discharge): battery_power should be positive
     """
+    # Quick retries for network issues (short delay between checks)
     for _ in range(VERIFICATION_ATTEMPTS):
         try:
             response = await udp_client.send_request(
                 get_es_status(0),
                 host,
                 port,
-                timeout=VERIFICATION_TIMEOUT,
+                timeout=request_timeout,
                 quiet_on_timeout=True,
             )
         except (TimeoutError, OSError, ValueError):
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(1.0)
             continue
 
         result = response.get("result", {}) if isinstance(response, dict) else {}
@@ -322,11 +373,11 @@ async def _verify_es_mode(
         battery_power = result.get("bat_power")
 
         if mode is not None and mode != "Manual":
-            await asyncio.sleep(VERIFICATION_DELAY)
+            await asyncio.sleep(1.0)
             continue
 
         if not isinstance(battery_power, (int, float)):
-            await asyncio.sleep(VERIFICATION_DELAY)
+            await asyncio.sleep(1.0)
             continue
 
         if enable == 0:
@@ -339,7 +390,7 @@ async def _verify_es_mode(
             if battery_power > 0:
                 return True
 
-        await asyncio.sleep(VERIFICATION_DELAY)
+        await asyncio.sleep(1.0)
 
     return False
 

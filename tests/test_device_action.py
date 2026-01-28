@@ -55,9 +55,11 @@ def _patch_all(client=None, scanner=None):
     """Patch MarstekUDPClient and MarstekScanner for tests."""
     client = client or _mock_client()
     scanner = scanner or _mock_scanner()
+    
     with (
         patch("custom_components.marstek.MarstekUDPClient", return_value=client),
         patch("custom_components.marstek.scanner.MarstekScanner.async_get", return_value=scanner),
+        patch("custom_components.marstek.device_action.asyncio.sleep", new_callable=AsyncMock),
     ):
         yield client, scanner
 
@@ -71,16 +73,16 @@ async def test_async_get_actions(hass, mock_config_entry):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    actions = await async_get_actions(hass, device.id)
-    action_types = {action[CONF_TYPE] for action in actions}
+        actions = await async_get_actions(hass, device.id)
+        action_types = {action[CONF_TYPE] for action in actions}
 
-    assert ACTION_CHARGE in action_types
-    assert ACTION_DISCHARGE in action_types
-    assert ACTION_STOP in action_types
+        assert ACTION_CHARGE in action_types
+        assert ACTION_DISCHARGE in action_types
+        assert ACTION_STOP in action_types
 
 
 @pytest.mark.parametrize("action_type,expected_power_negative", [
@@ -107,21 +109,21 @@ async def test_device_actions_pause_and_resume(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    config = {
-        CONF_DEVICE_ID: device.id,
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: action_type,
-    }
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: action_type,
+        }
 
-    await async_call_action_from_config(hass, config, {}, None)
+        await async_call_action_from_config(hass, config, {}, None)
 
-    # Verify polling was paused and resumed
-    client.pause_polling.assert_called()
-    client.resume_polling.assert_called()
+        # Verify polling was paused and resumed
+        client.pause_polling.assert_called()
+        client.resume_polling.assert_called()
 
 
 async def test_device_action_invalid_device(hass, mock_config_entry):
@@ -133,15 +135,15 @@ async def test_device_action_invalid_device(hass, mock_config_entry):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    config = {
-        CONF_DEVICE_ID: "invalid_device_id",
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: ACTION_CHARGE,
-    }
+        config = {
+            CONF_DEVICE_ID: "invalid_device_id",
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_CHARGE,
+        }
 
-    from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
-    with pytest.raises(InvalidDeviceAutomationConfig):
-        await async_call_action_from_config(hass, config, {}, None)
+        from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+        with pytest.raises(InvalidDeviceAutomationConfig):
+            await async_call_action_from_config(hass, config, {}, None)
 
 
 async def test_device_action_power_out_of_range_socket_limit_default(
@@ -165,19 +167,19 @@ async def test_device_action_power_out_of_range_socket_limit_default(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    config = {
-        CONF_DEVICE_ID: device.id,
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: ACTION_DISCHARGE,
-    }
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_DISCHARGE,
+        }
 
-    from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
-    with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
-        await async_call_action_from_config(hass, config, {}, None)
+        from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+        with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
+            await async_call_action_from_config(hass, config, {}, None)
 
 
 async def test_device_action_power_out_of_range_model_limit(hass, mock_config_entry):
@@ -199,19 +201,19 @@ async def test_device_action_power_out_of_range_model_limit(hass, mock_config_en
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    config = {
-        CONF_DEVICE_ID: device.id,
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: ACTION_CHARGE,
-    }
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_CHARGE,
+        }
 
-    from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
-    with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
-        await async_call_action_from_config(hass, config, {}, None)
+        from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+        with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
+            await async_call_action_from_config(hass, config, {}, None)
 
 
 async def test_device_action_charge_enforces_socket_limit_default(
@@ -235,19 +237,19 @@ async def test_device_action_charge_enforces_socket_limit_default(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    config = {
-        CONF_DEVICE_ID: device.id,
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: ACTION_CHARGE,
-    }
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_CHARGE,
+        }
 
-    from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
-    with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
-        await async_call_action_from_config(hass, config, {}, None)
+        from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+        with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
+            await async_call_action_from_config(hass, config, {}, None)
 
 
 async def test_device_action_charge_enforces_socket_limit_explicit_true(
@@ -272,19 +274,19 @@ async def test_device_action_charge_enforces_socket_limit_explicit_true(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    config = {
-        CONF_DEVICE_ID: device.id,
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: ACTION_CHARGE,
-    }
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_CHARGE,
+        }
 
-    from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
-    with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
-        await async_call_action_from_config(hass, config, {}, None)
+        from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+        with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
+            await async_call_action_from_config(hass, config, {}, None)
 
 
 async def test_device_action_charge_allows_high_power_without_socket_limit(
@@ -309,16 +311,90 @@ async def test_device_action_charge_allows_high_power_without_socket_limit(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
-    assert device
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
 
-    config = {
-        CONF_DEVICE_ID: device.id,
-        CONF_DOMAIN: DOMAIN,
-        CONF_TYPE: ACTION_CHARGE,
-    }
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_CHARGE,
+        }
 
-    await async_call_action_from_config(hass, config, {}, None)
-    client.pause_polling.assert_called()
-    client.resume_polling.assert_called()
+        await async_call_action_from_config(hass, config, {}, None)
+        client.pause_polling.assert_called()
+        client.resume_polling.assert_called()
+
+
+async def test_device_action_polling_active_during_verification_delay(
+    hass, mock_config_entry
+):
+    """Test polling is resumed BEFORE verification delay sleep (not blocked during wait)."""
+    mock_config_entry.add_to_hass(hass)
+
+    call_order: list[str] = []
+
+    client = _mock_client(mode_response={"result": {"mode": "Manual", "bat_power": -500}})
+    
+    # Track call order
+    original_pause = client.pause_polling
+    original_resume = client.resume_polling
+    
+    async def track_pause(host: str) -> None:
+        call_order.append("pause")
+        return await original_pause(host)
+    
+    async def track_resume(host: str) -> None:
+        call_order.append("resume")
+        return await original_resume(host)
+    
+    client.pause_polling = AsyncMock(side_effect=track_pause)
+    client.resume_polling = AsyncMock(side_effect=track_resume)
+
+    with (
+        patch("custom_components.marstek.MarstekUDPClient", return_value=client),
+        patch("custom_components.marstek.scanner.MarstekScanner.async_get", return_value=_mock_scanner()),
+        patch("custom_components.marstek.device_action.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        # Track sleep calls in order
+        async def track_sleep(delay: float) -> None:
+            call_order.append(f"sleep_{delay}")
+        mock_sleep.side_effect = track_sleep
+
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        assert device
+
+        config = {
+            CONF_DEVICE_ID: device.id,
+            CONF_DOMAIN: DOMAIN,
+            CONF_TYPE: ACTION_CHARGE,
+        }
+
+        await async_call_action_from_config(hass, config, {}, None)
+
+        # Key assertion: Resume must come BEFORE the 75s verification delay sleep
+        # Expected order: pause -> resume -> sleep_75.0 -> pause -> resume
+        # Find the first big sleep (verification delay)
+        verification_sleep_idx = None
+        for i, call in enumerate(call_order):
+            if call.startswith("sleep_") and float(call.split("_")[1]) > 30:
+                verification_sleep_idx = i
+                break
+        
+        assert verification_sleep_idx is not None, f"No verification delay sleep found in {call_order}"
+        
+        # Before verification sleep, we must have: pause, resume (at least one complete cycle)
+        pre_sleep_calls = call_order[:verification_sleep_idx]
+        assert "pause" in pre_sleep_calls, f"No pause before verification delay: {pre_sleep_calls}"
+        assert "resume" in pre_sleep_calls, f"No resume before verification delay: {pre_sleep_calls}"
+        
+        # The resume for send must come before the verification delay sleep
+        last_resume_before_sleep = max(
+            i for i, c in enumerate(pre_sleep_calls) if c == "resume"
+        )
+        assert last_resume_before_sleep < verification_sleep_idx, \
+            f"Polling should be active during verification delay. Order: {call_order}"
