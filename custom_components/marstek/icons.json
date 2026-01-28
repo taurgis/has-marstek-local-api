@@ -111,9 +111,6 @@
       "wifi_rssi": {
         "default": "mdi:wifi"
       },
-      "ct_connection": {
-        "default": "mdi:connection"
-      },
       "battery_temperature": {
         "default": "mdi:thermometer"
       },
@@ -140,6 +137,17 @@
       },
       "total_load_energy": {
         "default": "mdi:home-lightning-bolt"
+      }
+    },
+    "binary_sensor": {
+      "ct_connection": {
+        "default": "mdi:connection"
+      },
+      "charge_permission": {
+        "default": "mdi:battery-charging"
+      },
+      "discharge_permission": {
+        "default": "mdi:battery-minus"
       }
     },
     "select": {
