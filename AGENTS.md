@@ -194,22 +194,26 @@ from .pymarstek import MAX_POWER_VALUE, MAX_PASSIVE_DURATION, MAX_TIME_SLOTS
 
 ## Verification after changes (MANDATORY)
 
-**After every code modification**, you MUST run both type checking and tests:
+**After every code modification**, you MUST run linting, type checking, and tests:
 
 ```bash
-# 1. Type checking (strict mode enabled)
+# 1. Linting (code style and common errors)
+python3 -m ruff check custom_components/marstek/
+
+# 2. Type checking (strict mode enabled)
 python3 -m mypy --strict custom_components/marstek/
 
-# 2. Run all tests
+# 3. Run all tests
 pytest tests/ -q
 ```
 
-**Do not consider a change complete until both commands pass.** If either fails:
-1. Fix the type errors or test failures
+**Do not consider a change complete until all three commands pass.** If any fails:
+1. Fix the lint errors, type errors, or test failures
 2. Re-run verification
-3. Repeat until both pass
+3. Repeat until all pass
 
 This ensures:
+- **Code quality**: Ruff catches unused imports, style issues, and common bugs
 - **Type safety**: The codebase uses `--strict` mypy; all functions need proper annotations
 - **No regressions**: Tests must pass to confirm existing functionality isn't broken
 - **CI alignment**: These are the same checks that run in GitHub Actions
