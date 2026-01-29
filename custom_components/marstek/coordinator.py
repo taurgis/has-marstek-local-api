@@ -34,6 +34,7 @@ from .const import (
     INITIAL_SETUP_REQUEST_DELAY,
     device_supports_pv,
 )
+from .scanner import MarstekScanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -337,13 +338,17 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning(
                     "Device %s status request failed (attempt #%d, threshold: %d): %s. "
                     "Entities will become unavailable. "
-                    "Scanner will detect IP changes automatically",
+                    "Triggering immediate scan for IP changes",
                     current_ip,
                     self.consecutive_failures,
                     failure_threshold,
                     err,
                 )
                 self._create_connection_issue(str(err))
+                # Trigger immediate scan to detect IP changes faster
+                # (event-driven approach instead of aggressive polling)
+                scanner = MarstekScanner.async_get(self.hass)
+                scanner.async_request_scan()
                 # Mark update as failed so entities become unavailable
                 raise UpdateFailed(
                     f"Polling failed for {current_ip} (attempt #{self.consecutive_failures}): {err}"

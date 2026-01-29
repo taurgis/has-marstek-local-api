@@ -21,9 +21,12 @@ from .discovery import discover_devices
 
 _LOGGER = logging.getLogger(__name__)
 
-# Scanner runs discovery every 10 minutes to detect IP changes
-# (conservative interval to reduce network traffic to devices)
+# Scanner runs discovery every 10 minutes as a backup
+# Primary detection is event-driven: triggered when coordinator hits failure threshold
 SCAN_INTERVAL = timedelta(minutes=10)
+
+# Minimum time between event-triggered scans (debounce)
+MIN_SCAN_INTERVAL = timedelta(seconds=30)
 
 
 class MarstekScanner:
@@ -36,6 +39,7 @@ class MarstekScanner:
         self._hass = hass
         self._track_interval: CALLBACK_TYPE | None = None
         self._scan_task: asyncio.Task[None] | None = None
+        self._last_scan_time: datetime | None = None
 
     @classmethod
     @callback
@@ -99,6 +103,32 @@ class MarstekScanner:
         
         # Execute scan in background task (non-blocking)
         self._scan_task = self._hass.async_create_task(self._async_scan_impl())
+        self._last_scan_time = datetime.now()
+
+    @callback
+    def async_request_scan(self) -> bool:
+        """Request an immediate scan (event-driven, e.g., on connection failure).
+        
+        This allows the coordinator to trigger a scan when it detects connection
+        failures, enabling faster IP change detection without aggressive polling.
+        
+        Returns:
+            True if scan was triggered, False if debounced (too soon after last scan)
+        """
+        # Debounce: don't scan if we recently scanned
+        if self._last_scan_time is not None:
+            elapsed = datetime.now() - self._last_scan_time
+            if elapsed < MIN_SCAN_INTERVAL:
+                _LOGGER.debug(
+                    "Scan request debounced (last scan %s ago, min interval %s)",
+                    elapsed,
+                    MIN_SCAN_INTERVAL,
+                )
+                return False
+        
+        _LOGGER.info("Immediate scan requested (connection failure detected)")
+        self.async_scan()
+        return True
 
     async def _async_scan_impl(self) -> None:
         """Execute device discovery and check for IP changes."""
