@@ -165,3 +165,13 @@ Create `icons.json`:
 - Sending control commands without pausing polling (causes concurrent UDP traffic and flaky results).
 - Breaking unique IDs (must remain stable across upgrades and IP changes).
 - Skipping options reload listeners or reauth handling in `config_flow.py`.
+- Using aggressive polling intervals instead of event-driven triggers (prefer immediate scan on failure over shorter intervals).
+
+## Event-Driven Best Practices
+
+When detecting connectivity issues or IP changes:
+1. **Prefer event-driven over polling**: Trigger immediate action on failure instead of shortening poll intervals
+2. **Debounce**: Add minimum intervals between event-triggered actions (e.g., 30s minimum between scans)
+3. **Keep backup polling**: Maintain a longer interval (10 min) as a backstop for edge cases
+
+Example: The coordinator triggers `MarstekScanner.async_request_scan()` when it hits the failure threshold, enabling fast IP change detection without aggressive periodic scanning.
