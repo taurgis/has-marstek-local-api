@@ -182,6 +182,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
             # Build description showing already configured devices only
+            # Note: The "Already configured devices:" header is embedded in the placeholder
+            # value since HA config flows don't support dynamic translation lookups.
+            # This is a common pattern in HA integrations for this type of dynamic content.
             if already_configured_names:
                 description_lines = [f"- {name}" for name in already_configured_names]
                 already_configured_text = (

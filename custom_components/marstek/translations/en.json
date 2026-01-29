@@ -396,6 +396,12 @@
     "invalid_device": {
       "message": "Device {device_id} not found"
     },
+    "device_not_found": {
+      "message": "Device {device_id} not found"
+    },
+    "config_invalid": {
+      "message": "Configuration invalid for device {device_id}"
+    },
     "no_config_entry": {
       "message": "No loaded Marstek config entry found for device: {device_id}"
     },
