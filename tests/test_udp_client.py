@@ -227,7 +227,11 @@ class TestSendRequest:
         """Test that validation can be skipped."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        client._loop = asyncio.get_event_loop()
+        # Use mocked loop to avoid socket blocking mode checks
+        mock_loop = MagicMock()
+        mock_loop.time.return_value = 1000.0
+        mock_loop.create_task = MagicMock(return_value=MagicMock())
+        client._loop = mock_loop
         
         # Invalid method but validation skipped - should get ValueError for no id, 
         # not ValidationError (since validation is skipped)
@@ -263,7 +267,11 @@ class TestSendRequest:
         """Test that quiet_on_timeout suppresses warnings."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        client._loop = asyncio.get_event_loop()
+        # Use mocked loop to avoid socket blocking mode checks
+        mock_loop = MagicMock()
+        mock_loop.time.return_value = 1000.0
+        mock_loop.create_task = MagicMock(return_value=MagicMock())
+        client._loop = mock_loop
         
         message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
         
