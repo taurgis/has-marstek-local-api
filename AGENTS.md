@@ -8,7 +8,7 @@ This repository contains a Home Assistant custom integration for **Marstek energ
 - **Scope**: Marstek devices that support **OPEN API** on the local network.
 - **Transport**: UDP JSON-RPC-like messages (default port **30000**) as described in `docs/marstek_device_openapi.MD`.
 - **Pattern**: `local_polling` using a single `DataUpdateCoordinator` per device + a background `Scanner` to detect IP changes.
-- **Quality Scale**: Bronze (tracked in `quality_scale.yaml`)
+- Quality Scale: Silver (aiming for Gold with >95% coverage; tracked in `quality_scale.yaml`)
 
 Important compatibility notes:
 - The integration is currently **not compatible with Venus E2.0** devices (see `README.md`).
@@ -203,8 +203,8 @@ python3 -m ruff check custom_components/marstek/
 # 2. Type checking (strict mode enabled)
 python3 -m mypy --strict custom_components/marstek/
 
-# 3. Run all tests
-pytest tests/ -q
+# 3. Run all tests with coverage check (>95% required)
+pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 ```
 
 **Do not consider a change complete until all three commands pass.** If any fails:
@@ -220,12 +220,12 @@ This ensures:
 
 ## Testing and QA expectations
 
-- Aim for Bronze+ quality scale: 100% config_flow coverage, connection tested in setup, unload/reload covered.
+- **Quality Scale**: Aim for **Gold** level standards (>95% code coverage).
 - Test structure: `tests/` mirrors platforms (`test_config_flow.py`, `test_init.py`, `test_sensor.py`, etc.) with shared fixtures in `tests/conftest.py`.
 - Use `pytest-homeassistant-custom-component` with pinned versions in `requirements_test.txt`; mock UDP I/O—no live devices.
 - Cover failures: cannot_connect, invalid_auth/invalid_discovery_info, already_configured, coordinator timeouts, action retries.
 - Mark coordinator failures with `UpdateFailed` to surface entity unavailability.
-- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (coverage threshold) on latest supported Python versions.
+- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (**coverage >95%**) on latest supported Python versions.
 - Mock device available in `tools/mock_device/` for local testing.
 
 ### Type checking requirements

@@ -178,8 +178,8 @@ Statuses: `done`, `todo`, `exempt` (with comment explaining why).
 # 1. Type checking (strict mode)
 python3 -m mypy --strict custom_components/<domain>/
 
-# 2. Tests
-pytest tests/ -q
+# 2. Tests with coverage
+pytest tests/ -q --cov=custom_components/<domain> --cov-fail-under=95
 ```
 
 Both must pass. Fix any errors and re-run until clean.
@@ -198,4 +198,4 @@ Both must pass. Fix any errors and re-run until clean.
 - [ ] Requirements pinned; manifest fields valid; hassfest/HACS clean
 - [ ] Tests cover config flow, coordinator happy-path and failure, and entity states
 - [ ] **mypy --strict passes with no errors**
-- [ ] **All tests pass (pytest tests/ -q)**
+- [ ] **All tests pass with >95% coverage**
