@@ -120,8 +120,8 @@
       "battery_power": {
         "name": "Battery power"
       },
-      "grid_power": {
-        "name": "Grid power"
+      "ongrid_power": {
+        "name": "On-grid power"
       },
       "offgrid_power": {
         "name": "Off-grid power"

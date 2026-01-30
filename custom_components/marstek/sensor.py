@@ -79,7 +79,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
     ),
     MarstekSensorEntityDescription(
         key="ongrid_power",
-        translation_key="grid_power",
+        translation_key="ongrid_power",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
