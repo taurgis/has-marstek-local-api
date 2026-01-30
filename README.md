@@ -17,7 +17,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 - **Battery Status** - Current operational status
 - **Operating Mode** - Current device mode (Auto, AI, Manual, Passive)
 - **PV Metrics** - Solar panel power, voltage, current, and state (up to 4 channels; Venus A/D)
-- **Grid Power** - Total grid power from energy meter (3-phase support)
+- **On-grid Power** - Total grid power from energy meter (3-phase support)
 - **WiFi Signal Strength** - RSSI for connectivity diagnostics
 - **CT Connection Status** - Current transformer connection state
 - **Device Information** - IP address, firmware version, MAC addresses

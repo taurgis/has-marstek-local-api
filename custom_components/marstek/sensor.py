@@ -228,7 +228,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
     ),
     MarstekSensorEntityDescription(
         key="em_total_power",
-        translation_key="grid_total_power",
+        translation_key="em_total_power",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -239,7 +239,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
     ),
     MarstekSensorEntityDescription(
         key="em_a_power",
-        translation_key="phase_a_power",
+        translation_key="em_a_power",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -250,7 +250,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
     ),
     MarstekSensorEntityDescription(
         key="em_b_power",
-        translation_key="phase_b_power",
+        translation_key="em_b_power",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -261,7 +261,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
     ),
     MarstekSensorEntityDescription(
         key="em_c_power",
-        translation_key="phase_c_power",
+        translation_key="em_c_power",
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,

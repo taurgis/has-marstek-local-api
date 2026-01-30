@@ -242,7 +242,7 @@ async def test_grid_total_power_sensor_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.marstek_venus_v3_grid_total_power")
+        state = hass.states.get("sensor.marstek_venus_v3_total_power")
         assert state is not None
         assert state.state == "360"
 
@@ -389,10 +389,10 @@ async def test_all_new_sensors_with_full_status(
             is not None
         )
         assert (
-            hass.states.get("sensor.marstek_venus_v3_grid_total_power")
+            hass.states.get("sensor.marstek_venus_v3_total_power")
             is not None
         )
-        assert hass.states.get("sensor.marstek_venus_v3_grid_power") is not None
+        assert hass.states.get("sensor.marstek_venus_v3_on_grid_power") is not None
         assert hass.states.get("sensor.marstek_venus_v3_off_grid_power") is not None
         assert hass.states.get("sensor.marstek_venus_v3_pv_power") is not None
         assert (

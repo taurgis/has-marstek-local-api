@@ -75,7 +75,7 @@ If you add/modify device control:
 
 | Platform | Entities |
 |----------|---------|
-| `sensor` | Battery SoC, power, status, temperature; device mode; PV power/voltage/current (4ch, Venus A/D); grid power (3-phase); WiFi diagnostics |
+| `sensor` | Battery SoC, power, status, temperature; device mode; PV power/voltage/current (4ch, Venus A/D); on-grid power (3-phase); WiFi diagnostics |
 | `binary_sensor` | CT connection status |
 | `select` | Operating mode (Auto/AI/Manual/Passive) |
 

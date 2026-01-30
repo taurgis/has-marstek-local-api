@@ -16,13 +16,13 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 | Device mode | `device_mode` | — | — | Enabled |
 | Battery status | `battery_status` | — | — | Enabled |
 | Battery temperature | `bat_temp` | °C | — | Enabled |
-| Grid total power | `em_total_power` | W | — | Enabled |
+| Total power | `em_total_power` | W | — | Enabled |
 | Phase A power | `em_a_power` | W | — | Enabled |
 | Phase B power | `em_b_power` | W | — | Enabled |
 | Phase C power | `em_c_power` | W | — | Enabled |
 | Total solar energy | `total_pv_energy` | Wh | — | Enabled |
-| Total grid export | `total_grid_output_energy` | Wh | — | Enabled |
-| Total grid import | `total_grid_input_energy` | Wh | — | Enabled |
+| Total grid output energy | `total_grid_output_energy` | Wh | — | Enabled |
+| Total grid input energy | `total_grid_input_energy` | Wh | — | Enabled |
 | Total load energy | `total_load_energy` | Wh | — | Enabled |
 
 ### PV channel sensors (PV1–PV4)

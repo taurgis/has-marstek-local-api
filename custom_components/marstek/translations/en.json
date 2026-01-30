@@ -173,26 +173,26 @@
       "battery_rated_capacity": {
         "name": "Battery rated capacity"
       },
-      "grid_total_power": {
-        "name": "Grid total power"
+      "em_total_power": {
+        "name": "Total power"
       },
-      "phase_a_power": {
+      "em_a_power": {
         "name": "Phase A power"
       },
-      "phase_b_power": {
+      "em_b_power": {
         "name": "Phase B power"
       },
-      "phase_c_power": {
+      "em_c_power": {
         "name": "Phase C power"
       },
       "total_pv_energy": {
         "name": "Total solar energy"
       },
       "total_grid_output_energy": {
-        "name": "Total grid export"
+        "name": "Total grid output energy"
       },
       "total_grid_input_energy": {
-        "name": "Total grid import"
+        "name": "Total grid input energy"
       },
       "total_load_energy": {
         "name": "Total load energy"
