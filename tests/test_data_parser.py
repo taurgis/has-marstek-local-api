@@ -455,13 +455,17 @@ class TestParseEsStatusResponse:
     """Tests for parse_es_status_response."""
 
     def test_parse_charging_status(self):
-        """Test parsing charging battery status."""
+        """Test parsing charging battery status.
+        
+        API convention: bat_power > 0 = charging
+        HA convention: battery_power < 0 = charging (negated)
+        """
         response = {
             "id": 1,
             "result": {
                 "bat_soc": 55,
                 "bat_cap": 5120,
-                "bat_power": 1000,  # Positive = charging
+                "bat_power": 1000,  # API: positive = charging
                 "pv_power": 1200,
                 "ongrid_power": 200,
             },
@@ -470,23 +474,29 @@ class TestParseEsStatusResponse:
         result = parse_es_status_response(response)
 
         assert result["battery_soc"] == 55
-        assert result["battery_power"] == 1000  # Raw positive value
+        # HA convention: negative = charging
+        assert result["battery_power"] == -1000
         assert result["battery_status"] == "charging"
 
     def test_parse_discharging_status(self):
-        """Test parsing discharging battery status."""
+        """Test parsing discharging battery status.
+        
+        API convention: bat_power < 0 = discharging
+        HA convention: battery_power > 0 = discharging (negated)
+        """
         response = {
             "id": 1,
             "result": {
                 "bat_soc": 55,
-                "bat_power": -800,  # Negative = discharging
+                "bat_power": -800,  # API: negative = discharging
                 "ongrid_power": -500,
             },
         }
 
         result = parse_es_status_response(response)
 
-        assert result["battery_power"] == -800  # Raw negative value
+        # HA convention: positive = discharging
+        assert result["battery_power"] == 800
         assert result["battery_status"] == "discharging"
 
     def test_parse_idle_status(self):
@@ -505,22 +515,56 @@ class TestParseEsStatusResponse:
         assert result["battery_status"] == "idle"
 
     def test_parse_missing_bat_power_fallback(self):
-        """Test fallback calculation when bat_power is missing."""
+        """Test fallback calculation when bat_power is missing.
+        
+        Venus A/E devices don't provide bat_power. Fallback uses energy balance:
+        bat_power = pv_power - ongrid_power (API convention)
+        
+        Example: pv=0, ongrid=+800 (exporting to grid while discharging)
+        -> raw: 0 - 800 = -800 (API: discharging)
+        -> HA: +800 (positive = discharging)
+        """
         response = {
             "id": 1,
             "result": {
                 "bat_soc": 55,
-                # bat_power omitted by device
-                "pv_power": 1200,
-                "ongrid_power": 200,
+                # bat_power omitted by device (e.g., Venus A/E)
+                "pv_power": 0,
+                "ongrid_power": 800,  # Exporting to grid
             },
         }
 
         result = parse_es_status_response(response)
 
-        # P_bat = -pv_power + ongrid_power
-        assert result["battery_power"] == -1000
+        # Fallback: raw = pv - ongrid = 0 - 800 = -800 (API: discharging)
+        # HA convention (negate): +800 (positive = discharging)
+        assert result["battery_power"] == 800
         assert result["battery_status"] == "discharging"
+
+    def test_parse_missing_bat_power_fallback_charging(self):
+        """Test fallback calculation when bat_power is missing and battery charges.
+        
+        Example: PV producing 1200W, exporting 200W to grid
+        -> Battery absorbs: 1200 - 200 = 1000W (charging)
+        -> raw = pv - ongrid = 1200 - 200 = 1000 (API: charging)
+        -> HA: -1000 (negative = charging)
+        """
+        response = {
+            "id": 1,
+            "result": {
+                "bat_soc": 55,
+                # bat_power omitted by device (e.g., Venus A/E)
+                "pv_power": 1200,
+                "ongrid_power": 200,  # Exporting to grid
+            },
+        }
+
+        result = parse_es_status_response(response)
+
+        # Fallback: raw = pv - ongrid = 1200 - 200 = 1000 (API: charging)
+        # HA convention (negate): -1000 (negative = charging)
+        assert result["battery_power"] == -1000
+        assert result["battery_status"] == "charging"
 
     def test_parse_bat_power_none_defaults_idle(self):
         """Test bat_power None defaults to 0 and idle status."""

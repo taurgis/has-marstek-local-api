@@ -68,33 +68,41 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     pv_power = result.get("pv_power", 0)  # Solar power
     ongrid_power = result.get("ongrid_power", 0)  # Grid power
     offgrid_power = result.get("offgrid_power", 0)
-    bat_power = result.get("bat_power")  # Battery power (+ = charge, - = discharge)
-    if bat_power is None and "bat_power" not in result:
-        # Fallback when API omits bat_power (some devices):
-        # P_bat = -pv_power + ongrid_power
-        # Positive = charging, Negative = discharging
-        bat_power = -pv_power + ongrid_power
-    if bat_power is None:
-        bat_power = 0
-    
+    raw_bat_power = result.get("bat_power")  # API: + = charge, - = discharge
+    if raw_bat_power is None and "bat_power" not in result:
+        # Fallback when API omits bat_power (Venus A/E devices):
+        # Energy flow: battery + PV = grid export (when discharging to grid)
+        # So: bat_power = pv_power - ongrid_power (API convention: - = discharging)
+        # With pv=0, ongrid=+800 (export): bat_power = -800 (discharging)
+        raw_bat_power = pv_power - ongrid_power
+    if raw_bat_power is None:
+        raw_bat_power = 0
+
+    # Convert to Home Assistant convention:
+    # HA Energy Dashboard expects: positive = DISCHARGING, negative = CHARGING
+    # API returns: positive = charging, negative = discharging
+    # So we negate the value to match HA convention
+    battery_power = -raw_bat_power
+
     # Energy totals
     total_pv_energy = result.get("total_pv_energy", 0)
     total_grid_output_energy = result.get("total_grid_output_energy", 0)
     total_grid_input_energy = result.get("total_grid_input_energy", 0)
     total_load_energy = result.get("total_load_energy", 0)
-    
-    # Calculate battery_status from bat_power direction
-    # Positive bat_power = charging, Negative = discharging (per jaapp/Marstek convention)
-    if bat_power > 0:
-        battery_status = "charging"
-    elif bat_power < 0:
+
+    # Calculate battery_status from battery_power (HA convention)
+    # Positive = discharging (battery providing power)
+    # Negative = charging (battery receiving power)
+    if battery_power > 0:
         battery_status = "discharging"
+    elif battery_power < 0:
+        battery_status = "charging"
     else:
         battery_status = "idle"
-    
+
     return {
         "battery_soc": bat_soc,
-        "battery_power": bat_power,  # Positive = charging, negative = discharging
+        "battery_power": battery_power,  # HA convention: positive = discharging
         "battery_status": battery_status,
         "ongrid_power": ongrid_power,
         "offgrid_power": offgrid_power,
