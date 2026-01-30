@@ -24,7 +24,12 @@ class TestAutomationWorkflows:
 
     def test_scenario_auto_to_passive_charging_to_auto(self) -> None:
         """Test automation: Auto -> Passive (charge during cheap tariff) -> Auto."""
-        device = MockMarstekDevice(port=30010, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device = MockMarstekDevice(
+            port=30010,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.household.force_cooking_event(power=2000, duration_mins=60)
         device.simulator.start()
 
@@ -71,7 +76,12 @@ class TestAutomationWorkflows:
 
     def test_scenario_passive_discharging_peak_shaving(self) -> None:
         """Test automation: Auto -> Passive (discharge during peak) -> Auto."""
-        device = MockMarstekDevice(port=30011, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device = MockMarstekDevice(
+            port=30011,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.start()
 
         try:
@@ -146,7 +156,12 @@ class TestAutomationWorkflows:
 
     def test_scenario_rapid_mode_switching_stability(self) -> None:
         """Test automation: Rapid mode switches don't cause inconsistent state."""
-        device = MockMarstekDevice(port=30013, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device = MockMarstekDevice(
+            port=30013,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.start()
 
         try:
@@ -188,7 +203,12 @@ class TestAutomationWorkflows:
 
     def test_scenario_passive_mode_expiration(self) -> None:
         """Test automation: Passive mode expires and device returns to Auto."""
-        device = MockMarstekDevice(port=30014, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device = MockMarstekDevice(
+            port=30014,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.start()
 
         try:
@@ -220,7 +240,12 @@ class TestSOCEffects:
     def test_soc_affects_power_limits(self) -> None:
         """Test automation: Battery SOC affects actual power output."""
         # Test low SOC - can't discharge
-        device_low = MockMarstekDevice(port=30015, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device_low = MockMarstekDevice(
+            port=30015,
+            simulate=True,
+            include_bat_power=True,
+        )
         device_low.simulator.soc = 3
         device_low.simulator.start()
 
@@ -239,7 +264,12 @@ class TestSOCEffects:
             device_low.simulator.stop()
 
         # Test high SOC - charging tapers
-        device_high = MockMarstekDevice(port=30016, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device_high = MockMarstekDevice(
+            port=30016,
+            simulate=True,
+            include_bat_power=True,
+        )
         device_high.simulator.soc = 98
         device_high.simulator.start()
 
@@ -263,7 +293,12 @@ class TestGridPowerConsistency:
 
     def test_grid_power_consistency(self) -> None:
         """Test automation: Grid power is calculated correctly."""
-        device = MockMarstekDevice(port=30017, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device = MockMarstekDevice(
+            port=30017,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.household.force_cooking_event(power=2000, duration_mins=60)
         device.simulator.start()
 
@@ -331,7 +366,12 @@ class TestConcurrentPolling:
 
     def test_concurrent_polling_during_mode_change(self) -> None:
         """Test automation: Polling continues during and after mode change."""
-        device = MockMarstekDevice(port=30019, simulate=True)
+        # Enable include_bat_power for testing direct bat_power response path
+        device = MockMarstekDevice(
+            port=30019,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.household.force_cooking_event(power=3000, duration_mins=60)
         device.simulator.start()
 

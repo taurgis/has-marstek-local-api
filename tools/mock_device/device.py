@@ -33,11 +33,17 @@ class MockMarstekDevice:
         ip_override: str | None = None,
         initial_soc: int = 50,
         simulate: bool = True,
+        include_bat_power: bool = False,
     ):
         self.port = port
         self.config = {**DEFAULT_CONFIG, **(device_config or {})}
         self.ip = ip_override or get_local_ip()
         self.sock: socket.socket | None = None
+        
+        # Whether to include bat_power in ES.GetStatus responses
+        # Default False since real Venus E 3.0 does NOT return bat_power
+        # Enable for testing the direct bat_power code path
+        self.include_bat_power = include_bat_power
 
         # Battery simulator (tracks energy stats internally)
         self.simulator = BatterySimulator(initial_soc=initial_soc)
@@ -184,7 +190,11 @@ class MockMarstekDevice:
             # State includes energy stats from simulator
             state_with_capacity = {**state, "capacity_wh": self.simulator.capacity_wh}
             return handle_es_get_status(
-                request_id, src, state_with_capacity, self.config.get("device", "")
+                request_id,
+                src,
+                state_with_capacity,
+                self.config.get("device", ""),
+                include_bat_power=self.include_bat_power,
             )
 
         elif method == "ES.GetMode":

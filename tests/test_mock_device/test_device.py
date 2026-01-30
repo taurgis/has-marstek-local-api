@@ -21,7 +21,12 @@ class TestDeviceResponses:
 
     def test_es_get_status_after_passive_charging(self) -> None:
         """Test ES.GetStatus returns correct power after passive charging set."""
-        device = MockMarstekDevice(port=30001, simulate=True)
+        # Enable include_bat_power to test direct bat_power code path
+        device = MockMarstekDevice(
+            port=30001,
+            simulate=True,
+            include_bat_power=True,
+        )
 
         set_mode_params = {
             "id": 0,
@@ -48,7 +53,12 @@ class TestDeviceResponses:
 
     def test_es_get_status_after_passive_discharge(self) -> None:
         """Test ES.GetStatus returns correct power for passive discharging."""
-        device = MockMarstekDevice(port=30002, simulate=True)
+        # Enable include_bat_power to test direct bat_power code path
+        device = MockMarstekDevice(
+            port=30002,
+            simulate=True,
+            include_bat_power=True,
+        )
 
         set_mode_params = {
             "id": 0,
@@ -72,7 +82,12 @@ class TestDeviceResponses:
 
     def test_es_get_status_after_manual_mode(self) -> None:
         """Test ES.GetStatus returns correct power after manual schedule set."""
-        device = MockMarstekDevice(port=30003, simulate=True)
+        # Enable include_bat_power to test direct bat_power code path
+        device = MockMarstekDevice(
+            port=30003,
+            simulate=True,
+            include_bat_power=True,
+        )
 
         set_mode_params = {
             "id": 0,
@@ -103,7 +118,12 @@ class TestDeviceResponses:
 
     def test_es_get_status_with_simulation_thread(self) -> None:
         """Test ES.GetStatus returns correct values with simulation thread running."""
-        device = MockMarstekDevice(port=30004, simulate=True)
+        # Enable include_bat_power to test direct bat_power code path
+        device = MockMarstekDevice(
+            port=30004,
+            simulate=True,
+            include_bat_power=True,
+        )
         device.simulator.household.force_cooking_event(power=4000, duration_mins=60)
         device.simulator.start()
 
@@ -145,6 +165,42 @@ class TestDeviceResponses:
         result = response["result"]
         assert "bat_soc" in result
         assert "bat_power" not in result
+
+    def test_es_get_status_venus_e_omits_bat_power(self) -> None:
+        """Test VenusE ES.GetStatus omits bat_power field (uses fallback calculation)."""
+        device = MockMarstekDevice(
+            port=30021,
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 145},
+        )
+
+        response = device._build_response(1, "ES.GetStatus", {})
+
+        assert response is not None
+        result = response["result"]
+        assert "bat_soc" in result
+        assert "pv_power" in result
+        assert "ongrid_power" in result
+        # Venus E omits bat_power - integration uses fallback: pv_power - ongrid_power
+        assert "bat_power" not in result
+
+    def test_es_get_status_with_include_bat_power_flag(self) -> None:
+        """Test ES.GetStatus includes bat_power when include_bat_power=True."""
+        # No real device is confirmed to return bat_power, but we support it
+        # via include_bat_power=True for testing the direct code path
+        device = MockMarstekDevice(
+            port=30022,
+            simulate=False,
+            include_bat_power=True,
+        )
+
+        response = device._build_response(1, "ES.GetStatus", {})
+
+        assert response is not None
+        result = response["result"]
+        assert "bat_soc" in result
+        # bat_power included when flag is True
+        assert "bat_power" in result
 
 
 class TestDeviceDiscovery:

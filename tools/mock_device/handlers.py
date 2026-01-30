@@ -40,16 +40,30 @@ def handle_ble_get_status(
 
 
 def handle_es_get_status(
-    request_id: int, src: str, state: dict[str, Any], device_type: str
+    request_id: int,
+    src: str,
+    state: dict[str, Any],
+    device_type: str,
+    *,
+    include_bat_power: bool = False,
 ) -> dict[str, Any]:
     """Handle ES.GetStatus request with full energy stats per API spec.
     
     Energy stats are now tracked in the simulator and included in state.
     
-    Note: bat_power sign convention (per real device / jaapp):
+    Note: bat_power sign convention (per real device behavior):
       - Positive = charging (power flowing INTO battery)
       - Negative = discharging (power flowing OUT of battery)
     Internal simulator uses opposite convention, so we negate here.
+    
+    Args:
+        request_id: Request ID for response
+        src: Source identifier for response
+        state: Battery simulator state
+        device_type: Device type string (currently unused for bat_power decision)
+        include_bat_power: If True, include bat_power in response. Default False
+            since real Venus E devices do NOT return bat_power, and we have no
+            evidence other devices do either. Enable for testing purposes only.
     """
     # Negate power: internal +discharge/-charge → API +charge/-discharge
     bat_power = -state["power"]
@@ -70,8 +84,11 @@ def handle_es_get_status(
         },
     }
 
-    device_type_normalized = device_type.lower()
-    if "venusa" not in device_type_normalized and "venus a" not in device_type_normalized:
+    # By default, NO device returns bat_power in ES.GetStatus response
+    # Real Venus E 3.0 confirmed: bat_power is NOT in the response
+    # Integration uses fallback calculation: pv_power - ongrid_power
+    # Enable include_bat_power=True only for testing the direct path
+    if include_bat_power:
         result["result"]["bat_power"] = bat_power
 
     return result
