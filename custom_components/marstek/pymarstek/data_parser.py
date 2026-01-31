@@ -6,6 +6,8 @@ from typing import Any
 
 import logging
 
+from .compatibility import CompatibilityMatrix
+
 _LOGGER: logging.Logger | None = None
 
 
@@ -48,7 +50,21 @@ def parse_es_mode_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
+def _scale_value(
+    compatibility: CompatibilityMatrix | None,
+    value: Any,
+    field: str,
+) -> Any:
+    if compatibility is None:
+        return value
+    return compatibility.scale_value(value, field)
+
+
+def parse_es_status_response(
+    response: dict[str, Any],
+    *,
+    compatibility: CompatibilityMatrix | None = None,
+) -> dict[str, Any]:
     """Parse ES.GetStatus response into structured data.
     
     ES.GetStatus returns actual battery power and energy statistics.
@@ -64,8 +80,8 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
     bat_soc = result.get("bat_soc", 0)
-    bat_cap = result.get("bat_cap", 0)  # Battery capacity in Wh
-    pv_power = result.get("pv_power", 0)  # Solar power
+    bat_cap = _scale_value(compatibility, result.get("bat_cap", 0), "bat_cap")
+    pv_power = _scale_value(compatibility, result.get("pv_power", 0), "pv_power")
     ongrid_power = result.get("ongrid_power", 0)  # Grid power
     offgrid_power = result.get("offgrid_power", 0)
     raw_bat_power = result.get("bat_power")  # API: + = charge, - = discharge
@@ -75,6 +91,8 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
         # So: bat_power = pv_power - ongrid_power (API convention: - = discharging)
         # With pv=0, ongrid=+800 (export): bat_power = -800 (discharging)
         raw_bat_power = pv_power - ongrid_power
+    else:
+        raw_bat_power = _scale_value(compatibility, raw_bat_power, "bat_power")
     if raw_bat_power is None:
         raw_bat_power = 0
 
@@ -85,10 +103,22 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     battery_power = -raw_bat_power
 
     # Energy totals
-    total_pv_energy = result.get("total_pv_energy", 0)
-    total_grid_output_energy = result.get("total_grid_output_energy", 0)
-    total_grid_input_energy = result.get("total_grid_input_energy", 0)
-    total_load_energy = result.get("total_load_energy", 0)
+    total_pv_energy = _scale_value(
+        compatibility, result.get("total_pv_energy", 0), "total_pv_energy"
+    )
+    total_grid_output_energy = _scale_value(
+        compatibility,
+        result.get("total_grid_output_energy", 0),
+        "total_grid_output_energy",
+    )
+    total_grid_input_energy = _scale_value(
+        compatibility,
+        result.get("total_grid_input_energy", 0),
+        "total_grid_input_energy",
+    )
+    total_load_energy = _scale_value(
+        compatibility, result.get("total_load_energy", 0), "total_load_energy"
+    )
 
     # Calculate battery_status from battery_power (HA convention)
     # Positive = discharging (battery providing power)
@@ -115,7 +145,11 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
+def parse_pv_status_response(
+    response: dict[str, Any],
+    *,
+    compatibility: CompatibilityMatrix | None = None,
+) -> dict[str, Any]:
     """Parse PV.GetStatus response into structured data.
     
     Note: The API spec shows single PV channel fields (pv_power, pv_voltage, pv_current).
@@ -150,7 +184,8 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
     # Check for single-channel format (per API spec)
     if "pv_power" in result:
         # Single PV channel - map to pv1_* for consistency
-        pv_data["pv1_power"] = _scale_pv_power(result.get("pv_power", 0))
+        pv1_power = _scale_pv_power(result.get("pv_power", 0))
+        pv_data["pv1_power"] = _scale_value(compatibility, pv1_power, "pv1_power")
         pv_data["pv1_voltage"] = result.get("pv_voltage", 0)
         pv_data["pv1_current"] = result.get("pv_current", 0)
         pv_data["pv1_state"] = 1 if result.get("pv_power", 0) > 0 else 0
@@ -158,9 +193,12 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
         # Multi-channel format - extract data for each PV channel (1-4)
         for channel in range(1, 5):
             prefix = f"pv{channel}_"
-            pv_data[f"{prefix}power"] = _scale_pv_power(
+            pv_power = _scale_pv_power(
                 result.get(f"{prefix}power", 0),
                 channel=channel,
+            )
+            pv_data[f"{prefix}power"] = _scale_value(
+                compatibility, pv_power, f"pv{channel}_power"
             )
             pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage", 0)
             pv_data[f"{prefix}current"] = result.get(f"{prefix}current", 0)
@@ -219,7 +257,11 @@ def parse_em_status_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
+def parse_bat_status_response(
+    response: dict[str, Any],
+    *,
+    compatibility: CompatibilityMatrix | None = None,
+) -> dict[str, Any]:
     """Parse Bat.GetStatus response into structured data.
     
     Provides detailed battery information including temperature and capacity.
@@ -233,11 +275,15 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
     result = response.get("result", {})
     
     return {
-        "bat_temp": result.get("bat_temp"),  # Battery temperature [°C]
+        "bat_temp": _scale_value(compatibility, result.get("bat_temp"), "bat_temp"),
         "bat_charg_flag": result.get("charg_flag"),  # Charging permission flag
         "bat_dischrg_flag": result.get("dischrg_flag"),  # Discharge permission flag
-        "bat_capacity": result.get("bat_capacity"),  # Remaining capacity [Wh]
-        "bat_rated_capacity": result.get("rated_capacity"),  # Rated capacity [Wh]
+        "bat_capacity": _scale_value(
+            compatibility, result.get("bat_capacity"), "bat_capacity"
+        ),
+        "bat_rated_capacity": _scale_value(
+            compatibility, result.get("rated_capacity"), "bat_rated_capacity"
+        ),
         "bat_soc_detailed": result.get("soc"),  # SOC from Bat.GetStatus
     }
 

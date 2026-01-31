@@ -32,9 +32,9 @@ from .const import (
     DEFAULT_UDP_PORT,
     DOMAIN,
     INITIAL_SETUP_REQUEST_DELAY,
-    device_supports_pv,
 )
 from .scanner import MarstekScanner
+from .pymarstek.compatibility import CompatibilityMatrix
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,10 +67,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._initial_device_ip = device_ip
         self._initial_device_port = device_port
         
-        # Check device capabilities based on device type
-        # Venus A and Venus D support PV; Venus C/E do NOT
-        device_type = config_entry.data.get("device_type", "")
-        self._supports_pv = device_supports_pv(device_type)
+        self._compatibility = CompatibilityMatrix(
+            device_model=str(config_entry.data.get("device_type", "")),
+            firmware_version=config_entry.data.get("version", 0),
+        )
+        self._supports_pv = self._compatibility.capabilities.supports_pv
         
         # Track last fetch times for tiered polling
         self._last_pv_fetch: float = 0.0  # Medium interval
@@ -252,6 +253,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 include_bat=include_slow,
                 delay_between_requests=request_delay,
                 previous_status=self.data,  # Preserve values on partial failures
+                compatibility=self._compatibility,
             )
 
             # Update last fetch times for successful fetches

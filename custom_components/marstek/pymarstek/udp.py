@@ -39,6 +39,7 @@ from .data_parser import (
     parse_pv_status_response,
     parse_wifi_status_response,
 )
+from .compatibility import CompatibilityMatrix
 from .validators import ValidationError, validate_json_message
 
 _LOGGER = logging.getLogger(__name__)
@@ -663,6 +664,7 @@ class MarstekUDPClient:
         include_bat: bool = True,
         delay_between_requests: float = 2.0,
         previous_status: dict[str, Any] | None = None,
+        compatibility: CompatibilityMatrix | None = None,
     ) -> dict[str, Any]:
         """Get complete device status including battery, PV, WiFi, and EM data.
         
@@ -722,7 +724,10 @@ class MarstekUDPClient:
             es_status_response = await self.send_request(
                 es_status_command, device_ip, port, timeout=timeout
             )
-            es_status_data = parse_es_status_response(es_status_response)
+            es_status_data = parse_es_status_response(
+                es_status_response,
+                compatibility=compatibility,
+            )
             made_request = True
             has_fresh_data = True
             _LOGGER.debug(
@@ -765,7 +770,10 @@ class MarstekUDPClient:
                 pv_status_response = await self.send_request(
                     pv_status_command, device_ip, port, timeout=timeout
                 )
-                pv_status_data = parse_pv_status_response(pv_status_response)
+                pv_status_data = parse_pv_status_response(
+                    pv_status_response,
+                    compatibility=compatibility,
+                )
                 made_request = True
                 has_fresh_data = True
                 _LOGGER.debug(
@@ -811,7 +819,10 @@ class MarstekUDPClient:
                 bat_status_response = await self.send_request(
                     bat_status_command, device_ip, port, timeout=timeout
                 )
-                bat_status_data = parse_bat_status_response(bat_status_response)
+                bat_status_data = parse_bat_status_response(
+                    bat_status_response,
+                    compatibility=compatibility,
+                )
                 has_fresh_data = True
                 _LOGGER.debug(
                     "Bat.GetStatus parsed for %s: Temp=%s°C, ChargFlag=%s, DischrgFlag=%s",

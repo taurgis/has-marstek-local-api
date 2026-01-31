@@ -19,6 +19,7 @@ from .data_parser import (
     parse_es_status_response,
     parse_pv_status_response,
 )
+from .compatibility import CompatibilityMatrix
 from .udp import MarstekUDPClient
 from .validators import (
     MAX_PASSIVE_DURATION,
@@ -36,6 +37,7 @@ __all__ = [
     "MAX_POWER_VALUE",
     "MAX_TIME_SLOTS",
     "MAX_WEEK_SET",
+    "CompatibilityMatrix",
     "MarstekUDPClient",
     "ValidationError",
     "build_command",
