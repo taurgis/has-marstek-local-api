@@ -4,6 +4,7 @@ import argparse
 
 from .const import DEFAULT_UDP_PORT
 from .device import MockMarstekDevice
+from .utils import DEFAULT_STATE_DIR
 
 
 def main() -> None:
@@ -44,6 +45,17 @@ def main() -> None:
         "--no-simulate",
         action="store_true",
         help="Disable dynamic simulation (static values only)",
+    )
+    parser.add_argument(
+        "--state-dir",
+        type=str,
+        default=str(DEFAULT_STATE_DIR),
+        help="Directory to store persisted mock device state",
+    )
+    parser.add_argument(
+        "--reset-state",
+        action="store_true",
+        help="Reset persisted state for this device",
     )
     args = parser.parse_args()
 
@@ -86,6 +98,8 @@ def main() -> None:
         ip_override=args.ip,
         initial_soc=args.soc,
         simulate=not args.no_simulate,
+        state_dir=args.state_dir,
+        reset_state=args.reset_state,
     )
     device.start()
 

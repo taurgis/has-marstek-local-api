@@ -20,7 +20,13 @@ from .handlers import (
     handle_wifi_get_status,
 )
 from .simulators import BatterySimulator
-from .utils import get_local_ip
+from .utils import (
+    get_local_ip,
+    load_persistent_state,
+    reset_persistent_state,
+    resolve_state_dir,
+    save_persistent_state,
+)
 
 
 class MockMarstekDevice:
@@ -34,19 +40,36 @@ class MockMarstekDevice:
         initial_soc: int = 50,
         simulate: bool = True,
         include_bat_power: bool = False,
+        state_dir: str | None = None,
+        reset_state: bool = False,
     ):
         self.port = port
         self.config = {**DEFAULT_CONFIG, **(device_config or {})}
         self.ip = ip_override or get_local_ip()
         self.sock: socket.socket | None = None
+        self._state_dir = (
+            resolve_state_dir(state_dir) if state_dir is not None else None
+        )
         
         # Whether to include bat_power in ES.GetStatus responses
         # Default False since real Venus E 3.0 does NOT return bat_power
         # Enable for testing the direct bat_power code path
         self.include_bat_power = include_bat_power
 
+        if self._state_dir is not None and reset_state:
+            reset_persistent_state(self.config["ble_mac"], self._state_dir)
+
+        persisted_state = (
+            load_persistent_state(self.config["ble_mac"], self._state_dir)
+            if self._state_dir is not None
+            else None
+        )
+
         # Battery simulator (tracks energy stats internally)
-        self.simulator = BatterySimulator(initial_soc=initial_soc)
+        self.simulator = BatterySimulator(
+            initial_soc=initial_soc,
+            persist_callback=self._persist_state if self._state_dir is not None else None,
+        )
         self.simulate = simulate
 
         # BLE connection state (for mock purposes always disconnected)
@@ -56,6 +79,12 @@ class MockMarstekDevice:
         self._static_soc = initial_soc
         self._static_power = 0
         self._static_mode = MODE_AUTO
+        self._static_totals = self._default_static_totals()
+
+        if persisted_state:
+            self.simulator.apply_persistent_state(persisted_state)
+            self._static_soc = int(persisted_state.get("soc", initial_soc))
+            self._static_totals = self._totals_from_state(persisted_state)
 
     def start(self) -> None:
         """Start the mock device server."""
@@ -80,6 +109,7 @@ class MockMarstekDevice:
         finally:
             if self.simulate:
                 self.simulator.stop()
+            self._persist_state()
             if self.sock:
                 self.sock.close()
 
@@ -169,7 +199,49 @@ class MockMarstekDevice:
         """Get current device state."""
         if self.simulate:
             return self.simulator.get_state()
-        return get_static_state(self._static_soc, self._static_power, self._static_mode)
+        return get_static_state(
+            self._static_soc,
+            self._static_power,
+            self._static_mode,
+            self._static_totals,
+        )
+
+    def _default_static_totals(self) -> dict[str, float]:
+        return {
+            "total_pv_energy": 0.0,
+            "total_grid_output_energy": 0.0,
+            "total_grid_input_energy": 0.0,
+            "total_load_energy": 0.0,
+        }
+
+    def _totals_from_state(self, state: dict[str, Any]) -> dict[str, float]:
+        return {
+            "total_pv_energy": float(state.get("total_pv_energy", 0.0)),
+            "total_grid_output_energy": float(
+                state.get("total_grid_output_energy", 0.0)
+            ),
+            "total_grid_input_energy": float(
+                state.get("total_grid_input_energy", 0.0)
+            ),
+            "total_load_energy": float(state.get("total_load_energy", 0.0)),
+        }
+
+    def _persist_state(self, state: dict[str, Any] | None = None) -> None:
+        if state is None:
+            if self._state_dir is None:
+                return
+            if state is None:
+                if self.simulate:
+                    state = self.simulator.get_persistent_state()
+                else:
+                    state = {
+                        "soc": float(self._static_soc),
+                        **self._static_totals,
+                    }
+        try:
+            save_persistent_state(self.config["ble_mac"], self._state_dir, state)
+        except OSError as exc:
+            print(f"[WARN] Failed to persist mock state: {exc}")
 
     def _build_response(
         self, request_id: int, method: str, params: dict[str, Any]

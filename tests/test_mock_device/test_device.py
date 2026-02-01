@@ -360,3 +360,65 @@ class TestAIMode:
             assert 0 <= result["bat_soc"] <= 100
         finally:
             device.simulator.stop()
+
+
+class TestPersistence:
+    """Tests for mock device state persistence."""
+
+    def test_persistent_state_round_trip(self, tmp_path: Path) -> None:
+        """Persisted SOC and energy totals should survive restarts."""
+        ble_mac = "001122334455"
+        state_dir = str(tmp_path)
+
+        device = MockMarstekDevice(
+            port=30100,
+            simulate=True,
+            device_config={"ble_mac": ble_mac},
+            state_dir=state_dir,
+        )
+        device.simulator.soc = 77
+        device.simulator.total_pv_energy = 12.5
+        device.simulator.total_grid_output_energy = 34.0
+        device.simulator.total_grid_input_energy = 1234.5
+        device.simulator.total_load_energy = 4567.8
+        device._persist_state()
+
+        restarted = MockMarstekDevice(
+            port=30101,
+            simulate=True,
+            device_config={"ble_mac": ble_mac},
+            state_dir=state_dir,
+        )
+
+        assert restarted.simulator.soc == pytest.approx(77.0)
+        assert restarted.simulator.total_pv_energy == pytest.approx(12.5)
+        assert restarted.simulator.total_grid_output_energy == pytest.approx(34.0)
+        assert restarted.simulator.total_grid_input_energy == pytest.approx(1234.5)
+        assert restarted.simulator.total_load_energy == pytest.approx(4567.8)
+
+    def test_persistent_state_reset(self, tmp_path: Path) -> None:
+        """Reset flag should clear persisted state."""
+        ble_mac = "00aa11bb22cc"
+        state_dir = str(tmp_path)
+
+        device = MockMarstekDevice(
+            port=30102,
+            simulate=True,
+            device_config={"ble_mac": ble_mac},
+            state_dir=state_dir,
+        )
+        device.simulator.soc = 88
+        device.simulator.total_grid_input_energy = 987.6
+        device._persist_state()
+
+        restarted = MockMarstekDevice(
+            port=30103,
+            simulate=True,
+            device_config={"ble_mac": ble_mac},
+            state_dir=state_dir,
+            reset_state=True,
+            initial_soc=50,
+        )
+
+        assert restarted.simulator.soc == pytest.approx(50.0)
+        assert restarted.simulator.total_grid_input_energy == 0.0

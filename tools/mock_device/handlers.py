@@ -256,8 +256,14 @@ def handle_es_set_mode(request_id: int, src: str) -> dict[str, Any]:
     }
 
 
-def get_static_state(soc: int, power: int, mode: str) -> dict[str, Any]:
+def get_static_state(
+    soc: int,
+    power: int,
+    mode: str,
+    totals: dict[str, float] | None = None,
+) -> dict[str, Any]:
     """Get static state when simulation is disabled."""
+    totals = totals or {}
     return {
         "soc": soc,
         "power": power,
@@ -275,10 +281,10 @@ def get_static_state(soc: int, power: int, mode: str) -> dict[str, Any]:
         "ct_connected": True,
         "charg_flag": 1,
         "dischrg_flag": 1,
-        "total_pv_energy": 0,
-        "total_grid_output_energy": 0,
-        "total_grid_input_energy": 0,
-        "total_load_energy": 0,
+        "total_pv_energy": int(totals.get("total_pv_energy", 0)),
+        "total_grid_output_energy": int(totals.get("total_grid_output_energy", 0)),
+        "total_grid_input_energy": int(totals.get("total_grid_input_energy", 0)),
+        "total_load_energy": int(totals.get("total_load_energy", 0)),
         "pv_power": 0,
         "pv_voltage": 0,
         "pv_current": 0,

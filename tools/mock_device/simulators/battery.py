@@ -10,7 +10,7 @@ import random
 import threading
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from ..const import (
     BATTERY_CAPACITY_WH,
@@ -64,6 +64,8 @@ class BatterySimulator:
         capacity_wh: int = BATTERY_CAPACITY_WH,
         max_charge_power: int = DEFAULT_MAX_CHARGE_POWER,
         max_discharge_power: int = DEFAULT_MAX_DISCHARGE_POWER,
+        persist_callback: Callable[[dict[str, Any]], None] | None = None,
+        persist_interval: float = 30.0,
     ):
         self.soc = initial_soc
         self.capacity_wh = capacity_wh
@@ -114,6 +116,9 @@ class BatterySimulator:
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
+        self._persist_callback = persist_callback
+        self._persist_interval = persist_interval
+        self._last_persist = time.time()
 
     def start(self) -> None:
         """Start the battery simulation thread."""
@@ -126,6 +131,8 @@ class BatterySimulator:
         self._running = False
         if self._thread:
             self._thread.join(timeout=2.0)
+        if self._persist_callback:
+            self._persist_callback(self.get_persistent_state())
 
     def _simulation_loop(self) -> None:
         """Main simulation loop."""
@@ -187,6 +194,9 @@ class BatterySimulator:
 
         # Update temperature
         self._update_temperature()
+
+        # Persist state periodically
+        self._maybe_persist_locked()
 
     def _calculate_target_power(self) -> int:
         """Calculate target battery power based on mode.
@@ -308,6 +318,46 @@ class BatterySimulator:
             elif self.battery_temp < self.base_temp:
                 self.battery_temp += 0.1 * random.uniform(0.5, 1.5)
         self.battery_temp = max(15.0, min(50.0, self.battery_temp))
+
+    def apply_persistent_state(self, state: dict[str, Any]) -> None:
+        """Apply persisted state values to the simulator."""
+        with self._lock:
+            self.soc = float(state.get("soc", self.soc))
+            self.total_pv_energy = float(
+                state.get("total_pv_energy", self.total_pv_energy)
+            )
+            self.total_grid_output_energy = float(
+                state.get("total_grid_output_energy", self.total_grid_output_energy)
+            )
+            self.total_grid_input_energy = float(
+                state.get("total_grid_input_energy", self.total_grid_input_energy)
+            )
+            self.total_load_energy = float(
+                state.get("total_load_energy", self.total_load_energy)
+            )
+
+    def _get_persistent_state_locked(self) -> dict[str, Any]:
+        return {
+            "soc": float(self.soc),
+            "total_pv_energy": float(self.total_pv_energy),
+            "total_grid_output_energy": float(self.total_grid_output_energy),
+            "total_grid_input_energy": float(self.total_grid_input_energy),
+            "total_load_energy": float(self.total_load_energy),
+        }
+
+    def get_persistent_state(self) -> dict[str, Any]:
+        """Return current state suitable for persistence."""
+        with self._lock:
+            return self._get_persistent_state_locked()
+
+    def _maybe_persist_locked(self) -> None:
+        if not self._persist_callback:
+            return
+        now = time.time()
+        if now - self._last_persist < self._persist_interval:
+            return
+        self._persist_callback(self._get_persistent_state_locked())
+        self._last_persist = now
 
     def _apply_immediate_power_update(self) -> None:
         """Immediately update power to reflect mode change."""
