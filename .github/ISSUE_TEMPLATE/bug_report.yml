@@ -95,15 +95,43 @@ body:
     validations:
       required: true
 
+  - type: markdown
+    attributes:
+      value: |
+        ## How to enable debug logging (quick guide)
+
+        Preferred (no restart needed):
+        1. **Settings → Devices & Services → Marstek → ⋮ → Enable debug logging**
+        2. Reproduce the problem.
+        3. Go back to the Marstek integration menu → **Disable debug logging** and download the log file.
+
+        Also helpful:
+        - Marstek integration menu → **Download diagnostics** (attach the downloaded file).
+
+        Advanced fallback (YAML): see https://www.home-assistant.io/integrations/logger/ and
+        https://www.home-assistant.io/docs/configuration/troubleshooting/#enabling-debug-logging
+
+        Note: debug logs may include sensitive details; please only include relevant sections.
+
   - type: textarea
     id: debug_logs
     attributes:
       label: Debug logs
       description: |
-        Enable debug logging and paste the relevant log lines here.
+        Attach the downloaded debug log file (preferred) and/or paste the relevant log lines here.
+        Tip: include the first error/traceback and ~50-200 lines of context around it.
       render: text
     validations:
       required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (recommended)
+      description: |
+        Download diagnostics from the Marstek integration menu (⋮ → Download diagnostics) and attach the file.
+        If you can't attach a file, describe what you see in diagnostics (device model/firmware, options, etc.).
+      render: text
 
   - type: checkboxes
     id: confirmations
