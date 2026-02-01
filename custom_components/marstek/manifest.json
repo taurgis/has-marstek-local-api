@@ -17,7 +17,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/taurgis/has-marstek-local-api/issues",
   "loggers": ["marstek"],
-  "quality_scale": "bronze",
+  "quality_scale": "platinum",
   "requirements": [],
   "version": "1.0.0-rc3"
 }

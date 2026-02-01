@@ -24,7 +24,7 @@
       "battery_power": {
         "default": "mdi:battery-charging"
       },
-      "grid_power": {
+      "ongrid_power": {
         "default": "mdi:flash"
       },
       "offgrid_power": {
@@ -114,16 +114,16 @@
       "battery_temperature": {
         "default": "mdi:thermometer"
       },
-      "grid_total_power": {
+      "em_total_power": {
         "default": "mdi:transmission-tower"
       },
-      "phase_a_power": {
+      "em_a_power": {
         "default": "mdi:flash"
       },
-      "phase_b_power": {
+      "em_b_power": {
         "default": "mdi:flash"
       },
-      "phase_c_power": {
+      "em_c_power": {
         "default": "mdi:flash"
       },
       "total_pv_energy": {
