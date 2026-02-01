@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import socket
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

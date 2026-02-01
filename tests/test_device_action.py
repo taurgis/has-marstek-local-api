@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_TYPE
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac

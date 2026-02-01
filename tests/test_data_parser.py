@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
     parse_bat_status_response,

@@ -6,16 +6,7 @@ the mock device returns correct and consistent status information.
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
-
-import pytest
-
-_tools_dir = Path(__file__).parent.parent.parent / "tools"
-if str(_tools_dir) not in sys.path:
-    sys.path.insert(0, str(_tools_dir))
-
 from mock_device import MockMarstekDevice
 
 

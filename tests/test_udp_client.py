@@ -230,8 +230,9 @@ class TestSendRequest:
         # Use mocked loop to avoid socket blocking mode checks
         mock_loop = MagicMock()
         mock_loop.time.return_value = 1000.0
-        mock_loop.create_task = MagicMock(return_value=MagicMock())
         client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
         
         # Invalid method but validation skipped - should get ValueError for no id, 
         # not ValidationError (since validation is skipped)
@@ -273,8 +274,9 @@ class TestCommandStats:
         client._socket = MagicMock()
         mock_loop = MagicMock()
         mock_loop.time.return_value = 1000.0
-        mock_loop.create_task = MagicMock(return_value=MagicMock())
         client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
 
         message = json.dumps(
             {"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}
@@ -302,8 +304,9 @@ class TestCommandStats:
         client._socket = MagicMock()
         mock_loop = MagicMock()
         mock_loop.time.return_value = 1000.0
-        mock_loop.create_task = MagicMock(return_value=MagicMock())
         client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
 
         message = json.dumps(
             {"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}
@@ -333,8 +336,9 @@ class TestCommandStats:
         # Use mocked loop to avoid socket blocking mode checks
         mock_loop = MagicMock()
         mock_loop.time.return_value = 1000.0
-        mock_loop.create_task = MagicMock(return_value=MagicMock())
         client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
         
         message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
         
@@ -483,8 +487,6 @@ class TestSendRequestWithPollingControl:
         client._loop.time.return_value = 0
         
         paused_states: list[bool] = []
-        
-        original_send = client.send_request
         
         async def mock_send(*args: Any, **kwargs: Any) -> dict[str, Any]:
             paused_states.append(client.is_polling_paused("192.168.1.100"))
@@ -856,7 +858,7 @@ class TestPsutilHandling:
         # Just verify the method completes without errors
 
 
-class TestRateLimitCleanup:
+class TestRateLimitCleanupEnforcement:
     """Tests for rate limit tracking cleanup."""
 
     async def test_cleanup_triggered_when_max_ips_exceeded(self) -> None:
@@ -1181,9 +1183,6 @@ class TestSendRequestSkipValidation:
         client._socket = MagicMock()
         loop = asyncio.get_event_loop()
         client._loop = loop
-        
-        # Setup pending request handling
-        request_handled = asyncio.Event()
         
         async def mock_recvfrom(
             sock: Any, bufsize: int

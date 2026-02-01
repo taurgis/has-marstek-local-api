@@ -4,15 +4,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
-import sys
-from pathlib import Path
-
-_tools_dir = Path(__file__).parent.parent.parent / "tools"
-if str(_tools_dir) not in sys.path:
-    sys.path.insert(0, str(_tools_dir))
-
 from mock_device import BatterySimulator
 from mock_device.const import (
     MODE_AI,

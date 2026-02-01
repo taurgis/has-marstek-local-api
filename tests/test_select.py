@@ -11,13 +11,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.marstek.const import (
-    DOMAIN,
-    MODE_AI,
-    MODE_AUTO,
-    MODE_MANUAL,
-    MODE_PASSIVE,
-)
+from custom_components.marstek.const import MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE
 
 
 def _mock_client(status=None, setup_error=None):
