@@ -31,11 +31,11 @@ def parse_es_mode_response(response: dict[str, Any]) -> dict[str, Any]:
     """
     result = response.get("result", {})
     
-    battery_soc = result.get("bat_soc", 0)
-    ongrid_power = result.get("ongrid_power", 0)
-    raw_mode = result.get("mode", "Unknown")
-    # Convert API mode to lowercase HA mode
-    device_mode = raw_mode.lower() if raw_mode else "unknown"
+    battery_soc = result.get("bat_soc")
+    ongrid_power = result.get("ongrid_power")
+    raw_mode = result.get("mode")
+    # Convert API mode to lowercase HA mode (ignore non-string placeholders)
+    device_mode = raw_mode.lower() if isinstance(raw_mode, str) and raw_mode else None
     
     # NOTE: ongrid_power is GRID power, not battery power!
     # Positive = exporting to grid, Negative = importing from grid
@@ -63,42 +63,56 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     result = response.get("result", {})
     
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
-    bat_soc = result.get("bat_soc", 0)
-    bat_cap = result.get("bat_cap", 0)  # Battery capacity in Wh
-    pv_power = result.get("pv_power", 0)  # Solar power
-    ongrid_power = result.get("ongrid_power", 0)  # Grid power
-    offgrid_power = result.get("offgrid_power", 0)
-    raw_bat_power = result.get("bat_power")  # API: + = charge, - = discharge
-    if raw_bat_power is None and "bat_power" not in result:
+    bat_soc = result.get("bat_soc")
+    bat_cap = result.get("bat_cap")  # Battery capacity in Wh
+    pv_power = result.get("pv_power")  # Solar power
+    ongrid_power = result.get("ongrid_power")  # Grid power
+    offgrid_power = result.get("offgrid_power")
+    raw_bat_power: Any | None
+    if "bat_power" in result:
+        raw_bat_power = result.get("bat_power")
+        if not isinstance(raw_bat_power, (int, float)):
+            raw_bat_power = None
+    else:
+        raw_bat_power = None
+    if (
+        raw_bat_power is None
+        and "bat_power" not in result
+        and isinstance(pv_power, (int, float))
+        and isinstance(ongrid_power, (int, float))
+    ):
         # Fallback when API omits bat_power (Venus A/E devices):
         # Energy flow: battery + PV = grid export (when discharging to grid)
         # So: bat_power = pv_power - ongrid_power (API convention: - = discharging)
         # With pv=0, ongrid=+800 (export): bat_power = -800 (discharging)
         raw_bat_power = pv_power - ongrid_power
+    battery_power: float | None
+    battery_status: str | None
     if raw_bat_power is None:
-        raw_bat_power = 0
+        battery_power = None
+        battery_status = None
+    else:
+        # Convert to Home Assistant convention:
+        # HA Energy Dashboard expects: positive = DISCHARGING, negative = CHARGING
+        # API returns: positive = charging, negative = discharging
+        # So we negate the value to match HA convention
+        battery_power = -raw_bat_power
 
-    # Convert to Home Assistant convention:
-    # HA Energy Dashboard expects: positive = DISCHARGING, negative = CHARGING
-    # API returns: positive = charging, negative = discharging
-    # So we negate the value to match HA convention
-    battery_power = -raw_bat_power
+        # Calculate battery_status from battery_power (HA convention)
+        # Positive = discharging (battery providing power)
+        # Negative = charging (battery receiving power)
+        if battery_power > 0:
+            battery_status = "discharging"
+        elif battery_power < 0:
+            battery_status = "charging"
+        else:
+            battery_status = "idle"
 
     # Energy totals
-    total_pv_energy = result.get("total_pv_energy", 0)
-    total_grid_output_energy = result.get("total_grid_output_energy", 0)
-    total_grid_input_energy = result.get("total_grid_input_energy", 0)
-    total_load_energy = result.get("total_load_energy", 0)
-
-    # Calculate battery_status from battery_power (HA convention)
-    # Positive = discharging (battery providing power)
-    # Negative = charging (battery receiving power)
-    if battery_power > 0:
-        battery_status = "discharging"
-    elif battery_power < 0:
-        battery_status = "charging"
-    else:
-        battery_status = "idle"
+    total_pv_energy = result.get("total_pv_energy")
+    total_grid_output_energy = result.get("total_grid_output_energy")
+    total_grid_input_energy = result.get("total_grid_input_energy")
+    total_load_energy = result.get("total_load_energy")
 
     return {
         "battery_soc": bat_soc,
@@ -150,21 +164,37 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
     # Check for single-channel format (per API spec)
     if "pv_power" in result:
         # Single PV channel - map to pv1_* for consistency
-        pv_data["pv1_power"] = _scale_pv_power(result.get("pv_power", 0))
-        pv_data["pv1_voltage"] = result.get("pv_voltage", 0)
-        pv_data["pv1_current"] = result.get("pv_current", 0)
-        pv_data["pv1_state"] = 1 if result.get("pv_power", 0) > 0 else 0
+        pv_power = result.get("pv_power")
+        pv_data["pv1_power"] = _scale_pv_power(pv_power)
+        if "pv_voltage" in result:
+            pv_data["pv1_voltage"] = result.get("pv_voltage")
+        if "pv_current" in result:
+            pv_data["pv1_current"] = result.get("pv_current")
+        if isinstance(pv_power, (int, float)):
+            pv_data["pv1_state"] = 1 if pv_power > 0 else 0
     else:
         # Multi-channel format - extract data for each PV channel (1-4)
         for channel in range(1, 5):
             prefix = f"pv{channel}_"
-            pv_data[f"{prefix}power"] = _scale_pv_power(
-                result.get(f"{prefix}power", 0),
-                channel=channel,
+            channel_keys = (
+                f"{prefix}power",
+                f"{prefix}voltage",
+                f"{prefix}current",
+                f"{prefix}state",
             )
-            pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage", 0)
-            pv_data[f"{prefix}current"] = result.get(f"{prefix}current", 0)
-            pv_data[f"{prefix}state"] = result.get(f"{prefix}state", 0)
+            if not any(key in result for key in channel_keys):
+                continue
+            if f"{prefix}power" in result:
+                pv_data[f"{prefix}power"] = _scale_pv_power(
+                    result.get(f"{prefix}power"),
+                    channel=channel,
+                )
+            if f"{prefix}voltage" in result:
+                pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage")
+            if f"{prefix}current" in result:
+                pv_data[f"{prefix}current"] = result.get(f"{prefix}current")
+            if f"{prefix}state" in result:
+                pv_data[f"{prefix}state"] = result.get(f"{prefix}state")
     
     return pv_data
 
@@ -308,70 +338,87 @@ def merge_device_status(
         "bat_dischrg_flag": None,
     }
     
+    def _is_unknown_value(value: Any) -> bool:
+        return isinstance(value, str) and value.lower() == "unknown"
+
+    def _apply_updates(updates: dict[str, Any]) -> None:
+        for key, value in updates.items():
+            if value is None or _is_unknown_value(value):
+                continue
+            status[key] = value
+
     # Apply previous status first (lowest priority) to preserve values 
     # from last successful poll when individual requests fail
     if previous_status:
         # Only preserve non-None values from previous status
         for key, value in previous_status.items():
-            if value is not None and key in status and status[key] is None:
-                status[key] = value
-            # Also preserve "Unknown" values with actual values from previous
-            elif key in status and status[key] == "Unknown" and value not in (None, "Unknown"):
+            if (
+                value is not None
+                and not _is_unknown_value(value)
+                and key in status
+                and status[key] is None
+            ):
                 status[key] = value
             # Preserve PV keys from previous status if they exist (device supports PV)
-            elif key.startswith("pv") and key not in status and value is not None:
+            elif (
+                key.startswith("pv")
+                and key not in status
+                and value is not None
+                and not _is_unknown_value(value)
+            ):
                 status[key] = value
     
     # Apply in order of priority (lowest to highest)
     # PV data is ONLY included if pv_status_data is provided (Venus A/D devices only)
     if pv_status_data:
-        status.update(pv_status_data)
+        _apply_updates(pv_status_data)
     
     if em_status_data:
-        status.update(em_status_data)
+        _apply_updates(em_status_data)
     
     if wifi_status_data:
-        status.update(wifi_status_data)
+        _apply_updates(wifi_status_data)
     
     if bat_status_data:
-        status.update(bat_status_data)
+        _apply_updates(bat_status_data)
     
     if es_mode_data:
-        status.update(es_mode_data)
+        _apply_updates(es_mode_data)
     
     # ES.GetStatus has highest priority for battery data
     if es_status_data:
-        status.update(es_status_data)
+        _apply_updates(es_status_data)
     
     # Recalculate pv_power and battery_power using PV channel data when
     # ES.GetStatus returns incorrect pv_power (Venus A devices report pv_power=0
     # in ES.GetStatus but individual channels from PV.GetStatus are correct)
     if pv_status_data and es_status_data:
-        es_pv_power = es_status_data.get("pv_power", 0)
+        es_pv_power = es_status_data.get("pv_power")
         # Calculate total from individual PV channels
         total_pv_from_channels = sum(
             pv_status_data.get(f"pv{ch}_power", 0) or 0
             for ch in range(1, 5)
         )
         # If ES.GetStatus pv_power is 0 but channels have real power, override
-        if es_pv_power == 0 and total_pv_from_channels > 0:
+        if (es_pv_power in (None, 0)) and total_pv_from_channels > 0:
             # Override pv_power with calculated total from PV channels
             status["pv_power"] = total_pv_from_channels
             
             # Recalculate battery power using correct pv_power
-            ongrid_power = es_status_data.get("ongrid_power", 0) or 0
-            # bat_power = pv_power - ongrid_power (API convention)
-            # Then negate for HA convention (positive = discharging)
-            raw_bat_power = total_pv_from_channels - ongrid_power
-            battery_power = -raw_bat_power
-            status["battery_power"] = battery_power
-            # Update battery status based on recalculated power
-            if battery_power > 0:
-                status["battery_status"] = "discharging"
-            elif battery_power < 0:
-                status["battery_status"] = "charging"
-            else:
-                status["battery_status"] = "idle"
+            ongrid_power = es_status_data.get("ongrid_power")
+            if isinstance(ongrid_power, (int, float)):
+                # bat_power = pv_power - ongrid_power (API convention)
+                # Then negate for HA convention (positive = discharging)
+                raw_bat_power = total_pv_from_channels - ongrid_power
+                battery_power = -raw_bat_power
+                status["battery_power"] = battery_power
+                # Update battery status based on recalculated power
+                if battery_power > 0:
+                    status["battery_status"] = "discharging"
+                elif battery_power < 0:
+                    status["battery_status"] = "charging"
+                else:
+                    status["battery_status"] = "idle"
     
     if device_ip:
         status["device_ip"] = device_ip

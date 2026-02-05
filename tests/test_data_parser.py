@@ -678,8 +678,8 @@ class TestParseEsStatusResponse:
         assert result["battery_power"] == -1000
         assert result["battery_status"] == "charging"
 
-    def test_parse_bat_power_none_defaults_idle(self):
-        """Test bat_power None defaults to 0 and idle status."""
+    def test_parse_bat_power_none_keeps_missing(self):
+        """Test bat_power None remains unset to preserve previous values."""
         response = {
             "id": 1,
             "result": {
@@ -690,8 +690,8 @@ class TestParseEsStatusResponse:
 
         result = parse_es_status_response(response)
 
-        assert result["battery_power"] == 0
-        assert result["battery_status"] == "idle"
+        assert result["battery_power"] is None
+        assert result["battery_status"] is None
 
 
 class TestMergeDeviceStatusNoPV:
@@ -908,3 +908,22 @@ class TestMergeStatusPreviousStatusHandling:
         assert result["battery_soc"] == 75
         assert result["battery_power"] == 500
         assert result["wifi_rssi"] == -55
+
+    def test_unknown_values_do_not_override_previous(self):
+        """Test that placeholder values from partial responses do not overwrite prior data."""
+        previous = {
+            "device_mode": "auto",
+            "battery_status": "charging",
+            "wifi_rssi": -40,
+        }
+
+        result = merge_device_status(
+            es_mode_data={"device_mode": "Unknown"},
+            es_status_data={"battery_status": "unknown"},
+            wifi_status_data={"wifi_rssi": None},
+            previous_status=previous,
+        )
+
+        assert result["device_mode"] == "auto"
+        assert result["battery_status"] == "charging"
+        assert result["wifi_rssi"] == -40
