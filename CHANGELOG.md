@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0-rc4] - 2026-02-06
+
+### Added
+- Device action configuration validation
+- Official Docs Researcher agent and expanded researcher tooling
+
+### Changed
+- Refined entity naming and battery sensor default visibility; updated quality scale
+
+### Fixed
+- Preserve `bat_capacity` and `bat_rated_capacity` values
+- Ensure entities are created even if the API fails on first fetch
+- Keep previous values correctly on API failures
+- Translation message adjustment
+
+### Maintenance
+- Energy dashboard documentation and troubleshooting/bug report updates
+- Research guidelines and Marstek research source documentation
+- Tests for failed API fallback and test setup cleanup
+
 ## [1.0.0-rc3] - 2026-02-01
 
 ### Added

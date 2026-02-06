@@ -1,12 +1,16 @@
 ```skill
 ---
 name: release-management
-description: Guide for creating releases, updating changelogs, version bumps, and git tagging for the Marstek integration
+description: REQUIRED for any release work. Use this skill for version bumps, changelog updates, tagging, and publishing for the Marstek integration.
 ---
 
 # Release Management
 
 This skill covers the complete release workflow for the Marstek Home Assistant integration.
+
+## When to Use (Required)
+
+Use this skill for any release request (RC, stable, patch, minor, or major). Do not skip it when preparing a release, updating versions, or publishing tags/releases.
 
 ## Release Types
 
@@ -18,16 +22,26 @@ This skill covers the complete release workflow for the Marstek Home Assistant i
 | Minor | `X.Y.0` | `1.1.0` | New features (backward compatible) |
 | Major | `X.0.0` | `2.0.0` | Breaking changes |
 
+## External Requirements (Official Docs)
+
+- Home Assistant requires a valid integration `version` in the manifest, using a SemVer-compatible format. https://developers.home-assistant.io/docs/creating_integration_manifest/#version
+- SemVer supports prerelease identifiers like `1.0.0-rc.1`, and prereleases sort lower than the associated stable version. https://semver.org/
+- HACS uses the tag name from the latest GitHub release as the remote version; tags alone are not enough. https://hacs.xyz/docs/publish/start/#versions
+- GitHub releases can be marked as pre-releases for RCs. https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository#creating-a-release
+
 ## Release Checklist
 
 ### 1. Pre-Release Validation
 
 ```bash
+# Linting (code style and common errors)
+python3 -m ruff check custom_components/marstek/
+
 # Type checking (strict mode required)
 python3 -m mypy --strict custom_components/marstek/
 
-# Run all tests
-pytest tests/ -q
+# Run all tests with coverage gate
+pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
 # Both MUST pass before proceeding
 ```
@@ -88,6 +102,8 @@ Two files must be updated:
 ```
 
 Location: `custom_components/marstek/manifest.json`
+
+Note: The manifest `version` must stay aligned with the GitHub release tag (HACS uses the release tag as the remote version).
 
 #### pyproject.toml (optional)
 
