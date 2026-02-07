@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0-rc5] - 2026-02-07
+
+### Added
+- Autodiscovery support for automatic device detection
+
+### Fixed
+- Device action now uses real power values instead of absolute values
+- Battery power API failure no longer sets battery to idle incorrectly
+- Grid power field values are now preserved correctly on API failures
+
+### Maintenance
+- Updated device naming
+- Updated CONTRIBUTING with verification info
+- Code cleanup and refactoring
+- Test adjustments
+
 ## [1.0.0-rc4] - 2026-02-06
 
 ### Added
