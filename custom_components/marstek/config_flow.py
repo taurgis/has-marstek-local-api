@@ -62,6 +62,7 @@ from .const import (
     DOMAIN,
     device_default_socket_limit,
 )
+from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
 
 _LOGGER = logging.getLogger(__name__)
@@ -196,7 +197,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
-                title=f"Marstek {device['device_type']}",
+                title=format_device_name(device),
                 data=_build_entry_data(device["ip"], DEFAULT_UDP_PORT, device),
             )
 
@@ -298,7 +299,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
-                    title=f"Marstek {device_info.get('device_type', 'Device')}",
+                    title=format_device_name(device_info),
                     data=_build_entry_data(host, port, device_info),
                 )
 

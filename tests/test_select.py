@@ -79,7 +79,7 @@ async def test_select_entity_created(hass: HomeAssistant, mock_config_entry):
         await hass.async_block_till_done()
 
     assert mock_config_entry.state == ConfigEntryState.LOADED
-    state = hass.states.get("select.marstek_venus_v3_operating_mode")
+    state = hass.states.get("select.venus_operating_mode")
     assert state is not None
     assert state.state == "auto"
 
@@ -98,7 +98,7 @@ async def test_select_entity_options(hass: HomeAssistant, mock_config_entry):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    state = hass.states.get("select.marstek_venus_v3_operating_mode")
+    state = hass.states.get("select.venus_operating_mode")
     assert state is not None
     # Check options attribute
     options = state.attributes.get("options")
@@ -137,7 +137,7 @@ async def test_select_mode_sends_command(
             "select",
             "select_option",
             {
-                "entity_id": "select.marstek_venus_v3_operating_mode",
+                "entity_id": "select.venus_operating_mode",
                 "option": mode,
             },
             blocking=True,
@@ -186,7 +186,7 @@ async def test_select_mode_command_failure_retries(
             "select",
             "select_option",
             {
-                "entity_id": "select.marstek_venus_v3_operating_mode",
+                "entity_id": "select.venus_operating_mode",
                 "option": MODE_AUTO,
             },
             blocking=True,
@@ -226,7 +226,7 @@ async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_ent
                 "select",
                 "select_option",
                 {
-                    "entity_id": "select.marstek_venus_v3_operating_mode",
+                    "entity_id": "select.venus_operating_mode",
                     "option": MODE_AI,
                 },
                 blocking=True,
@@ -245,7 +245,7 @@ async def test_select_entity_created_with_valid_data(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        state = hass.states.get("select.marstek_venus_v3_operating_mode")
+        state = hass.states.get("select.venus_operating_mode")
         assert state is not None
         assert state.state == MODE_MANUAL
 
@@ -266,7 +266,7 @@ async def test_select_invalid_mode(
                 "select",
                 "select_option",
                 {
-                    "entity_id": "select.marstek_venus_v3_operating_mode",
+                    "entity_id": "select.venus_operating_mode",
                     "option": "invalid_mode_option",
                 },
                 blocking=True,
@@ -296,7 +296,7 @@ async def test_select_passive_manual_blocked(
                 "select",
                 "select_option",
                 {
-                    "entity_id": "select.marstek_venus_v3_operating_mode",
+                    "entity_id": "select.venus_operating_mode",
                     "option": mode,
                 },
                 blocking=True,

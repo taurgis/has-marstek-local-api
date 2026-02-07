@@ -30,7 +30,7 @@ async def test_coordinator_success_creates_entities(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.marstek_venus_v3_battery_level")
+        state = hass.states.get("sensor.venus_battery_level")
         assert state is not None
         assert state.state == "55"
 
@@ -51,7 +51,7 @@ async def test_coordinator_failure_marks_entities_unavailable(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    state = hass.states.get("sensor.marstek_venus_v3_battery_level")
+    state = hass.states.get("sensor.venus_battery_level")
     # Entity may not exist if coordinator failed on first refresh
     # or should be unavailable if it was created
     if state:
@@ -78,10 +78,10 @@ async def test_no_pv_entities_when_data_missing(
         await hass.async_block_till_done()
 
         # Check that PV entities are not registered
-        pv_entity = hass.states.get("sensor.marstek_venus_v3_pv1_power")
+        pv_entity = hass.states.get("sensor.venus_pv1_power")
         assert pv_entity is None
         # PV power should also not be created as exist_fn checks for pv_power key
-        pv_power = hass.states.get("sensor.marstek_venus_v3_pv_power")
+        pv_power = hass.states.get("sensor.venus_pv_power")
         assert pv_power is None
 
 
@@ -117,7 +117,7 @@ async def test_pv_power_overridden_when_api_returns_zero(
         await hass.async_block_till_done()
 
         # PV power should show the overridden value (sum of channels)
-        state = hass.states.get("sensor.marstek_venus_v3_pv_power")
+        state = hass.states.get("sensor.venus_pv_power")
         assert state is not None
         assert float(state.state) == 184.5
 
@@ -146,7 +146,7 @@ async def test_pv_power_partial_channels(
         await hass.async_block_till_done()
 
         # PV power should show sum of available channels
-        state = hass.states.get("sensor.marstek_venus_v3_pv_power")
+        state = hass.states.get("sensor.venus_pv_power")
         assert state is not None
         assert float(state.state) == 150.0
 
@@ -175,7 +175,7 @@ async def test_wifi_rssi_sensor_created(
         # Sensor is disabled by default, check entity registry instead of state
         entity_registry = er.async_get(hass)
         entry = entity_registry.async_get(
-            "sensor.marstek_venus_v3_wifi_signal_strength"
+            "sensor.venus_wifi_signal_strength"
         )
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
@@ -200,7 +200,7 @@ async def test_wifi_rssi_sensor_not_created_when_missing(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        state = hass.states.get("sensor.marstek_venus_v3_wifi_signal_strength")
+        state = hass.states.get("sensor.venus_wifi_signal_strength")
         assert state is None
 
 
@@ -228,7 +228,7 @@ async def test_ct_connection_sensor_created(
         # Sensor is disabled by default, check entity registry instead of state
         entity_registry = er.async_get(hass)
         entry = entity_registry.async_get(
-            "binary_sensor.marstek_venus_v3_ct_connection"
+            "binary_sensor.venus_ct_connection"
         )
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
@@ -256,7 +256,7 @@ async def test_ct_connection_sensor_created_when_value_missing(
 
         entity_registry = er.async_get(hass)
         entry = entity_registry.async_get(
-            "binary_sensor.marstek_venus_v3_ct_connection"
+            "binary_sensor.venus_ct_connection"
         )
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
@@ -285,7 +285,7 @@ async def test_ct_connection_sensor_disconnected(
         # Sensor is disabled by default, check entity registry instead of state
         entity_registry = er.async_get(hass)
         entry = entity_registry.async_get(
-            "binary_sensor.marstek_venus_v3_ct_connection"
+            "binary_sensor.venus_ct_connection"
         )
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
@@ -311,7 +311,7 @@ async def test_battery_temperature_sensor_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.marstek_venus_v3_battery_temperature")
+        state = hass.states.get("sensor.venus_battery_temperature")
         assert state is not None
         assert state.state == "27.5"
 
@@ -339,7 +339,7 @@ async def test_grid_total_power_sensor_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.marstek_venus_v3_total_power")
+        state = hass.states.get("sensor.venus_total_power")
         assert state is not None
         assert state.state == "360"
 
@@ -368,15 +368,15 @@ async def test_phase_power_sensors_created(
         assert mock_config_entry.state == ConfigEntryState.LOADED
         
         # Check all three phase sensors (entity_id uses sensor_type em_X_power)
-        state_a = hass.states.get("sensor.marstek_venus_v3_phase_a_power")
+        state_a = hass.states.get("sensor.venus_phase_a_power")
         assert state_a is not None
         assert state_a.state == "120"
         
-        state_b = hass.states.get("sensor.marstek_venus_v3_phase_b_power")
+        state_b = hass.states.get("sensor.venus_phase_b_power")
         assert state_b is not None
         assert state_b.state == "115"
         
-        state_c = hass.states.get("sensor.marstek_venus_v3_phase_c_power")
+        state_c = hass.states.get("sensor.venus_phase_c_power")
         assert state_c is not None
         assert state_c.state == "125"
 
@@ -438,88 +438,88 @@ async def test_all_new_sensors_with_full_status(
         # WiFi and CT sensors are disabled by default
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_wifi_signal_strength"
+                "sensor.venus_wifi_signal_strength"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_wi_fi_ip_address"
+                "sensor.venus_wi_fi_ip_address"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_wi_fi_gateway"
+                "sensor.venus_wi_fi_gateway"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_wi_fi_subnet_mask"
+                "sensor.venus_wi_fi_subnet_mask"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_wi_fi_dns"
+                "sensor.venus_wi_fi_dns"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "binary_sensor.marstek_venus_v3_ct_connection"
+                "binary_sensor.venus_ct_connection"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "binary_sensor.marstek_venus_v3_charge_permission"
+                "binary_sensor.venus_charge_permission"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "binary_sensor.marstek_venus_v3_discharge_permission"
+                "binary_sensor.venus_discharge_permission"
             )
             is not None
         )
         
         # Battery temp and grid power are enabled
         assert (
-            hass.states.get("sensor.marstek_venus_v3_battery_temperature")
+            hass.states.get("sensor.venus_battery_temperature")
             is not None
         )
         assert (
-            hass.states.get("sensor.marstek_venus_v3_total_power")
+            hass.states.get("sensor.venus_total_power")
             is not None
         )
-        assert hass.states.get("sensor.marstek_venus_v3_on_grid_power") is not None
-        assert hass.states.get("sensor.marstek_venus_v3_off_grid_power") is not None
+        assert hass.states.get("sensor.venus_on_grid_power") is not None
+        assert hass.states.get("sensor.venus_off_grid_power") is not None
         # PV power (overridden from calculated sum when API returns 0)
-        pv_power = hass.states.get("sensor.marstek_venus_v3_pv_power")
+        pv_power = hass.states.get("sensor.venus_pv_power")
         assert pv_power is not None
         assert float(pv_power.state) == 320.0  # 100 + 120 + 50 + 50
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_battery_remaining_capacity"
+                "sensor.venus_battery_remaining_capacity"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_battery_rated_capacity"
+                "sensor.venus_battery_rated_capacity"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.marstek_venus_v3_battery_total_capacity"
+                "sensor.venus_battery_total_capacity"
             )
             is not None
         )
         
         # Phase sensors (entity_id uses em_X_power)
-        assert hass.states.get("sensor.marstek_venus_v3_phase_a_power") is not None
-        assert hass.states.get("sensor.marstek_venus_v3_phase_b_power") is not None
-        assert hass.states.get("sensor.marstek_venus_v3_phase_c_power") is not None
+        assert hass.states.get("sensor.venus_phase_a_power") is not None
+        assert hass.states.get("sensor.venus_phase_b_power") is not None
+        assert hass.states.get("sensor.venus_phase_c_power") is not None

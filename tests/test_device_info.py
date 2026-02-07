@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.marstek.binary_sensor import BINARY_SENSORS, MarstekBinarySensor
-from custom_components.marstek.device_info import get_device_identifier
+from custom_components.marstek.device_info import build_device_info, get_device_identifier
 
 
 def test_get_device_identifier_requires_mac() -> None:
@@ -28,3 +28,18 @@ def test_binary_sensor_returns_none_when_no_data() -> None:
     entity = MarstekBinarySensor(coordinator, device_info, description)
 
     assert entity.is_on is None
+
+
+def test_build_device_info_formats_device_name() -> None:
+    """Device name should be short and exclude firmware version."""
+    device_info = {
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusA 3.0",
+        "version": 147,
+    }
+
+    device = build_device_info(device_info)
+
+    assert device["name"] == "Venus A (3.0)"
+    assert device["manufacturer"] == "Marstek"
+    assert device["sw_version"] == "147"
