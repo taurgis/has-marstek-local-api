@@ -12,6 +12,11 @@
 - Try `marstek.request_data_sync`.
 - Increase request timeout/failures threshold in [Options](options.md).
 
+Note: Because the device Open API can be unstable, the integration keeps the
+last known values during transient failures. Entities are marked unavailable
+only after the configured "Failures before unavailable" threshold is reached.
+This is expected behavior.
+
 ## Connection instability
 
 - Reduce request rate (increase fast/medium intervals).

@@ -20,6 +20,10 @@ Options also expose request timing knobs to avoid UDP bursts:
 - Request timeout (range 5–60s)
 - Failures before unavailable (range 1–10)
 
+The failures threshold controls when entities are marked unavailable. Until the
+threshold is reached, the integration keeps the last known values to avoid
+flapping on an unstable device API.
+
 <img src="screenshots/device-settings-network.png" alt="Network settings" width="560" />
 
 ## Power / behavior

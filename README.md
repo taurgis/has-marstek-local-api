@@ -260,6 +260,9 @@ python mock_marstek.py
 ### Entities Unavailable
 - Check device connectivity and OPEN API status
 - Review Home Assistant logs for error messages
+- Expected behavior: brief UDP/API failures keep last known values until the
+  "Failures before unavailable" threshold is reached (to avoid flapping on an
+  unstable device API)
 - Try the request_data_sync service
 
 ## Contributing
