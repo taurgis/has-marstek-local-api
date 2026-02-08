@@ -4,6 +4,9 @@ from __future__ import annotations
 
 
 
+import pytest
+import voluptuous as vol
+from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.device_registry import format_mac
@@ -29,6 +32,7 @@ from custom_components.marstek.const import (
     DOMAIN,
     CONF_SOCKET_LIMIT,
 )
+from custom_components.marstek.helpers.flow_schemas import build_manual_entry_schema
 
 from tests.conftest import (
     create_mock_client,
@@ -69,6 +73,44 @@ async def test_user_flow_success(hass: HomeAssistant) -> None:
     assert format_mac(result["data"]["ble_mac"]) == "aa:bb:cc:dd:ee:ff"
 
 
+async def test_user_flow_form_snapshot(
+    hass: HomeAssistant, snapshot
+) -> None:
+    """Test user flow form structure snapshot."""
+    devices = [
+        {
+            "ip": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+            "model": "Venus",
+            "firmware": "3.0",
+        }
+    ]
+
+    with patch_discovery(devices):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+
+    schema = result["data_schema"].schema
+    device_key, validator = next(iter(schema.items()))
+    options = dict(getattr(validator, "container", {}))
+
+    snapshot_data = {
+        "type": result["type"],
+        "step_id": result["step_id"],
+        "errors": result.get("errors"),
+        "description_placeholders": result.get("description_placeholders"),
+        "fields": {str(device_key): options},
+    }
+
+    assert snapshot_data == snapshot
+
+
 async def test_user_flow_no_devices_redirects_to_manual(hass: HomeAssistant) -> None:
     """Test user flow redirects to manual entry when no devices found."""
     with patch_discovery([]):
@@ -79,6 +121,36 @@ async def test_user_flow_no_devices_redirects_to_manual(hass: HomeAssistant) -> 
     # Should redirect to manual entry step when no devices found
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
+
+
+async def test_manual_flow_form_snapshot(
+    hass: HomeAssistant, snapshot
+) -> None:
+    """Test manual entry form structure snapshot."""
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+
+    schema = result["data_schema"].schema
+    fields: dict[str, dict[str, object]] = {}
+    for key in schema:
+        default = getattr(key, "default", None)
+        if default is vol.UNDEFINED:
+            default = None
+        fields[str(key)] = {
+            "required": getattr(key, "required", False),
+            "default": default,
+        }
+
+    snapshot_data = {
+        "type": result["type"],
+        "step_id": result["step_id"],
+        "errors": result.get("errors"),
+        "fields": fields,
+    }
+
+    assert snapshot_data == snapshot
 
 
 async def test_user_flow_cannot_connect_redirects_to_manual(
@@ -471,6 +543,37 @@ async def test_reauth_flow_success(
     assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == "192.168.1.200"
 
 
+async def test_reauth_confirm_form_snapshot(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, snapshot
+) -> None:
+    """Test reauth confirm form structure snapshot."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    assert result["step_id"] == "reauth_confirm"
+
+    schema = result["data_schema"].schema
+    fields: dict[str, dict[str, object]] = {}
+    for key in schema:
+        default = getattr(key, "default", None)
+        if default is vol.UNDEFINED:
+            default = None
+        fields[str(key)] = {
+            "required": getattr(key, "required", False),
+            "default": default,
+        }
+
+    snapshot_data = {
+        "type": result["type"],
+        "step_id": result["step_id"],
+        "errors": result.get("errors"),
+        "description_placeholders": result.get("description_placeholders"),
+        "fields": fields,
+    }
+
+    assert snapshot_data == snapshot
+
+
 async def test_reauth_flow_cannot_connect(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -593,6 +696,17 @@ async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
     assert result["errors"] == {"base": "invalid_discovery_info"}
+
+
+def test_manual_entry_schema_rejects_invalid_port() -> None:
+    """Test manual entry schema rejects ports outside valid range."""
+    schema = build_manual_entry_schema(30000)
+
+    with pytest.raises(vol.Invalid):
+        schema({CONF_HOST: "192.168.1.100", CONF_PORT: 0})
+
+    with pytest.raises(vol.Invalid):
+        schema({CONF_HOST: "192.168.1.100", CONF_PORT: 70000})
 
 
 async def test_reauth_flow_empty_host(

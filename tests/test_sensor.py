@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -66,6 +67,54 @@ async def test_coordinator_failure_marks_entities_unavailable(
     # or should be unavailable if it was created
     if state:
         assert state.state == "unavailable"
+
+
+async def test_entities_recover_after_unavailable(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test entities recover after a failed refresh."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={"failure_threshold": 1}
+    )
+
+    good_status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": -250,
+    }
+
+    client = create_mock_client(status=good_status)
+    client.get_device_status = AsyncMock(
+        side_effect=[
+            good_status,
+            TimeoutError("timeout"),
+            good_status,
+        ]
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_battery_level")
+        assert state is not None
+        assert state.state == "55"
+
+        coordinator = mock_config_entry.runtime_data.coordinator
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_battery_level")
+        assert state is not None
+        assert state.state == "unavailable"
+
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_battery_level")
+        assert state is not None
+        assert state.state == "55"
 
 
 async def test_no_pv_entities_when_data_missing(

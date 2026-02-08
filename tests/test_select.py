@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +13,9 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.marstek.const import MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE
+from custom_components.marstek.const import DOMAIN, MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE
+from custom_components.marstek.helpers.select_descriptions import SELECT_ENTITIES
+from custom_components.marstek.select import MarstekOperatingModeSelect, async_setup_entry
 
 
 def _mock_client(status=None, setup_error=None):
@@ -41,6 +45,7 @@ def _mock_scanner():
     """Create a mock MarstekScanner."""
     scanner = MagicMock()
     scanner.async_setup = AsyncMock(return_value=None)
+    scanner.async_unload = AsyncMock(return_value=None)
     return scanner
 
 
@@ -107,6 +112,31 @@ async def test_select_entity_options(hass: HomeAssistant, mock_config_entry):
     assert MODE_AI in options
     assert MODE_MANUAL in options
     assert MODE_PASSIVE in options
+
+
+async def test_select_setup_missing_udp_client(
+    hass: HomeAssistant, mock_config_entry, caplog
+) -> None:
+    """Test select setup handles missing UDP client."""
+    hass.data.pop(DOMAIN, None)
+    mock_config_entry.add_to_hass(hass)
+
+    device_info = {
+        **mock_config_entry.data,
+        "ip": mock_config_entry.data["host"],
+    }
+    mock_config_entry.runtime_data = SimpleNamespace(
+        coordinator=MagicMock(),
+        device_info=device_info,
+    )
+
+    async_add_entities = MagicMock()
+
+    caplog.set_level(logging.ERROR)
+    await async_setup_entry(hass, mock_config_entry, async_add_entities)
+
+    assert "Shared UDP client not found for select entity setup" in caplog.text
+    async_add_entities.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -301,3 +331,33 @@ async def test_select_passive_manual_blocked(
                 },
                 blocking=True,
             )
+
+
+async def test_select_no_host_configured() -> None:
+    """Test selecting a mode raises error when host is missing."""
+    coordinator = MagicMock()
+    coordinator.async_add_listener.return_value = lambda: None
+    coordinator.last_update_success = True
+    coordinator.data = {"device_mode": MODE_AUTO}
+
+    config_entry = MagicMock()
+    config_entry.data = {}
+
+    device_info = {
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus",
+        "version": 3,
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+
+    entity = MarstekOperatingModeSelect(
+        coordinator,
+        device_info,
+        SELECT_ENTITIES[0],
+        MagicMock(),
+        config_entry,
+    )
+
+    with pytest.raises(HomeAssistantError, match="no_host_configured"):
+        await entity.async_select_option(MODE_AUTO)

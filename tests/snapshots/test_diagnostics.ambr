@@ -1,0 +1,70 @@
+# serializer version: 1
+# name: test_diagnostics_snapshot
+  dict({
+    'command_stats': dict({
+      'ES.GetStatus': dict({
+        'last_error': 'timeout',
+        'last_latency': None,
+        'last_success': False,
+        'last_timeout': True,
+        'last_updated': '2025-01-29T17:00:01+00:00',
+        'success_rate': 0.5,
+        'timeout_rate': 0.5,
+        'total_attempts': 2,
+        'total_failures': 0,
+        'total_success': 1,
+        'total_timeouts': 1,
+      }),
+    }),
+    'coordinator': dict({
+      'consecutive_failures': 0,
+      'diagnostics_generated_at': '2026-01-27T10:30:10+00:00',
+      'last_update_attempt_time': '2026-01-27T10:30:00+00:00',
+      'last_update_success': True,
+      'last_update_success_time': '2026-01-27T10:30:00+00:00',
+      'time_since_last_attempt': '10.0 seconds ago',
+      'time_since_last_success': '10.0 seconds ago',
+    }),
+    'coordinator_data': dict({
+      'SSID': '**REDACTED**',
+      'battery_level': 75,
+      'bleMac': '**REDACTED**',
+      'device_mode': 'Auto',
+      'grid_power': 500,
+      'ip': '**REDACTED**',
+    }),
+    'device_info': dict({
+      'ble_mac': '**REDACTED**',
+      'device_type': 'Venus',
+      'ip': '**REDACTED**',
+      'mac': '**REDACTED**',
+      'version': 1,
+      'wifi_mac': '**REDACTED**',
+      'wifi_name': '**REDACTED**',
+    }),
+    'entry': dict({
+      'data': dict({
+        'ble_mac': '**REDACTED**',
+        'device_type': 'Venus',
+        'host': '**REDACTED**',
+        'mac': '**REDACTED**',
+        'version': 1,
+        'wifi_mac': '**REDACTED**',
+        'wifi_name': '**REDACTED**',
+      }),
+      'options': dict({
+        'poll_interval_fast': 30,
+      }),
+      'title': 'Test Marstek Device',
+    }),
+    'last_exception': None,
+    'polling_config': dict({
+      'failure_threshold': 3,
+      'poll_interval_fast': 30,
+      'poll_interval_medium': 60,
+      'poll_interval_slow': 300,
+      'request_delay': 5.0,
+      'request_timeout': 10.0,
+    }),
+  })
+# ---

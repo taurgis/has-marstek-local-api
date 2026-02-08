@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -353,6 +354,9 @@ async def test_clear_manual_schedules_service(
 
         # Verify commands were sent (10 slots cleared)
         assert client.send_request.call_count >= 10
+        # Polling should be paused/resumed once for the batch
+        assert client.pause_polling.call_count == 1
+        assert client.resume_polling.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -515,6 +519,9 @@ async def test_set_manual_schedules_service(
 
         # Verify commands were sent (1 for setup + 2 for schedules)
         assert client.send_request.call_count >= 2
+        # Polling should be paused/resumed once for the batch
+        assert client.pause_polling.call_count == 1
+        assert client.resume_polling.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -809,3 +816,61 @@ async def test_request_data_sync_service_all_devices(
 
             # Verify coordinator refresh was requested
             mock_refresh.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_request_data_sync_skips_unloaded_entries(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test request_data_sync only refreshes loaded entries with runtime_data."""
+    mock_config_entry.add_to_hass(hass)
+
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Add a second loaded entry with runtime_data
+        second_entry = MockConfigEntry(
+            domain=DOMAIN,
+            unique_id="bb:cc:dd:ee:ff:00",
+            data={
+                "host": "5.6.7.8",
+                "ble_mac": "BB:CC:DD:EE:FF:00",
+            },
+        )
+        second_entry.add_to_hass(hass)
+        second_entry.runtime_data = SimpleNamespace(
+            coordinator=AsyncMock(),
+        )
+        second_entry.mock_state(hass, ConfigEntryState.LOADED)
+
+        # Add an unloaded entry with runtime_data to ensure it is skipped
+        third_entry = MockConfigEntry(
+            domain=DOMAIN,
+            unique_id="cc:dd:ee:ff:00:11",
+            data={
+                "host": "9.9.9.9",
+                "ble_mac": "CC:DD:EE:FF:00:11",
+            },
+        )
+        third_entry.add_to_hass(hass)
+        third_entry.runtime_data = SimpleNamespace(
+            coordinator=AsyncMock(),
+        )
+        third_entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
+
+        coordinator = mock_config_entry.runtime_data.coordinator
+        with patch.object(
+            coordinator, "async_request_refresh", new_callable=AsyncMock
+        ) as mock_refresh:
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_REQUEST_DATA_SYNC,
+                {},
+                blocking=True,
+            )
+
+            mock_refresh.assert_called_once()
+            second_entry.runtime_data.coordinator.async_request_refresh.assert_called_once()
+            third_entry.runtime_data.coordinator.async_request_refresh.assert_not_called()

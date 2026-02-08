@@ -1,0 +1,52 @@
+# serializer version: 1
+# name: test_manual_flow_form_snapshot
+  dict({
+    'errors': dict({
+    }),
+    'fields': dict({
+      'host': dict({
+        'default': None,
+        'required': False,
+      }),
+      'port': dict({
+        'default': 'default_factory.<locals>.<lambda>()',
+        'required': False,
+      }),
+    }),
+    'step_id': 'manual',
+    'type': <FlowResultType.FORM: 'form'>,
+  })
+# ---
+# name: test_reauth_confirm_form_snapshot
+  dict({
+    'description_placeholders': dict({
+      'host': '1.2.3.4',
+      'name': 'Mock Title',
+    }),
+    'errors': dict({
+    }),
+    'fields': dict({
+      'host': dict({
+        'default': 'default_factory.<locals>.<lambda>()',
+        'required': False,
+      }),
+    }),
+    'step_id': 'reauth_confirm',
+    'type': <FlowResultType.FORM: 'form'>,
+  })
+# ---
+# name: test_user_flow_form_snapshot
+  dict({
+    'description_placeholders': dict({
+      'already_configured': '',
+    }),
+    'errors': None,
+    'fields': dict({
+      'device': dict({
+        '0': 'Venus v3 (marstek) - 1.2.3.4',
+      }),
+    }),
+    'step_id': 'user',
+    'type': <FlowResultType.FORM: 'form'>,
+  })
+# ---

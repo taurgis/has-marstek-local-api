@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -197,6 +197,38 @@ async def test_diagnostics_with_simple_exception(
     assert "cause" not in exc_info
 
 
+async def test_diagnostics_redacts_exception_message(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Test diagnostics redact IP/MAC from exception messages and tracebacks."""
+    error = Exception("Polling failed for 192.168.1.100 (AA:BB:CC:DD:EE:FF)")
+    error.__cause__ = OSError("Device 192.168.1.100 MAC aa:bb:cc:dd:ee:ff")
+
+    mock_runtime_data.coordinator.last_exception = error
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    exc_info = result["last_exception"]
+    assert exc_info is not None
+
+    message = exc_info["message"]
+    assert "192.168.1.100" not in message
+    assert "AA:BB:CC:DD:EE:FF" not in message
+    assert "**REDACTED**" in message
+
+    cause_message = exc_info["cause"]["message"]
+    assert "192.168.1.100" not in cause_message
+    assert "aa:bb:cc:dd:ee:ff" not in cause_message
+    assert "**REDACTED**" in cause_message
+
+    traceback_text = "\n".join(exc_info["traceback"])
+    assert "192.168.1.100" not in traceback_text
+    assert "AA:BB:CC:DD:EE:FF" not in traceback_text
+
+
 async def test_diagnostics_with_empty_coordinator_data(
     hass: HomeAssistant,
     mock_config_entry: MagicMock,
@@ -266,3 +298,41 @@ async def test_diagnostics_without_last_update_time(
     assert result["coordinator"]["last_update_attempt_time"] is None
     assert result["coordinator"]["time_since_last_attempt"] is None
     assert result["coordinator"]["consecutive_failures"] == 0
+
+
+async def test_diagnostics_snapshot(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+    snapshot,
+) -> None:
+    """Test diagnostics output snapshot for regression coverage."""
+    fixed_now = datetime(2026, 1, 27, 10, 30, 10, tzinfo=timezone.utc)
+    last_time = fixed_now - timedelta(seconds=10)
+
+    mock_runtime_data.coordinator.device_ip = "192.168.1.100"
+    mock_runtime_data.coordinator.last_update_success_time = last_time
+    mock_runtime_data.coordinator.last_update_attempt_time = last_time
+    mock_runtime_data.coordinator.consecutive_failures = 0
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    udp_client = MagicMock()
+    udp_client.get_command_stats_for_ip.return_value = {
+        "ES.GetStatus": {
+            "total_attempts": 2,
+            "total_success": 1,
+            "total_timeouts": 1,
+            "total_failures": 0,
+            "last_success": False,
+            "last_latency": None,
+            "last_timeout": True,
+            "last_error": "timeout",
+            "last_updated": 1738170001.0,
+        }
+    }
+    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENT] = udp_client
+
+    with patch("custom_components.marstek.diagnostics.dt_util.now", return_value=fixed_now):
+        result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    assert result == snapshot
