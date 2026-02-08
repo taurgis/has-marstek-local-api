@@ -653,6 +653,41 @@ async def test_reconfigure_flow_success(
     assert updated_entry.data["port"] == 30000
 
 
+async def test_reconfigure_confirm_form_snapshot(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, snapshot
+) -> None:
+    """Test reconfigure confirm form structure snapshot."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": mock_config_entry.entry_id},
+        data=None,
+    )
+    assert result["step_id"] == "reconfigure_confirm"
+
+    schema = result["data_schema"].schema
+    fields: dict[str, dict[str, object]] = {}
+    for key in schema:
+        default = getattr(key, "default", None)
+        if default is vol.UNDEFINED:
+            default = None
+        fields[str(key)] = {
+            "required": getattr(key, "required", False),
+            "default": default,
+        }
+
+    snapshot_data = {
+        "type": result["type"],
+        "step_id": result["step_id"],
+        "errors": result.get("errors"),
+        "description_placeholders": result.get("description_placeholders"),
+        "fields": fields,
+    }
+
+    assert snapshot_data == snapshot
+
+
 async def test_reconfigure_flow_cannot_connect(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
