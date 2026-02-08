@@ -19,7 +19,7 @@ from .const import DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
 from .coordinator import MarstekDataUpdateCoordinator
 from .pymarstek import MarstekUDPClient, get_es_mode
 from .scanner import MarstekScanner
-from .services import async_setup_services, async_unload_services
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,7 +88,6 @@ async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
     # Remove domain data entirely when last entry is unloaded
     hass.data.pop(DOMAIN, None)
 
-    await async_unload_services(hass)
 
 
 async def _get_or_create_shared_udp_client(hass: HomeAssistant) -> MarstekUDPClient:

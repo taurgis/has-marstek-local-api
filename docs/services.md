@@ -6,6 +6,10 @@ The integration exposes services for advanced control and automation.
 
 All services target a device via `device_id` (select the Marstek device).
 
+Services are registered when Home Assistant starts and remain available even if
+no Marstek devices are currently loaded. If no matching device or config entry
+is available, the service call will return an error.
+
 ## `marstek.set_passive_mode`
 
 Set passive mode with a target power and duration.

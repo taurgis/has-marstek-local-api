@@ -266,8 +266,8 @@ async def test_last_entry_unload_cleans_up_shared_client(
         marstek_data = hass.data.get(DOMAIN)
         if marstek_data is not None:
             assert DATA_UDP_CLIENT not in marstek_data
-        # Services should be unregistered
-        assert not hass.services.has_service(DOMAIN, "set_passive_mode")
+        # Services remain registered for the integration lifetime
+        assert hass.services.has_service(DOMAIN, "set_passive_mode")
 
 
 async def test_repair_issue_created_on_failure(
