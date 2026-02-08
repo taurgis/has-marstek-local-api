@@ -712,7 +712,7 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(
                         min=30,
-                        max=600,
+                        max=86400,
                         step=10,
                         unit_of_measurement="seconds",
                         mode=NumberSelectorMode.BOX,
@@ -724,7 +724,7 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(
                         min=60,
-                        max=1800,
+                        max=86400,
                         step=30,
                         unit_of_measurement="seconds",
                         mode=NumberSelectorMode.BOX,
