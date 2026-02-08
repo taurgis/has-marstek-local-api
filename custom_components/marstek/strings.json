@@ -275,6 +275,30 @@
       },
       "pv4_state": {
         "name": "PV4 state"
+      },
+      "api_success_rate_overall": {
+        "name": "API success rate (overall)"
+      },
+      "api_success_rate_es_get_mode": {
+        "name": "API success rate (ES.GetMode)"
+      },
+      "api_success_rate_es_get_status": {
+        "name": "API success rate (ES.GetStatus)"
+      },
+      "api_success_rate_em_get_status": {
+        "name": "API success rate (EM.GetStatus)"
+      },
+      "api_success_rate_pv_get_status": {
+        "name": "API success rate (PV.GetStatus)"
+      },
+      "api_success_rate_wifi_get_status": {
+        "name": "API success rate (Wifi.GetStatus)"
+      },
+      "api_success_rate_bat_get_status": {
+        "name": "API success rate (Bat.GetStatus)"
+      },
+      "api_success_rate_es_set_mode": {
+        "name": "API success rate (ES.SetMode)"
       }
     },
     "select": {

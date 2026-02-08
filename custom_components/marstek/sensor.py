@@ -33,6 +33,15 @@ from . import MarstekConfigEntry
 from .const import OPERATING_MODES
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
+from .pymarstek.const import (
+    CMD_BATTERY_STATUS,
+    CMD_EM_STATUS,
+    CMD_ES_MODE,
+    CMD_ES_SET_MODE,
+    CMD_ES_STATUS,
+    CMD_PV_GET_STATUS,
+    CMD_WIFI_STATUS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +58,14 @@ class MarstekSensorEntityDescription(SensorEntityDescription):  # type: ignore[m
         ],
         StateType,
     ]
+    attributes_fn: Callable[
+        [
+            MarstekDataUpdateCoordinator,
+            dict[str, Any],
+            ConfigEntry | None,
+        ],
+        dict[str, Any] | None,
+    ] | None = None
     exists_fn: Callable[[dict[str, Any]], bool] = lambda data: True
 
 
@@ -61,6 +78,151 @@ def _value_from_data(key: str, data: dict[str, Any]) -> StateType:
 
 def _exists_key_with_value(key: str, data: dict[str, Any]) -> bool:
     return key in data and data.get(key) is not None
+
+
+def _command_success_rate(
+    coordinator: MarstekDataUpdateCoordinator, method: str
+) -> float | None:
+    stats = coordinator.udp_client.get_command_stats_for_ip(coordinator.device_ip)
+    if not isinstance(stats, dict):
+        return None
+    bucket = stats.get(method)
+    if not isinstance(bucket, dict):
+        return None
+    attempts = bucket.get("total_attempts")
+    success = bucket.get("total_success")
+    if not isinstance(attempts, (int, float)) or not isinstance(success, (int, float)):
+        return None
+    if attempts <= 0:
+        return None
+    return (success / attempts) * 100.0
+
+
+def _command_stats_attributes(
+    coordinator: MarstekDataUpdateCoordinator, method: str
+) -> dict[str, Any] | None:
+    stats = coordinator.udp_client.get_command_stats_for_ip(coordinator.device_ip)
+    if not isinstance(stats, dict):
+        return None
+    bucket = stats.get(method)
+    if not isinstance(bucket, dict):
+        return None
+    attributes = {
+        "total_attempts": bucket.get("total_attempts"),
+        "total_success": bucket.get("total_success"),
+        "total_timeouts": bucket.get("total_timeouts"),
+        "total_failures": bucket.get("total_failures"),
+        "last_success": bucket.get("last_success"),
+        "last_timeout": bucket.get("last_timeout"),
+        "last_error": bucket.get("last_error"),
+        "last_latency": bucket.get("last_latency"),
+        "last_updated": bucket.get("last_updated"),
+    }
+    return {key: value for key, value in attributes.items() if value is not None}
+
+
+def _overall_command_success_rate(
+    coordinator: MarstekDataUpdateCoordinator,
+) -> float | None:
+    stats = coordinator.udp_client.get_command_stats_for_ip(coordinator.device_ip)
+    if not isinstance(stats, dict):
+        return None
+    attempts_total = 0.0
+    success_total = 0.0
+    for bucket in stats.values():
+        if not isinstance(bucket, dict):
+            continue
+        attempts = bucket.get("total_attempts")
+        success = bucket.get("total_success")
+        if not isinstance(attempts, (int, float)) or not isinstance(
+            success, (int, float)
+        ):
+            continue
+        attempts_total += float(attempts)
+        success_total += float(success)
+    if attempts_total <= 0:
+        return None
+    return (success_total / attempts_total) * 100.0
+
+
+def _overall_command_stats_attributes(
+    coordinator: MarstekDataUpdateCoordinator,
+) -> dict[str, Any] | None:
+    stats = coordinator.udp_client.get_command_stats_for_ip(coordinator.device_ip)
+    if not isinstance(stats, dict):
+        return None
+    attempts_total = 0
+    success_total = 0
+    timeout_total = 0
+    failure_total = 0
+    has_data = False
+    for bucket in stats.values():
+        if not isinstance(bucket, dict):
+            continue
+        attempts = bucket.get("total_attempts")
+        success = bucket.get("total_success")
+        if not isinstance(attempts, (int, float)):
+            continue
+        if not isinstance(success, (int, float)):
+            continue
+        timeouts = bucket.get("total_timeouts", 0)
+        failures = bucket.get("total_failures", 0)
+        timeout_value = timeouts if isinstance(timeouts, (int, float)) else 0
+        failure_value = failures if isinstance(failures, (int, float)) else 0
+        attempts_total += int(attempts)
+        success_total += int(success)
+        timeout_total += int(timeout_value)
+        failure_total += int(failure_value)
+        has_data = True
+    if not has_data:
+        return None
+    attributes = {
+        "total_attempts": attempts_total,
+        "total_success": success_total,
+        "total_timeouts": timeout_total,
+        "total_failures": failure_total,
+    }
+    return {key: value for key, value in attributes.items() if value is not None}
+
+
+def _api_success_rate_sensor(
+    method: str, translation_key: str
+) -> MarstekSensorEntityDescription:
+    return MarstekSensorEntityDescription(
+        key=translation_key,
+        translation_key=translation_key,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        suggested_display_precision=1,
+        value_fn=lambda coordinator, _info, _entry, method=method: (  # type: ignore[misc]
+            _command_success_rate(coordinator, method)
+        ),
+        attributes_fn=lambda coordinator, _info, _entry, method=method: (  # type: ignore[misc]
+            _command_stats_attributes(coordinator, method)
+        ),
+    )
+
+
+def _overall_success_rate_sensor(
+    translation_key: str,
+) -> MarstekSensorEntityDescription:
+    return MarstekSensorEntityDescription(
+        key=translation_key,
+        translation_key=translation_key,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        suggested_display_precision=1,
+        value_fn=lambda coordinator, _info, _entry: (
+            _overall_command_success_rate(coordinator)
+        ),
+        attributes_fn=lambda coordinator, _info, _entry: (
+            _overall_command_stats_attributes(coordinator)
+        ),
+    )
 
 
 SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
@@ -359,6 +521,18 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
 )
 
 
+API_STABILITY_SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
+    _overall_success_rate_sensor("api_success_rate_overall"),
+    _api_success_rate_sensor(CMD_ES_MODE, "api_success_rate_es_get_mode"),
+    _api_success_rate_sensor(CMD_ES_STATUS, "api_success_rate_es_get_status"),
+    _api_success_rate_sensor(CMD_EM_STATUS, "api_success_rate_em_get_status"),
+    _api_success_rate_sensor(CMD_PV_GET_STATUS, "api_success_rate_pv_get_status"),
+    _api_success_rate_sensor(CMD_WIFI_STATUS, "api_success_rate_wifi_get_status"),
+    _api_success_rate_sensor(CMD_BATTERY_STATUS, "api_success_rate_bat_get_status"),
+    _api_success_rate_sensor(CMD_ES_SET_MODE, "api_success_rate_es_set_mode"),
+)
+
+
 def _pv_sensor_descriptions() -> tuple[MarstekSensorEntityDescription, ...]:
     """Generate PV sensor descriptions with appropriate display precision."""
     descriptions: list[MarstekSensorEntityDescription] = []
@@ -427,6 +601,15 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], SensorEntit
             self.coordinator, self._device_info, self._config_entry
         )
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes for the sensor."""
+        if not self.entity_description.attributes_fn:
+            return None
+        return self.entity_description.attributes_fn(
+            self.coordinator, self._device_info, self._config_entry
+        )
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -442,7 +625,7 @@ async def async_setup_entry(
     data = coordinator.data or {}
 
     sensors: list[MarstekSensor] = []
-    for description in (*SENSORS, *PV_SENSORS):
+    for description in (*SENSORS, *PV_SENSORS, *API_STABILITY_SENSORS):
         if description.exists_fn(data):
             sensors.append(
                 MarstekSensor(

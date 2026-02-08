@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.marstek.sensor import (
+    _api_success_rate_sensor,
+    _command_success_rate,
+    _command_stats_attributes,
+    _overall_command_stats_attributes,
+    _overall_command_success_rate,
+)
 
 from tests.conftest import create_mock_client, patch_marstek_integration
 
@@ -202,6 +212,41 @@ async def test_wifi_rssi_sensor_not_created_when_missing(
 
         state = hass.states.get("sensor.venus_wifi_signal_strength")
         assert state is None
+
+
+    async def test_api_stability_sensors_disabled_by_default(
+        hass: HomeAssistant, mock_config_entry: MockConfigEntry
+    ) -> None:
+        """Test API stability sensors are created but disabled by default."""
+        mock_config_entry.add_to_hass(hass)
+
+        status = {
+            "device_mode": "auto",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+
+        client = create_mock_client(status=status)
+
+        with patch_marstek_integration(client=client):
+            await hass.config_entries.async_setup(mock_config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            entity_registry = er.async_get(hass)
+            entity_ids = [
+                "sensor.venus_api_success_rate_overall",
+                "sensor.venus_api_success_rate_es_get_mode",
+                "sensor.venus_api_success_rate_es_get_status",
+                "sensor.venus_api_success_rate_em_get_status",
+                "sensor.venus_api_success_rate_pv_get_status",
+                "sensor.venus_api_success_rate_wifi_get_status",
+                "sensor.venus_api_success_rate_bat_get_status",
+                "sensor.venus_api_success_rate_es_set_mode",
+            ]
+            for entity_id in entity_ids:
+                entry = entity_registry.async_get(entity_id)
+                assert entry is not None
+                assert entry.disabled_by is not None
 
 
 async def test_ct_connection_sensor_created(
@@ -523,3 +568,91 @@ async def test_all_new_sensors_with_full_status(
         assert hass.states.get("sensor.venus_phase_a_power") is not None
         assert hass.states.get("sensor.venus_phase_b_power") is not None
         assert hass.states.get("sensor.venus_phase_c_power") is not None
+
+
+def test_command_success_rate_calculates_percentage() -> None:
+    """Test API success rate calculation with valid stats."""
+    coordinator = SimpleNamespace(
+        device_ip="1.2.3.4",
+        udp_client=SimpleNamespace(
+            get_command_stats_for_ip=lambda _ip: {
+                "ES.GetStatus": {"total_attempts": 4, "total_success": 3}
+            }
+        ),
+    )
+
+    rate = _command_success_rate(coordinator, "ES.GetStatus")
+    assert rate == 75.0
+
+    attrs = _command_stats_attributes(coordinator, "ES.GetStatus")
+    assert attrs == {
+        "total_attempts": 4,
+        "total_success": 3,
+    }
+
+
+def test_command_success_rate_returns_none_with_no_attempts() -> None:
+    """Test API success rate returns None when no attempts were recorded."""
+    coordinator = SimpleNamespace(
+        device_ip="1.2.3.4",
+        udp_client=SimpleNamespace(
+            get_command_stats_for_ip=lambda _ip: {
+                "ES.GetStatus": {"total_attempts": 0, "total_success": 0}
+            }
+        ),
+    )
+
+    rate = _command_success_rate(coordinator, "ES.GetStatus")
+    assert rate is None
+
+    attrs = _command_stats_attributes(coordinator, "ES.GetStatus")
+    assert attrs == {
+        "total_attempts": 0,
+        "total_success": 0,
+    }
+
+
+def test_api_success_rate_sensor_value_fn() -> None:
+    """Test API success rate sensor description value function."""
+    coordinator = SimpleNamespace(
+        device_ip="1.2.3.4",
+        udp_client=SimpleNamespace(
+            get_command_stats_for_ip=lambda _ip: {
+                "ES.GetMode": {"total_attempts": 10, "total_success": 9}
+            }
+        ),
+    )
+
+    description = _api_success_rate_sensor("ES.GetMode", "api_success_rate_es_get_mode")
+    value = description.value_fn(coordinator, {}, None)
+    assert value == 90.0
+
+    attrs = description.attributes_fn(coordinator, {}, None)
+    assert attrs == {
+        "total_attempts": 10,
+        "total_success": 9,
+    }
+
+
+def test_overall_command_success_rate() -> None:
+    """Test overall API success rate aggregation."""
+    coordinator = SimpleNamespace(
+        device_ip="1.2.3.4",
+        udp_client=SimpleNamespace(
+            get_command_stats_for_ip=lambda _ip: {
+                "ES.GetMode": {"total_attempts": 5, "total_success": 5},
+                "ES.GetStatus": {"total_attempts": 5, "total_success": 3},
+            }
+        ),
+    )
+
+    rate = _overall_command_success_rate(coordinator)
+    assert rate == 80.0
+
+    attrs = _overall_command_stats_attributes(coordinator)
+    assert attrs == {
+        "total_attempts": 10,
+        "total_success": 8,
+        "total_timeouts": 0,
+        "total_failures": 0,
+    }

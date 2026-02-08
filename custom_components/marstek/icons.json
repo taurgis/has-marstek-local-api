@@ -137,6 +137,30 @@
       },
       "total_load_energy": {
         "default": "mdi:home-lightning-bolt"
+      },
+      "api_success_rate_overall": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_es_get_mode": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_es_get_status": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_em_get_status": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_pv_get_status": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_wifi_get_status": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_bat_get_status": {
+        "default": "mdi:percent"
+      },
+      "api_success_rate_es_set_mode": {
+        "default": "mdi:percent"
       }
     },
     "binary_sensor": {
