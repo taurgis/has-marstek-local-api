@@ -10,7 +10,7 @@ import pytest
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -144,7 +144,7 @@ async def test_set_passive_mode_power_out_of_range_socket_limit_default(
         )
         assert device is not None
 
-        with pytest.raises(HomeAssistantError, match="Requested power"):
+        with pytest.raises(ServiceValidationError, match="Requested power"):
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_PASSIVE_MODE,
@@ -372,7 +372,7 @@ async def test_service_invalid_device_id(
         await hass.async_block_till_done()
 
         # Call service with invalid device ID
-        with pytest.raises(HomeAssistantError, match="invalid_device"):
+        with pytest.raises(ServiceValidationError, match="invalid_device"):
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_PASSIVE_MODE,
@@ -631,7 +631,7 @@ async def test_set_manual_schedules_power_out_of_range(
         )
         assert device is not None
 
-        with pytest.raises(HomeAssistantError, match="Requested power"):
+        with pytest.raises(ServiceValidationError, match="Requested power"):
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_MANUAL_SCHEDULES,
@@ -677,7 +677,7 @@ async def test_set_manual_schedules_mixed_invalid_entry(
         )
         assert device is not None
 
-        with pytest.raises(HomeAssistantError, match="Requested power"):
+        with pytest.raises(ServiceValidationError, match="Requested power"):
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_MANUAL_SCHEDULES,
@@ -734,7 +734,7 @@ async def test_set_passive_mode_unknown_device_type_out_of_range(
         )
         assert device is not None
 
-        with pytest.raises(HomeAssistantError, match="Requested power"):
+        with pytest.raises(ServiceValidationError, match="Requested power"):
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_PASSIVE_MODE,
