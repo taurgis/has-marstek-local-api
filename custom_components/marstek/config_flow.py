@@ -95,10 +95,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # BLE-MAC is more stable than WiFi MAC and ensures device history continuity
             formatted_unique_id = get_unique_id_from_device_info(device)
             if not formatted_unique_id:
-                return self.async_show_form(
-                    step_id="user",
-                    data_schema=vol.Schema({}),
-                    errors={"base": "invalid_discovery_info"},
+                return await self.async_step_manual(
+                    errors={"base": "invalid_discovery_info"}
                 )
 
             await self.async_set_unique_id(formatted_unique_id)

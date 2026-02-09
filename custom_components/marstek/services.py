@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 
 from .const import API_MODE_PASSIVE, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN
@@ -52,7 +52,7 @@ def _get_device_id_from_call(call: ServiceCall) -> str:
     """Extract device_id from service call data."""
     device_id = call.data.get(ATTR_DEVICE_ID)
     if not device_id:
-        raise HomeAssistantError(
+        raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="no_device_specified",
         )
@@ -67,7 +67,7 @@ def _get_entry_and_client_from_device_id(
     device = device_registry.async_get(device_id)
 
     if not device:
-        raise HomeAssistantError(
+        raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="invalid_device",
             translation_placeholders={"device_id": device_id},
@@ -84,16 +84,18 @@ def _get_entry_and_client_from_device_id(
             if host and udp_client:
                 return entry, udp_client, host, int(port)
 
-    raise HomeAssistantError(
+    raise ServiceValidationError(
         translation_domain=DOMAIN,
         translation_key="no_config_entry",
         translation_placeholders={"device_id": device_id},
     )
 
 
-def _power_error(requested: int, min_power: int, max_power: int) -> HomeAssistantError:
+def _power_error(
+    requested: int, min_power: int, max_power: int
+) -> ServiceValidationError:
     """Build a power validation error for service calls."""
-    return HomeAssistantError(
+    return ServiceValidationError(
         translation_domain=DOMAIN,
         translation_key="power_out_of_range",
         translation_placeholders={
