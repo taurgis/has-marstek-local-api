@@ -21,6 +21,9 @@ This is expected behavior.
 
 - Reduce request rate (increase fast/medium intervals).
 - Ensure only one controller is talking to the device.
+- If **Parallel API requests** is enabled, try disabling it first (especially on Wi-Fi).
+- In diagnostics, check `polling_config.request_strategy` and
+  `polling_config.request_delay_effective` to confirm actual request behavior.
 
 ## Venus E2.0
 
