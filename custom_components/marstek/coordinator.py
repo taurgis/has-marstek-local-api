@@ -17,12 +17,14 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_FAILURE_THRESHOLD,
+    CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
     DEFAULT_FAILURE_THRESHOLD,
+    DEFAULT_PARALLEL_API_REQUESTS,
     DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_POLL_INTERVAL_MEDIUM,
     DEFAULT_POLL_INTERVAL_SLOW,
@@ -177,6 +179,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
         ))
 
+    def _use_parallel_api_requests(self) -> bool:
+        """Return True when polling should call status APIs in parallel."""
+        return bool(
+            self._entry.options.get(
+                CONF_PARALLEL_API_REQUESTS,
+                DEFAULT_PARALLEL_API_REQUESTS,
+            )
+        )
+
     def finish_initial_setup(self) -> None:
         """Mark initial setup as complete.
 
@@ -187,6 +198,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _get_request_delay(self) -> float:
         """Get delay between requests from options, or fast delay for initial setup."""
+        if self._use_parallel_api_requests():
+            return 0.0
         if self._is_initial_setup:
             return INITIAL_SETUP_REQUEST_DELAY
         return float(self._entry.options.get(
@@ -262,6 +275,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Determine which data types to fetch based on elapsed time
         current_time = time.monotonic()
+        parallel_requests = self._use_parallel_api_requests()
         request_delay = self._get_request_delay()
 
         include_pv, include_wifi, include_slow = self._select_polling_tiers(
@@ -272,11 +286,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         request_timeout = self._get_request_timeout()
 
         _LOGGER.debug(
-            "Polling tiers for %s: fast=always, pv=%s, wifi=%s, bat=%s",
+            "Polling tiers for %s: fast=always, pv=%s, wifi=%s, bat=%s, parallel=%s",
             current_ip,
             include_pv,
             include_wifi,
             include_slow,
+            parallel_requests,
         )
 
         try:
@@ -291,6 +306,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 include_wifi=include_wifi,
                 include_em=True,  # Always fetch - fast tier
                 include_bat=include_slow,
+                parallel_requests=parallel_requests,
                 delay_between_requests=request_delay,
                 previous_status=self.data,  # Preserve values on partial failures
             )

@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 from . import MarstekConfigEntry
 from .const import (
     CONF_FAILURE_THRESHOLD,
+    CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -22,6 +23,7 @@ from .const import (
     CONF_REQUEST_TIMEOUT,
     DATA_UDP_CLIENT,
     DEFAULT_FAILURE_THRESHOLD,
+    DEFAULT_PARALLEL_API_REQUESTS,
     DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_POLL_INTERVAL_MEDIUM,
     DEFAULT_POLL_INTERVAL_SLOW,
@@ -119,6 +121,16 @@ def _summarize_command_stats(stats: dict[str, Any]) -> dict[str, Any]:
 
 def _build_polling_config(entry: MarstekConfigEntry) -> dict[str, Any]:
     """Build polling configuration from entry options."""
+    parallel_enabled = bool(
+        entry.options.get(
+            CONF_PARALLEL_API_REQUESTS,
+            DEFAULT_PARALLEL_API_REQUESTS,
+        )
+    )
+    configured_delay = float(
+        entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY)
+    )
+
     return {
         "poll_interval_fast": entry.options.get(
             CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST
@@ -129,7 +141,11 @@ def _build_polling_config(entry: MarstekConfigEntry) -> dict[str, Any]:
         "poll_interval_slow": entry.options.get(
             CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
         ),
-        "request_delay": entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY),
+        "parallel_api_requests": parallel_enabled,
+        "request_strategy": "parallel" if parallel_enabled else "sequential",
+        "request_delay": configured_delay,
+        "request_delay_effective": 0.0 if parallel_enabled else configured_delay,
+        "udp_rate_limit_bypassed": parallel_enabled,
         "request_timeout": entry.options.get(
             CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
         ),

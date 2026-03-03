@@ -93,7 +93,8 @@ After setup, you can adjust polling and request behavior in **Device → Configu
 - **Fast polling interval** (default: 30s): ES.GetMode, ES.GetStatus, EM.GetStatus (real-time power)
 - **Medium polling interval** (default: 60s): PV.GetStatus (solar data, Venus A/D only)
 - **Slow polling interval** (default: 300s): Wifi.GetStatus, Bat.GetStatus (diagnostics)
-- **Request delay** (default: 10s): Delay between consecutive UDP requests
+- **Parallel API requests** (default: off): Send enabled status APIs concurrently with no inter-request delay (advanced; can be less stable on Wi-Fi)
+- **Request delay** (default: 5s): Delay between consecutive UDP requests in sequential mode (ignored when parallel API requests is enabled)
 - **Request timeout** (default: 10s): Per-request timeout before retry/fail
 - **Failures before unavailable** (default: 3): Consecutive failures before entities become unavailable
 

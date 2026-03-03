@@ -38,6 +38,7 @@ from .const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
     CONF_FAILURE_THRESHOLD,
+    CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -47,6 +48,7 @@ from .const import (
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
     DEFAULT_FAILURE_THRESHOLD,
+    DEFAULT_PARALLEL_API_REQUESTS,
     DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_POLL_INTERVAL_MEDIUM,
     DEFAULT_POLL_INTERVAL_SLOW,
@@ -578,6 +580,10 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
         current_slow = self.config_entry.options.get(
             CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
         )
+        current_parallel_requests = self.config_entry.options.get(
+            CONF_PARALLEL_API_REQUESTS,
+            DEFAULT_PARALLEL_API_REQUESTS,
+        )
         current_delay = self.config_entry.options.get(
             CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
         )
@@ -606,6 +612,7 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
         )
 
         network_schema = build_network_schema(
+            current_parallel_requests=current_parallel_requests,
             current_delay=current_delay,
             current_timeout=current_timeout,
             current_failure_threshold=current_failure_threshold,

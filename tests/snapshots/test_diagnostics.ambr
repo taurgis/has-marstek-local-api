@@ -60,11 +60,15 @@
     'last_exception': None,
     'polling_config': dict({
       'failure_threshold': 3,
+      'parallel_api_requests': False,
       'poll_interval_fast': 30,
       'poll_interval_medium': 60,
       'poll_interval_slow': 300,
       'request_delay': 5.0,
+      'request_delay_effective': 5.0,
+      'request_strategy': 'sequential',
       'request_timeout': 10.0,
+      'udp_rate_limit_bypassed': False,
     }),
   })
 # ---

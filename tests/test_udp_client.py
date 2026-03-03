@@ -287,6 +287,38 @@ class TestSendRequest:
                 message, "192.168.1.100", 30000, timeout=0.1, validate=False
             )
 
+    async def test_bypass_rate_limit_forwarded_to_udp_send(self) -> None:
+        """Test send_request forwards bypass_rate_limit to UDP send path."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        mock_loop = MagicMock()
+        mock_loop.time.return_value = 1000.0
+        client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+
+        message = json.dumps(
+            {"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}
+        )
+
+        with patch.object(client, "_send_udp_message", AsyncMock()) as mock_send_udp:
+            with patch("asyncio.wait_for", AsyncMock(return_value={"id": 1, "result": {}})):
+                await client.send_request(
+                    message,
+                    "192.168.1.100",
+                    30000,
+                    timeout=0.1,
+                    validate=False,
+                    bypass_rate_limit=True,
+                )
+
+        mock_send_udp.assert_called_once_with(
+            message,
+            "192.168.1.100",
+            30000,
+            bypass_rate_limit=True,
+        )
+
 
 class TestCommandStats:
     """Tests for command diagnostics tracking."""
@@ -660,6 +692,156 @@ class TestGetDeviceStatus:
         assert result["has_fresh_data"]
         # Check merged data
         assert "device_mode" in result or "ongrid_power" in result
+
+    async def test_sequential_mode_respects_delay_between_requests(self) -> None:
+        """Test default sequential mode waits between request calls."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        bypass_flags: list[bool] = []
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            bypass_flags.append(bool(kwargs.get("bypass_rate_limit", False)))
+            method = json.loads(message).get("method")
+            if method == "ES.GetMode":
+                return {"id": 1, "result": {"mode": 0, "gridpower": 100}}
+            if method == "ES.GetStatus":
+                return {"id": 2, "result": {"soc": 50, "batw": 200}}
+            return {"id": 0, "result": {}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+                await client.get_device_status(
+                    "192.168.1.100",
+                    include_em=False,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                    parallel_requests=False,
+                    delay_between_requests=1.5,
+                )
+
+        mock_sleep.assert_called_once_with(1.5)
+        assert bypass_flags == [False, False]
+
+    async def test_parallel_mode_skips_inter_request_delay(self) -> None:
+        """Test parallel mode does not sleep between requests."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        bypass_flags: list[bool] = []
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            bypass_flags.append(bool(kwargs.get("bypass_rate_limit", False)))
+            method = json.loads(message).get("method")
+            if method == "ES.GetMode":
+                return {"id": 1, "result": {"mode": 0, "gridpower": 100}}
+            if method == "ES.GetStatus":
+                return {"id": 2, "result": {"soc": 50, "batw": 200}}
+            return {"id": 0, "result": {}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+                result = await client.get_device_status(
+                    "192.168.1.100",
+                    include_em=False,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                    parallel_requests=True,
+                    delay_between_requests=5.0,
+                )
+
+        assert result["has_fresh_data"]
+        mock_sleep.assert_not_called()
+        assert bypass_flags == [True, True]
+
+    async def test_parallel_mode_starts_requests_concurrently(self) -> None:
+        """Test parallel mode can start multiple requests before any returns."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        release = asyncio.Event()
+        started_methods: set[str] = set()
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            method = str(json.loads(message).get("method"))
+            started_methods.add(method)
+            await release.wait()
+            if method == "ES.GetMode":
+                return {"id": 1, "result": {"mode": 0, "gridpower": 100}}
+            if method == "ES.GetStatus":
+                return {"id": 2, "result": {"soc": 50, "batw": 200}}
+            return {"id": 0, "result": {}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            status_task = asyncio.create_task(
+                client.get_device_status(
+                    "192.168.1.100",
+                    include_em=False,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                    parallel_requests=True,
+                    delay_between_requests=5.0,
+                )
+            )
+
+            for _ in range(20):
+                if {"ES.GetMode", "ES.GetStatus"}.issubset(started_methods):
+                    break
+                await asyncio.sleep(0)
+
+            assert {"ES.GetMode", "ES.GetStatus"}.issubset(started_methods)
+            release.set()
+            result = await status_task
+
+        assert result["has_fresh_data"]
+
+    async def test_parallel_mode_full_status_with_all_tiers(self) -> None:
+        """Test parallel mode schedules all enabled tier requests."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            method = json.loads(message).get("method")
+            if method == "ES.GetMode":
+                return {"id": 1, "result": {"mode": "Auto", "bat_soc": 55, "ongrid_power": 123}}
+            if method == "ES.GetStatus":
+                return {
+                    "id": 2,
+                    "result": {"bat_soc": 66, "bat_power": 150, "pv_power": 400, "ongrid_power": 200},
+                }
+            if method == "EM.GetStatus":
+                return {"id": 3, "result": {"ct_state": 1, "a_power": 10, "b_power": 11, "c_power": 12}}
+            if method == "PV.GetStatus":
+                return {"id": 4, "result": {"pv1_power": 700, "pv1_voltage": 35, "pv1_current": 2.0}}
+            if method == "Wifi.GetStatus":
+                return {"id": 5, "result": {"rssi": -60, "ssid": "TestNet"}}
+            if method == "Bat.GetStatus":
+                return {"id": 6, "result": {"bat_temp": 30.5, "charg_flag": 1, "dischrg_flag": 0}}
+            return {"id": 0, "result": {}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+                result = await client.get_device_status(
+                    "192.168.1.100",
+                    parallel_requests=True,
+                    delay_between_requests=5.0,
+                )
+
+        assert result["has_fresh_data"]
+        assert result.get("device_mode") is not None
+        assert result.get("wifi_ssid") == "TestNet"
+        mock_sleep.assert_not_called()
 
     async def test_partial_failure_preserves_data(self) -> None:
         """Test that partial failures preserve previous data."""
@@ -1098,6 +1280,23 @@ class TestRateLimitCleanupEnforcement:
         
         # Rate limit should not have been called
         assert call_count == 0
+
+    async def test_bypass_rate_limit_skips_unicast_throttling(self) -> None:
+        """Test explicit bypass skips rate limiting even for unicast."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+        client._enforce_rate_limit = AsyncMock()
+
+        await client._send_udp_message(
+            '{"test": 1}',
+            "192.168.1.100",
+            30000,
+            bypass_rate_limit=True,
+        )
+
+        client._enforce_rate_limit.assert_not_called()
 
     async def test_rate_limit_skips_subnet_broadcast(self) -> None:
         """Test that rate limiting is skipped for subnet broadcasts."""

@@ -11,7 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.marstek.const import CONF_POLL_INTERVAL_SLOW, DOMAIN
+from custom_components.marstek.const import (
+    CONF_PARALLEL_API_REQUESTS,
+    CONF_POLL_INTERVAL_SLOW,
+    CONF_REQUEST_DELAY,
+    DOMAIN,
+)
 from custom_components.marstek.coordinator import MarstekDataUpdateCoordinator
 from custom_components.marstek.pymarstek import MarstekUDPClient
 
@@ -72,6 +77,34 @@ async def test_coordinator_successful_update(
     assert data["battery_power"] == -250
     assert data["device_mode"] == "Auto"
     mock_udp_client.get_device_status.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_parallel_requests_option(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test coordinator enables parallel requests and forces zero delay."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            CONF_PARALLEL_API_REQUESTS: True,
+            CONF_REQUEST_DELAY: 5.0,
+        },
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["parallel_requests"] is True
+    assert kwargs["delay_between_requests"] == 0.0
 
 
 @pytest.mark.asyncio

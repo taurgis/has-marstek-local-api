@@ -95,14 +95,16 @@
           },
           "network_settings": {
             "name": "Network Settings",
-            "description": "Request timing and error handling",
+            "description": "Request timing and error handling. Warning: parallel API requests can fail more often on Wi-Fi; LAN is recommended.",
             "data": {
+              "parallel_api_requests": "Parallel API requests (advanced)",
               "request_delay": "Delay between requests",
               "request_timeout": "Request timeout",
               "failure_threshold": "Failures before unavailable"
             },
             "data_description": {
-              "request_delay": "Delay between consecutive API requests for device stability",
+              "parallel_api_requests": "Send all enabled status API requests at once with no delay. This can increase timeout/failure frequency on Wi-Fi connections. Wired LAN is recommended.",
+              "request_delay": "Delay between consecutive API requests for device stability (ignored when parallel API requests is enabled)",
               "request_timeout": "How long to wait for a response before timing out",
               "failure_threshold": "Number of consecutive failures before entities become unavailable"
             }

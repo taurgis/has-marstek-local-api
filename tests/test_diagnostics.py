@@ -95,8 +95,38 @@ async def test_async_get_config_entry_diagnostics(
     assert "poll_interval_fast" in result["polling_config"]
     assert "poll_interval_medium" in result["polling_config"]
     assert "poll_interval_slow" in result["polling_config"]
+    assert "parallel_api_requests" in result["polling_config"]
+    assert "request_strategy" in result["polling_config"]
     assert "request_delay" in result["polling_config"]
+    assert "request_delay_effective" in result["polling_config"]
+    assert "udp_rate_limit_bypassed" in result["polling_config"]
     assert "request_timeout" in result["polling_config"]
+
+    assert result["polling_config"]["request_strategy"] == "sequential"
+    assert result["polling_config"]["request_delay"] == 5.0
+    assert result["polling_config"]["request_delay_effective"] == 5.0
+    assert result["polling_config"]["udp_rate_limit_bypassed"] is False
+
+
+async def test_diagnostics_parallel_mode_effective_delay(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Test diagnostics exposes effective delay and strategy for parallel mode."""
+    mock_config_entry.runtime_data = mock_runtime_data
+    mock_config_entry.options = {
+        "parallel_api_requests": True,
+        "request_delay": 7.5,
+    }
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    assert result["polling_config"]["parallel_api_requests"] is True
+    assert result["polling_config"]["request_strategy"] == "parallel"
+    assert result["polling_config"]["request_delay"] == 7.5
+    assert result["polling_config"]["request_delay_effective"] == 0.0
+    assert result["polling_config"]["udp_rate_limit_bypassed"] is True
 
     # Verify coordinator section has timestamps
     assert "last_update_success_time" in result["coordinator"]

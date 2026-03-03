@@ -222,5 +222,6 @@ All device actions respect the **Socket limit** setting configured in [Options](
 
 ## Notes on safety & responsiveness
 
-- The integration avoids concurrent UDP bursts; control actions are designed to pause polling while sending commands.
+- By default, the integration avoids concurrent UDP bursts; control actions are designed to pause polling while sending commands.
+- If **Parallel API requests** is enabled in [Options](options.md), status polling intentionally uses concurrent requests and may be less stable on Wi-Fi.
 - If your device becomes unresponsive, increase request delay/timeout in [Options](options.md).

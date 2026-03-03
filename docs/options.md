@@ -16,9 +16,22 @@ The integration uses tiered polling to reduce device load:
 
 Options also expose request timing knobs to avoid UDP bursts:
 
+- Parallel API requests (advanced)
 - Request delay (range 1–30s)
 - Request timeout (range 5–60s)
 - Failures before unavailable (range 1–10)
+
+### Parallel API requests (advanced)
+
+When enabled, the integration sends enabled status requests in parallel with no
+inter-request delay.
+
+- Improves update speed on some stable networks.
+- Can increase API timeouts/failures, especially on Wi-Fi.
+- Wired LAN is recommended if this mode is enabled.
+
+The **Request delay** field remains configurable, but it is ignored while
+parallel API requests is enabled.
 
 The failures threshold controls when entities are marked unavailable. Until the
 threshold is reached, the integration keeps the last known values to avoid

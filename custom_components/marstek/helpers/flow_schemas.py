@@ -16,6 +16,7 @@ from ..const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
     CONF_FAILURE_THRESHOLD,
+    CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -88,6 +89,7 @@ def build_polling_schema(
 
 def build_network_schema(
     *,
+    current_parallel_requests: bool,
     current_delay: float,
     current_timeout: float,
     current_failure_threshold: int,
@@ -95,6 +97,10 @@ def build_network_schema(
     """Build network options schema."""
     return vol.Schema(
         {
+            vol.Required(
+                CONF_PARALLEL_API_REQUESTS,
+                default=current_parallel_requests,
+            ): BooleanSelector(),
             vol.Required(
                 CONF_REQUEST_DELAY,
                 default=current_delay,

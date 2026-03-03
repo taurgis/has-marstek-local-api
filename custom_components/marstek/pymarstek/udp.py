@@ -343,11 +343,22 @@ class MarstekUDPClient:
         if len(self._last_request_time) > self._max_tracked_ips:
             await self._cleanup_rate_limit_tracking()
 
-    async def _send_udp_message(self, message: str, target_ip: str, target_port: int) -> None:
+    async def _send_udp_message(
+        self,
+        message: str,
+        target_ip: str,
+        target_port: int,
+        *,
+        bypass_rate_limit: bool = False,
+    ) -> None:
         sock = await self._ensure_socket()
 
         # Enforce rate limiting for non-broadcast addresses
-        if target_ip not in ("255.255.255.255",) and not target_ip.endswith(".255"):
+        if (
+            not bypass_rate_limit
+            and target_ip not in ("255.255.255.255",)
+            and not target_ip.endswith(".255")
+        ):
             await self._enforce_rate_limit(target_ip)
 
         data = message.encode("utf-8")
@@ -363,6 +374,7 @@ class MarstekUDPClient:
         *,
         quiet_on_timeout: bool = False,
         validate: bool = True,
+        bypass_rate_limit: bool = False,
     ) -> dict[str, Any]:
         """Send a request message and wait for response.
 
@@ -374,6 +386,7 @@ class MarstekUDPClient:
             quiet_on_timeout: If True, don't log warnings on timeout
             validate: If True, validate message before sending (default True).
                 Set to False only if message was already validated.
+            bypass_rate_limit: If True, skip per-device UDP throttling for this request
 
         Returns:
             Response dictionary from device
@@ -424,7 +437,12 @@ class MarstekUDPClient:
             self._ensure_listener()
 
             request_started = time.time()
-            await self._send_udp_message(message, target_ip, target_port)
+            await self._send_udp_message(
+                message,
+                target_ip,
+                target_port,
+                bypass_rate_limit=bypass_rate_limit,
+            )
             _LOGGER.debug("Send request to %s:%d: %s", target_ip, target_port, message)
             response = await asyncio.wait_for(future, timeout=timeout)
             latency = time.time() - request_started
@@ -657,6 +675,7 @@ class MarstekUDPClient:
         include_wifi: bool = True,
         include_em: bool = True,
         include_bat: bool = True,
+        parallel_requests: bool = False,
         delay_between_requests: float = 2.0,
         previous_status: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -673,6 +692,8 @@ class MarstekUDPClient:
             include_wifi: Whether to include WiFi status (RSSI)
             include_em: Whether to include Energy Meter/CT data
             include_bat: Whether to include detailed battery data
+            parallel_requests: If True, request all enabled APIs concurrently
+                without delay between calls
             delay_between_requests: Delay between requests in seconds
             previous_status: Previous device status to preserve values when
                 individual requests fail (prevents intermittent "Unknown" states)
@@ -698,14 +719,20 @@ class MarstekUDPClient:
             *,
             success_log: Callable[[dict[str, Any]], None],
             failure_log: str,
+            apply_delay: bool,
+            bypass_rate_limit: bool,
         ) -> dict[str, Any] | None:
             """Send a request and parse response with shared error handling."""
             nonlocal made_request, has_fresh_data
-            if made_request:
+            if apply_delay and made_request:
                 await asyncio.sleep(delay_between_requests)
             try:
                 response = await self.send_request(
-                    command, device_ip, port, timeout=timeout
+                    command,
+                    device_ip,
+                    port,
+                    timeout=timeout,
+                    bypass_rate_limit=bypass_rate_limit,
                 )
                 parsed = parser(response)
                 made_request = True
@@ -716,91 +743,208 @@ class MarstekUDPClient:
                 _LOGGER.debug(failure_log, device_ip, err)
                 return None
 
-        # Get ES mode (device_mode, ongrid_power) - always fetched (fast tier)
-        es_mode_data = await _request_and_parse(
-            get_es_mode(0),
-            parse_es_mode_response,
-            success_log=lambda data: _LOGGER.debug(
+        def _log_es_mode(data: dict[str, Any]) -> None:
+            _LOGGER.debug(
                 "ES.GetMode parsed for %s: Mode=%s, GridPower=%sW",
                 device_ip,
                 data.get("device_mode"),
                 data.get("ongrid_power"),
-            ),
-            failure_log="ES.GetMode failed for %s: %s",
-        )
+            )
 
-        # Get ES status (battery_power, battery_status) - always fetched (fast tier)
-        es_status_data = await _request_and_parse(
-            get_es_status(0),
-            parse_es_status_response,
-            success_log=lambda data: _LOGGER.debug(
+        def _log_es_status(data: dict[str, Any]) -> None:
+            _LOGGER.debug(
                 "ES.GetStatus parsed for %s: SOC=%s%%, BattPower=%sW, Status=%s",
                 device_ip,
                 data.get("battery_soc"),
                 data.get("battery_power"),
                 data.get("battery_status"),
-            ),
-            failure_log="ES.GetStatus failed for %s: %s",
-        )
-
-        # Get EM status (CT/energy meter) - always fetched (fast tier)
-        if include_em:
-            em_status_data = await _request_and_parse(
-                get_em_status(0),
-                parse_em_status_response,
-                success_log=lambda data: _LOGGER.debug(
-                    "EM.GetStatus parsed for %s: CT=%s, TotalPower=%sW",
-                    device_ip,
-                    "Connected" if data.get("ct_connected") else "Not connected",
-                    data.get("em_total_power"),
-                ),
-                failure_log="EM.GetStatus failed for %s: %s",
             )
 
-        # Get PV status if requested (medium tier)
-        if include_pv:
-            pv_status_data = await _request_and_parse(
-                get_pv_status(0),
-                parse_pv_status_response,
-                success_log=lambda data: _LOGGER.debug(
-                    "PV.GetStatus parsed for %s: PV1=%sW, PV2=%sW, PV3=%sW, PV4=%sW",
-                    device_ip,
-                    data.get("pv1_power"),
-                    data.get("pv2_power"),
-                    data.get("pv3_power"),
-                    data.get("pv4_power"),
-                ),
-                failure_log="PV.GetStatus failed for %s: %s",
+        def _log_em_status(data: dict[str, Any]) -> None:
+            _LOGGER.debug(
+                "EM.GetStatus parsed for %s: CT=%s, TotalPower=%sW",
+                device_ip,
+                "Connected" if data.get("ct_connected") else "Not connected",
+                data.get("em_total_power"),
             )
 
-        # Get WiFi status (slow tier - RSSI signal strength)
-        if include_wifi:
-            wifi_status_data = await _request_and_parse(
-                get_wifi_status(0),
-                parse_wifi_status_response,
-                success_log=lambda data: _LOGGER.debug(
-                    "Wifi.GetStatus parsed for %s: RSSI=%s dBm, SSID=%s",
-                    device_ip,
-                    data.get("wifi_rssi"),
-                    data.get("wifi_ssid"),
-                ),
-                failure_log="Wifi.GetStatus failed for %s: %s",
+        def _log_pv_status(data: dict[str, Any]) -> None:
+            _LOGGER.debug(
+                "PV.GetStatus parsed for %s: PV1=%sW, PV2=%sW, PV3=%sW, PV4=%sW",
+                device_ip,
+                data.get("pv1_power"),
+                data.get("pv2_power"),
+                data.get("pv3_power"),
+                data.get("pv4_power"),
             )
 
-        # Get detailed battery status (slow tier - temperature, charge flags)
-        if include_bat:
-            bat_status_data = await _request_and_parse(
-                get_battery_status(0),
-                parse_bat_status_response,
-                success_log=lambda data: _LOGGER.debug(
-                    "Bat.GetStatus parsed for %s: Temp=%s°C, ChargFlag=%s, DischrgFlag=%s",
-                    device_ip,
-                    data.get("bat_temp"),
-                    data.get("bat_charg_flag"),
-                    data.get("bat_dischrg_flag"),
-                ),
-                failure_log="Bat.GetStatus failed for %s: %s",
+        def _log_wifi_status(data: dict[str, Any]) -> None:
+            _LOGGER.debug(
+                "Wifi.GetStatus parsed for %s: RSSI=%s dBm, SSID=%s",
+                device_ip,
+                data.get("wifi_rssi"),
+                data.get("wifi_ssid"),
             )
+
+        def _log_bat_status(data: dict[str, Any]) -> None:
+            _LOGGER.debug(
+                "Bat.GetStatus parsed for %s: Temp=%s°C, ChargFlag=%s, DischrgFlag=%s",
+                device_ip,
+                data.get("bat_temp"),
+                data.get("bat_charg_flag"),
+                data.get("bat_dischrg_flag"),
+            )
+
+        if parallel_requests:
+            request_keys: list[str] = []
+            request_tasks: list[asyncio.Task[dict[str, Any] | None]] = []
+
+            def _schedule_request(
+                key: str,
+                command: str,
+                parser: Callable[[dict[str, Any]], dict[str, Any]],
+                success_log: Callable[[dict[str, Any]], None],
+                failure_log: str,
+            ) -> None:
+                request_keys.append(key)
+                request_tasks.append(
+                    asyncio.create_task(
+                        _request_and_parse(
+                            command,
+                            parser,
+                            success_log=success_log,
+                            failure_log=failure_log,
+                            apply_delay=False,
+                            bypass_rate_limit=True,
+                        )
+                    )
+                )
+
+            _schedule_request(
+                "es_mode",
+                get_es_mode(0),
+                parse_es_mode_response,
+                _log_es_mode,
+                "ES.GetMode failed for %s: %s",
+            )
+            _schedule_request(
+                "es_status",
+                get_es_status(0),
+                parse_es_status_response,
+                _log_es_status,
+                "ES.GetStatus failed for %s: %s",
+            )
+            if include_em:
+                _schedule_request(
+                    "em_status",
+                    get_em_status(0),
+                    parse_em_status_response,
+                    _log_em_status,
+                    "EM.GetStatus failed for %s: %s",
+                )
+            if include_pv:
+                _schedule_request(
+                    "pv_status",
+                    get_pv_status(0),
+                    parse_pv_status_response,
+                    _log_pv_status,
+                    "PV.GetStatus failed for %s: %s",
+                )
+            if include_wifi:
+                _schedule_request(
+                    "wifi_status",
+                    get_wifi_status(0),
+                    parse_wifi_status_response,
+                    _log_wifi_status,
+                    "Wifi.GetStatus failed for %s: %s",
+                )
+            if include_bat:
+                _schedule_request(
+                    "bat_status",
+                    get_battery_status(0),
+                    parse_bat_status_response,
+                    _log_bat_status,
+                    "Bat.GetStatus failed for %s: %s",
+                )
+
+            results = await asyncio.gather(*request_tasks)
+            for key, result in zip(request_keys, results, strict=True):
+                if key == "es_mode":
+                    es_mode_data = result
+                elif key == "es_status":
+                    es_status_data = result
+                elif key == "em_status":
+                    em_status_data = result
+                elif key == "pv_status":
+                    pv_status_data = result
+                elif key == "wifi_status":
+                    wifi_status_data = result
+                elif key == "bat_status":
+                    bat_status_data = result
+        else:
+            # Get ES mode (device_mode, ongrid_power) - always fetched (fast tier)
+            es_mode_data = await _request_and_parse(
+                get_es_mode(0),
+                parse_es_mode_response,
+                success_log=_log_es_mode,
+                failure_log="ES.GetMode failed for %s: %s",
+                apply_delay=True,
+                bypass_rate_limit=False,
+            )
+
+            # Get ES status (battery_power, battery_status) - always fetched (fast tier)
+            es_status_data = await _request_and_parse(
+                get_es_status(0),
+                parse_es_status_response,
+                success_log=_log_es_status,
+                failure_log="ES.GetStatus failed for %s: %s",
+                apply_delay=True,
+                bypass_rate_limit=False,
+            )
+
+            # Get EM status (CT/energy meter) - always fetched (fast tier)
+            if include_em:
+                em_status_data = await _request_and_parse(
+                    get_em_status(0),
+                    parse_em_status_response,
+                    success_log=_log_em_status,
+                    failure_log="EM.GetStatus failed for %s: %s",
+                    apply_delay=True,
+                    bypass_rate_limit=False,
+                )
+
+            # Get PV status if requested (medium tier)
+            if include_pv:
+                pv_status_data = await _request_and_parse(
+                    get_pv_status(0),
+                    parse_pv_status_response,
+                    success_log=_log_pv_status,
+                    failure_log="PV.GetStatus failed for %s: %s",
+                    apply_delay=True,
+                    bypass_rate_limit=False,
+                )
+
+            # Get WiFi status (slow tier - RSSI signal strength)
+            if include_wifi:
+                wifi_status_data = await _request_and_parse(
+                    get_wifi_status(0),
+                    parse_wifi_status_response,
+                    success_log=_log_wifi_status,
+                    failure_log="Wifi.GetStatus failed for %s: %s",
+                    apply_delay=True,
+                    bypass_rate_limit=False,
+                )
+
+            # Get detailed battery status (slow tier - temperature, charge flags)
+            if include_bat:
+                bat_status_data = await _request_and_parse(
+                    get_battery_status(0),
+                    parse_bat_status_response,
+                    success_log=_log_bat_status,
+                    failure_log="Bat.GetStatus failed for %s: %s",
+                    apply_delay=True,
+                    bypass_rate_limit=False,
+                )
 
         # Merge data (ES.GetStatus has priority for battery data)
         # Pass previous_status to preserve values when individual requests fail

@@ -11,6 +11,7 @@ from custom_components.marstek.const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
     CONF_FAILURE_THRESHOLD,
+    CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -64,6 +65,7 @@ class TestOptionsFlowSections:
             CONF_POLL_INTERVAL_SLOW,
         ],
         "network_settings": [
+            CONF_PARALLEL_API_REQUESTS,
             CONF_REQUEST_DELAY,
             CONF_REQUEST_TIMEOUT,
             CONF_FAILURE_THRESHOLD,
