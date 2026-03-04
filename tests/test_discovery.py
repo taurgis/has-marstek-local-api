@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import socket
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -319,8 +319,40 @@ class TestDiscoverDevices:
         
         assert len(result) == 1
         assert result[0]["ip"] == "192.168.1.100"
+        assert result[0]["port"] == 30000
         assert result[0]["device_type"] == "Venus"
         assert result[0]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+
+    @pytest.mark.asyncio
+    async def test_discovery_scans_multiple_ports(self) -> None:
+        """Test discovery sends broadcast probes to every requested UDP port."""
+        from custom_components.marstek.discovery import discover_devices
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.2
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = AsyncMock(side_effect=TimeoutError())
+                mock_loop.return_value = loop
+
+                with patch(
+                    "custom_components.marstek.discovery._get_broadcast_addresses",
+                    return_value=["255.255.255.255"],
+                ):
+                    await discover_devices(timeout=0.5, ports=[30000, 30003])
+
+        loop.sock_sendto.assert_any_await(mock_socket, ANY, ("255.255.255.255", 30000))
+        loop.sock_sendto.assert_any_await(mock_socket, ANY, ("255.255.255.255", 30003))
 
     @pytest.mark.asyncio
     async def test_discovery_filters_echo(self) -> None:

@@ -128,6 +128,7 @@ async def test_scanner_scan_impl_no_devices(hass: HomeAssistant):
         await scanner._async_scan_impl()
 
         mock_discover.assert_called_once()
+        assert "ports" in mock_discover.call_args.kwargs
 
 
 async def test_scanner_scan_impl_discovers_devices_no_ip_change(
@@ -162,6 +163,43 @@ async def test_scanner_scan_impl_discovers_devices_no_ip_change(
 
         # No IP change, so discovery flow should not be created
         mock_create_flow.assert_not_called()
+
+
+async def test_scanner_scan_impl_discovers_devices_port_changed(
+    hass: HomeAssistant, mock_config_entry
+):
+    """Test _async_scan_impl triggers discovery flow when port changes at same IP."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(mock_config_entry, data={**mock_config_entry.data, "port": 30000})
+    mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)
+
+    scanner = MarstekScanner(hass)
+
+    with (
+        patch(
+            "custom_components.marstek.scanner.discover_devices",
+            AsyncMock(
+                return_value=[
+                    {
+                        "ip": "1.2.3.4",  # same IP
+                        "port": 30003,  # different port
+                        "ble_mac": "AA:BB:CC:DD:EE:FF",
+                        "device_type": "Venus",
+                        "version": 3,
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "custom_components.marstek.scanner.discovery_flow.async_create_flow"
+        ) as mock_create_flow,
+    ):
+        await scanner._async_scan_impl()
+
+        mock_create_flow.assert_called_once()
+        call_args = mock_create_flow.call_args
+        assert call_args[1]["data"]["ip"] == "1.2.3.4"
+        assert call_args[1]["data"]["port"] == 30003
 
 
 async def test_scanner_scan_impl_discovers_devices_ip_changed(

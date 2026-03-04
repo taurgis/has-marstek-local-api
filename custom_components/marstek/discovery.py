@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import socket
+from collections.abc import Iterable
 from typing import Any
 
 from .const import DEFAULT_UDP_PORT
@@ -34,7 +35,7 @@ def _build_discovery_message() -> bytes:
     return json.dumps(request).encode("utf-8")
 
 
-def _build_device_info(result: dict[str, Any], device_ip: str) -> dict[str, Any]:
+def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int) -> dict[str, Any]:
     """Build device info dict from discovery response result."""
     return {
         "id": result.get("id", 0),
@@ -42,6 +43,7 @@ def _build_device_info(result: dict[str, Any], device_ip: str) -> dict[str, Any]
         "version": result.get("ver", 0),
         "wifi_name": result.get("wifi_name", ""),
         "ip": device_ip,
+        "port": device_port,
         "wifi_mac": result.get("wifi_mac", ""),
         "ble_mac": result.get("ble_mac", ""),
         "mac": result.get("wifi_mac") or result.get("ble_mac", ""),
@@ -73,9 +75,32 @@ def _is_valid_device_response(response: dict[str, Any]) -> bool:
     return any(key in result for key in ["device", "ip", "ble_mac", "wifi_mac"])
 
 
+def _normalize_discovery_ports(
+    ports: Iterable[int] | None,
+    *,
+    fallback_port: int,
+) -> list[int]:
+    """Normalize and deduplicate discovery ports."""
+    candidates = list(ports) if ports is not None else [fallback_port]
+
+    normalized: list[int] = []
+    for candidate in candidates:
+        try:
+            port = int(candidate)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= port <= 65535 and port not in normalized:
+            normalized.append(port)
+
+    if not normalized:
+        normalized.append(fallback_port)
+    return normalized
+
+
 async def discover_devices(
     timeout: float = DISCOVERY_TIMEOUT,
     port: int = DEFAULT_UDP_PORT,
+    ports: Iterable[int] | None = None,
 ) -> list[dict[str, Any]]:
     """Discover Marstek devices on the local network via UDP broadcast.
 
@@ -87,11 +112,17 @@ async def discover_devices(
     Args:
         timeout: Discovery timeout in seconds
         port: UDP port to use
+        ports: Optional explicit list of UDP ports to scan
 
     Returns:
         List of discovered device dictionaries
     """
-    _LOGGER.debug("Starting local device discovery (timeout=%ss, port=%d)", timeout, port)
+    scan_ports = _normalize_discovery_ports(ports, fallback_port=port)
+    _LOGGER.debug(
+        "Starting local device discovery (timeout=%ss, ports=%s)",
+        timeout,
+        scan_ports,
+    )
 
     # Create UDP socket with broadcast support
     # Bind to an ephemeral port to avoid conflicts with the shared UDP client
@@ -121,11 +152,12 @@ async def discover_devices(
 
     # Send discovery broadcasts
     for addr in broadcast_addrs:
-        try:
-            await loop.sock_sendto(sock, message, (addr, port))
-            _LOGGER.debug("Sent discovery to %s:%d", addr, port)
-        except OSError as err:
-            _LOGGER.warning("Failed to send to %s:%d: %s", addr, port, err)
+        for target_port in scan_ports:
+            try:
+                await loop.sock_sendto(sock, message, (addr, target_port))
+                _LOGGER.debug("Sent discovery to %s:%d", addr, target_port)
+            except OSError as err:
+                _LOGGER.warning("Failed to send to %s:%d: %s", addr, target_port, err)
 
     # Collect responses
     devices: list[dict[str, Any]] = []
@@ -177,7 +209,7 @@ async def discover_devices(
             seen_ips.add(device_ip)
 
             # Build device info dict (compatible with pymarstek format)
-            device = _build_device_info(result, device_ip)
+            device = _build_device_info(result, device_ip, sender_port)
             devices.append(device)
             _LOGGER.info(
                 "Discovered device: %s at %s (BLE MAC: %s)",
@@ -270,7 +302,11 @@ async def get_device_info(
                 result = response["result"]
 
                 # Build device info dict
-                device = _build_device_info(result, result.get("ip", host))
+                device = _build_device_info(
+                    result,
+                    result.get("ip", host),
+                    int(addr[1]),
+                )
 
                 _LOGGER.info(
                     "Got device info: %s at %s (BLE MAC: %s)",

@@ -11,14 +11,14 @@ from typing import Any, ClassVar, Self
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import discovery_flow
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import DATA_SUPPRESS_RELOADS, DOMAIN
+from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,11 +42,20 @@ _DEVICE_METADATA_FIELDS: tuple[str, ...] = (
     "firmware",
 )
 
+_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003)
+
 
 def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
     """Build discovery flow data from device info."""
+    port = device.get("port", DEFAULT_UDP_PORT)
+    try:
+        normalized_port = int(port)
+    except (TypeError, ValueError):
+        normalized_port = DEFAULT_UDP_PORT
+
     return {
         "ip": device.get("ip"),
+        "port": normalized_port,
         "ble_mac": device.get("ble_mac"),
         "device_type": device.get("device_type"),
         "version": device.get("version"),
@@ -164,7 +173,8 @@ class MarstekScanner:
         try:
             # Use local discovery module (workaround for pymarstek echo issues)
             _LOGGER.debug("Scanner: Starting device discovery (broadcast)")
-            devices = await discover_devices()
+            scan_ports = self._build_scan_ports()
+            devices = await discover_devices(ports=scan_ports)
 
             _LOGGER.debug(
                 "Scanner: Discovered %d device(s)", len(devices) if devices else 0
@@ -204,6 +214,7 @@ class MarstekScanner:
 
                 stored_ble_mac = entry.data.get("ble_mac")
                 stored_ip = entry.data.get(CONF_HOST)
+                stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
 
                 _LOGGER.debug(
                     "Scanner: Entry %s - stored BLE-MAC: %s, stored IP: %s",
@@ -233,21 +244,28 @@ class MarstekScanner:
                     continue
 
                 new_ip = matched_device.get("ip")
+                new_port = int(matched_device.get("port", DEFAULT_UDP_PORT))
                 _LOGGER.debug(
-                    "Scanner: Entry %s - current IP: %s, discovered IP: %s",
+                    "Scanner: Entry %s - current %s:%s, discovered %s:%s",
                     entry.title,
                     stored_ip,
+                    stored_port,
                     new_ip,
+                    new_port,
                 )
                 self._maybe_update_entry_metadata(entry, matched_device)
-                if new_ip and new_ip != stored_ip:
+                ip_changed = bool(new_ip and new_ip != stored_ip)
+                port_changed = bool(new_ip and new_port != stored_port)
+                if ip_changed or port_changed:
                     _LOGGER.info(
-                        "Scanner detected IP change for device %s: %s -> %s",
+                        "Scanner detected endpoint change for device %s: %s:%s -> %s:%s",
                         stored_ble_mac,
                         stored_ip,
+                        stored_port,
                         new_ip,
+                        new_port,
                     )
-                    # Trigger discovery flow to update config entry (mik-laj feedback)
+                    # Trigger discovery flow to update config entry endpoint
                     # This follows the pattern used in Yeelight integration
                     discovery_flow.async_create_flow(
                         self._hass,
@@ -257,9 +275,10 @@ class MarstekScanner:
                     )
                 else:
                     _LOGGER.debug(
-                        "Scanner: Entry %s IP unchanged (%s)",
+                        "Scanner: Entry %s endpoint unchanged (%s:%s)",
                         entry.title,
                         stored_ip,
+                        stored_port,
                     )
 
             # Trigger discovery flows for unconfigured devices
@@ -268,6 +287,24 @@ class MarstekScanner:
             self._trigger_unconfigured_discovery(devices, configured_macs)
         except Exception as err:
             _LOGGER.debug("Scanner discovery failed: %s", err)
+
+    def _build_scan_ports(self) -> list[int]:
+        """Build the UDP port list for discovery scans.
+
+        Includes the default API port, common custom demo ports, and any ports
+        already configured in existing entries.
+        """
+        ports: set[int] = {DEFAULT_UDP_PORT, *_COMMON_CUSTOM_PORTS}
+
+        for entry in self._hass.config_entries.async_entries(DOMAIN):
+            try:
+                configured_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= configured_port <= 65535:
+                ports.add(configured_port)
+
+        return sorted(ports)
 
     def _maybe_update_entry_metadata(
         self,

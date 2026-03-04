@@ -467,6 +467,10 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 continue
 
             reload = entry.state == ConfigEntryState.SETUP_RETRY
+            discovered_port = self._discovered_port or DEFAULT_UDP_PORT
+            current_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
+            updates: dict[str, Any] = {}
+
             if entry.data.get(CONF_HOST) != self._discovered_ip:
                 _LOGGER.info(
                     "Discovery: Device %s IP changed from %s to %s, updating config entry",
@@ -474,8 +478,21 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     entry.data.get(CONF_HOST),
                     self._discovered_ip,
                 )
+                updates[CONF_HOST] = self._discovered_ip
+
+            if current_port != discovered_port:
+                _LOGGER.info(
+                    "Discovery: Device %s port changed from %s to %s, updating config entry",
+                    entry.unique_id,
+                    current_port,
+                    discovered_port,
+                )
+                updates[CONF_PORT] = discovered_port
+
+            if updates:
                 self.hass.config_entries.async_update_entry(
-                    entry, data={**entry.data, CONF_HOST: self._discovered_ip}
+                    entry,
+                    data={**entry.data, **updates},
                 )
                 reload = entry.state in (
                     ConfigEntryState.SETUP_RETRY,

@@ -331,6 +331,34 @@ async def test_integration_discovery_updates_ip(
     assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == "1.2.3.99"
 
 
+async def test_integration_discovery_updates_port_same_ip(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test integration discovery updates existing entry port when IP is unchanged."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "port": 30000},
+    )
+
+    discovery_info = {
+        "ip": "1.2.3.4",  # Same as existing entry
+        "port": 30003,
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus",
+        "version": 3,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert hass.config_entries.async_entries(DOMAIN)[0].data["port"] == 30003
+
+
 async def test_options_flow_creates_entry(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
