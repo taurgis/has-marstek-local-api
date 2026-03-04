@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-
+from typing import Any
 
 import pytest
 import voluptuous as vol
@@ -22,6 +22,7 @@ from custom_components.marstek.const import (
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
+    CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
     DEFAULT_FAILURE_THRESHOLD,
@@ -32,16 +33,24 @@ from custom_components.marstek.const import (
     DEFAULT_REQUEST_DELAY,
     DEFAULT_REQUEST_TIMEOUT,
     DOMAIN,
-    CONF_SOCKET_LIMIT,
 )
 from custom_components.marstek.helpers.flow_schemas import build_manual_entry_schema
-
 from tests.conftest import (
     create_mock_client,
     patch_discovery,
     patch_manual_connection,
     patch_marstek_integration,
 )
+
+
+def _get_schema_field_default(result: dict[str, Any], field_name: str) -> Any:
+    """Extract default value for a field in a flow form schema."""
+    schema = result["data_schema"].schema
+    key = next(key for key in schema if getattr(key, "schema", None) == field_name)
+    default = getattr(key, "default", vol.UNDEFINED)
+    if default is vol.UNDEFINED:
+        return None
+    return default() if callable(default) else default
 
 
 async def test_user_flow_success(hass: HomeAssistant) -> None:
@@ -510,6 +519,27 @@ async def test_manual_flow_cannot_connect(hass: HomeAssistant) -> None:
     assert result["errors"] == {"base": "cannot_connect"}
 
 
+async def test_manual_flow_keeps_custom_port_after_failure(
+    hass: HomeAssistant,
+) -> None:
+    """Test manual form keeps the submitted custom port after connection failure."""
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["step_id"] == "manual"
+
+    with patch_manual_connection(error=ConnectionError("cannot connect")):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30030}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert _get_schema_field_default(result, CONF_PORT) == 30030
+
+
 async def test_manual_flow_invalid_response(hass: HomeAssistant) -> None:
     """Test manual entry flow when device returns invalid response (no MAC)."""
     device_info = {
@@ -775,6 +805,31 @@ async def test_reconfigure_flow_cannot_connect(
     assert result["errors"]["base"] == "cannot_connect"
 
 
+async def test_reconfigure_flow_keeps_custom_port_after_failure(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test reconfigure form keeps custom port on failed reconnect attempt."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": mock_config_entry.entry_id},
+        data=None,
+    )
+    assert result["step_id"] == "reconfigure_confirm"
+
+    with patch_manual_connection(error=TimeoutError("Connection timeout")):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "192.168.1.201", "port": 30030},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reconfigure_confirm"
+    assert result["errors"]["base"] == "cannot_connect"
+    assert _get_schema_field_default(result, CONF_PORT) == 30030
+
+
 async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
     """Test manual entry flow when device returns ValueError (invalid data)."""
     # First trigger discovery that finds no devices to get to manual step
@@ -1030,6 +1085,35 @@ async def test_confirm_cannot_connect(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "confirm"
     assert result["errors"]["base"] == "cannot_connect"
+
+
+async def test_confirm_keeps_custom_port_after_failure(hass: HomeAssistant) -> None:
+    """Test confirm form keeps submitted custom port after connection failure."""
+    dhcp_info = type(
+        "DhcpInfo",
+        (),
+        {
+            "ip": "192.168.1.100",
+            "hostname": "marstek",
+            "macaddress": "aabbccddeeff",
+        },
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+    )
+    assert result["step_id"] == "confirm"
+
+    with patch_manual_connection(device_info=None):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "192.168.1.100", "port": 30030},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+    assert result["errors"]["base"] == "cannot_connect"
+    assert _get_schema_field_default(result, CONF_PORT) == 30030
 
 
 async def test_confirm_invalid_discovery_info(hass: HomeAssistant) -> None:

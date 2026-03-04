@@ -410,7 +410,7 @@ python -m mock_device --ble-mac 02deadbeef01 --soc 50 &
 python -m mock_device --port 30001 --ble-mac 02deadbeef02 --soc 75 &
 ```
 
-**In devcontainer:** Three mock devices run automatically at `172.28.0.20-22`.
+**In devcontainer:** Five mock devices run automatically on `172.28.0.20`, `172.28.0.22-25`; two use port `30000` and three use custom ports (`30001-30003`).
 
 ### Tool selection guide
 

@@ -181,8 +181,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             host = user_input[CONF_HOST]
-            port = user_input.get(CONF_PORT, DEFAULT_UDP_PORT)
-            manual_entry_schema = build_manual_entry_schema(DEFAULT_UDP_PORT)
+            port = int(user_input.get(CONF_PORT, DEFAULT_UDP_PORT))
+            manual_entry_schema = build_manual_entry_schema(port)
 
             try:
                 # Validate connection by attempting to get device info
@@ -314,10 +314,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_manual(errors={"base": "invalid_discovery_info"})
 
         discovered_port = self._discovered_port or DEFAULT_UDP_PORT
+        form_host = self._discovered_ip
+        form_port = discovered_port
 
         if user_input is not None:
             host = str(user_input.get(CONF_HOST, ""))
             port = int(user_input.get(CONF_PORT, DEFAULT_UDP_PORT))
+            form_host = host
+            form_port = port
 
             try:
                 device_info = await get_device_info(host=host, port=port)
@@ -349,8 +353,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="confirm",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_HOST, default=self._discovered_ip): cv.string,
-                    vol.Required(CONF_PORT, default=discovered_port): vol.All(
+                    vol.Required(CONF_HOST, default=form_host): cv.string,
+                    vol.Required(CONF_PORT, default=form_port): vol.All(
                         vol.Coerce(int), vol.Range(min=1, max=65535)
                     ),
                 }
@@ -413,10 +417,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Confirm reconfiguration dialog."""
         errors: dict[str, str] = {}
         reconfigure_entry = self._get_reconfigure_entry()
+        form_host = str(reconfigure_entry.data.get(CONF_HOST, ""))
+        form_port = int(reconfigure_entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
 
         if user_input is not None:
             host = str(user_input.get(CONF_HOST, ""))
             port = int(user_input.get(CONF_PORT, DEFAULT_UDP_PORT))
+            form_host = host
+            form_port = port
 
             result, error = await self._async_handle_host_update(
                 reconfigure_entry,
@@ -434,13 +442,10 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="reconfigure_confirm",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_HOST, default=str(reconfigure_entry.data.get(CONF_HOST, ""))
-                    ): cv.string,
-                    vol.Required(
-                        CONF_PORT,
-                        default=int(reconfigure_entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                    vol.Required(CONF_HOST, default=form_host): cv.string,
+                    vol.Required(CONF_PORT, default=form_port): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=65535)
+                    ),
                 }
             ),
             errors=errors,

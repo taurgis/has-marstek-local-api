@@ -71,20 +71,28 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs 3 mock devices with unique, clearly-fake MAC addresses:
+The devcontainer runs 5 mock devices with unique, clearly-fake MAC addresses.
+Two use the default port (`30000`) and three run on custom ports:
 
-| Device | IP | BLE MAC | WiFi MAC | Initial SOC |
-|--------|-----|---------|----------|-------------|
-| mock-marstek | 172.28.0.20 | 02deadbeef01 | 02cafebabe01 | 50% |
-| mock-marstek-2 | 172.28.0.21 | 02deadbeef02 | 02cafebabe02 | 75% |
-| mock-marstek-3 | 172.28.0.22 | 02deadbeef03 | 02cafebabe03 | 30% |
+| Device | IP | Port | BLE MAC | WiFi MAC | Initial SOC |
+|--------|-----|------|---------|----------|-------------|
+| mock-marstek | 172.28.0.20 | 30000 | 02deadbeef01 | 02cafebabe01 | 50% |
+| mock-marstek-2 | 172.28.0.25 | 30000 | 02deadbeef02 | 02cafebabe02 | 75% |
+| mock-marstek-3 | 172.28.0.22 | 30001 | 02deadbeef03 | 02cafebabe03 | 30% |
+| mock-marstek-4 (VenusD) | 172.28.0.23 | 30002 | 02deadbeef04 | 02cafebabe04 | 60% |
+| mock-marstek-5 (VenusA) | 172.28.0.24 | 30003 | 02deadbeef05 | 02cafebabe05 | 65% |
 
 > **Note:** MAC addresses use the locally-administered range (`02:xx:xx:xx:xx:xx`) with memorable patterns (`deadbeef`, `cafebabe`) to clearly distinguish mock devices from real hardware.
 
 To add devices in Home Assistant:
 1. Go to Settings → Devices & Services
 2. Add Integration → Marstek
-3. Use manual entry with IP: `172.28.0.20`, `172.28.0.21`, or `172.28.0.22`
+3. Use manual entry with one of these IP/port pairs:
+    - `172.28.0.20:30000`
+    - `172.28.0.25:30000`
+    - `172.28.0.22:30001`
+    - `172.28.0.23:30002`
+    - `172.28.0.24:30003`
 
 ## Simulation Behavior
 

@@ -17,7 +17,7 @@ services:
         ipv4_address: 172.28.0.10
     command: python -m homeassistant -c /config
 
-  # Mock device 1 - uses defaults from const.py (02deadbeef01, 02cafebabe01)
+  # Mock device 1 - default UDP port 30000
   mock-marstek:
     build:
       context: ../tools/mock_device
@@ -30,7 +30,7 @@ services:
         ipv4_address: 172.28.0.20
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.20", "--soc", "50"]
 
-  # Mock device 2 - unique mock MACs
+  # Mock device 2 - default UDP port 30000
   mock-marstek-2:
     build:
       context: ../tools/mock_device
@@ -43,7 +43,7 @@ services:
         ipv4_address: 172.28.0.25
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--ble-mac", "02deadbeef02", "--wifi-mac", "02cafebabe02", "--soc", "75"]
 
-  # Mock device 3 - unique mock MACs
+  # Mock device 3 - custom UDP port 30001
   mock-marstek-3:
     build:
       context: ../tools/mock_device
@@ -54,9 +54,9 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.22
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--ble-mac", "02deadbeef03", "--wifi-mac", "02cafebabe03", "--soc", "30"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--port", "30001", "--ble-mac", "02deadbeef03", "--wifi-mac", "02cafebabe03", "--soc", "30"]
 
-  # Mock device 4 - Venus D with PV (4 MPPT channels)
+  # Mock device 4 - Venus D with PV (4 MPPT channels), custom UDP port 30002
   mock-marstek-4:
     build:
       context: ../tools/mock_device
@@ -67,9 +67,9 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.23
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.23", "--device", "VenusD", "--ble-mac", "02deadbeef04", "--wifi-mac", "02cafebabe04", "--soc", "60", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.23", "--port", "30002", "--device", "VenusD", "--ble-mac", "02deadbeef04", "--wifi-mac", "02cafebabe04", "--soc", "60", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
 
-  # Mock device 5 - Venus A with PV (4 MPPT channels)
+  # Mock device 5 - Venus A with PV (4 MPPT channels), custom UDP port 30003
   mock-marstek-5:
     build:
       context: ../tools/mock_device
@@ -80,7 +80,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.24
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--device", "VenusA", "--ble-mac", "02deadbeef05", "--wifi-mac", "02cafebabe05", "--soc", "65", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ble-mac", "02deadbeef05", "--wifi-mac", "02cafebabe05", "--soc", "65", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
 
 networks:
   marstek_net:
