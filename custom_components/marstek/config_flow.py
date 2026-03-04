@@ -76,6 +76,8 @@ from .helpers.flow_schemas import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003)
+
 class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Marstek."""
 
@@ -106,7 +108,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             return self.async_create_entry(
                 title=format_device_name(device),
-                data=build_entry_data(device["ip"], DEFAULT_UDP_PORT, device),
+                data=build_entry_data(
+                    device["ip"],
+                    int(device.get("port", DEFAULT_UDP_PORT)),
+                    device,
+                ),
             )
 
         # Start broadcast device discovery
@@ -237,13 +243,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, max_retries: int = 2, retry_delay: float = 3.0
     ) -> list[dict[str, Any]]:
         """Device discovery retry mechanism using local discovery module."""
+        scan_ports = self._build_discovery_ports()
+
         for attempt in range(1, max_retries + 1):
             try:
                 if attempt > 1:
                     _LOGGER.info("Device discovery, attempt %d", attempt)
                     await asyncio.sleep(retry_delay)
 
-                devices = await discover_devices()
+                devices = await discover_devices(ports=scan_ports)
 
                 if devices:
                     if attempt > 1:
@@ -263,6 +271,20 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     raise
 
         return []
+
+    def _build_discovery_ports(self) -> list[int]:
+        """Build UDP ports to probe during initial config flow discovery."""
+        ports: set[int] = {DEFAULT_UDP_PORT, *_COMMON_CUSTOM_PORTS}
+
+        for entry in self._async_current_entries(include_ignore=False):
+            try:
+                configured_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= configured_port <= 65535:
+                ports.add(configured_port)
+
+        return sorted(ports)
 
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfo

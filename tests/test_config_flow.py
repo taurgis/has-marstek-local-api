@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import voluptuous as vol
@@ -82,6 +83,54 @@ async def test_user_flow_success(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"]["host"] == "1.2.3.4"
     assert format_mac(result["data"]["ble_mac"]) == "aa:bb:cc:dd:ee:ff"
+
+
+async def test_user_flow_discovery_probes_multiple_ports(hass: HomeAssistant) -> None:
+    """Test initial user discovery probes default and common custom ports."""
+    with patch(
+        "custom_components.marstek.config_flow.discover_devices",
+        AsyncMock(return_value=[]),
+    ) as mock_discover:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert mock_discover.call_args is not None
+    assert mock_discover.call_args.kwargs["ports"] == [30000, 30001, 30002, 30003]
+
+
+async def test_user_flow_uses_discovered_custom_port(hass: HomeAssistant) -> None:
+    """Test user flow stores discovered custom port when creating an entry."""
+    devices = [
+        {
+            "ip": "1.2.3.4",
+            "port": 30003,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+            "model": "Venus",
+            "firmware": "3.0",
+        }
+    ]
+
+    with patch_discovery(devices):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["type"] == FlowResultType.FORM
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"device": "0"}
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["host"] == "1.2.3.4"
+    assert result["data"]["port"] == 30003
 
 
 async def test_user_flow_form_snapshot(
