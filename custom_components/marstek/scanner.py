@@ -59,8 +59,8 @@ def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
 
     discovered_port = device.get("port")
     try:
-        normalized_port = int(discovered_port)
-    except (TypeError, ValueError):
+        normalized_port = int(discovered_port) if discovered_port is not None else None
+    except ValueError:
         normalized_port = None
 
     if normalized_port is not None and 1 <= normalized_port <= 65535:
