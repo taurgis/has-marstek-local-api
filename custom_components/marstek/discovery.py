@@ -301,11 +301,12 @@ async def get_device_info(
 
                 result = response["result"]
 
-                # Build device info dict
+                # Build device info dict — use the target port we sent to,
+                # not the response sender port, for reliable port recording.
                 device = _build_device_info(
                     result,
                     result.get("ip", host),
-                    int(addr[1]),
+                    port,
                 )
 
                 _LOGGER.info(

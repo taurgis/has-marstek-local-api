@@ -595,6 +595,51 @@ class TestGetDeviceInfo:
         assert result["device_type"] == "Venus"
 
     @pytest.mark.asyncio
+    async def test_records_target_port_not_sender_port(self) -> None:
+        """Test that device info records the target port we sent to, not the response sender port."""
+        from custom_components.marstek.discovery import get_device_info
+
+        device_response = {
+            "id": 0,
+            "result": {
+                "device": "Venus",
+                "ver": 3,
+                "ip": "192.168.1.100",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+            }
+        }
+
+        mock_socket = MagicMock()
+
+        call_count = 0
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Device responds from an ephemeral port (49152), NOT the target port (30003)
+                return (json.dumps(device_response).encode(), ("192.168.1.100", 49152))
+            raise TimeoutError()
+
+        time_calls = [0]
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                result = await get_device_info("192.168.1.100", port=30003, timeout=0.5)
+
+        assert result is not None
+        # Port should be the target port (30003) we sent to, not the sender port (49152)
+        assert result["port"] == 30003
+
+    @pytest.mark.asyncio
     async def test_no_response_timeout(self) -> None:
         """Test timeout when device doesn't respond."""
         from custom_components.marstek.discovery import get_device_info
