@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0-rc8] - 2026-03-19
+
+### Added
+- Manual IP/port entry in the config flow
+- Multi-port discovery support for devices using custom Open API ports
+
+### Changed
+- Battery icon handling now follows Home Assistant's battery device class behavior
+
+### Fixed
+- Preserved custom ports during discovery and device info lookups
+- Wrapped UDP request IDs to 16-bit values and accepted wrapped `id = 0` responses
+
+### Maintenance
+- Refined discovery internals and development mocks
+- Updated typing compatibility for the latest Home Assistant/Python environment
+
 ## [1.0.0-rc7] - 2026-03-03
 
 ### Added
