@@ -52,12 +52,12 @@ class TestRequestIdManagement:
     def test_get_next_request_id_wraps_at_16_bits(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that request IDs wrap after 65535."""
-        monkeypatch.setattr(command_builder, "_request_id", 0xFFFE)
+        """Test that request IDs wrap after 65535 and keep incrementing."""
+        monkeypatch.setattr(command_builder, "_request_id", 0xFFFC)
 
-        assert get_next_request_id() == 0xFFFF
-        assert get_next_request_id() == 0
-        assert get_next_request_id() == 1
+        generated_ids = [get_next_request_id() for _ in range(6)]
+
+        assert generated_ids == [0xFFFD, 0xFFFE, 0xFFFF, 0, 1, 2]
 
 
 class TestBuildCommand:
