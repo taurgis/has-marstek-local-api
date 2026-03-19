@@ -52,6 +52,53 @@ async def test_setup_and_unload(
     assert DOMAIN not in hass.data
 
 
+async def test_setup_with_custom_port(
+    hass: HomeAssistant,
+) -> None:
+    """Test setup passes custom port through the entire chain."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "port": 30003,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={
+            "device_mode": "SelfUse",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert entry.state == ConfigEntryState.LOADED
+
+        # Verify connection was verified with custom port
+        client.send_request.assert_called()
+        call_args = client.send_request.call_args
+        assert call_args.args[2] == 30003  # port argument
+
+        # Verify coordinator uses custom port for polling
+        coordinator = entry.runtime_data.coordinator
+        assert coordinator.device_port == 30003
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
 async def test_update_listener_suppresses_reload(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

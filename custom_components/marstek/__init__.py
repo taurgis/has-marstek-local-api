@@ -102,7 +102,7 @@ async def _get_or_create_shared_udp_client(hass: HomeAssistant) -> MarstekUDPCli
 
     if DATA_UDP_CLIENT not in hass.data[DOMAIN]:
         _LOGGER.debug("Creating shared UDP client for Marstek integration")
-        udp_client = MarstekUDPClient()
+        udp_client = MarstekUDPClient(bind_port=0)
         await udp_client.async_setup()
         hass.data[DOMAIN][DATA_UDP_CLIENT] = udp_client
 
@@ -229,7 +229,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     udp_client = await _get_or_create_shared_udp_client(hass)
 
     stored_ip = entry.data[CONF_HOST]
-    stored_port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
+    stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
     # Only use BLE-MAC for device identification (user feedback)
     stored_ble_mac = entry.data.get("ble_mac")
 

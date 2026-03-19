@@ -18,9 +18,6 @@
   },
   "entity": {
     "sensor": {
-      "battery_level": {
-        "default": "mdi:battery"
-      },
       "battery_power": {
         "default": "mdi:battery-charging"
       },

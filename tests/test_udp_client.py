@@ -225,6 +225,44 @@ class TestAsyncSetup:
         # Should still be the same socket
         assert client._socket is mock_socket
 
+    async def test_bind_port_defaults_to_port(self) -> None:
+        """Test that bind_port defaults to port when not specified."""
+        client = MarstekUDPClient(port=30000)
+        mock_socket = MagicMock()
+
+        with patch("socket.socket", return_value=mock_socket):
+            await client.async_setup()
+            mock_socket.bind.assert_called_once_with(("0.0.0.0", 30000))
+
+        await client.async_cleanup()
+
+    async def test_bind_port_ephemeral(self) -> None:
+        """Test that bind_port=0 binds to ephemeral port."""
+        client = MarstekUDPClient(bind_port=0)
+        mock_socket = MagicMock()
+
+        with patch("socket.socket", return_value=mock_socket):
+            await client.async_setup()
+            mock_socket.bind.assert_called_once_with(("0.0.0.0", 0))
+
+        # Broadcast target port should still use default
+        assert client._port == 30000
+        await client.async_cleanup()
+
+    async def test_bind_port_independent_of_broadcast_port(self) -> None:
+        """Test that bind_port and broadcast port (self._port) are independent."""
+        client = MarstekUDPClient(port=30000, bind_port=0)
+        mock_socket = MagicMock()
+
+        with patch("socket.socket", return_value=mock_socket):
+            await client.async_setup()
+            # Socket binds to ephemeral port
+            mock_socket.bind.assert_called_once_with(("0.0.0.0", 0))
+
+        # Broadcast target port is still 30000
+        assert client._port == 30000
+        await client.async_cleanup()
+
 
 class TestSendRequest:
     """Tests for send_request method."""

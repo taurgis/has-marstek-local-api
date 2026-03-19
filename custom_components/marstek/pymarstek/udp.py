@@ -88,8 +88,14 @@ class MarstekUDPClient:
     - Discovery caching to reduce network traffic
     """
 
-    def __init__(self, port: int = DEFAULT_UDP_PORT) -> None:
+    def __init__(
+        self,
+        port: int = DEFAULT_UDP_PORT,
+        *,
+        bind_port: int | None = None,
+    ) -> None:
         self._port = port
+        self._bind_port = bind_port if bind_port is not None else port
         self._socket: socket.socket | None = None
         self._pending_requests: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._response_cache: dict[int, dict[str, Any]] = {}
@@ -184,7 +190,7 @@ class MarstekUDPClient:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setblocking(False)
-        sock.bind(("0.0.0.0", self._port))
+        sock.bind(("0.0.0.0", self._bind_port))
         self._socket = sock
         _LOGGER.debug("UDP client bound to %s:%s", sock.getsockname()[0], sock.getsockname()[1])
 
