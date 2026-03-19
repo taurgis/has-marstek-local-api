@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -13,26 +13,6 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
-
-try:
-    from homeassistant.helpers.service_info.dhcp import (  # type: ignore[import-not-found]
-        DhcpServiceInfo,
-    )
-except ImportError:
-    # Fallback for older Home Assistant versions (pre-2025.1)
-    try:
-        from homeassistant.components.dhcp import DhcpServiceInfo
-    except ImportError:
-        # If DHCP service info is not available, create a minimal stub
-        from dataclasses import dataclass
-
-        @dataclass
-        class DhcpServiceInfo:  # type: ignore[no-redef]
-            """Fallback DHCP service info for older Home Assistant versions."""
-
-            ip: str
-            hostname: str
-            macaddress: str
 
 from .const import (
     CONF_ACTION_CHARGE_POWER,
@@ -74,10 +54,19 @@ from .helpers.flow_schemas import (
     build_power_schema,
 )
 
+
+class DhcpServiceInfoLike(Protocol):
+    """Structural typing for DHCP discovery payloads across HA versions."""
+
+    ip: str
+    hostname: str
+    macaddress: str
+
 _LOGGER = logging.getLogger(__name__)
 
 _COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30030)
 _MANUAL_DEVICE_OPTION = "__manual__"
+
 
 class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Marstek."""
@@ -294,7 +283,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return sorted(ports)
 
     async def async_step_dhcp(
-        self, discovery_info: DhcpServiceInfo
+        self, discovery_info: DhcpServiceInfoLike
     ) -> config_entries.ConfigFlowResult:
         """Handle DHCP discovery to update IP address when it changes (mik-laj feedback)."""
         if not discovery_info.macaddress or not discovery_info.ip:
