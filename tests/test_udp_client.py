@@ -1142,6 +1142,37 @@ class TestListenForResponses:
         # Should have caught the OSError, slept, then got cancelled
         assert recv_calls == 2
 
+    async def test_matches_response_with_zero_request_id(self) -> None:
+        """Test that a wrapped request ID of 0 still resolves pending requests."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+
+        loop = asyncio.get_event_loop()
+        client._loop = loop
+
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        client._pending_requests[0] = future
+
+        recv_calls = 0
+        response = {"id": 0, "result": {"mode": "Auto"}}
+
+        async def mock_recvfrom(
+            sock: Any, bufsize: int
+        ) -> tuple[bytes, tuple[str, int]]:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                return (json.dumps(response).encode(), ("192.168.1.100", 30000))
+            raise asyncio.CancelledError()
+
+        with patch.object(loop, "sock_recvfrom", mock_recvfrom):
+            await client._listen_for_responses()
+
+        assert recv_calls == 2
+        assert future.done()
+        assert future.result() == response
+        assert client._response_cache[0]["response"] == response
+
 
 class TestPsutilHandling:
     """Tests for psutil import handling."""

@@ -25,12 +25,17 @@ from .validators import ValidationError, validate_command
 _LOGGER = logging.getLogger(__name__)
 
 _request_id = 0
+_MAX_REQUEST_ID = 0xFFFF
 
 
 def get_next_request_id() -> int:
-    """Get the next request identifier."""
+    """Get the next request identifier.
+
+    Marstek devices appear to treat request IDs as 16-bit values, so wrap the
+    counter to keep request/response matching stable during long-running polls.
+    """
     global _request_id
-    _request_id += 1
+    _request_id = (_request_id + 1) & _MAX_REQUEST_ID
     return _request_id
 
 

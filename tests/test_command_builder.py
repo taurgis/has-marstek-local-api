@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import custom_components.marstek.pymarstek.command_builder as command_builder
 
 from custom_components.marstek.pymarstek.command_builder import (
     build_command,
@@ -46,6 +47,16 @@ class TestRequestIdManagement:
         reset_request_id()
 
         # Next ID should be 1
+        assert get_next_request_id() == 1
+
+    def test_get_next_request_id_wraps_at_16_bits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that request IDs wrap after 65535."""
+        monkeypatch.setattr(command_builder, "_request_id", 0xFFFE)
+
+        assert get_next_request_id() == 0xFFFF
+        assert get_next_request_id() == 0
         assert get_next_request_id() == 1
 
 

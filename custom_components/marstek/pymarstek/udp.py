@@ -494,7 +494,7 @@ class MarstekUDPClient:
                     response = {"raw": response_text}
                 request_id = response.get("id") if isinstance(response, dict) else None
                 _LOGGER.debug("Recv: %s:%d | %s", addr[0], addr[1], response)
-                if request_id:
+                if isinstance(request_id, int):
                     self._response_cache[request_id] = {
                         "response": response,
                         "addr": addr,
