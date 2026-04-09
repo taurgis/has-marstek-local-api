@@ -290,6 +290,17 @@ def _is_unknown_value(value: Any) -> bool:
     return isinstance(value, str) and value.lower() == "unknown"
 
 
+# Energy counters that some device firmware versions do not track.
+# Venus A firmware 147 always returns 0 for total_pv_energy and total_load_energy
+# even when solar panels are generating power.  Incoming 0 values for these keys
+# are treated as "not reported" rather than "actually zero" so that:
+#   - a first-time None (Unavailable) is not replaced by a misleading 0
+#   - a previously stored non-zero value is preserved across fast-tier poll cycles
+_ENERGY_SKIP_ZERO_KEYS: frozenset[str] = frozenset(
+    {"total_pv_energy", "total_load_energy"}
+)
+
+
 def _recalculate_battery_from_pv(
     status: dict[str, Any],
     pv_status_data: dict[str, Any],
@@ -341,6 +352,11 @@ def merge_device_status(
 
     Note: Battery power is recalculated using PV channel data when ES.GetStatus
     returns incorrect pv_power (common on Venus A devices).
+
+    Note: total_pv_energy and total_load_energy are treated as "not reported" when
+    the device returns 0, because some Venus A firmware versions always return 0 for
+    these counters even while solar panels are generating power.  This causes the
+    sensors to show Unavailable instead of a misleading 0.
 
     Args:
         es_mode_data: Parsed ES.GetMode data (device_mode, ongrid_power)
@@ -396,6 +412,10 @@ def merge_device_status(
     def _apply_updates(updates: dict[str, Any]) -> None:
         for key, value in updates.items():
             if value is None or _is_unknown_value(value):
+                continue
+            # Skip zero updates for energy counters that some devices don't track.
+            # Preserves None (Unavailable) or a previously accumulated non-zero value.
+            if key in _ENERGY_SKIP_ZERO_KEYS and value == 0:
                 continue
             status[key] = value
 

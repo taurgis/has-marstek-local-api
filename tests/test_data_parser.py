@@ -527,6 +527,79 @@ class TestMergeDeviceStatus:
         assert result["battery_power"] == 500
         assert result["battery_status"] == "discharging"
 
+    def test_total_pv_energy_zero_is_skipped(self):
+        """Test that total_pv_energy=0 from ES.GetStatus is treated as 'not tracked'.
+
+        Venus A firmware 147 always returns total_pv_energy=0 and total_load_energy=0
+        in ES.GetStatus even though solar panels are generating power.  A zero value
+        should NOT override a previously-stored non-zero value, and should NOT replace
+        an initial None (which displays as Unavailable rather than a misleading 0).
+        """
+        es_status_data = {
+            "battery_soc": 50,
+            "battery_power": -89,
+            "total_pv_energy": 0,  # Venus A: always returns 0
+            "total_grid_output_energy": 71824,
+            "total_grid_input_energy": 44188,
+            "total_load_energy": 0,  # Venus A: always returns 0
+        }
+
+        # Case 1: No previous status – counters should remain None (Unavailable)
+        result = merge_device_status(es_status_data=es_status_data)
+        assert result["total_pv_energy"] is None
+        assert result["total_load_energy"] is None
+        # Grid counters are non-zero and must still be applied
+        assert result["total_grid_output_energy"] == 71824
+        assert result["total_grid_input_energy"] == 44188
+
+    def test_total_pv_energy_zero_does_not_reset_previous_nonzero(self):
+        """Test that total_pv_energy=0 does not overwrite a previously-known value.
+
+        If a device previously reported a non-zero value and then starts returning 0
+        (e.g. due to a firmware quirk or temporary issue), the previously stored
+        non-zero value should be preserved.
+        """
+        previous_status = {
+            "total_pv_energy": 5000,
+            "total_load_energy": 3000,
+            "total_grid_output_energy": 71824,
+            "total_grid_input_energy": 44188,
+        }
+        es_status_data = {
+            "battery_soc": 50,
+            "total_pv_energy": 0,  # Would wrongly overwrite 5000
+            "total_grid_output_energy": 71824,
+            "total_grid_input_energy": 44188,
+            "total_load_energy": 0,  # Would wrongly overwrite 3000
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            previous_status=previous_status,
+        )
+
+        # Previous non-zero values must be preserved
+        assert result["total_pv_energy"] == 5000
+        assert result["total_load_energy"] == 3000
+        # Grid counters are unaffected
+        assert result["total_grid_output_energy"] == 71824
+        assert result["total_grid_input_energy"] == 44188
+
+    def test_total_pv_energy_nonzero_is_applied(self):
+        """Test that a genuine non-zero total_pv_energy value from ES.GetStatus is stored."""
+        es_status_data = {
+            "battery_soc": 80,
+            "total_pv_energy": 12345,
+            "total_grid_output_energy": 71824,
+            "total_grid_input_energy": 44188,
+            "total_load_energy": 6789,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_pv_energy"] == 12345
+        assert result["total_load_energy"] == 6789
+
     def test_battery_power_recalculated_discharging(self):
         """Test battery power recalculation when discharging with PV.
         
