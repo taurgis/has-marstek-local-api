@@ -483,6 +483,76 @@ async def test_phase_power_sensors_created(
         assert state_c.state == "125"
 
 
+async def test_em_energy_sensors_created_when_data_available(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test CT grid energy sensors created when EM energy data is available.
+
+    Real Venus E 3.0 devices return undocumented input_energy / output_energy
+    fields in EM.GetStatus. These sensors are disabled by default but should
+    be created when the device provides the data.
+    """
+    mock_config_entry.add_to_hass(hass)
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 99,
+        "battery_power": -497,
+        "em_total_power": 0,
+        "em_input_energy": 1234,
+        "em_output_energy": 567,
+    }
+
+    client = create_mock_client(status=status)
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state == ConfigEntryState.LOADED
+
+        # Sensors exist in registry (disabled by default)
+        entity_registry = er.async_get(hass)
+        ct_import = entity_registry.async_get("sensor.venus_ct_grid_import_energy")
+        assert ct_import is not None
+        assert ct_import.disabled_by is not None  # disabled by default
+
+        ct_export = entity_registry.async_get("sensor.venus_ct_grid_export_energy")
+        assert ct_export is not None
+        assert ct_export.disabled_by is not None  # disabled by default
+
+
+async def test_em_energy_sensors_not_created_without_data(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test CT grid energy sensors are not created when device does not provide them.
+
+    Devices without EM energy support will not return input_energy/output_energy,
+    so no sensor should be created to avoid unavailable entities.
+    """
+    mock_config_entry.add_to_hass(hass)
+
+    # Status without em_input_energy / em_output_energy
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": 120,
+        "em_total_power": 360,
+    }
+
+    client = create_mock_client(status=status)
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state == ConfigEntryState.LOADED
+
+        entity_registry = er.async_get(hass)
+        assert entity_registry.async_get("sensor.venus_ct_grid_import_energy") is None
+        assert entity_registry.async_get("sensor.venus_ct_grid_export_energy") is None
+
+
 async def test_all_new_sensors_with_full_status(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

@@ -101,6 +101,14 @@ class BatterySimulator:
         self.total_grid_input_energy = 0.0   # Energy imported from grid
         self.total_load_energy = 0.0         # Total household consumption
 
+        # CT-measured energy (session totals, not persisted - reset on restart)
+        # These simulate EM.GetStatus input_energy / output_energy fields.
+        # Unlike total_grid_input/output_energy (which may be frozen at factory values
+        # due to firmware bugs), CT energy starts at 0 and accumulates as long as
+        # the CT is connected and measuring. Real devices reset these on power cycle.
+        self.em_input_energy = 0.0   # CT-measured grid import energy [Wh]
+        self.em_output_energy = 0.0  # CT-measured grid export energy [Wh]
+
         # PV simulation (always 0 for plug-in battery without solar input)
         self.pv_power = 0
         self.pv_voltage = 0
@@ -300,8 +308,12 @@ class BatterySimulator:
         # Grid energy tracking
         if self.grid_power > 0:
             self.total_grid_input_energy += self.grid_power * hours
+            if self.ct_connected:
+                self.em_input_energy += self.grid_power * hours
         else:
             self.total_grid_output_energy += abs(self.grid_power) * hours
+            if self.ct_connected:
+                self.em_output_energy += abs(self.grid_power) * hours
         
         # Load energy = gross household consumption
         self.total_load_energy += self.gross_household_consumption * hours
@@ -483,6 +495,10 @@ class BatterySimulator:
                 "total_grid_output_energy": int(self.total_grid_output_energy),
                 "total_grid_input_energy": int(self.total_grid_input_energy),
                 "total_load_energy": int(self.total_load_energy),
+                
+                # CT-measured energy (session totals, reset on restart)
+                "em_input_energy": int(self.em_input_energy),
+                "em_output_energy": int(self.em_output_energy),
                 
                 # PV state
                 "pv_power": self.pv_power,

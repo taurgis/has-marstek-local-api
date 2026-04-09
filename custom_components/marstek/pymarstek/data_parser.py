@@ -238,13 +238,19 @@ def parse_wifi_status_response(response: dict[str, Any]) -> dict[str, Any]:
 def parse_em_status_response(response: dict[str, Any]) -> dict[str, Any]:
     """Parse EM.GetStatus (Energy Meter/CT) response into structured data.
 
-    Provides CT connection state and phase power readings.
+    Provides CT connection state, phase power readings, and accumulated CT energy.
+
+    Note: Some devices return undocumented `input_energy` and `output_energy` fields
+    in addition to the power readings. These represent cumulative CT-measured energy
+    (imported/exported since last device reset) and may update when the CT is active
+    even when the ES.GetStatus total_grid_*_energy fields are frozen (firmware bug).
 
     Args:
         response: Raw response from EM.GetStatus command
 
     Returns:
-        Dictionary with energy meter data (ct_state, phase powers, total_power)
+        Dictionary with energy meter data (ct_state, phase powers, total_power,
+        em_input_energy, em_output_energy)
     """
     result = response.get("result", {})
 
@@ -259,6 +265,11 @@ def parse_em_status_response(response: dict[str, Any]) -> dict[str, Any]:
         "em_b_power": result.get("b_power"),  # Phase B power [W]
         "em_c_power": result.get("c_power"),  # Phase C power [W]
         "em_total_power": result.get("total_power"),  # Total grid power [W]
+        # CT-measured cumulative energy totals (undocumented but present on real devices).
+        # These accumulate from the last device reset and are updated by the CT hardware.
+        # Use as alternative to ES.GetStatus energy totals when those are frozen.
+        "em_input_energy": result.get("input_energy"),  # CT grid import energy [Wh]
+        "em_output_energy": result.get("output_energy"),  # CT grid export energy [Wh]
     }
 
 
@@ -384,6 +395,9 @@ def merge_device_status(
         "em_b_power": None,
         "em_c_power": None,
         "em_total_power": None,
+        # CT-measured energy totals (from EM.GetStatus, may differ from ES totals)
+        "em_input_energy": None,
+        "em_output_energy": None,
         # Battery details defaults
         "bat_temp": None,
         "bat_charg_flag": None,

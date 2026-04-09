@@ -266,7 +266,7 @@ class TestDeviceDiscovery:
         assert "bat_temp" in result
 
     def test_em_get_status(self) -> None:
-        """Test EM.GetStatus returns energy meter info."""
+        """Test EM.GetStatus returns energy meter info including CT energy totals."""
         device = MockMarstekDevice(port=30009, simulate=False)
 
         response = device._build_response(1, "EM.GetStatus", {})
@@ -274,6 +274,11 @@ class TestDeviceDiscovery:
         assert response is not None
         result = response["result"]
         assert "ct_state" in result  # CT clamp state
+        # CT energy totals (undocumented but present on real devices)
+        assert "input_energy" in result
+        assert "output_energy" in result
+        assert result["input_energy"] == 0  # starts at 0 in static mode
+        assert result["output_energy"] == 0  # starts at 0 in static mode
 
 
 class TestStaticMode:

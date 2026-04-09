@@ -114,6 +114,73 @@ class TestParseEmStatusResponse:
         assert result["ct_connected"] is None
         assert result["em_a_power"] is None
         assert result["em_total_power"] is None
+        assert result["em_input_energy"] is None
+        assert result["em_output_energy"] is None
+
+    def test_parse_with_energy_fields(self):
+        """Test parsing EM status response with CT energy totals.
+
+        Real Venus E 3.0 devices return undocumented input_energy and output_energy
+        fields in EM.GetStatus, representing cumulative CT-measured energy since
+        the last device reset.
+        """
+        response = {
+            "id": 683,
+            "result": {
+                "id": 0,
+                "ct_state": 1,
+                "a_power": 0,
+                "b_power": 0,
+                "c_power": 0,
+                "total_power": 0,
+                "input_energy": 1234,
+                "output_energy": 567,
+            },
+        }
+
+        result = parse_em_status_response(response)
+
+        assert result["ct_state"] == 1
+        assert result["ct_connected"] is True
+        assert result["em_total_power"] == 0
+        assert result["em_input_energy"] == 1234
+        assert result["em_output_energy"] == 567
+
+    def test_parse_with_zero_energy_fields(self):
+        """Test parsing EM status with zero CT energy totals (e.g., after device reset)."""
+        response = {
+            "id": 1,
+            "result": {
+                "ct_state": 1,
+                "total_power": 0,
+                "input_energy": 0,
+                "output_energy": 0,
+            },
+        }
+
+        result = parse_em_status_response(response)
+
+        assert result["em_input_energy"] == 0
+        assert result["em_output_energy"] == 0
+
+    def test_parse_without_energy_fields(self):
+        """Test parsing EM status without CT energy totals (older firmware/devices)."""
+        response = {
+            "id": 1,
+            "result": {
+                "ct_state": 1,
+                "a_power": 100,
+                "b_power": 80,
+                "c_power": 120,
+                "total_power": 300,
+            },
+        }
+
+        result = parse_em_status_response(response)
+
+        assert result["em_total_power"] == 300
+        assert result["em_input_energy"] is None
+        assert result["em_output_energy"] is None
 
 
 class TestParseBatStatusResponse:

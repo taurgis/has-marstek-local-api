@@ -200,6 +200,12 @@
       "em_c_power": {
         "name": "Phase C power"
       },
+      "em_input_energy": {
+        "name": "CT grid import energy"
+      },
+      "em_output_energy": {
+        "name": "CT grid export energy"
+      },
       "total_pv_energy": {
         "name": "Total solar energy"
       },

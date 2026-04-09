@@ -204,6 +204,10 @@ def handle_em_get_status(
     
     Positive values = importing from grid (household consuming more than battery provides)
     Negative values = exporting to grid (battery/solar producing more than household uses)
+
+    Also includes CT-measured cumulative energy totals (input_energy, output_energy)
+    which accumulate since the last device reset. These are present on real devices
+    but not in the official API documentation.
     """
     return {
         "id": request_id,
@@ -215,6 +219,8 @@ def handle_em_get_status(
             "b_power": state.get("em_b_power", 0),
             "c_power": state.get("em_c_power", 0),
             "total_power": state["grid_power"],
+            "input_energy": state.get("em_input_energy", 0),
+            "output_energy": state.get("em_output_energy", 0),
         },
     }
 
@@ -285,6 +291,8 @@ def get_static_state(
         "total_grid_output_energy": int(totals.get("total_grid_output_energy", 0)),
         "total_grid_input_energy": int(totals.get("total_grid_input_energy", 0)),
         "total_load_energy": int(totals.get("total_load_energy", 0)),
+        "em_input_energy": int(totals.get("em_input_energy", 0)),
+        "em_output_energy": int(totals.get("em_output_energy", 0)),
         "pv_power": 0,
         "pv_voltage": 0,
         "pv_current": 0,
