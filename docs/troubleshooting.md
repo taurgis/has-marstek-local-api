@@ -25,6 +25,17 @@ This is expected behavior.
 - In diagnostics, check `polling_config.request_strategy` and
   `polling_config.request_delay_effective` to confirm actual request behavior.
 
+## Grid energy totals look frozen
+
+On some Venus firmware builds, the device keeps returning fixed
+`total_grid_input_energy` or `total_grid_output_energy` values even while
+`on_grid_power` continues to show import/export activity.
+
+The integration now keeps those totals moving by using the reported grid power
+between updates and restores the corrected total after Home Assistant restarts.
+If the totals still look wrong, compare the grid energy sensors with
+`sensor.<device>_on_grid_power` and include debug logs in your report.
+
 ## Venus E2.0
 
 Venus **E2.0 is not supported**.

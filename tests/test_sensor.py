@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
+from homeassistant.components.sensor import SensorExtraStoredData
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -19,6 +20,8 @@ from custom_components.marstek.helpers.sensor_stats import (
     overall_command_stats_attributes,
     overall_command_success_rate,
 )
+from custom_components.marstek.pymarstek.data_parser import merge_device_status
+from custom_components.marstek.sensor import MarstekSensor
 
 from tests.conftest import create_mock_client, patch_marstek_integration
 
@@ -117,6 +120,68 @@ async def test_entities_recover_after_unavailable(
         state = hass.states.get("sensor.venus_battery_level")
         assert state is not None
         assert state.state == "55"
+
+
+async def test_grid_input_total_restores_corrected_value_after_restart(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test restored grid totals seed the fallback baseline after restart."""
+    mock_config_entry.add_to_hass(hass)
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": -250,
+        "ongrid_power": -360,
+        "total_grid_input_energy": 1000.0,
+        "total_grid_output_energy": 500.0,
+    }
+
+    client = create_mock_client(status=status)
+
+    async def _get_device_status(*_args, **kwargs):
+        previous_status = kwargs.get("previous_status")
+        last_update = 160.0 if previous_status else 100.0
+        return merge_device_status(
+            es_status_data=status,
+            last_update=last_update,
+            previous_status=previous_status,
+        )
+
+    client.get_device_status = AsyncMock(side_effect=_get_device_status)
+
+    async def _restore_sensor_data(
+        self: MarstekSensor,
+    ) -> SensorExtraStoredData | None:
+        if self.entity_description.key == "total_grid_input_energy":
+            return SensorExtraStoredData(
+                native_value=1100.0,
+                native_unit_of_measurement="Wh",
+            )
+        return None
+
+    with (
+        patch.object(
+            MarstekSensor,
+            "async_get_last_sensor_data",
+            _restore_sensor_data,
+        ),
+        patch_marstek_integration(client=client),
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_total_grid_input_energy")
+        assert state is not None
+        assert float(state.state) == 1100.0
+
+        coordinator = mock_config_entry.runtime_data.coordinator
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_total_grid_input_energy")
+        assert state is not None
+        assert float(state.state) == 1106.0
 
 
 async def test_no_pv_entities_when_data_missing(

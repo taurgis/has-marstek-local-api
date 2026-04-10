@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import RestoreSensor, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -25,8 +25,15 @@ from .helpers.sensor_descriptions import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_RESTORED_GRID_TOTAL_KEYS = {
+    "total_grid_input_energy",
+    "total_grid_output_energy",
+}
 
-class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], SensorEntity):
+
+class MarstekSensor(
+    CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity
+):
     """Representation of a Marstek sensor."""
 
     _attr_has_entity_name = True
@@ -47,6 +54,29 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], SensorEntit
         device_identifier = get_device_identifier(device_info)
         self._attr_unique_id = f"{device_identifier}_{description.key}"
         self._attr_device_info = build_device_info(device_info)
+
+    async def async_added_to_hass(self) -> None:
+        """Restore corrected grid totals so total_increasing stays monotonic."""
+        await super().async_added_to_hass()
+
+        if self.entity_description.key not in _RESTORED_GRID_TOTAL_KEYS:
+            return
+
+        restored_data = await self.async_get_last_sensor_data()
+        if restored_data is None or self.coordinator.data is None:
+            return
+
+        restored_value = restored_data.native_value
+        if not isinstance(restored_value, (int, float)):
+            return
+
+        expected_unit = self.entity_description.native_unit_of_measurement
+        if restored_data.native_unit_of_measurement != expected_unit:
+            return
+
+        current_value = self.coordinator.data.get(self.entity_description.key)
+        if not isinstance(current_value, (int, float)) or current_value < restored_value:
+            self.coordinator.data[self.entity_description.key] = float(restored_value)
 
     @property
     def native_value(self) -> StateType:

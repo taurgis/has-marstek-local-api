@@ -317,6 +317,93 @@ def _recalculate_battery_from_pv(
                 status["battery_status"] = "idle"
 
 
+def _average_ongrid_power(
+    previous_power: Any,
+    current_power: Any,
+) -> float | None:
+    """Return the average grid power between two samples when available."""
+    numeric_values = [
+        float(value)
+        for value in (previous_power, current_power)
+        if isinstance(value, (int, float))
+    ]
+    if not numeric_values:
+        return None
+    return sum(numeric_values) / len(numeric_values)
+
+
+def _stabilize_grid_energy_totals(
+    status: dict[str, Any],
+    previous_status: dict[str, Any] | None,
+) -> None:
+    """Preserve moving grid totals when firmware counters stall.
+
+    Some Venus E firmware builds keep returning the same
+    total_grid_input_energy/total_grid_output_energy values even while
+    ongrid_power shows sustained import/export. When that happens, keep the
+    last known total as a floor and integrate the current flow until the device
+    counters start advancing again.
+    """
+    if not previous_status:
+        return
+
+    previous_timestamp = previous_status.get("last_update")
+    current_timestamp = status.get("last_update")
+    if not isinstance(previous_timestamp, (int, float)) or not isinstance(
+        current_timestamp, (int, float)
+    ):
+        return
+
+    elapsed_seconds = current_timestamp - previous_timestamp
+    if elapsed_seconds < 0:
+        return
+
+    average_ongrid_power = _average_ongrid_power(
+        previous_status.get("ongrid_power"),
+        status.get("ongrid_power"),
+    )
+    elapsed_hours = elapsed_seconds / 3600
+    import_delta_wh = (
+        abs(average_ongrid_power) * elapsed_hours
+        if average_ongrid_power is not None and average_ongrid_power < 0
+        else 0.0
+    )
+    export_delta_wh = (
+        average_ongrid_power * elapsed_hours
+        if average_ongrid_power is not None and average_ongrid_power > 0
+        else 0.0
+    )
+
+    def _stabilize_total(total_key: str, delta_wh: float) -> None:
+        previous_total = previous_status.get(total_key)
+        current_total = status.get(total_key)
+        if not isinstance(previous_total, (int, float)) and not isinstance(
+            current_total, (int, float)
+        ):
+            return
+
+        if (
+            isinstance(previous_total, (int, float))
+            and isinstance(current_total, (int, float))
+            and current_total > previous_total
+        ):
+            return
+
+        baseline_total: float | None = None
+        if isinstance(previous_total, (int, float)):
+            baseline_total = float(previous_total)
+        elif isinstance(current_total, (int, float)):
+            baseline_total = float(current_total)
+
+        if baseline_total is None:
+            return
+
+        status[total_key] = baseline_total + delta_wh
+
+    _stabilize_total("total_grid_input_energy", import_delta_wh)
+    _stabilize_total("total_grid_output_energy", export_delta_wh)
+
+
 def merge_device_status(
     es_mode_data: dict[str, Any] | None = None,
     es_status_data: dict[str, Any] | None = None,
@@ -449,6 +536,8 @@ def merge_device_status(
 
     if last_update is not None:
         status["last_update"] = last_update
+
+    _stabilize_grid_energy_totals(status, previous_status)
 
     return status
 

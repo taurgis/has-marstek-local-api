@@ -443,6 +443,78 @@ class TestMergeDeviceStatus:
         assert result["battery_power"] == 0
         assert result["ct_connected"] is False
 
+    def test_grid_input_total_uses_fallback_when_counter_is_stuck(self):
+        """Test grid import total keeps increasing when firmware counters stall."""
+        previous_status = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+            "last_update": 100.0,
+        }
+
+        es_status_data = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            last_update=160.0,
+            previous_status=previous_status,
+        )
+
+        assert result["total_grid_input_energy"] == 1006.0
+        assert result["total_grid_output_energy"] == 500.0
+
+    def test_grid_output_total_uses_fallback_when_counter_is_stuck(self):
+        """Test grid export total keeps increasing when firmware counters stall."""
+        previous_status = {
+            "ongrid_power": 600,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+            "last_update": 200.0,
+        }
+
+        es_status_data = {
+            "ongrid_power": 600,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            last_update=260.0,
+            previous_status=previous_status,
+        )
+
+        assert result["total_grid_input_energy"] == 1000.0
+        assert result["total_grid_output_energy"] == 510.0
+
+    def test_grid_totals_trust_advancing_device_counter(self):
+        """Test advancing firmware counters are used as-is."""
+        previous_status = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+            "last_update": 300.0,
+        }
+
+        es_status_data = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1015.0,
+            "total_grid_output_energy": 500.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            last_update=360.0,
+            previous_status=previous_status,
+        )
+
+        assert result["total_grid_input_energy"] == 1015.0
+        assert result["total_grid_output_energy"] == 500.0
+
     def test_battery_power_recalculated_from_pv_channels(self):
         """Test battery power and pv_power are recalculated when ES.GetStatus pv_power is 0.
         

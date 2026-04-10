@@ -16,6 +16,12 @@ The Marstek Open API reports total energy values in Wh. The integration keeps th
 | Grid export (total) | Total grid output energy | total_grid_output_energy | Wh |
 | Home consumption (total) | Total load energy | total_load_energy | Wh |
 
+Note: Some Marstek firmware versions can keep the raw grid input/output energy
+counters fixed even while grid power is still changing. When that happens, the
+integration keeps the grid totals monotonic by deriving the missing growth from
+`on_grid_power` between updates and restoring the corrected total after Home
+Assistant restarts.
+
 ## Optional power sensors
 These are not required for the energy dashboard. Use them for real time cards and sanity checks. These sensors use `state_class: measurement`.
 
