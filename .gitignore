@@ -37,6 +37,10 @@ ENV/
 *.swo
 *~
 
+# Node.js
+node_modules/
+.changeset/status.json
+
 # Testing
 .pytest_cache/
 .coverage

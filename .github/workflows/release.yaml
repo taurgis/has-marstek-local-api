@@ -29,10 +29,14 @@ jobs:
           
           # Use awk to extract content between this version header and the next version header
           CHANGELOG=$(awk -v ver="$VERSION" '
-            /^## \[/ {
+            /^## / {
               if (found) exit
-              if (index($0, "[" ver "]")) found=1
-              next
+              header=$0
+              sub(/^## /, "", header)
+              if (header ~ ("^\\[" ver "\\]") || header ~ ("^" ver "($| )")) {
+                found=1
+                next
+              }
             }
             found { print }
           ' CHANGELOG.md)

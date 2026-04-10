@@ -1,0 +1,39 @@
+name: Changesets
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  changesets:
+    name: Create Release PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install release tooling
+        run: npm ci
+
+      - name: Create release pull request or tag release
+        uses: changesets/action@v1
+        with:
+          version: npm run changeset:version
+          publish: npm run release:tag
+          title: Release
+          commit: Release
+          createGithubReleases: false
+          setupGitUser: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

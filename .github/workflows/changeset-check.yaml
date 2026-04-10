@@ -1,0 +1,40 @@
+name: Changeset Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check:
+    name: Has changeset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install release tooling
+        run: npm ci
+
+      - name: Check for changesets
+        run: |
+          # Allow the automated Release PR (title "Release") to skip this check
+          if [ "${{ github.event.pull_request.title }}" = "Release" ]; then
+            echo "Skipping changeset check for the Release PR."
+            exit 0
+          fi
+
+          STATUS=$(npx changeset status --since=origin/main 2>&1) || true
+
+          if echo "$STATUS" | grep -q "No changesets present"; then
+            echo "::warning::This PR has no changeset. If the change should appear in the next release, run \`npm run changeset\` and commit the generated file."
+          else
+            echo "Changeset found."
+            echo "$STATUS"
+          fi

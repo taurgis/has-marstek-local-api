@@ -236,6 +236,39 @@ pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 pytest tests/test_config_flow.py -v
 ```
 
+### Release workflow
+
+This repository uses Changesets for release preparation.
+
+```bash
+# Install the release tooling once
+npm install
+
+# Add a release note for a change
+npm run changeset
+```
+
+Merge changesets into `main` and the `Changesets` GitHub Action will open or update a `Release` pull request that:
+
+- bumps `package.json`
+- updates `CHANGELOG.md`
+- syncs `custom_components/marstek/manifest.json`
+- syncs `pyproject.toml`
+
+When that PR is merged, the workflow creates and pushes the matching `v*` tag, and the existing release workflow publishes the GitHub release from `CHANGELOG.md`.
+
+If you need to continue the current release-candidate flow, enter prerelease mode before merging the next release batch:
+
+```bash
+# Start generating RC versions
+npm run changeset:pre:enter
+
+# Leave prerelease mode before the final stable release
+npm run changeset:pre:exit
+```
+
+Changesets prerelease mode uses SemVer prerelease identifiers such as `-rc.0`.
+
 ### Mock Device
 
 A mock device is available for testing without physical hardware:

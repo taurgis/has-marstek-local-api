@@ -1,0 +1,16 @@
+{
+  "name": "ha-marstek-release-tools",
+  "private": true,
+  "version": "1.0.0-rc8",
+  "description": "Release tooling for the Marstek Home Assistant integration",
+  "scripts": {
+    "changeset": "changeset",
+    "changeset:version": "changeset version && node scripts/sync-release-version.mjs",
+    "changeset:pre:enter": "changeset pre enter rc",
+    "changeset:pre:exit": "changeset pre exit",
+    "release:tag": "node scripts/create-release-tag.mjs"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7"
+  }
+}
