@@ -36,6 +36,22 @@ between updates and restores the corrected total after Home Assistant restarts.
 If the totals still look wrong, compare the grid energy sensors with
 `sensor.<device>_on_grid_power` and include debug logs in your report.
 
+## Venus A solar or load energy stays at 0 Wh
+
+Some Venus A firmware versions report `total_pv_energy` as `0` even while PV
+channel power is active.
+
+The integration treats those contradicted zero solar totals as invalid instead
+of exposing a misleading lifetime counter. That means `total_pv_energy` may
+stay unavailable until the device reports a real non-zero total.
+
+If you need solar energy in the meantime, compare the sensor with
+`sensor.<device>_pv_power` and consider Home Assistant's Integration helper to
+derive energy from power.
+
+`total_load_energy` remains device-reported because Marstek documents it as
+load or off-grid energy and its exact semantics vary by firmware.
+
 ## Venus E2.0
 
 Venus **E2.0 is not supported**.

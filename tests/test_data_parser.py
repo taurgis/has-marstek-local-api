@@ -515,6 +515,91 @@ class TestMergeDeviceStatus:
         assert result["total_grid_input_energy"] == 1015.0
         assert result["total_grid_output_energy"] == 500.0
 
+    def test_total_pv_energy_zero_is_kept_without_contradicting_pv_activity(self):
+        """Test a legitimate zero PV lifetime total is preserved."""
+        es_status_data = {
+            "total_pv_energy": 0,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_pv_energy"] == 0
+
+    def test_total_pv_energy_zero_with_active_pv_is_suppressed(self):
+        """Test bogus zero PV total is hidden when PV generation is active."""
+        es_status_data = {
+            "total_pv_energy": 0,
+            "pv_power": 0,
+            "ongrid_power": 169,
+            "battery_power": 169,
+        }
+        pv_status_data = {
+            "pv1_power": 41.5,
+            "pv2_power": 52.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            pv_status_data=pv_status_data,
+        )
+
+        assert result["pv_power"] == 93.5
+        assert result["total_pv_energy"] is None
+
+    def test_total_pv_energy_zero_does_not_reset_previous_nonzero(self):
+        """Test zero PV totals do not overwrite a previous non-zero lifetime total."""
+        previous_status = {
+            "total_pv_energy": 12345,
+        }
+        es_status_data = {
+            "total_pv_energy": 0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            previous_status=previous_status,
+        )
+
+        assert result["total_pv_energy"] == 12345
+
+    def test_total_load_energy_zero_is_kept_without_previous_total(self):
+        """Test a zero load total remains available when there is no contradiction."""
+        es_status_data = {
+            "total_load_energy": 0,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_load_energy"] == 0
+
+    def test_total_load_energy_zero_does_not_reset_previous_nonzero(self):
+        """Test zero load totals do not overwrite a previous non-zero lifetime total."""
+        previous_status = {
+            "total_load_energy": 67890,
+        }
+        es_status_data = {
+            "total_load_energy": 0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            previous_status=previous_status,
+        )
+
+        assert result["total_load_energy"] == 67890
+
+    def test_total_pv_and_load_energy_nonzero_are_applied(self):
+        """Test genuine non-zero lifetime PV/load totals are still used."""
+        es_status_data = {
+            "total_pv_energy": 4321,
+            "total_load_energy": 8765,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_pv_energy"] == 4321
+        assert result["total_load_energy"] == 8765
+
     def test_battery_power_recalculated_from_pv_channels(self):
         """Test battery power and pv_power are recalculated when ES.GetStatus pv_power is 0.
         

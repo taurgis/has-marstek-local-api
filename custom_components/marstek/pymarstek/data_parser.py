@@ -317,6 +317,50 @@ def _recalculate_battery_from_pv(
                 status["battery_status"] = "idle"
 
 
+def _has_active_pv_generation(status: dict[str, Any]) -> bool:
+    """Return True when current status shows active PV generation."""
+    pv_power = status.get("pv_power")
+    if isinstance(pv_power, (int, float)) and pv_power > 0:
+        return True
+
+    return any(
+        isinstance(status.get(f"pv{channel}_power"), (int, float))
+        and status[f"pv{channel}_power"] > 0
+        for channel in range(1, 5)
+    )
+
+
+def _resolve_contradicted_energy_totals(
+    status: dict[str, Any],
+    previous_status: dict[str, Any] | None,
+) -> None:
+    """Handle firmware totals that are contradicted by other telemetry.
+
+    Best-effort rules:
+    - `total_pv_energy=0` is only treated as invalid when PV generation is
+      currently active or when a previous non-zero lifetime total exists.
+    - `total_load_energy=0` is preserved unless it would reset a previous
+      non-zero lifetime total, because firmware semantics are less clear.
+    """
+    previous_pv_total = previous_status.get("total_pv_energy") if previous_status else None
+    current_pv_total = status.get("total_pv_energy")
+    if isinstance(current_pv_total, (int, float)) and current_pv_total == 0:
+        if isinstance(previous_pv_total, (int, float)) and previous_pv_total > 0:
+            status["total_pv_energy"] = previous_pv_total
+        elif _has_active_pv_generation(status):
+            status["total_pv_energy"] = None
+
+    previous_load_total = previous_status.get("total_load_energy") if previous_status else None
+    current_load_total = status.get("total_load_energy")
+    if (
+        isinstance(current_load_total, (int, float))
+        and current_load_total == 0
+        and isinstance(previous_load_total, (int, float))
+        and previous_load_total > 0
+    ):
+        status["total_load_energy"] = previous_load_total
+
+
 def _average_ongrid_power(
     previous_power: Any,
     current_power: Any,
@@ -530,6 +574,8 @@ def merge_device_status(
     # in ES.GetStatus but individual channels from PV.GetStatus are correct)
     if pv_status_data and es_status_data:
         _recalculate_battery_from_pv(status, pv_status_data, es_status_data)
+
+    _resolve_contradicted_energy_totals(status, previous_status)
 
     if device_ip:
         status["device_ip"] = device_ip

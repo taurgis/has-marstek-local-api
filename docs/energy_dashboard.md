@@ -14,13 +14,16 @@ The Marstek Open API reports total energy values in Wh. The integration keeps th
 | Solar production (total) | Total solar energy | total_pv_energy | Wh |
 | Grid consumption (total) | Total grid input energy | total_grid_input_energy | Wh |
 | Grid export (total) | Total grid output energy | total_grid_output_energy | Wh |
-| Home consumption (total) | Total load energy | total_load_energy | Wh |
 
 Note: Some Marstek firmware versions can keep the raw grid input/output energy
 counters fixed even while grid power is still changing. When that happens, the
 integration keeps the grid totals monotonic by deriving the missing growth from
 `on_grid_power` between updates and restoring the corrected total after Home
 Assistant restarts.
+
+Note: `total_load_energy` is reported by the Marstek Open API as load or
+off-grid energy, and its semantics vary by device and firmware. The integration
+does not recommend it as the Energy Dashboard's Home consumption source.
 
 ## Optional power sensors
 These are not required for the energy dashboard. Use them for real time cards and sanity checks. These sensors use `state_class: measurement`.
@@ -62,13 +65,6 @@ template:
         unit_of_measurement: "kWh"
         device_class: energy
         state_class: total_increasing
-      - name: "Marstek total load energy kwh"
-        unique_id: marstek_total_load_energy_kwh
-        state: "{{ (states('sensor.total_load_energy') | float(0)) / 1000 }}"
-        availability: "{{ is_number(states('sensor.total_load_energy')) }}"
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
 ```
 
 ## Entity ID examples
@@ -78,13 +74,15 @@ Use these as copy-paste starting points, then replace the entity IDs with the ac
 - `sensor.total_pv_energy`
 - `sensor.total_grid_input_energy`
 - `sensor.total_grid_output_energy`
-- `sensor.total_load_energy`
 
 ### Power sensors
 - `sensor.pv_power`
 - `sensor.ongrid_power`
 - `sensor.em_total_power`
 - `sensor.battery_power`
+
+### Other device-reported totals
+- `sensor.total_load_energy`
 
 ## References
 - https://www.home-assistant.io/docs/energy/
