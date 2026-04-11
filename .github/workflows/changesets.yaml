@@ -40,12 +40,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract version for published release
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.hasChangesets == 'false'
         id: version
         run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
+      - name: Check whether GitHub release already exists
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        id: release_state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "should_create=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_create=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract changelog for published release
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.release_state.outputs.should_create == 'true'
         id: changelog
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -70,7 +82,7 @@ jobs:
           echo "$CHANGELOG" > release_notes.md
 
       - name: Determine pre-release status
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.release_state.outputs.should_create == 'true'
         id: prerelease
         run: |
           if [[ "${{ steps.version.outputs.version }}" == *"-rc"* ]] || [[ "${{ steps.version.outputs.version }}" == *"-beta"* ]] || [[ "${{ steps.version.outputs.version }}" == *"-alpha"* ]]; then
@@ -80,10 +92,11 @@ jobs:
           fi
 
       - name: Create GitHub Release for published tag
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.release_state.outputs.should_create == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           name: v${{ steps.version.outputs.version }}
           body_path: release_notes.md
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
