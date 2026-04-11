@@ -27,6 +27,7 @@ jobs:
         run: npm ci
 
       - name: Create release pull request or tag release
+        id: changesets
         uses: changesets/action@v1
         with:
           version: npm run changeset:version
@@ -35,5 +36,57 @@ jobs:
           commit: Release
           createGithubReleases: false
           setupGitUser: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version for published release
+        if: steps.changesets.outputs.published == 'true'
+        id: version
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog for published release
+        if: steps.changesets.outputs.published == 'true'
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          CHANGELOG=$(awk -v ver="$VERSION" '
+            /^## / {
+              if (found) exit
+              header=$0
+              sub(/^## /, "", header)
+              if (header ~ ("^\\[" ver "\\]") || header ~ ("^" ver "($| )")) {
+                found=1
+                next
+              }
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="See [CHANGELOG.md](CHANGELOG.md) for details."
+          fi
+
+          echo "$CHANGELOG" > release_notes.md
+
+      - name: Determine pre-release status
+        if: steps.changesets.outputs.published == 'true'
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.version }}" == *"-rc"* ]] || [[ "${{ steps.version.outputs.version }}" == *"-beta"* ]] || [[ "${{ steps.version.outputs.version }}" == *"-alpha"* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release for published tag
+        if: steps.changesets.outputs.published == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
