@@ -42,7 +42,9 @@ jobs:
       - name: Extract version for published release
         if: steps.changesets.outputs.hasChangesets == 'false'
         id: version
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Check whether GitHub release already exists
         if: steps.changesets.outputs.hasChangesets == 'false'
