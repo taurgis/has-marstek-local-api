@@ -25,6 +25,18 @@ DISCOVERY_TIMEOUT = 10.0  # Total discovery timeout in seconds
 DISCOVERY_METHOD = "Marstek.GetDevice"
 
 
+def _normalize_ip(ip: str) -> str:
+    """Normalize an IPv4 address by removing leading zeros from each octet."""
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return ip
+
+    try:
+        return ".".join(str(int(part)) for part in parts)
+    except ValueError:
+        return ip
+
+
 def _build_discovery_message() -> bytes:
     """Build discovery request payload."""
     request = {
@@ -199,7 +211,7 @@ async def discover_devices(
                 continue
 
             result = response["result"]
-            device_ip = result.get("ip", sender_ip)
+            device_ip = _normalize_ip(result.get("ip", sender_ip))
 
             # Skip duplicates
             if device_ip in seen_ips:
@@ -305,7 +317,7 @@ async def get_device_info(
                 # not the response sender port, for reliable port recording.
                 device = _build_device_info(
                     result,
-                    result.get("ip", host),
+                    _normalize_ip(result.get("ip", host)),
                     port,
                 )
 

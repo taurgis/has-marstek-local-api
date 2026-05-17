@@ -219,6 +219,40 @@ class TestIsValidDeviceResponse:
         assert _is_valid_device_response(response) is False
 
 
+class TestNormalizeIp:
+    """Tests for _normalize_ip."""
+
+    def test_no_leading_zeros(self) -> None:
+        """Test that a clean IPv4 address is unchanged."""
+        from custom_components.marstek.discovery import _normalize_ip
+
+        assert _normalize_ip("192.168.9.92") == "192.168.9.92"
+
+    def test_leading_zero_in_octet(self) -> None:
+        """Test that leading zeros are stripped from a single octet."""
+        from custom_components.marstek.discovery import _normalize_ip
+
+        assert _normalize_ip("192.168.09.92") == "192.168.9.92"
+
+    def test_multiple_leading_zeros(self) -> None:
+        """Test that leading zeros are stripped from all octets."""
+        from custom_components.marstek.discovery import _normalize_ip
+
+        assert _normalize_ip("010.001.002.003") == "10.1.2.3"
+
+    def test_invalid_ip_passthrough(self) -> None:
+        """Test that invalid IP-like strings are returned unchanged."""
+        from custom_components.marstek.discovery import _normalize_ip
+
+        assert _normalize_ip("192.168.invalid.092") == "192.168.invalid.092"
+
+    def test_non_ipv4_passthrough(self) -> None:
+        """Test that non-IPv4 hostnames are returned unchanged."""
+        from custom_components.marstek.discovery import _normalize_ip
+
+        assert _normalize_ip("marstek.local") == "marstek.local"
+
+
 class TestDiscoverDevices:
     """Tests for discover_devices function."""
 
@@ -322,6 +356,60 @@ class TestDiscoverDevices:
         assert result[0]["port"] == 30000
         assert result[0]["device_type"] == "Venus"
         assert result[0]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+
+    @pytest.mark.asyncio
+    async def test_discovery_normalizes_leading_zero_ip(self) -> None:
+        """Test that discovery normalizes device-reported IP addresses."""
+        from custom_components.marstek.discovery import discover_devices
+
+        device_response = {
+            "id": 0,
+            "result": {
+                "device": "Venus",
+                "ver": 3,
+                "wifi_name": "TestNet",
+                "ip": "192.168.09.92",
+                "wifi_mac": "11:22:33:44:55:66",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+            },
+        }
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
+        mock_socket.setblocking = MagicMock()
+        mock_socket.setsockopt = MagicMock()
+
+        call_count = 0
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (json.dumps(device_response).encode(), ("192.168.9.92", 30000))
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                with patch(
+                    "custom_components.marstek.discovery._get_broadcast_addresses",
+                    return_value=["255.255.255.255"],
+                ):
+                    result = await discover_devices(timeout=0.5)
+
+        assert len(result) == 1
+        assert result[0]["ip"] == "192.168.9.92"
 
     @pytest.mark.asyncio
     async def test_discovery_scans_multiple_ports(self) -> None:
@@ -593,6 +681,53 @@ class TestGetDeviceInfo:
         assert result is not None
         assert result["ip"] == "192.168.1.100"
         assert result["device_type"] == "Venus"
+
+    @pytest.mark.asyncio
+    async def test_normalizes_leading_zero_ip_from_device(self) -> None:
+        """Test that device info normalizes device-reported IP addresses."""
+        from custom_components.marstek.discovery import get_device_info
+
+        device_response = {
+            "id": 0,
+            "result": {
+                "device": "Venus",
+                "ver": 3,
+                "wifi_name": "TestNet",
+                "ip": "192.168.09.92",
+                "wifi_mac": "11:22:33:44:55:66",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+            },
+        }
+
+        mock_socket = MagicMock()
+
+        call_count = 0
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (json.dumps(device_response).encode(), ("192.168.9.92", 30000))
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                result = await get_device_info("192.168.9.92", timeout=0.5)
+
+        assert result is not None
+        assert result["ip"] == "192.168.9.92"
 
     @pytest.mark.asyncio
     async def test_records_target_port_not_sender_port(self) -> None:
