@@ -1,7 +1,7 @@
 {
   "name": "ha-marstek-release-tools",
   "private": true,
-  "version": "1.0.0-rc8",
+  "version": "1.0.0",
   "description": "Release tooling for the Marstek Home Assistant integration",
   "scripts": {
     "changeset": "changeset",
