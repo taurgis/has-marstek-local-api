@@ -193,7 +193,7 @@ async def test_device_action_power_out_of_range_model_limit(hass, mock_config_en
             "device_type": "Venus A",
         },
         options={
-            CONF_ACTION_CHARGE_POWER: -1500,
+            CONF_ACTION_CHARGE_POWER: -1501,
         },
     )
 

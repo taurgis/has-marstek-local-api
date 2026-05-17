@@ -281,6 +281,45 @@ async def test_set_passive_mode_charge_ignores_socket_limit_explicit_true(
 
 
 @pytest.mark.asyncio
+async def test_set_passive_mode_venus_a_allows_1500w_charge(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test Venus A accepts its full 1500 W charge limit."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "Venus A",
+        },
+    )
+
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(
+            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        )
+        assert device is not None
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_PASSIVE_MODE,
+            {
+                ATTR_DEVICE_ID: device.id,
+                ATTR_POWER: -1500,
+                ATTR_DURATION: 3600,
+            },
+            blocking=True,
+        )
+
+        assert client.send_request.call_count >= 1
+
+
+@pytest.mark.asyncio
 async def test_set_manual_schedule_service(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
