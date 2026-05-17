@@ -280,6 +280,15 @@ python mock_marstek.py
 
 ## Troubleshooting
 
+### LED Light Switch
+- The current documented Marstek Open API does not expose a known LED light
+  status field or LED control command, so this integration cannot add an LED
+  light switch yet.
+- If a newer firmware adds an undocumented local API for LED control, please
+  open an issue with your device model, firmware version, diagnostics, debug
+  logs, and—if possible—a raw API capture from
+  `python3 tools/capture_device.py <IP_ADDRESS> -o marstek-device.json`.
+
 ### Device Not Found
 - Ensure OPEN API is enabled in the Marstek app on your device
 - Verify Home Assistant and device are on the same network segment
