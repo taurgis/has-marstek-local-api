@@ -116,7 +116,7 @@ _DEVICE_PV_SUPPORT_TOKENS: Final[frozenset[str]] = frozenset({
 # Device power limits (AC charge/discharge) in watts per model
 # Values are maximum absolute power in either direction unless socket limit is enabled.
 _DEVICE_POWER_LIMITS: Final[dict[str, int]] = {
-    "venusa": 1200,
+    "venusa": 1500,
     "venusc": 2500,
     "venusd": 2200,
     "venuse": 2500,
