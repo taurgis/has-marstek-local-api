@@ -253,12 +253,16 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
             _value_from_data("wifi_sta_dns", coordinator.data or {})
         ),
     ),
+    # Bat.GetStatus sensors are disabled by default: the request is suspected
+    # to trigger device resets on some firmwares (issue #14). The coordinator
+    # only sends Bat.GetStatus while at least one of these entities is enabled.
     MarstekSensorEntityDescription(
         key="bat_temp",
         translation_key="battery_temperature",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
         suggested_display_precision=1,
         value_fn=lambda coordinator, _info, _entry: (
             _value_from_data("bat_temp", coordinator.data or {})
@@ -270,6 +274,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY_STORAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
         value_fn=lambda coordinator, _info, _entry: (
             _value_from_data("bat_capacity", coordinator.data or {})
         ),
@@ -280,6 +285,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY_STORAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
         value_fn=lambda coordinator, _info, _entry: (
             _value_from_data("bat_rated_capacity", coordinator.data or {})
         ),

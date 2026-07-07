@@ -461,7 +461,7 @@ async def test_ct_connection_sensor_disconnected(
 async def test_battery_temperature_sensor_created(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Test battery temperature sensor is created when data is available."""
+    """Test battery temperature sensor is created but disabled by default."""
     mock_config_entry.add_to_hass(hass)
 
     status = {
@@ -478,9 +478,11 @@ async def test_battery_temperature_sensor_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.venus_battery_temperature")
-        assert state is not None
-        assert state.state == "27.5"
+        # Disabled by default (Bat.GetStatus can reset the device, issue #14)
+        entity_registry = er.async_get(hass)
+        entry = entity_registry.async_get("sensor.venus_battery_temperature")
+        assert entry is not None
+        assert entry.disabled_by is not None
 
 
 async def test_grid_total_power_sensor_created(
@@ -652,11 +654,14 @@ async def test_all_new_sensors_with_full_status(
             is not None
         )
         
-        # Battery temp and grid power are enabled
+        # Battery detail sensors are disabled by default (issue #14)
         assert (
-            hass.states.get("sensor.venus_battery_temperature")
+            entity_registry.async_get(
+                "sensor.venus_battery_temperature"
+            )
             is not None
         )
+        # Grid power is enabled
         assert (
             hass.states.get("sensor.venus_total_power")
             is not None

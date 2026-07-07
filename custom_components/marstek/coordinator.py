@@ -121,14 +121,17 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             " [INITIAL SETUP - fast delays]" if is_initial_setup else "",
         )
 
-    def _select_polling_tiers(self, current_time: float) -> tuple[bool, bool, bool]:
+    def _select_polling_tiers(
+        self, current_time: float
+    ) -> tuple[bool, bool, bool, bool]:
         """Decide which polling tiers to include for this update cycle."""
         include_pv = self._supports_pv and (
             (current_time - self._last_pv_fetch) >= self._get_medium_interval()
         )
         include_slow = (current_time - self._last_slow_fetch) >= self._get_slow_interval()
         include_wifi = include_slow and self._is_wifi_status_enabled()
-        return include_pv, include_wifi, include_slow
+        include_bat = include_slow and self._is_bat_status_enabled()
+        return include_pv, include_wifi, include_bat, include_slow
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
         """Handle polling errors and return cached data or raise UpdateFailed."""
@@ -220,15 +223,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
-    def _is_wifi_status_enabled(self) -> bool:
-        """Return True if any WiFi status entity is enabled for this entry."""
-        wifi_keys = {
-            "wifi_rssi",
-            "wifi_sta_ip",
-            "wifi_sta_gate",
-            "wifi_sta_mask",
-            "wifi_sta_dns",
-        }
+    def _has_enabled_entities(self, keys: set[str]) -> bool:
+        """Return True if any entity with one of these keys is enabled."""
         entity_registry = er.async_get(self.hass)
         entries = er.async_entries_for_config_entry(
             entity_registry, self._entry.entry_id
@@ -236,13 +232,42 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for entry in entries:
             if not entry.unique_id:
                 continue
-            for key in wifi_keys:
+            for key in keys:
                 if (
                     entry.unique_id.endswith(f"_{key}")
                     and entry.disabled_by is None
                 ):
                     return True
         return False
+
+    def _is_wifi_status_enabled(self) -> bool:
+        """Return True if any WiFi status entity is enabled for this entry."""
+        return self._has_enabled_entities(
+            {
+                "wifi_rssi",
+                "wifi_sta_ip",
+                "wifi_sta_gate",
+                "wifi_sta_mask",
+                "wifi_sta_dns",
+            }
+        )
+
+    def _is_bat_status_enabled(self) -> bool:
+        """Return True if any Bat.GetStatus entity is enabled for this entry.
+
+        Bat.GetStatus is suspected to trigger device resets on some firmwares
+        (issue #14), so the request is only sent while a user has explicitly
+        enabled one of the entities that depend on it.
+        """
+        return self._has_enabled_entities(
+            {
+                "bat_temp",
+                "bat_capacity",
+                "bat_rated_capacity",
+                "bat_charg_flag",
+                "bat_dischrg_flag",
+            }
+        )
 
     @property
     def device_ip(self) -> str:
@@ -263,6 +288,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         - Fast (base interval): ES.GetMode, ES.GetStatus, EM.GetStatus - real-time power
         - Medium: PV.GetStatus - solar data
         - Slow: Wifi.GetStatus, Bat.GetStatus - rarely changes
+
+        Wifi.GetStatus and Bat.GetStatus are only sent while at least one
+        entity that depends on them is enabled in the entity registry.
         """
         current_ip = self.device_ip
         current_port = self.device_port
@@ -278,8 +306,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         parallel_requests = self._use_parallel_api_requests()
         request_delay = self._get_request_delay()
 
-        include_pv, include_wifi, include_slow = self._select_polling_tiers(
-            current_time
+        include_pv, include_wifi, include_bat, include_slow = (
+            self._select_polling_tiers(current_time)
         )
 
         # Get configured timeout
@@ -290,7 +318,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             current_ip,
             include_pv,
             include_wifi,
-            include_slow,
+            include_bat,
             parallel_requests,
         )
 
@@ -305,7 +333,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 include_pv=include_pv,
                 include_wifi=include_wifi,
                 include_em=True,  # Always fetch - fast tier
-                include_bat=include_slow,
+                include_bat=include_bat,
                 parallel_requests=parallel_requests,
                 delay_between_requests=request_delay,
                 previous_status=self.data,  # Preserve values on partial failures
