@@ -223,6 +223,78 @@ async def test_coordinator_includes_bat_status_when_entity_enabled(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_bat_status_respects_slow_interval(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that Bat.GetStatus is not repeated before the slow interval elapses."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 300}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    # First cycle fetches battery details (never fetched before)
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is True
+
+    # Second cycle right after must skip it (300s interval not elapsed)
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is False
+
+
+@pytest.mark.asyncio
+async def test_coordinator_wifi_status_respects_slow_interval(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that Wifi.GetStatus is not repeated before the slow interval elapses."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 300}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_wifi_rssi",
+        config_entry=mock_config_entry,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    # First cycle fetches WiFi status (never fetched before)
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_wifi"] is True
+
+    # Second cycle right after must skip it (300s interval not elapsed)
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_wifi"] is False
+
+
+@pytest.mark.asyncio
 async def test_coordinator_polling_paused_returns_cached_data(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):
