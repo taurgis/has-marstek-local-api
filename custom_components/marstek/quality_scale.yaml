@@ -57,7 +57,7 @@ rules:
     comment: Integration represents single device per config entry; users add multiple devices via separate config entries
   entity-category:
     status: done
-    comment: Diagnostic sensors (WiFi RSSI, CT connection, battery capacity) use EntityCategory.DIAGNOSTIC
+    comment: Diagnostic sensors (WiFi RSSI, CT connection, battery temperature/capacity) use EntityCategory.DIAGNOSTIC
   entity-device-class: done
   entity-disabled-by-default:
     status: done

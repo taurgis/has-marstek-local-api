@@ -19,7 +19,6 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 | PV power | `pv_power` | W | — | Enabled (if supported) |
 | Device mode | `device_mode` | — | — | Enabled |
 | Battery status | `battery_status` | — | — | Enabled |
-| Battery temperature | `bat_temp` | °C | — | Disabled |
 | Total power | `em_total_power` | W | — | Enabled |
 | Phase A power | `em_a_power` | W | — | Enabled |
 | Phase B power | `em_b_power` | W | — | Enabled |
@@ -62,6 +61,7 @@ Created when the device reports those values (typically Venus A/D with PV channe
 | Wi‑Fi subnet mask | `wifi_sta_mask` | — | Diagnostic | Disabled |
 | Wi‑Fi DNS | `wifi_sta_dns` | — | Diagnostic | Disabled |
 | Battery total capacity | `bat_cap` | Wh | Diagnostic | Disabled (if supported) |
+| Battery temperature | `bat_temp` | °C | Diagnostic | Disabled |
 | Battery remaining capacity | `bat_capacity` | Wh | Diagnostic | Disabled |
 | Battery rated capacity | `bat_rated_capacity` | Wh | Diagnostic | Disabled |
 | Device IP | `device_ip` | — | Diagnostic | Disabled |
