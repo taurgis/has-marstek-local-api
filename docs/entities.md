@@ -4,6 +4,8 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 
 > Note: Some entities are **Diagnostic** and **disabled by default** (can be enabled in the entity registry).
 
+> ⚠️ The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically; disabling them all stops it again.
+
 ## Sensors
 
 | Entity name | Key | Unit | Category | Default |
@@ -15,7 +17,7 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 | PV power | `pv_power` | W | — | Enabled (if supported) |
 | Device mode | `device_mode` | — | — | Enabled |
 | Battery status | `battery_status` | — | — | Enabled |
-| Battery temperature | `bat_temp` | °C | — | Enabled |
+| Battery temperature | `bat_temp` | °C | — | Disabled |
 | Total power | `em_total_power` | W | — | Enabled |
 | Phase A power | `em_a_power` | W | — | Enabled |
 | Phase B power | `em_b_power` | W | — | Enabled |

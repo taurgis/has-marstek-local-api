@@ -140,6 +140,69 @@ async def test_coordinator_skips_wifi_status_when_disabled(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_skips_bat_status_when_disabled(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that Bat.GetStatus is skipped when battery detail entities are disabled."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is False
+
+
+@pytest.mark.asyncio
+async def test_coordinator_includes_bat_status_when_entity_enabled(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that Bat.GetStatus resumes when a battery detail entity is enabled."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is True
+
+
+@pytest.mark.asyncio
 async def test_coordinator_polling_paused_returns_cached_data(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):

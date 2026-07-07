@@ -13,7 +13,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 ### Monitoring
 - **Battery State of Charge (SoC)** - Current battery level percentage
 - **Battery Power** - Real-time charge/discharge power (W)
-- **Battery Temperature** - Battery pack temperature
+- **Battery Temperature** - Battery pack temperature (disabled by default, see below)
 - **Battery Status** - Current operational status
 - **Operating Mode** - Current device mode (Auto, AI, Manual, Passive)
 - **PV Metrics** - Solar panel power, voltage, current, and state (up to 4 channels; Venus A/D)
@@ -93,6 +93,8 @@ After setup, you can adjust polling and request behavior in **Device → Configu
 - **Fast polling interval** (default: 30s): ES.GetMode, ES.GetStatus, EM.GetStatus (real-time power)
 - **Medium polling interval** (default: 60s): PV.GetStatus (solar data, Venus A/D only)
 - **Slow polling interval** (default: 300s): Wifi.GetStatus, Bat.GetStatus (diagnostics)
+
+> **Note**: `Wifi.GetStatus` and `Bat.GetStatus` are only sent while at least one entity that depends on them is enabled. The battery detail entities (temperature, remaining/rated capacity, charge/discharge permission) are disabled by default because `Bat.GetStatus` is suspected to trigger device resets on some Marstek firmwares ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)). Enable them in the entity registry to opt in — the API call resumes automatically.
 - **Parallel API requests** (default: off): Send enabled status APIs concurrently with no inter-request delay (advanced; can be less stable on Wi-Fi)
 - **Request delay** (default: 5s): Delay between consecutive UDP requests in sequential mode (ignored when parallel API requests is enabled)
 - **Request timeout** (default: 10s): Per-request timeout before retry/fail
