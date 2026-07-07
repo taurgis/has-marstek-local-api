@@ -84,7 +84,7 @@ If you add/modify device control:
 
 | Platform | Entities |
 |----------|---------|
-| `sensor` | Battery SoC, power, status, temperature; device mode; PV power/voltage/current (4ch, Venus A/D); on-grid power (3-phase); WiFi diagnostics |
+| `sensor` | Battery SoC, power, status; device mode; PV power/voltage/current (4ch, Venus A/D); on-grid power (3-phase); WiFi diagnostics; battery details (temperature, capacity — disabled by default, see Polling intervals) |
 | `binary_sensor` | CT connection status |
 | `select` | Operating mode (Auto/AI/Manual/Passive) |
 
@@ -126,6 +126,8 @@ Polling is **tiered** to reduce device load:
 | Fast | 30s | `ES.GetMode`, `ES.GetStatus`, `EM.GetStatus` (real-time power) |
 | Medium | 60s | `PV.GetStatus` (solar data, Venus A/D only) |
 | Slow | 300s | `Wifi.GetStatus`, `Bat.GetStatus` (diagnostics) |
+
+Note: `Wifi.GetStatus` and `Bat.GetStatus` are only sent while at least one entity that depends on them is enabled in the entity registry (see `WIFI_STATUS_KEYS`/`BAT_STATUS_KEYS` in `const.py` and `MarstekDataUpdateCoordinator._select_polling_tiers`). The battery detail entities are disabled by default because `Bat.GetStatus` is suspected to trigger device resets on some firmwares (issue #14). When adding an entity backed by one of these calls, add its key to the matching key set in `const.py`.
 
 **Request delay**: 5 seconds between API calls during a polling cycle.
 

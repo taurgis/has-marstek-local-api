@@ -6,19 +6,39 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.marstek.const import (
+    BAT_STATUS_KEYS,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     DOMAIN,
+    WIFI_STATUS_KEYS,
 )
 from custom_components.marstek.coordinator import MarstekDataUpdateCoordinator
+from custom_components.marstek.helpers.binary_sensor_descriptions import (
+    BINARY_SENSORS,
+)
+from custom_components.marstek.helpers.sensor_descriptions import SENSORS
 from custom_components.marstek.pymarstek import MarstekUDPClient
+
+
+def test_gated_status_keys_match_entity_descriptions() -> None:
+    """Guard against drift between the coordinator key sets and entity keys.
+
+    The coordinator only sends Wifi.GetStatus/Bat.GetStatus while an entity
+    with one of these keys is enabled. If a key here stops matching a real
+    entity description, the gate can never open for it (or a renamed entity
+    silently decouples from the gate).
+    """
+    description_keys = {description.key for description in SENSORS} | {
+        description.key for description in BINARY_SENSORS
+    }
+    assert description_keys >= BAT_STATUS_KEYS
+    assert description_keys >= WIFI_STATUS_KEYS
 
 
 @pytest.mark.asyncio
