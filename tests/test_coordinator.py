@@ -24,21 +24,28 @@ from custom_components.marstek.helpers.binary_sensor_descriptions import (
 )
 from custom_components.marstek.helpers.sensor_descriptions import SENSORS
 from custom_components.marstek.pymarstek import MarstekUDPClient
+from custom_components.marstek.pymarstek.data_parser import (
+    parse_bat_status_response,
+    parse_wifi_status_response,
+)
 
 
 def test_gated_status_keys_match_entity_descriptions() -> None:
     """Guard against drift between the coordinator key sets and entity keys.
 
     The coordinator only sends Wifi.GetStatus/Bat.GetStatus while an entity
-    with one of these keys is enabled. If a key here stops matching a real
-    entity description, the gate can never open for it (or a renamed entity
-    silently decouples from the gate).
+    with one of these keys is enabled. The gated key sets must equal exactly
+    the parser outputs that are exposed as entities: a new parser field that
+    becomes an entity must be added to the key set (or it can never open the
+    gate), and a renamed/removed entity key must be removed from it.
     """
     description_keys = {description.key for description in SENSORS} | {
         description.key for description in BINARY_SENSORS
     }
-    assert description_keys >= BAT_STATUS_KEYS
-    assert description_keys >= WIFI_STATUS_KEYS
+    bat_parser_keys = set(parse_bat_status_response({}))
+    wifi_parser_keys = set(parse_wifi_status_response({}))
+    assert BAT_STATUS_KEYS == bat_parser_keys & description_keys
+    assert WIFI_STATUS_KEYS == wifi_parser_keys & description_keys
 
 
 @pytest.mark.asyncio
