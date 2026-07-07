@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.sensor import SensorExtraStoredData
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -481,6 +482,7 @@ async def test_battery_detail_sensors_disabled_by_default(
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
         # Disabled by default (Bat.GetStatus can reset the device, issue #14)
+        # and diagnostic, per the HA quality scale pairing guidance
         entity_registry = er.async_get(hass)
         device_identifier = get_device_identifier(mock_config_entry.data)
         for key in ("bat_temp", "bat_capacity", "bat_rated_capacity"):
@@ -492,12 +494,13 @@ async def test_battery_detail_sensors_disabled_by_default(
             entry = entity_registry.async_get(entity_id)
             assert entry is not None
             assert entry.disabled_by is not None
+            assert entry.entity_category is EntityCategory.DIAGNOSTIC
 
 
-async def test_battery_temperature_sensor_state_when_enabled(
+async def test_battery_detail_sensor_states_when_enabled(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Test battery temperature reports its state once the entity is enabled."""
+    """Test Bat.GetStatus sensors report their state once enabled."""
     mock_config_entry.add_to_hass(hass)
 
     status = {
@@ -505,28 +508,39 @@ async def test_battery_temperature_sensor_state_when_enabled(
         "battery_soc": 55,
         "battery_power": 120,
         "bat_temp": 27.5,
+        "bat_capacity": 2508,
+        "bat_rated_capacity": 2560,
     }
 
     client = create_mock_client(status=status)
 
-    # Pre-register the entity as enabled (simulates a user who opted in)
+    # Pre-register the entities as enabled (simulates a user who opted in)
     entity_registry = er.async_get(hass)
     device_identifier = get_device_identifier(mock_config_entry.data)
-    registry_entry = entity_registry.async_get_or_create(
-        domain="sensor",
-        platform=DOMAIN,
-        unique_id=f"{device_identifier}_bat_temp",
-        config_entry=mock_config_entry,
-    )
+    expected_states = {
+        "bat_temp": "27.5",
+        "bat_capacity": "2508",
+        "bat_rated_capacity": "2560",
+    }
+    registry_entries = {
+        key: entity_registry.async_get_or_create(
+            domain="sensor",
+            platform=DOMAIN,
+            unique_id=f"{device_identifier}_{key}",
+            config_entry=mock_config_entry,
+        )
+        for key in expected_states
+    }
 
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get(registry_entry.entity_id)
-        assert state is not None
-        assert state.state == "27.5"
+        for key, expected in expected_states.items():
+            state = hass.states.get(registry_entries[key].entity_id)
+            assert state is not None
+            assert state.state == expected
 
 
 async def test_grid_total_power_sensor_created(

@@ -230,6 +230,81 @@ async def test_coordinator_includes_bat_status_when_entity_enabled(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_includes_bat_status_for_binary_sensor_entity(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that an enabled permission binary sensor also opens the gate."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="binary_sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_charg_flag",
+        config_entry=mock_config_entry,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is True
+
+
+@pytest.mark.asyncio
+async def test_coordinator_non_gated_entities_do_not_open_bat_gate(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that enabled entities outside the gated key set keep the gate shut.
+
+    bat_cap (ES.GetStatus-backed) and battery_soc are close cousins of the
+    gated keys; a suffix-matching regression must not let them re-enable
+    the reset-triggering Bat.GetStatus call.
+    """
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
+    )
+
+    entity_registry = er.async_get(hass)
+    for key in ("battery_soc", "bat_cap", "em_total_power"):
+        entity_registry.async_get_or_create(
+            domain="sensor",
+            platform=DOMAIN,
+            unique_id=f"aa:bb:cc:dd:ee:ff_{key}",
+            config_entry=mock_config_entry,
+        )
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is False
+
+
+@pytest.mark.asyncio
 async def test_coordinator_bat_status_respects_slow_interval(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):
