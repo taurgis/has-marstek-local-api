@@ -77,9 +77,13 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         device_type = config_entry.data.get("device_type", "")
         self._supports_pv = device_supports_pv(device_type)
 
-        # Track last fetch times for tiered polling
+        # Track last fetch times for tiered polling. WiFi and battery details
+        # are stamped separately so that enabling an entity mid-cycle triggers
+        # its first fetch on the next update instead of waiting out a shared
+        # slow-tier timestamp bumped by a cycle that skipped the request.
         self._last_pv_fetch: float = 0.0  # Medium interval
-        self._last_slow_fetch: float = 0.0  # Slow interval (WiFi, battery details)
+        self._last_wifi_fetch: float = 0.0  # Slow interval (WiFi status)
+        self._last_bat_fetch: float = 0.0  # Slow interval (battery details)
 
         # Track if this is the initial setup (use faster delays)
         self._is_initial_setup = is_initial_setup
@@ -125,15 +129,21 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _select_polling_tiers(
         self, current_time: float
-    ) -> tuple[bool, bool, bool, bool]:
+    ) -> tuple[bool, bool, bool]:
         """Decide which polling tiers to include for this update cycle."""
         include_pv = self._supports_pv and (
             (current_time - self._last_pv_fetch) >= self._get_medium_interval()
         )
-        include_slow = (current_time - self._last_slow_fetch) >= self._get_slow_interval()
-        include_wifi = include_slow and self._is_wifi_status_enabled()
-        include_bat = include_slow and self._is_bat_status_enabled()
-        return include_pv, include_wifi, include_bat, include_slow
+        slow_interval = self._get_slow_interval()
+        include_wifi = (
+            (current_time - self._last_wifi_fetch) >= slow_interval
+            and self._is_wifi_status_enabled()
+        )
+        include_bat = (
+            (current_time - self._last_bat_fetch) >= slow_interval
+            and self._is_bat_status_enabled()
+        )
+        return include_pv, include_wifi, include_bat
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
         """Handle polling errors and return cached data or raise UpdateFailed."""
@@ -289,8 +299,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         parallel_requests = self._use_parallel_api_requests()
         request_delay = self._get_request_delay()
 
-        include_pv, include_wifi, include_bat, include_slow = (
-            self._select_polling_tiers(current_time)
+        include_pv, include_wifi, include_bat = self._select_polling_tiers(
+            current_time
         )
 
         # Get configured timeout
@@ -325,20 +335,24 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Update last fetch times for successful fetches
             if include_pv:
                 self._last_pv_fetch = current_time
-            if include_slow:
-                self._last_slow_fetch = current_time
+            if include_wifi:
+                self._last_wifi_fetch = current_time
+            if include_bat:
+                self._last_bat_fetch = current_time
 
             # Check if we actually got valid data
             raise_if_invalid_status(current_ip, device_status, _LOGGER)
             _LOGGER.debug(
-                "Device %s poll done: SOC %s%%, Power %sW, Mode %s, Status %s (pv=%s, slow=%s)",
+                "Device %s poll done: SOC %s%%, Power %sW, Mode %s, Status %s "
+                "(pv=%s, wifi=%s, bat=%s)",
                 current_ip,
                 device_status.get("battery_soc"),
                 device_status.get("battery_power"),
                 device_status.get("device_mode"),
                 device_status.get("battery_status"),
                 include_pv,
-                include_slow,
+                include_wifi,
+                include_bat,
             )
 
             # Update success tracking
