@@ -295,6 +295,96 @@ async def test_coordinator_wifi_status_respects_slow_interval(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_fetches_bat_status_promptly_after_enable(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that enabling a battery detail entity triggers Bat.GetStatus
+    on the next update instead of waiting out a slow-tier cycle that
+    skipped the request."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 300}
+    )
+
+    entity_registry = er.async_get(hass)
+    registry_entry = entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    # First cycle: entity disabled, Bat.GetStatus skipped
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is False
+
+    # User enables the entity; the next cycle must fetch immediately
+    # (battery details were never actually fetched)
+    entity_registry.async_update_entity(
+        registry_entry.entity_id, disabled_by=None
+    )
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is True
+
+
+@pytest.mark.asyncio
+async def test_coordinator_bat_and_wifi_slow_timers_are_independent(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Test that a WiFi fetch does not delay the first battery detail fetch."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 300}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_wifi_rssi",
+        config_entry=mock_config_entry,
+    )
+    bat_entry = entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    # First cycle fetches WiFi but skips battery details (entity disabled)
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_wifi"] is True
+    assert kwargs["include_bat"] is False
+
+    # Enabling the battery entity fetches it on the next cycle while the
+    # recently-fetched WiFi status keeps respecting its own interval
+    entity_registry.async_update_entity(bat_entry.entity_id, disabled_by=None)
+    await coordinator._async_update_data()
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is True
+    assert kwargs["include_wifi"] is False
+
+
+@pytest.mark.asyncio
 async def test_coordinator_polling_paused_returns_cached_data(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):
