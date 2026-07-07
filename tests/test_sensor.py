@@ -458,10 +458,10 @@ async def test_ct_connection_sensor_disconnected(
         assert entry.disabled_by is not None  # Disabled by default
 
 
-async def test_battery_temperature_sensor_created(
+async def test_battery_detail_sensors_disabled_by_default(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Test battery temperature sensor is created but disabled by default."""
+    """Test Bat.GetStatus sensors are created but disabled by default."""
     mock_config_entry.add_to_hass(hass)
 
     status = {
@@ -469,6 +469,8 @@ async def test_battery_temperature_sensor_created(
         "battery_soc": 55,
         "battery_power": 120,
         "bat_temp": 27.5,
+        "bat_capacity": 2508,
+        "bat_rated_capacity": 2560,
     }
 
     client = create_mock_client(status=status)
@@ -480,9 +482,51 @@ async def test_battery_temperature_sensor_created(
         assert mock_config_entry.state == ConfigEntryState.LOADED
         # Disabled by default (Bat.GetStatus can reset the device, issue #14)
         entity_registry = er.async_get(hass)
-        entry = entity_registry.async_get("sensor.venus_battery_temperature")
-        assert entry is not None
-        assert entry.disabled_by is not None
+        device_identifier = get_device_identifier(mock_config_entry.data)
+        for key in ("bat_temp", "bat_capacity", "bat_rated_capacity"):
+            unique_id = f"{device_identifier}_{key}"
+            entity_id = entity_registry.async_get_entity_id(
+                "sensor", DOMAIN, unique_id
+            )
+            assert entity_id is not None
+            entry = entity_registry.async_get(entity_id)
+            assert entry is not None
+            assert entry.disabled_by is not None
+
+
+async def test_battery_temperature_sensor_state_when_enabled(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test battery temperature reports its state once the entity is enabled."""
+    mock_config_entry.add_to_hass(hass)
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": 120,
+        "bat_temp": 27.5,
+    }
+
+    client = create_mock_client(status=status)
+
+    # Pre-register the entity as enabled (simulates a user who opted in)
+    entity_registry = er.async_get(hass)
+    device_identifier = get_device_identifier(mock_config_entry.data)
+    registry_entry = entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{device_identifier}_bat_temp",
+        config_entry=mock_config_entry,
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state == ConfigEntryState.LOADED
+        state = hass.states.get(registry_entry.entity_id)
+        assert state is not None
+        assert state.state == "27.5"
 
 
 async def test_grid_total_power_sensor_created(

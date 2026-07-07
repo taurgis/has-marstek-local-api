@@ -16,6 +16,31 @@ PLATFORMS: Final[list[Platform]] = [
     Platform.SELECT,
 ]
 
+# Entity keys backed by Wifi.GetStatus. The coordinator only sends the
+# request while at least one of these entities is enabled.
+WIFI_STATUS_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "wifi_rssi",
+        "wifi_sta_ip",
+        "wifi_sta_gate",
+        "wifi_sta_mask",
+        "wifi_sta_dns",
+    }
+)
+
+# Entity keys backed by Bat.GetStatus. The coordinator only sends the
+# request while at least one of these entities is enabled, because the
+# call is suspected to trigger device resets on some firmwares (issue #14).
+BAT_STATUS_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "bat_temp",
+        "bat_capacity",
+        "bat_rated_capacity",
+        "bat_charg_flag",
+        "bat_dischrg_flag",
+    }
+)
+
 # UDP Configuration
 DEFAULT_UDP_PORT: Final = 30000  # Default UDP port for Marstek devices
 DISCOVERY_TIMEOUT: Final = 10.0  # Wait 10s for each broadcast

@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BAT_STATUS_KEYS,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
@@ -33,6 +34,7 @@ from .const import (
     DEFAULT_UDP_PORT,
     DOMAIN,
     INITIAL_SETUP_REQUEST_DELAY,
+    WIFI_STATUS_KEYS,
     device_supports_pv,
 )
 from .helpers.coordinator_helpers import raise_if_invalid_status
@@ -223,34 +225,23 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
-    def _has_enabled_entities(self, keys: set[str]) -> bool:
+    def _has_enabled_entities(self, keys: frozenset[str]) -> bool:
         """Return True if any entity with one of these keys is enabled."""
         entity_registry = er.async_get(self.hass)
         entries = er.async_entries_for_config_entry(
             entity_registry, self._entry.entry_id
         )
-        for entry in entries:
-            if not entry.unique_id:
-                continue
-            for key in keys:
-                if (
-                    entry.unique_id.endswith(f"_{key}")
-                    and entry.disabled_by is None
-                ):
-                    return True
-        return False
+        suffixes = tuple(f"_{key}" for key in keys)
+        return any(
+            entry.unique_id
+            and entry.disabled_by is None
+            and entry.unique_id.endswith(suffixes)
+            for entry in entries
+        )
 
     def _is_wifi_status_enabled(self) -> bool:
         """Return True if any WiFi status entity is enabled for this entry."""
-        return self._has_enabled_entities(
-            {
-                "wifi_rssi",
-                "wifi_sta_ip",
-                "wifi_sta_gate",
-                "wifi_sta_mask",
-                "wifi_sta_dns",
-            }
-        )
+        return self._has_enabled_entities(WIFI_STATUS_KEYS)
 
     def _is_bat_status_enabled(self) -> bool:
         """Return True if any Bat.GetStatus entity is enabled for this entry.
@@ -259,15 +250,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         (issue #14), so the request is only sent while a user has explicitly
         enabled one of the entities that depend on it.
         """
-        return self._has_enabled_entities(
-            {
-                "bat_temp",
-                "bat_capacity",
-                "bat_rated_capacity",
-                "bat_charg_flag",
-                "bat_dischrg_flag",
-            }
-        )
+        return self._has_enabled_entities(BAT_STATUS_KEYS)
 
     @property
     def device_ip(self) -> str:
