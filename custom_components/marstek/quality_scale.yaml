@@ -57,11 +57,16 @@ rules:
     comment: Integration represents single device per config entry; users add multiple devices via separate config entries
   entity-category:
     status: done
-    comment: Diagnostic sensors (WiFi RSSI, CT connection, battery temp) use EntityCategory.DIAGNOSTIC
+    comment: Diagnostic sensors (WiFi RSSI, CT connection, battery temperature/capacity) use EntityCategory.DIAGNOSTIC
   entity-device-class: done
   entity-disabled-by-default:
     status: done
-    comment: Diagnostic sensors (device info, WiFi RSSI, CT connection) disabled by default
+    comment: >
+      Diagnostic sensors (device info, WiFi RSSI, CT connection) disabled by
+      default. Battery detail entities (temperature, remaining/rated capacity,
+      charge/discharge permission) also disabled by default because their
+      Bat.GetStatus source call is suspected to reset devices (issue #14);
+      the coordinator skips the call while all of them are disabled.
   entity-translations:
     status: done
     comment: All entities use translation_key for proper localization

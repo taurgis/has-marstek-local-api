@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.sensor import SensorExtraStoredData
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -458,10 +459,10 @@ async def test_ct_connection_sensor_disconnected(
         assert entry.disabled_by is not None  # Disabled by default
 
 
-async def test_battery_temperature_sensor_created(
+async def test_battery_detail_sensors_disabled_by_default(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Test battery temperature sensor is created when data is available."""
+    """Test Bat.GetStatus sensors are created but disabled by default."""
     mock_config_entry.add_to_hass(hass)
 
     status = {
@@ -469,6 +470,8 @@ async def test_battery_temperature_sensor_created(
         "battery_soc": 55,
         "battery_power": 120,
         "bat_temp": 27.5,
+        "bat_capacity": 2508,
+        "bat_rated_capacity": 2560,
     }
 
     client = create_mock_client(status=status)
@@ -478,9 +481,66 @@ async def test_battery_temperature_sensor_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.venus_battery_temperature")
-        assert state is not None
-        assert state.state == "27.5"
+        # Disabled by default (Bat.GetStatus can reset the device, issue #14)
+        # and diagnostic, per the HA quality scale pairing guidance
+        entity_registry = er.async_get(hass)
+        device_identifier = get_device_identifier(mock_config_entry.data)
+        for key in ("bat_temp", "bat_capacity", "bat_rated_capacity"):
+            unique_id = f"{device_identifier}_{key}"
+            entity_id = entity_registry.async_get_entity_id(
+                "sensor", DOMAIN, unique_id
+            )
+            assert entity_id is not None
+            entry = entity_registry.async_get(entity_id)
+            assert entry is not None
+            assert entry.disabled_by is not None
+            assert entry.entity_category is EntityCategory.DIAGNOSTIC
+
+
+async def test_battery_detail_sensor_states_when_enabled(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test Bat.GetStatus sensors report their state once enabled."""
+    mock_config_entry.add_to_hass(hass)
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": 120,
+        "bat_temp": 27.5,
+        "bat_capacity": 2508,
+        "bat_rated_capacity": 2560,
+    }
+
+    client = create_mock_client(status=status)
+
+    # Pre-register the entities as enabled (simulates a user who opted in)
+    entity_registry = er.async_get(hass)
+    device_identifier = get_device_identifier(mock_config_entry.data)
+    expected_states = {
+        "bat_temp": "27.5",
+        "bat_capacity": "2508",
+        "bat_rated_capacity": "2560",
+    }
+    registry_entries = {
+        key: entity_registry.async_get_or_create(
+            domain="sensor",
+            platform=DOMAIN,
+            unique_id=f"{device_identifier}_{key}",
+            config_entry=mock_config_entry,
+        )
+        for key in expected_states
+    }
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state == ConfigEntryState.LOADED
+        for key, expected in expected_states.items():
+            state = hass.states.get(registry_entries[key].entity_id)
+            assert state is not None
+            assert state.state == expected
 
 
 async def test_grid_total_power_sensor_created(
@@ -652,11 +712,14 @@ async def test_all_new_sensors_with_full_status(
             is not None
         )
         
-        # Battery temp and grid power are enabled
+        # Battery detail sensors are disabled by default (issue #14)
         assert (
-            hass.states.get("sensor.venus_battery_temperature")
+            entity_registry.async_get(
+                "sensor.venus_battery_temperature"
+            )
             is not None
         )
+        # Grid power is enabled
         assert (
             hass.states.get("sensor.venus_total_power")
             is not None

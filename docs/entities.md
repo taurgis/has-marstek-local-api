@@ -4,6 +4,10 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 
 > Note: Some entities are **Diagnostic** and **disabled by default** (can be enabled in the entity registry).
 
+> ⚠️ The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically; disabling them all stops it again.
+>
+> **Upgrading?** Entities that were already registered stay enabled — upgrades never disable entities behind your back. To stop `Bat.GetStatus` on an existing installation, disable the five entities above manually once (device page → entity → ⚙️ → *Enabled* off).
+
 ## Sensors
 
 | Entity name | Key | Unit | Category | Default |
@@ -15,7 +19,6 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 | PV power | `pv_power` | W | — | Enabled (if supported) |
 | Device mode | `device_mode` | — | — | Enabled |
 | Battery status | `battery_status` | — | — | Enabled |
-| Battery temperature | `bat_temp` | °C | — | Enabled |
 | Total power | `em_total_power` | W | — | Enabled |
 | Phase A power | `em_a_power` | W | — | Enabled |
 | Phase B power | `em_b_power` | W | — | Enabled |
@@ -58,6 +61,7 @@ Created when the device reports those values (typically Venus A/D with PV channe
 | Wi‑Fi subnet mask | `wifi_sta_mask` | — | Diagnostic | Disabled |
 | Wi‑Fi DNS | `wifi_sta_dns` | — | Diagnostic | Disabled |
 | Battery total capacity | `bat_cap` | Wh | Diagnostic | Disabled (if supported) |
+| Battery temperature | `bat_temp` | °C | Diagnostic | Disabled |
 | Battery remaining capacity | `bat_capacity` | Wh | Diagnostic | Disabled |
 | Battery rated capacity | `bat_rated_capacity` | Wh | Diagnostic | Disabled |
 | Device IP | `device_ip` | — | Diagnostic | Disabled |
