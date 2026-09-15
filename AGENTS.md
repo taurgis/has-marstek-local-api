@@ -436,3 +436,9 @@ Issues and specs live in GitHub Issues for `taurgis/has-marstek-local-api`. See 
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` at the repo root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
+### Install targets
+
+All project skills live in `.agents/skills/` (the Cursor / Forward Nexus project path). Claude Code uses symlinks under `.claude/skills/`. Matt Pocock engineering skills (`/to-spec`, `/wayfinder`, and related) are tracked in `skills-lock.json` and installed with `npx forward-nexus`. Default targets are `cursor` and `claude-code` (see `.forward-nexus.json`).
+
+After cloning: `npx forward-nexus restore --yes`. To attach another agent later: `npx forward-nexus agents add cursor,claude-code`.
