@@ -20,7 +20,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
-from .firmware_profile import resolve_firmware_profile
+from .firmware_profile import resolve_firmware_profile_from_metadata
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -334,15 +334,9 @@ class MarstekScanner:
         if not updates:
             return
 
-        old_profile = resolve_firmware_profile(
-            entry.data.get("device_type"),
-            entry.data.get("version"),
-        )
+        old_profile = resolve_firmware_profile_from_metadata(entry.data)
         merged = {**entry.data, **updates}
-        new_profile = resolve_firmware_profile(
-            merged.get("device_type"),
-            merged.get("version"),
-        )
+        new_profile = resolve_firmware_profile_from_metadata(merged)
         capabilities_changed = (
             old_profile.setup_capability_signature
             != new_profile.setup_capability_signature

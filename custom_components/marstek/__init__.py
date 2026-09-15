@@ -80,6 +80,9 @@ def _async_remove_unsupported_capability_entities(
     try:
         device_identifier = get_device_identifier(device_info)
     except ValueError:
+        _LOGGER.debug(
+            "Skipping capability entity cleanup; device identifier is missing"
+        )
         return
 
     registry = er.async_get(hass)

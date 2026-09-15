@@ -109,6 +109,11 @@ def extract_discovery_version(result: Mapping[str, Any] | None) -> Any:
     return result["ver"]
 
 
+def resolve_firmware_profile_from_metadata(data: Mapping[str, Any]) -> FirmwareProfile:
+    """Resolve capabilities from config-entry or discovery metadata."""
+    return resolve_firmware_profile(data.get("device_type"), data.get("version"))
+
+
 def resolve_firmware_profile(
     device_type: str | None,
     version: Any,

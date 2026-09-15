@@ -8,6 +8,7 @@ from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
     resolve_firmware_profile,
+    resolve_firmware_profile_from_metadata,
 )
 
 
@@ -228,3 +229,14 @@ def test_setup_capability_signature_changes_when_pv_family_appears() -> None:
     assert venus_e.setup_capability_signature != venus_a.setup_capability_signature
     assert venus_e.supports_pv is False
     assert venus_a.supports_pv is True
+
+
+def test_resolve_firmware_profile_from_metadata_uses_device_type_and_version() -> None:
+    """Merged config-entry/discovery dicts resolve through the canonical helper."""
+    profile = resolve_firmware_profile_from_metadata(
+        {"device_type": "VenusE 3.0", "version": "150"}
+    )
+
+    assert profile.family is DeviceFamily.VENUS_E
+    assert profile.firmware_version == 150
+    assert profile.supports_ups is True
