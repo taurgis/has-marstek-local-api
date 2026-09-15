@@ -2,6 +2,8 @@
 
 A mock Marstek device for testing the Home Assistant integration without a real device. Includes realistic battery simulation with dynamic SOC changes, power fluctuations, and mode transitions.
 
+`--device` and `--ver` select the same **firmware profile** the integration uses. The mock **encodes** physical watts and watt-hours onto the wire the way that firmware would. The integration **decodes** them back to W and Wh. Legacy profiles also reject SYS and UPS with JSON-RPC `-32601 Method not found`.
+
 ## Package Structure
 
 ```
@@ -22,14 +24,28 @@ mock_device/
 
 ## Features
 
+- **Firmware profiles**: `--device` + `--ver` choose legacy vs Rev 3.1 encodings and which writes are accepted
 - **Dynamic Battery Simulation**: SOC increases/decreases based on power flow
 - **Power Fluctuations**: Realistic ±5% variations in power readings
-- **Mode Support**: Auto, AI, Manual, Passive, and firmware-gated UPS (accepted when the shared firmware profile reports `supports_ups`)
-- **SYS writes**: Capable firmware accepts `DOD.SET`, `Ble.Adv`, and `Led.Ctrl` with `set_result: true`; legacy firmware returns JSON-RPC `-32601 Method not found`
+- **Mode Support**: Auto, AI, Manual, Passive; UPS only when the profile reports `supports_ups`
+- **SYS writes**: Capable firmware accepts `DOD.SET`, `Ble.Adv`, and `Led.Ctrl` with `set_result: true`; legacy firmware returns `-32601 Method not found`
 - **Passive Mode Timer**: Automatic expiration after configured duration
-- **Manual Schedules**: Supports schedule slots with day/time configuration
+- **Manual Schedules**: Slots 0–9, or 0–5 for Venus E mini
 - **Household Simulation**: Realistic time-of-day consumption patterns
 - **Status Display**: Periodic console output showing current battery state
+
+## Firmware-profile CLI
+
+Physical values inside the simulator are always SI (W, Wh). Before a UDP response is sent, the mock divides by the profile scale so the wire looks like real firmware:
+
+| Generation | Typical `--ver` | Wire encoding | Accepted extras |
+|------------|-----------------|---------------|-----------------|
+| Legacy | `145` (default) | Solar energy as Wh; Venus A/D channel-1 PV power as deciwatts; no EM 0.1 Wh totals | SYS and UPS return **Method not found** |
+| Rev 3.1 | `150` or newer | Solar energy as 0.01 kWh (`Wh / 10` on the wire); PV channel power as watts; EM energies as 0.1 Wh | SYS + UPS accepted on families that support them |
+
+Venus A firmware **149** is the observed solar-unit case: PV energy uses the Rev 3.1 0.01 kWh encoding even though SYS/UPS stay off. Pass `--device VenusA --ver 149` to exercise that path.
+
+Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be configured as Venus E if you need the SYS-without-150 and slots 0–5 behavior.
 
 ## Usage
 
@@ -51,21 +67,25 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 
 - `--port PORT` - UDP port (default: 30000)
 - `--ip IP` - Override reported IP address
-- `--device TYPE` - Device type (default: "VenusE 3.0")
+- `--device TYPE` - Device type (default: `"VenusE 3.0"`)
 - `--ver INTEGER` - Non-negative firmware version returned by discovery (default: 145)
 - `--ble-mac MAC` - BLE MAC address (unique per device)
 - `--wifi-mac MAC` - WiFi MAC address
 - `--soc PERCENT` - Initial battery SOC percentage (default: 50)
+- `--pv-channels` - Optional `power:voltage:current` list (up to 4 channels). Values are **physical watts**; the mock encodes channel 1 according to the profile
 - `--no-simulate` - Disable dynamic simulation (static values only)
 
 ### Examples
 
 ```bash
-# Start with 30% battery
+# Legacy Venus E (default ver 145): no SYS/UPS
 python -m mock_device --soc 30
 
-# Start with custom MAC (for multi-device testing)
-python -m mock_device --ble-mac 009b08a5bb40 --soc 75
+# Venus A firmware 149: scaled solar energy, still no SYS/UPS
+python -m mock_device --device VenusA --ver 149
+
+# Rev 3.1 Venus A: watt PV, SYS, UPS, EM energy
+python -m mock_device --device VenusA --ver 150 --soc 75
 
 # Static mode (no simulation)
 python -m mock_device --no-simulate
@@ -73,16 +93,17 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs 5 mock devices with unique, clearly-fake MAC addresses.
-Two use the default port (`30000`) and three run on custom ports:
+The devcontainer runs **exactly these five** mock devices. There is no optional sixth mock.
 
-| Device | IP | Port | Firmware | BLE MAC | WiFi MAC | Initial SOC |
-|--------|-----|------|----------|---------|----------|-------------|
-| mock-marstek | 172.28.0.20 | 30000 | 145 (legacy) | 02deadbeef01 | 02cafebabe01 | 50% |
-| mock-marstek-2 | 172.28.0.25 | 30000 | 145 (legacy) | 02deadbeef02 | 02cafebabe02 | 75% |
-| mock-marstek-3 | 172.28.0.22 | 30001 | 145 (legacy) | 02deadbeef03 | 02cafebabe03 | 30% |
-| mock-marstek-4 (VenusD) | 172.28.0.23 | 30002 | 145 (legacy deciwatt PV) | 02deadbeef04 | 02cafebabe04 | 60% |
-| mock-marstek-5 (VenusA) | 172.28.0.24 | 30003 | 150 (Rev 3.1 watt PV) | 02deadbeef05 | 02cafebabe05 | 65% |
+| Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
+|---------|-----|------|-------|-------|---------|-------------|------------------------|
+| mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh |
+| mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS |
+| mock-marstek-3 | 172.28.0.22 | 30001 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; custom port |
+| mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
+| mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 150 | Rev 3.1 | All channels **watts**; solar 0.01 kWh | PV + SYS + UPS + EM energy |
+
+Venus D @ 145 vs Venus A @ 150 is the deciwatt-versus-watt PV pair.
 
 > **Note:** MAC addresses use the locally-administered range (`02:xx:xx:xx:xx:xx`) with memorable patterns (`deadbeef`, `cafebabe`) to clearly distinguish mock devices from real hardware.
 
@@ -110,6 +131,9 @@ Uses configured power for set duration, then reverts to Auto.
 ### Manual Mode
 Follows configured schedule slots with day/time/power settings.
 
+### UPS Mode
+Accepted only when the firmware profile reports `supports_ups` (typically `ver >= 150`). Legacy mocks reject the write.
+
 ### SOC Limits
 - Cannot discharge below 5% SOC
 - Cannot charge above 100% SOC
@@ -119,14 +143,15 @@ Follows configured schedule slots with day/time/power settings.
 
 | Method | Description |
 |--------|-------------|
-| `Marstek.GetDevice` | Device info (discovery) |
-| `ES.GetStatus` | Battery status (SOC, power, energy) |
-| `ES.GetMode` | Current operating mode |
-| `ES.SetMode` | Change mode with config |
-| `PV.GetStatus` | PV panel readings |
+| `Marstek.GetDevice` | Device info (discovery), including explicit `ver` |
+| `ES.GetStatus` | Battery status (SOC, power, energy encoded per profile) |
+| `ES.GetMode` | Current operating mode (Rev 3.1 also encodes EM energy fallbacks) |
+| `ES.SetMode` | Change mode; UPS rejected on legacy |
+| `PV.GetStatus` | PV panel readings (Venus A/D); power encoded per profile |
 | `Wifi.GetStatus` | WiFi signal and network info |
-| `EM.GetStatus` | CT clamp / energy meter |
+| `EM.GetStatus` | CT clamp / energy meter (lifetime energy encoded on Rev 3.1) |
 | `Bat.GetStatus` | Battery temperature and flags |
+| `DOD.SET` / `Ble.Adv` / `Led.Ctrl` | SYS writes on capable firmware; Method not found on legacy |
 
 ## Testing Discovery
 

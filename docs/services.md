@@ -10,6 +10,25 @@ Services are registered when Home Assistant starts and remain available even if
 no Marstek devices are currently loaded. If no matching device or config entry
 is available, the service call will return an error.
 
+## How modes are set
+
+| Mode | How to set it |
+|------|----------------|
+| Auto, AI | Operating-mode select |
+| UPS | Operating-mode select, only when the firmware profile allows it (`ver >= 150` on ES-capable families, including Venus E mini) |
+| Manual, Passive | Parameterized services below (the select does not apply empty defaults) |
+
+`Set.Ver` and factory reset are **not** services, entities, or recommended actions.
+
+Schedule slot numbers are profile-specific:
+
+| Family | Valid `schedule_slot` |
+|--------|----------------------|
+| Venus A / C / D / E | `0–9` |
+| Venus E mini | `0–5` (slot `6` and above is rejected) |
+
+The service schema accepts `0–9` in the UI; the integration then validates against the device's current firmware profile.
+
 ## `marstek.set_passive_mode`
 
 Set passive mode with a target power and duration.
@@ -23,10 +42,10 @@ Set passive mode with a target power and duration.
 
 ## `marstek.set_manual_schedule`
 
-Configure one schedule slot (0–9).
+Configure one schedule slot.
 
 - `device_id` (required): target Marstek device
-- `schedule_slot` (optional): slot `0..9` (default `0`)
+- `schedule_slot` (optional): slot index (default `0`; max `9` on Venus A/C/D/E, max `5` on Venus E mini)
 - `start_time` (required): start time
 - `end_time` (required): end time
 - `power` (required, W): negative = charge, positive = discharge
@@ -169,7 +188,7 @@ Clear all manual schedule slots.
 
 - `device_id` (required): target Marstek device
 
-Note: This clears all 10 slots sequentially (protocol limitation), so it may take a short while.
+Note: This clears every slot the current firmware profile allows (10 slots on Venus A/C/D/E, 6 on Venus E mini) sequentially, so it may take a short while.
 
 <img src="screenshots/automation-clear-manual-schedule.png" alt="Clear schedules automation" width="520" />
 

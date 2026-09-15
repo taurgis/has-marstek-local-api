@@ -66,11 +66,12 @@ If you add/modify device control:
 | Config flow | `config_flow.py` | Broadcast discovery UI, DHCP updates, reauth, reconfigure, options flow with sections |
 | Polling + error handling | `coordinator.py` | Single source of truth; tiered polling (fast/medium/slow); returns previous data on connectivity issues |
 | IP change detection | `scanner.py` | Periodic broadcast discovery (60s); triggers discovery flow to update config entries |
+| Firmware profile | `firmware_profile.py` | Family + `ver` → capabilities and wire-to-SI scales |
 | Sensors | `sensor.py` | EntityDescription pattern; coordinator-backed; stable unique IDs; `suggested_display_precision` |
 | Binary sensors | `binary_sensor.py` | EntityDescription pattern; CT connection status |
 | Number | `number.py` | Firmware-gated SYS DOD; RestoreNumber; writes pause polling |
 | Switch | `switch.py` | Firmware-gated SYS BLE/LED; RestoreEntity; writes pause polling |
-| Select entities | `select.py` | Operating mode selection (Auto/AI/Manual/Passive) |
+| Select entities | `select.py` | Operating mode selection (Auto/AI/Manual/Passive; UPS when the profile allows it) |
 | Services | `services.py` | Idempotent registration; passive mode, manual schedules, data sync |
 | Device actions | `device_action.py` | Automation actions using `ES.SetMode` with retries + verification; pauses polling |
 | Device info helper | `device_info.py` | Shared `build_device_info()` + identifier utilities |
@@ -86,9 +87,9 @@ If you add/modify device control:
 
 | Platform | Entities |
 |----------|---------|
-| `sensor` | Battery SoC, power, status; device mode; PV power/voltage/current (4ch, Venus A/D); on-grid power (3-phase); WiFi diagnostics; battery details (temperature, capacity — disabled by default, see Polling intervals) |
+| `sensor` | Battery SoC, power, status; device mode; PV (Venus A/D); on-grid/EM power; EM lifetime energy when reported; WiFi diagnostics; battery details (disabled by default) |
 | `binary_sensor` | CT connection status |
-| `select` | Operating mode (Auto/AI/Manual/Passive) |
+| `select` | Operating mode (Auto/AI/Manual/Passive; UPS when the firmware profile allows it) |
 | `number` | Depth of discharge (firmware-gated SYS write; restored optimistic state) |
 | `switch` | Bluetooth advertising and panel LED (firmware-gated SYS writes; restored optimistic state) |
 
@@ -164,7 +165,7 @@ The `pymarstek/validators.py` module provides a **validation layer** that protec
 | Time range | End must be after start for enabled schedules | |
 | Week bitmask | Valid range 0-127 | `MAX_WEEK_SET = 127` |
 | Passive duration | Maximum 24 hours | `MAX_PASSIVE_DURATION = 86400` |
-| Schedule slots | 0-9 | `MAX_TIME_SLOTS = 10` |
+| Schedule slots | Venus A/C/D/E: 0-9; Venus E mini: 0-5 | Profile `max_manual_schedule_slot`; validator still lists `MAX_TIME_SLOTS = 10` as the schema ceiling |
 | Mode configs | Required fields checked per mode (manual_cfg, passive_cfg) | |
 
 ### Where validation happens
@@ -386,7 +387,8 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 |--------|---------|-------------|
 | `--port` | 30000 | UDP port |
 | `--ip` | auto | Override reported IP address |
-| `--device` | "VenusE 3.0" | Device type string |
+| `--device` | "VenusE 3.0" | Device type string (family matching; Venus E mini is not Venus E) |
+| `--ver` | 145 | Firmware integer returned by discovery; selects the shared firmware profile |
 | `--ble-mac` | random | BLE MAC address (unique ID) |
 | `--wifi-mac` | random | WiFi MAC address |
 | `--soc` | 50 | Initial battery SOC percentage |
@@ -401,7 +403,8 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 **Features:**
 - **Dynamic battery simulation**: SOC changes based on power flow
 - **Power fluctuations**: Realistic ±5% variations
-- **All modes**: Auto, AI, Manual, Passive with proper behavior
+- **All modes**: Auto, AI, Manual, Passive, and firmware-gated UPS
+- **Firmware profiles**: `--device` + `--ver` encode wattage/energy and accept or reject SYS/UPS (`Method not found` on legacy)
 - **Passive timer**: Auto-expiration after configured duration
 - **Manual schedules**: Day/time/power slot configuration
 - **Household simulation**: Time-of-day consumption patterns
@@ -411,12 +414,11 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 # Start with 30% battery for low-SOC testing
 python -m mock_device --soc 30
 
-# Start multiple devices with unique MACs
-python -m mock_device --ble-mac 02deadbeef01 --soc 50 &
-python -m mock_device --port 30001 --ble-mac 02deadbeef02 --soc 75 &
+# Start a Rev 3.1 Venus A (watt PV, SYS/UPS)
+python -m mock_device --device VenusA --ver 150
 ```
 
-**In devcontainer:** Five mock devices run automatically on `172.28.0.20`, `172.28.0.22-25`; two use port `30000` and three use custom ports (`30001-30003`).
+**In devcontainer:** Five mock devices run automatically. At least one is legacy firmware 145 and one is firmware 150 (Venus A watt PV vs Venus D deciwatt PV). See `tools/mock_device/README.md`.
 
 ### Tool selection guide
 

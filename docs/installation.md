@@ -18,3 +18,4 @@
 - Device and HA on the **same LAN segment**
 - **Open API enabled** in the Marstek app
 - UDP **port 30000** reachable
+- Venus **E2.0 is not supported** (may disconnect the device from CT003)

@@ -50,11 +50,12 @@ npm run changeset:pre:exit
 
 ## Mock device
 
-Run the mock device to develop without hardware:
+Run the mock device to develop without hardware. `--device` and `--ver` select a firmware profile (legacy encodings + `Method not found` vs Rev 3.1 encodings and accepted SYS/UPS writes). Physical watts and watt-hours are encoded on the wire according to that profile; the integration normalizes them back to W and Wh.
 
 ```
 cd tools
-python -m mock_device
+python -m mock_device --ver 145
+python -m mock_device --device "VenusA" --ver 150
 ```
 
 Backwards-compatible shim (still works):
@@ -63,6 +64,8 @@ Backwards-compatible shim (still works):
 python tools/mock_device/mock_marstek.py
 ```
 
+Devcontainer compose runs five mocks with mixed firmware. See [tools/mock_device/README.md](../tools/mock_device/README.md).
+
 ## Protocol reference
 
-See `docs/marstek_device_openapi.MD`.
+See [Marstek Device Open API Rev 3.1](marstek_device_openapi.MD).
