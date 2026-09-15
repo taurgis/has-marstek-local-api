@@ -7,16 +7,21 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
 from .coordinator import MarstekDataUpdateCoordinator
+from .device_info import get_device_identifier
+from .firmware_profile import FirmwareProfile
+from .helpers.number_descriptions import NUMBER_ENTITIES
+from .helpers.switch_descriptions import SWITCH_ENTITIES
 from .pymarstek import MarstekUDPClient, get_es_mode
 from .scanner import MarstekScanner
 from .services import async_setup_services
@@ -64,6 +69,35 @@ def _clear_connection_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
     issue_id = _issue_id_for_entry(entry)
     if issue_registry.async_get_issue(DOMAIN, issue_id):
         issue_registry.async_delete(DOMAIN, issue_id)
+
+
+def _async_remove_unsupported_capability_entities(
+    hass: HomeAssistant,
+    device_info: dict[str, Any],
+    profile: FirmwareProfile,
+) -> None:
+    """Remove registry entries for capability-gated entities the profile dropped."""
+    try:
+        device_identifier = get_device_identifier(device_info)
+    except ValueError:
+        return
+
+    registry = er.async_get(hass)
+    gated_entities: tuple[
+        tuple[Platform, tuple[Any, ...]],
+        ...,
+    ] = (
+        (Platform.NUMBER, NUMBER_ENTITIES),
+        (Platform.SWITCH, SWITCH_ENTITIES),
+    )
+    for platform, descriptions in gated_entities:
+        for description in descriptions:
+            if description.supported_fn(profile):
+                continue
+            unique_id = f"{device_identifier}_{description.key}"
+            entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+            if entity_id is not None:
+                registry.async_remove(entity_id)
 
 
 def _get_shared_udp_client(hass: HomeAssistant) -> MarstekUDPClient | None:
@@ -260,6 +294,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
         entry,
         udp_client,
         device_info_dict,
+    )
+
+    # Drop stale capability-gated registry entries before platforms re-add
+    # the entities the current firmware profile still supports.
+    _async_remove_unsupported_capability_entities(
+        hass, device_info_dict, coordinator.profile
     )
 
     # Clear any prior connection issue after successful setup

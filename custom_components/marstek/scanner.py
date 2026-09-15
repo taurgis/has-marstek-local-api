@@ -20,6 +20,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
+from .firmware_profile import resolve_firmware_profile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -333,18 +334,43 @@ class MarstekScanner:
         if not updates:
             return
 
+        old_profile = resolve_firmware_profile(
+            entry.data.get("device_type"),
+            entry.data.get("version"),
+        )
+        merged = {**entry.data, **updates}
+        new_profile = resolve_firmware_profile(
+            merged.get("device_type"),
+            merged.get("version"),
+        )
+        capabilities_changed = (
+            old_profile.setup_capability_signature
+            != new_profile.setup_capability_signature
+        )
+
         _LOGGER.info(
             "Scanner: Updating device metadata for %s: %s",
             entry.title,
             ", ".join(f"{key}={value}" for key, value in updates.items()),
         )
 
-        self._mark_suppress_reload(entry.entry_id)
+        if not capabilities_changed:
+            self._mark_suppress_reload(entry.entry_id)
+        else:
+            _LOGGER.info(
+                "Scanner: Firmware setup capabilities changed for %s; config entry will reload",
+                entry.title,
+            )
+
         self._hass.config_entries.async_update_entry(
             entry, data={**entry.data, **updates}
         )
 
-        if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data"):
+        if (
+            not capabilities_changed
+            and entry.state == ConfigEntryState.LOADED
+            and hasattr(entry, "runtime_data")
+        ):
             entry.runtime_data.device_info.update(updates)
             entry.runtime_data.coordinator.async_set_updated_data(
                 entry.runtime_data.coordinator.data or {}

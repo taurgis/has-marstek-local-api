@@ -26,6 +26,10 @@ If your device IP changes (DHCP), the integration’s background scanner will de
 
 Unique IDs are based on the device’s **BLE MAC** (falling back to other MACs when needed) so entities remain stable across IP changes.
 
+## Firmware updates
+
+When the scanner sees a firmware or model change that unlocks or removes setup-time capabilities (for example Venus E firmware `149` → `150` adding UPS and SYS controls), the config entry reloads automatically. Cosmetic metadata such as Wi-Fi name or a firmware number that does not change those capabilities is stored without a reload. You do not need to delete and re-add the device.
+
 ## Unsupported devices
 
 Venus **E2.0** is not supported.
