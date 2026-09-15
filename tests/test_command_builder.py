@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 import pytest
-import custom_components.marstek.pymarstek.command_builder as command_builder
 
+import custom_components.marstek.pymarstek.command_builder as command_builder
 from custom_components.marstek.pymarstek.command_builder import (
     build_command,
     discover,
