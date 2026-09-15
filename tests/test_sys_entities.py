@@ -31,6 +31,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.marstek.const import DOMAIN, PLATFORMS
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
+from custom_components.marstek.helpers.sys_write import sys_write_target
 from custom_components.marstek.number import async_setup_entry as async_setup_number
 from custom_components.marstek.pymarstek.const import (
     BLE_ADV_DISABLED,
@@ -44,7 +45,7 @@ from custom_components.marstek.pymarstek.const import (
     LED_OFF,
     LED_ON,
 )
-from custom_components.marstek.pymarstek.validators import VALID_METHODS
+from custom_components.marstek.pymarstek.validators import VALID_METHODS, ValidationError
 from custom_components.marstek.switch import async_setup_entry as async_setup_switch
 from tests.conftest import create_mock_client, patch_marstek_integration
 
@@ -63,7 +64,14 @@ def _entity_id(hass: HomeAssistant, platform: str, key: str) -> str | None:
 
 
 def _sys_client() -> MagicMock:
-    client = create_mock_client()
+    client = create_mock_client(
+        status={
+            "battery_soc": 55,
+            "device_mode": "auto",
+            "battery_power": -250,
+            "battery_status": "discharging",
+        }
+    )
     client.send_request = AsyncMock(return_value={"result": {"set_result": True}})
     return client
 
@@ -237,8 +245,10 @@ async def test_dod_entity_defaults_and_attributes(hass: HomeAssistant) -> None:
     assert state.attributes["max"] == DOD_MAX_VALUE
     assert state.attributes["step"] == 1
     assert state.attributes["unit_of_measurement"] == PERCENTAGE
-    assert state.attributes["entity_category"] == EntityCategory.CONFIG
     assert state.attributes.get(ATTR_ASSUMED_STATE) is True
+    registry_entry = er.async_get(hass).async_get(entity_id)
+    assert registry_entry is not None
+    assert registry_entry.entity_category == EntityCategory.CONFIG
 
 
 @pytest.mark.parametrize("value", [DOD_MIN_VALUE, DOD_MAX_VALUE, 50])
@@ -387,8 +397,10 @@ async def test_sys_switches_start_unknown_without_history(
         state = hass.states.get(entity_id)
         assert state is not None
         assert state.state == STATE_UNKNOWN
-        assert state.attributes["entity_category"] == EntityCategory.CONFIG
         assert state.attributes.get(ATTR_ASSUMED_STATE) is True
+        registry_entry = er.async_get(hass).async_get(entity_id)
+        assert registry_entry is not None
+        assert registry_entry.entity_category == EntityCategory.CONFIG
 
 
 @pytest.mark.parametrize(
@@ -614,6 +626,88 @@ async def test_sys_write_timeout_keeps_prior_state_and_resumes(
         assert err.value.translation_key == "sys_write_timeout"
         assert float(hass.states.get(entity_id).state) == DOD_DEFAULT_VALUE
         assert order == ["pause", "send", "resume"]
+
+
+async def test_sys_write_transport_error_keeps_prior_state(
+    hass: HomeAssistant,
+) -> None:
+    """Transport errors raise a translated error and resume polling."""
+    entry = _config_entry()
+    client = _sys_client()
+    with patch_marstek_integration(client=client):
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        entity_id = _entity_id(hass, "switch", "panel_led")
+        assert entity_id is not None
+        client.send_request.side_effect = OSError("network down")
+
+        with pytest.raises(HomeAssistantError) as err:
+            await hass.services.async_call(
+                "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+            )
+
+        assert err.value.translation_key == "sys_write_failed"
+        assert hass.states.get(entity_id).state == STATE_UNKNOWN
+        assert client.resume_polling.call_count >= 1
+
+
+async def test_sys_write_validation_error_during_send_keeps_state(
+    hass: HomeAssistant,
+) -> None:
+    """Validation failures during transmission keep prior state and resume."""
+    entry = _config_entry()
+    client = _sys_client()
+    with patch_marstek_integration(client=client):
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        entity_id = _entity_id(hass, "number", SYS_NUMBER_KEY)
+        assert entity_id is not None
+        client.send_request.side_effect = ValidationError("value must be an integer", "value")
+
+        with pytest.raises(HomeAssistantError) as err:
+            await hass.services.async_call(
+                "number",
+                "set_value",
+                {"entity_id": entity_id, "value": 40},
+                blocking=True,
+            )
+
+        assert err.value.translation_key == "sys_write_invalid"
+        assert float(hass.states.get(entity_id).state) == DOD_DEFAULT_VALUE
+        assert client.resume_polling.call_count >= 1
+
+
+async def test_sys_write_non_dict_response_is_rejected(
+    hass: HomeAssistant,
+) -> None:
+    """A non-dict UDP payload is treated as an unacknowledged write."""
+    entry = _config_entry()
+    client = _sys_client()
+    with patch_marstek_integration(client=client):
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        entity_id = _entity_id(hass, "switch", "bluetooth_advertising")
+        assert entity_id is not None
+        client.send_request.return_value = "not-json-rpc"
+
+        with pytest.raises(HomeAssistantError) as err:
+            await hass.services.async_call(
+                "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+            )
+
+        assert err.value.translation_key == "sys_write_rejected"
+        assert hass.states.get(entity_id).state == STATE_UNKNOWN
+
+
+def test_sys_write_target_requires_host() -> None:
+    """SYS writes fail closed when the config entry has no host."""
+    entry = MockConfigEntry(domain=DOMAIN, data={})
+    with pytest.raises(HomeAssistantError) as err:
+        sys_write_target(entry)
+    assert err.value.translation_key == "no_host_configured"
 
 
 async def test_sys_write_pauses_before_send_and_resumes(
