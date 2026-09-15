@@ -1562,8 +1562,54 @@ class TestGetDeviceStatusTieredFailures:
                     include_wifi=False,
                     include_em=False,
                 )
-        
+
         assert result["has_fresh_data"]
+
+    async def test_include_bat_false_never_sends_bat_get_status(self) -> None:
+        """Test Bat.GetStatus is not sent when include_bat=False, even with
+        other optional tiers enabled (and vice versa for Wifi.GetStatus)."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        sent_methods: list[str] = []
+
+        async def mock_send_request(
+            message: str, *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
+            method = json.loads(message).get("method")
+            sent_methods.append(method)
+            return {"id": 1, "result": {"mode": 0, "soc": 50}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()):
+                await client.get_device_status(
+                    "192.168.1.100",
+                    delay_between_requests=0,
+                    include_pv=False,
+                    include_wifi=True,
+                    include_em=True,
+                    include_bat=False,
+                )
+
+        assert "Wifi.GetStatus" in sent_methods
+        assert "Bat.GetStatus" not in sent_methods
+
+        sent_methods.clear()
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()):
+                await client.get_device_status(
+                    "192.168.1.100",
+                    delay_between_requests=0,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_em=True,
+                    include_bat=True,
+                )
+
+        assert "Bat.GetStatus" in sent_methods
+        assert "Wifi.GetStatus" not in sent_methods
 
 
 class TestPeriodicCleanup:

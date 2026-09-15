@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BAT_STATUS_KEYS,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
@@ -33,6 +34,7 @@ from .const import (
     DEFAULT_UDP_PORT,
     DOMAIN,
     INITIAL_SETUP_REQUEST_DELAY,
+    WIFI_STATUS_KEYS,
     device_supports_pv,
 )
 from .helpers.coordinator_helpers import raise_if_invalid_status
@@ -75,9 +77,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         device_type = config_entry.data.get("device_type", "")
         self._supports_pv = device_supports_pv(device_type)
 
-        # Track last fetch times for tiered polling
-        self._last_pv_fetch: float = 0.0  # Medium interval
-        self._last_slow_fetch: float = 0.0  # Slow interval (WiFi, battery details)
+        # Track last fetch times for tiered polling. None means "never fetched"
+        # so the first cycle always runs even when time.monotonic() is still
+        # below the interval (fresh CI runners / recently rebooted hosts).
+        # WiFi and battery details are stamped separately so that enabling an
+        # entity mid-cycle triggers its first fetch on the next update instead
+        # of waiting out a shared slow-tier timestamp bumped by a skip.
+        self._last_pv_fetch: float | None = None  # Medium interval
+        self._last_wifi_fetch: float | None = None  # Slow interval (WiFi status)
+        self._last_bat_fetch: float | None = None  # Slow interval (battery details)
 
         # Track if this is the initial setup (use faster delays)
         self._is_initial_setup = is_initial_setup
@@ -121,14 +129,28 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             " [INITIAL SETUP - fast delays]" if is_initial_setup else "",
         )
 
-    def _select_polling_tiers(self, current_time: float) -> tuple[bool, bool, bool]:
+    @staticmethod
+    def _interval_elapsed(
+        last_fetch: float | None, current_time: float, interval: float
+    ) -> bool:
+        """Return True if this tier has never been fetched or its interval elapsed."""
+        return last_fetch is None or (current_time - last_fetch) >= interval
+
+    def _select_polling_tiers(
+        self, current_time: float
+    ) -> tuple[bool, bool, bool]:
         """Decide which polling tiers to include for this update cycle."""
-        include_pv = self._supports_pv and (
-            (current_time - self._last_pv_fetch) >= self._get_medium_interval()
+        include_pv = self._supports_pv and self._interval_elapsed(
+            self._last_pv_fetch, current_time, self._get_medium_interval()
         )
-        include_slow = (current_time - self._last_slow_fetch) >= self._get_slow_interval()
-        include_wifi = include_slow and self._is_wifi_status_enabled()
-        return include_pv, include_wifi, include_slow
+        slow_interval = self._get_slow_interval()
+        include_wifi = self._interval_elapsed(
+            self._last_wifi_fetch, current_time, slow_interval
+        ) and self._is_wifi_status_enabled()
+        include_bat = self._interval_elapsed(
+            self._last_bat_fetch, current_time, slow_interval
+        ) and self._is_bat_status_enabled()
+        return include_pv, include_wifi, include_bat
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
         """Handle polling errors and return cached data or raise UpdateFailed."""
@@ -220,29 +242,38 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
-    def _is_wifi_status_enabled(self) -> bool:
-        """Return True if any WiFi status entity is enabled for this entry."""
-        wifi_keys = {
-            "wifi_rssi",
-            "wifi_sta_ip",
-            "wifi_sta_gate",
-            "wifi_sta_mask",
-            "wifi_sta_dns",
-        }
+    @staticmethod
+    def _entity_key_from_unique_id(unique_id: str) -> str | None:
+        """Return the entity key from a MAC-based unique_id (`{mac}_{key}`)."""
+        _, separator, key = unique_id.partition("_")
+        return key if separator and key else None
+
+    def _has_enabled_entities(self, keys: frozenset[str]) -> bool:
+        """Return True if any entity with one of these keys is enabled."""
         entity_registry = er.async_get(self.hass)
         entries = er.async_entries_for_config_entry(
             entity_registry, self._entry.entry_id
         )
         for entry in entries:
-            if not entry.unique_id:
+            if entry.disabled_by is not None:
                 continue
-            for key in wifi_keys:
-                if (
-                    entry.unique_id.endswith(f"_{key}")
-                    and entry.disabled_by is None
-                ):
-                    return True
+            key = self._entity_key_from_unique_id(entry.unique_id or "")
+            if key is not None and key in keys:
+                return True
         return False
+
+    def _is_wifi_status_enabled(self) -> bool:
+        """Return True if any WiFi status entity is enabled for this entry."""
+        return self._has_enabled_entities(WIFI_STATUS_KEYS)
+
+    def _is_bat_status_enabled(self) -> bool:
+        """Return True if any Bat.GetStatus entity is enabled for this entry.
+
+        Bat.GetStatus is suspected to trigger device resets on some firmwares
+        (issue #14), so the request is only sent while a user has explicitly
+        enabled one of the entities that depend on it.
+        """
+        return self._has_enabled_entities(BAT_STATUS_KEYS)
 
     @property
     def device_ip(self) -> str:
@@ -263,6 +294,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         - Fast (base interval): ES.GetMode, ES.GetStatus, EM.GetStatus - real-time power
         - Medium: PV.GetStatus - solar data
         - Slow: Wifi.GetStatus, Bat.GetStatus - rarely changes
+
+        Wifi.GetStatus and Bat.GetStatus are only sent while at least one
+        entity that depends on them is enabled in the entity registry.
         """
         current_ip = self.device_ip
         current_port = self.device_port
@@ -278,7 +312,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         parallel_requests = self._use_parallel_api_requests()
         request_delay = self._get_request_delay()
 
-        include_pv, include_wifi, include_slow = self._select_polling_tiers(
+        include_pv, include_wifi, include_bat = self._select_polling_tiers(
             current_time
         )
 
@@ -290,7 +324,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             current_ip,
             include_pv,
             include_wifi,
-            include_slow,
+            include_bat,
             parallel_requests,
         )
 
@@ -305,7 +339,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 include_pv=include_pv,
                 include_wifi=include_wifi,
                 include_em=True,  # Always fetch - fast tier
-                include_bat=include_slow,
+                include_bat=include_bat,
                 parallel_requests=parallel_requests,
                 delay_between_requests=request_delay,
                 previous_status=self.data,  # Preserve values on partial failures
@@ -314,20 +348,24 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Update last fetch times for successful fetches
             if include_pv:
                 self._last_pv_fetch = current_time
-            if include_slow:
-                self._last_slow_fetch = current_time
+            if include_wifi:
+                self._last_wifi_fetch = current_time
+            if include_bat:
+                self._last_bat_fetch = current_time
 
             # Check if we actually got valid data
             raise_if_invalid_status(current_ip, device_status, _LOGGER)
             _LOGGER.debug(
-                "Device %s poll done: SOC %s%%, Power %sW, Mode %s, Status %s (pv=%s, slow=%s)",
+                "Device %s poll done: SOC %s%%, Power %sW, Mode %s, Status %s "
+                "(pv=%s, wifi=%s, bat=%s)",
                 current_ip,
                 device_status.get("battery_soc"),
                 device_status.get("battery_power"),
                 device_status.get("device_mode"),
                 device_status.get("battery_status"),
                 include_pv,
-                include_slow,
+                include_wifi,
+                include_bat,
             )
 
             # Update success tracking
