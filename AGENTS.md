@@ -424,3 +424,13 @@ python -m mock_device --port 30001 --ble-mac 02deadbeef02 --soc 75 &
 | "Need realistic mock data" | `capture_device.py <IP> -o data.json` |
 | "Testing low battery behavior" | `mock_device/ --soc 5` |
 | "Debugging mode transitions" | `mock_device/` + watch console output |
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues for `taurgis/has-marstek-local-api`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context layout: `CONTEXT.md` at the repo root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
