@@ -6,7 +6,8 @@
       "sourceType": "github",
       "computedHash": "f37b5848592f8769be0e2c5b87c7fdd200a4be16c500c0cdc829eaf8327df658",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/code-review/SKILL.md",
       "installPath": ".agents/skills/code-review",
@@ -20,7 +21,8 @@
       "sourceType": "github",
       "computedHash": "bd7b0131d3ba199d34c9fa7152aae4670047fdc9fdbcc71ce3b1e9438b158fae",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/codebase-design/SKILL.md",
       "installPath": ".agents/skills/codebase-design",
@@ -34,7 +36,8 @@
       "sourceType": "github",
       "computedHash": "eadb9d42e84f997dd21b94a06342a5e8991d4ae72cf044e20c1fdbb881d2e9a2",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/domain-modeling/SKILL.md",
       "installPath": ".agents/skills/domain-modeling",
@@ -48,7 +51,8 @@
       "sourceType": "github",
       "computedHash": "843ca62ee2e3de072f70756e8778673a2df27c8f02a74a682e95ebb7a0251641",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/find-skills/SKILL.md",
       "installPath": ".agents/skills/find-skills",
@@ -62,7 +66,8 @@
       "sourceType": "github",
       "computedHash": "285b6cef43d72969b772da5dc6663f56ecacdca9f519b3c74187ba7726502ad5",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/productivity/grilling/SKILL.md",
       "installPath": ".agents/skills/grilling",
@@ -76,7 +81,8 @@
       "sourceType": "github",
       "computedHash": "ce2cae1881c560ab75504edd8fd4c00ac4bdbd34475e29eeb6faac8aea9459ea",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/implement/SKILL.md",
       "installPath": ".agents/skills/implement",
@@ -90,7 +96,8 @@
       "sourceType": "github",
       "computedHash": "daf6983084ab492540ea4d5d4df61e7adbbfd3632f99c23c3b7ff3d1f4926710",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/prototype/SKILL.md",
       "installPath": ".agents/skills/prototype",
@@ -104,7 +111,8 @@
       "sourceType": "github",
       "computedHash": "a5b9a55efb22419b3c969bb60361dce966fa593ca86d4edc1db11fd08a4446e5",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/research/SKILL.md",
       "installPath": ".agents/skills/research",
@@ -118,7 +126,8 @@
       "sourceType": "github",
       "computedHash": "6eceb350cad87825c15c3079088f860b99f31c7dedc25446a39908737b7498ae",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
       "installPath": ".agents/skills/setup-matt-pocock-skills",
@@ -132,7 +141,8 @@
       "sourceType": "github",
       "computedHash": "ad40f2d56e0325dd718dd8d4d6fe7014add6dc3c2b960f28ba2c4824adc185ac",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/tdd/SKILL.md",
       "installPath": ".agents/skills/tdd",
@@ -146,7 +156,8 @@
       "sourceType": "github",
       "computedHash": "a0e6fcf12d40f3fbbd131be9f311d9e5deb1c5da5561a1f6ef6e62700562015e",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/to-spec/SKILL.md",
       "installPath": ".agents/skills/to-spec",
@@ -160,7 +171,8 @@
       "sourceType": "github",
       "computedHash": "bc05e0b20721590afa6e1b1ef4eb74821e83c4fd251ffbdba7f313cf7818b93b",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/to-tickets/SKILL.md",
       "installPath": ".agents/skills/to-tickets",
@@ -174,7 +186,8 @@
       "sourceType": "github",
       "computedHash": "9b6d4b3e665a61e1d372f82f2a4dc60bccd69d50bb2675df9cb77a07e1102459",
       "agents": [
-        "cursor"
+        "cursor",
+        "claude-code"
       ],
       "repoPath": "skills/engineering/wayfinder/SKILL.md",
       "installPath": ".agents/skills/wayfinder",

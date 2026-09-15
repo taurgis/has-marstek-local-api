@@ -1,0 +1,19 @@
+<!-- GENERATED: forward-nexus ide-sync -->
+
+Source: `.github/instructions/repo-research.instructions.md`
+
+# Repository Research Requirement
+
+## Mandatory Pre-Step
+- Always run the subagent **Official Docs Researcher** before auditing, creating, updating, refactoring, scaffolding, or deleting code, documentation, instructions, prompts, agents, skills, workflows, or collections in this repository.
+- Use its findings to incorporate the most current official documentation and online references in the change.
+
+## When not to Use
+- When no technical content is being modified in the specified directories (e.g., purely editorial changes).
+- When working outside of the specified directories.
+- When you have already incorporated official documentation in the change and no further research is needed.
+
+## Examples
+- ✅ Run **Official Docs Researcher** before editing instructions, prompts, agents, skills, workflows, collections, or docs.
+- ✅ Include relevant official doc links when the change references platform behavior or standards.
+- ❌ Do not modify content in those directories without running the subagent first.
