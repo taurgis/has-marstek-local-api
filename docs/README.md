@@ -2,7 +2,7 @@
 
 This custom integration lets Home Assistant monitor and control **Marstek energy storage devices** over the **local network** using the Marstek **Open API Rev 3.1 via UDP** (no cloud dependency).
 
-Device family plus discovery firmware `ver` select a **firmware profile**. That profile decides energy/power decoding, which entities exist (PV, UPS, SYS, EM lifetime energy), and how many manual schedule slots the device accepts. Older firmware keeps the legacy entity set. Capable firmware adds UPS, SYS settings, and correctly scaled solar/meter totals.
+Device family plus discovery firmware `ver` select a **firmware profile**. That profile decides energy/power decoding, which setup-time entities exist (PV, UPS, SYS), and how many manual schedule slots the device accepts. EM lifetime energy sensors appear when the meter payload reports those fields (scaled on Rev 3.1 firmware). Older firmware keeps the legacy entity set. Capable firmware adds UPS, SYS settings, and correctly scaled solar/meter totals.
 
 ## Highlights
 
