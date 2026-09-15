@@ -2,7 +2,9 @@
 
 All entities are **coordinator-backed** (no per-entity polling). Names below match the English UI strings.
 
-Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED, EM lifetime energy) are **created only when the firmware profile supports them**. Unsupported features are omitted from the device page rather than left permanently unavailable. After a firmware update that unlocks or removes those capabilities, the scanner reloads the config entry so the entity set matches the new profile.
+Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only when the firmware profile supports them**. Unsupported features are omitted from the device page rather than left permanently unavailable. After a firmware update that unlocks or removes those capabilities, the scanner reloads the config entry so the entity set matches the new profile.
+
+Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Firmware `ver >= 150` on a known family scales the wire unit 0.1 Wh → Wh; older profiles leave a present value unscaled.
 
 > Note: Some entities are **Diagnostic** and **disabled by default** (can be enabled in the entity registry).
 
