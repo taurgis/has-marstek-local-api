@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- ddb13d4: Add Open API Rev 3.1 firmware-profile support with UPS mode, SYS DOD/Bluetooth/LED controls, field-specific energy scaling, EM lifetime energy sensors, and automatic reload when firmware capabilities change.
+
+### Patch Changes
+
+- e2399f1: Make the Bat.GetStatus polling call opt-in: the battery detail entities (temperature, remaining/rated capacity, charge/discharge permission) are now disabled by default, and the integration only sends Bat.GetStatus while at least one of them is enabled. The call is suspected to trigger spontaneous device resets on some Marstek firmwares (#14). Existing installations keep their currently enabled entities; disable the battery detail entities manually to stop the call.
+- 668878e: Add a shared firmware profile contract with versioned mock and device-specific schedule limits.
+- 56e61e9: Fix Venus A firmware 149+ solar energy totals that were stored about 10× too low.
+- 3bf94af: Accept integer ES.GetMode values and instance id 1 as read fallbacks, and map VNSA/VNSD/VNSE3 discovery names, without changing string SetMode writes or the id=0 default.
+- 00fc5b9: Keep last-known CT readings when Venus E 3.0 firmware 150 GetMode reports zeros, and add a matching firmware 150 Docker mock beside the existing firmware 145 Venus E.
+
 ## 1.0.0
 
 ### Patch Changes
