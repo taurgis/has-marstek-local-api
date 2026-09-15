@@ -20,6 +20,18 @@ class DeviceFamily(StrEnum):
     UNKNOWN = "Unknown"
 
 
+_REGULAR_FAMILIES = frozenset(
+    {
+        DeviceFamily.VENUS_A,
+        DeviceFamily.VENUS_C,
+        DeviceFamily.VENUS_D,
+        DeviceFamily.VENUS_E,
+    }
+)
+_KNOWN_FAMILIES = _REGULAR_FAMILIES | {DeviceFamily.VENUS_E_MINI}
+_PV_FAMILIES = frozenset({DeviceFamily.VENUS_A, DeviceFamily.VENUS_D})
+
+
 @dataclass(frozen=True, slots=True)
 class FirmwareProfile:
     """Resolved device capabilities and wire-to-SI scaling."""
@@ -93,21 +105,24 @@ def resolve_firmware_profile(
     """Resolve capabilities and legacy encoding from discovery metadata."""
     family = _normalize_family(device_type)
     firmware_version = _normalize_version(version)
+    firmware_known = firmware_version is not None
+    firmware_149 = firmware_version is not None and firmware_version >= 149
     firmware_150 = firmware_version is not None and firmware_version >= 150
-    regular_family = family in {
-        DeviceFamily.VENUS_A,
-        DeviceFamily.VENUS_C,
-        DeviceFamily.VENUS_D,
-        DeviceFamily.VENUS_E,
-    }
+    known_family = family in _KNOWN_FAMILIES
+    regular_family = family in _REGULAR_FAMILIES
     supports_sys = (regular_family and firmware_150) or (
-        family is DeviceFamily.VENUS_E_MINI and firmware_version is not None
+        family is DeviceFamily.VENUS_E_MINI and firmware_known
     )
+    scaled_pv_energy = known_family and (
+        firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
+    )
+    watt_pv_channels = family in _PV_FAMILIES and firmware_150
+    supports_em_energy = known_family and firmware_150
 
     return FirmwareProfile(
         family=family,
         firmware_version=firmware_version,
-        supports_pv=family in {DeviceFamily.VENUS_A, DeviceFamily.VENUS_D},
+        supports_pv=family in _PV_FAMILIES,
         supports_sys_dod=supports_sys,
         supports_sys_ble_advertising=supports_sys,
         supports_sys_led=supports_sys,
@@ -116,4 +131,8 @@ def resolve_firmware_profile(
         max_manual_schedule_slot=5
         if family is DeviceFamily.VENUS_E_MINI
         else 9,
+        pv_energy_scale=10.0 if scaled_pv_energy else 1.0,
+        pv_channel_1_power_scale=1.0 if watt_pv_channels else 0.1,
+        em_energy_scale=0.1 if supports_em_energy else 1.0,
+        supports_em_energy=supports_em_energy,
     )

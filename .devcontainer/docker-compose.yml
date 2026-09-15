@@ -57,6 +57,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--port", "30001", "--ver", "145", "--ble-mac", "02deadbeef03", "--wifi-mac", "02cafebabe03", "--soc", "30"]
 
   # Mock device 4 - Venus D with PV (4 MPPT channels), custom UDP port 30002
+  # Legacy firmware: channel-1 deciwatt PV encoding, solar energy in Wh
   mock-marstek-4:
     build:
       context: ..
@@ -70,6 +71,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.23", "--port", "30002", "--device", "VenusD", "--ver", "145", "--ble-mac", "02deadbeef04", "--wifi-mac", "02cafebabe04", "--soc", "60", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
 
   # Mock device 5 - Venus A with PV (4 MPPT channels), custom UDP port 30003
+  # Firmware 150+: watt PV encoding and Rev 3.1 energy units
   mock-marstek-5:
     build:
       context: ..
@@ -80,7 +82,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.24
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "145", "--ble-mac", "02deadbeef05", "--wifi-mac", "02cafebabe05", "--soc", "65", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "150", "--ble-mac", "02deadbeef05", "--wifi-mac", "02cafebabe05", "--soc", "65", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
 
 networks:
   marstek_net:

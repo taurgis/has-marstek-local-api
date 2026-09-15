@@ -55,6 +55,21 @@ between updates and restores the corrected total after Home Assistant restarts.
 If the totals still look wrong, compare the grid energy sensors with
 `sensor.<device>_on_grid_power` and include debug logs in your report.
 
+## Venus A solar totals look 10× too low, then jump
+
+Venus A firmware 149 reports `total_pv_energy` as 0.01 kWh (for example raw
+`25742` meaning `257.42 kWh`). Older integration versions stored that raw value
+as Wh, so Energy Dashboard solar production was about 10× too low.
+
+The integration now converts that field to Wh. Existing recorder history is
+**not** rewritten. The first corrected state is a large upward delta, which
+Home Assistant accumulates; it is **not** a meter reset. A reset is a
+decrease in a `total_increasing` sensor.
+
+If the Energy Dashboard shows a one-time production spike at the upgrade, use
+**Settings → Tools → Statistics** to locate and correct the transition:
+https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
+
 ## Venus A solar or load energy stays at 0 Wh
 
 Some Venus A firmware versions report `total_pv_energy` as `0` even while PV

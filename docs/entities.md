@@ -23,6 +23,8 @@ All entities are **coordinator-backed** (no per-entity polling). Names below mat
 | Phase A power | `em_a_power` | W | — | Enabled |
 | Phase B power | `em_b_power` | W | — | Enabled |
 | Phase C power | `em_c_power` | W | — | Enabled |
+| Meter input energy | `em_input_energy` | Wh | — | Enabled (if reported) |
+| Meter output energy | `em_output_energy` | Wh | — | Enabled (if reported) |
 | Total solar energy | `total_pv_energy` | Wh | — | Enabled |
 | Total grid output energy | `total_grid_output_energy` | Wh | — | Enabled |
 | Total grid input energy | `total_grid_input_energy` | Wh | — | Enabled |
@@ -90,5 +92,7 @@ Created when the device reports those values (typically Venus A/D with PV channe
 ## Device grouping
 
 Entities are grouped under one device, and unique IDs remain stable across IP changes.
+
+Meter input/output energy sensors are created only when `EM.GetStatus` (or Rev 3.1 `ES.GetMode` fallback) reports those lifetime totals. They use the same BLE-MAC unique ID pattern as other sensors and are suitable for the Energy Dashboard (`device_class: energy`, `state_class: total_increasing`, native unit `Wh`).
 
 <img src="screenshots/device-details-venusa.png" alt="Device details (Venus A)" width="560" />

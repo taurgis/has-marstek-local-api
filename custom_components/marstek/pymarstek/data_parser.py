@@ -19,19 +19,45 @@ def _get_logger() -> logging.Logger:
     return _LOGGER
 
 
-def parse_es_mode_response(response: dict[str, Any]) -> dict[str, Any]:
+def _scale_numeric(value: Any, scale: float) -> Any:
+    """Scale a numeric wire value; leave missing and non-numeric values unchanged."""
+    if isinstance(value, (int, float)):
+        return value * scale
+    return value
+
+
+def _add_scaled_meter_energy(
+    parsed: dict[str, Any],
+    result: dict[str, Any],
+    scale: float,
+) -> None:
+    """Copy present EM lifetime energy fields into coordinator keys."""
+    if "input_energy" in result:
+        parsed["em_input_energy"] = _scale_numeric(result.get("input_energy"), scale)
+    if "output_energy" in result:
+        parsed["em_output_energy"] = _scale_numeric(result.get("output_energy"), scale)
+
+
+def parse_es_mode_response(
+    response: dict[str, Any],
+    profile: FirmwareProfile | None = None,
+) -> dict[str, Any]:
     """Parse ES.GetMode response into structured data.
 
     ES.GetMode returns device mode and grid power info, NOT battery power.
     For actual battery power, use parse_es_status_response with ES.GetStatus.
+    Rev 3.1 also reports CT, phase-power, and meter energy fields that map onto
+    the existing EM coordinator keys and are used only as fallbacks.
 
     Args:
         response: Raw response from ES.GetMode command
+        profile: Firmware encoding profile; defaults to the legacy-safe contract
 
     Returns:
-        Dictionary with parsed mode and grid data (device_mode, ongrid_power)
+        Dictionary with parsed mode and optional fallback meter data
     """
     result = response.get("result", {})
+    active_profile = profile or _LEGACY_PROFILE
 
     battery_soc = result.get("bat_soc")
     ongrid_power = result.get("ongrid_power")
@@ -42,12 +68,31 @@ def parse_es_mode_response(response: dict[str, Any]) -> dict[str, Any]:
     # NOTE: ongrid_power is GRID power, not battery power!
     # Positive = exporting to grid, Negative = importing from grid
 
-    return {
+    parsed: dict[str, Any] = {
         "battery_soc": battery_soc,
         "device_mode": device_mode,
         "ongrid_power": ongrid_power,
         # Don't set battery_power here - it comes from ES.GetStatus
     }
+
+    if "ct_state" in result:
+        ct_state_raw = result.get("ct_state")
+        parsed["ct_state"] = ct_state_raw
+        parsed["ct_connected"] = (
+            ct_state_raw == 1 if ct_state_raw is not None else None
+        )
+
+    for source_key, dest_key in (
+        ("a_power", "em_a_power"),
+        ("b_power", "em_b_power"),
+        ("c_power", "em_c_power"),
+        ("total_power", "em_total_power"),
+    ):
+        if source_key in result:
+            parsed[dest_key] = result.get(source_key)
+
+    _add_scaled_meter_energy(parsed, result, active_profile.em_energy_scale)
+    return parsed
 
 
 def parse_es_status_response(
@@ -128,10 +173,10 @@ def parse_es_status_response(
         else:
             battery_status = "idle"
 
-    # Energy totals
-    total_pv_energy = result.get("total_pv_energy")
-    if isinstance(total_pv_energy, (int, float)):
-        total_pv_energy *= active_profile.pv_energy_scale
+    # Energy totals. Solar energy uses the profile scale; grid/load stay Wh.
+    total_pv_energy = _scale_numeric(
+        result.get("total_pv_energy"), active_profile.pv_energy_scale
+    )
     total_grid_output_energy = result.get("total_grid_output_energy")
     total_grid_input_energy = result.get("total_grid_input_energy")
     total_load_energy = result.get("total_load_energy")
@@ -173,9 +218,10 @@ def parse_pv_status_response(
     pv_data: dict[str, Any] = {}
 
     def _scale_pv_power(raw_value: Any, *, channel: int | None = None) -> Any:
-        """Scale PV power to watts.
+        """Scale PV power to watts using the profile's channel-1 factor.
 
-        Channel 1 reports PV power in deciwatts; other channels report watts.
+        Legacy firmware reports channel 1 in deciwatts; Rev 3.1 reports watts.
+        Other channels are already watts.
         """
         if raw_value is None:
             return None
@@ -248,24 +294,30 @@ def parse_wifi_status_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_em_status_response(response: dict[str, Any]) -> dict[str, Any]:
+def parse_em_status_response(
+    response: dict[str, Any],
+    profile: FirmwareProfile | None = None,
+) -> dict[str, Any]:
     """Parse EM.GetStatus (Energy Meter/CT) response into structured data.
 
-    Provides CT connection state and phase power readings.
+    Provides CT connection state and phase power readings. Lifetime meter
+    energy fields are included only when present on the wire.
 
     Args:
         response: Raw response from EM.GetStatus command
+        profile: Firmware encoding profile; defaults to the legacy-safe contract
 
     Returns:
         Dictionary with energy meter data (ct_state, phase powers, total_power)
     """
     result = response.get("result", {})
+    active_profile = profile or _LEGACY_PROFILE
 
     ct_state_raw = result.get("ct_state")
     # Convert to boolean-friendly value: 0=Not connected, 1=Connected
     ct_connected = ct_state_raw == 1 if ct_state_raw is not None else None
 
-    return {
+    parsed: dict[str, Any] = {
         "ct_state": ct_state_raw,  # Raw value: 0=Not connected, 1=Connected
         "ct_connected": ct_connected,  # Boolean for binary sensor
         "em_a_power": result.get("a_power"),  # Phase A power [W]
@@ -273,6 +325,8 @@ def parse_em_status_response(response: dict[str, Any]) -> dict[str, Any]:
         "em_c_power": result.get("c_power"),  # Phase C power [W]
         "em_total_power": result.get("total_power"),  # Total grid power [W]
     }
+    _add_scaled_meter_energy(parsed, result, active_profile.em_energy_scale)
+    return parsed
 
 
 def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
@@ -476,10 +530,10 @@ def merge_device_status(
 
     Priority order for overlapping keys:
     1. es_status_data (most accurate for battery_power, battery_status)
-    2. es_mode_data (device_mode, ongrid_power)
-    3. bat_status_data (battery temperature, capacity details)
-    4. wifi_status_data (WiFi RSSI, network info)
-    5. em_status_data (CT connection, phase powers)
+    2. em_status_data (CT connection, phase powers, meter energy)
+    3. es_mode_data (device_mode, ongrid_power; Rev 3.1 CT/power/energy fallback)
+    4. bat_status_data (battery temperature, capacity details)
+    5. wifi_status_data (WiFi RSSI, network info)
     6. pv_status_data (PV channel data)
     7. previous_status (fallback for any values not provided by current data)
 
@@ -548,14 +602,17 @@ def merge_device_status(
     if previous_status:
         # Only preserve non-None values from previous status
         for key, value in previous_status.items():
+            extra_key = key not in status and (
+                key.startswith("pv")
+                or key in {"em_input_energy", "em_output_energy"}
+            )
             if (
                 value is not None
                 and not _is_unknown_value(value)
                 and key in status
                 and status[key] is None
             ) or (
-                key.startswith("pv")
-                and key not in status
+                extra_key
                 and value is not None
                 and not _is_unknown_value(value)
             ):
@@ -566,6 +623,10 @@ def merge_device_status(
     if pv_status_data:
         _apply_updates(pv_status_data)
 
+    # Mode CT/power/energy fills gaps; current EM.GetStatus wins field-by-field.
+    if es_mode_data:
+        _apply_updates(es_mode_data)
+
     if em_status_data:
         _apply_updates(em_status_data)
 
@@ -574,9 +635,6 @@ def merge_device_status(
 
     if bat_status_data:
         _apply_updates(bat_status_data)
-
-    if es_mode_data:
-        _apply_updates(es_mode_data)
 
     # ES.GetStatus has highest priority for battery data
     if es_status_data:
