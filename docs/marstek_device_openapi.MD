@@ -360,7 +360,7 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or null | Instance ID. This integration tries `0` then `1` and caches the working id per device. |
+| `id` | number or null | Instance ID. Polling prefers `0` and falls back to `1` only when `0` times out or returns a JSON-RPC error. |
 
 **Result**
 
@@ -379,7 +379,7 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 
 `ES.GetMode` does **not** return `passive_cfg`. The integration stores the last Passive settings locally.
 
-Some published Open API samples and some devices disagree on whether `mode` is a string or an integer, and whether `params.id` is `0` or `1`. This integration keeps the documented string/`id=0` mapping and also accepts the integer/`id=1` variant.
+Some published Open API samples and some devices disagree on whether `mode` is a string or an integer, and whether `params.id` is `0` or `1`. **This integration prefers its own contract:** `ES.SetMode` sends string names, `ES.GetMode` is requested with `id=0` first, and battery power comes from `ES.GetStatus` (`bat_power`, never `abs(ongrid_power)`). Integer `mode` values and `id=1` are accepted on **read/fallback** only.
 
 Rev 3.1 CT/energy fields on `ES.GetMode` are used only as fallbacks when `EM.GetStatus` omits them. Phase-power sensors are not duplicated.
 
@@ -505,4 +505,4 @@ When the scanner sees a `ver` or model change that unlocks or removes setup-time
 
 - **2025-08-09** Vendor PDF: Version number Rev 1.0 (historical).
 - **2026-09-10** Vendor PDF metadata: Open API **Rev 3.1** (SYS, UPS, Venus E mini, field-specific energy units). Local reference updated to match that revision and the shipped firmware-profile integration.
-- **2026-09-15** Reads accept both string and integer `ES.GetMode` values, both instance id `0` and `1`, and both Venus display names and vendor SKUs (`VNSA-0` / `VNSD-0` / `VNSE3-0`). Writes still use the documented string mode names.
+- **2026-09-15** Reads accept integer `ES.GetMode` values `0–4` and fall back to instance id `1` when `id=0` fails. Writes, battery-power math, BLE-MAC unique IDs, and the `id=0` default stay this integration's contract. Vendor SKUs `VNSA-0` / `VNSD-0` / `VNSE3-0` map onto existing Venus families.

@@ -690,11 +690,15 @@ class MarstekUDPClient:
 
     @staticmethod
     def _es_mode_response_usable(response: dict[str, Any]) -> bool:
-        """Return whether a GetMode JSON-RPC payload has a usable result object."""
+        """Return whether GetMode produced a JSON-RPC result object.
+
+        A result dict — even empty — is our historical success path. Retry the
+        other instance id only on transport failure, a JSON-RPC error, or a
+        missing/non-dict result (the vendor library's id=1 probe).
+        """
         if "error" in response:
             return False
-        result = response.get("result")
-        return isinstance(result, dict) and bool(result)
+        return isinstance(response.get("result"), dict)
 
     async def fetch_es_mode(
         self,
@@ -705,11 +709,11 @@ class MarstekUDPClient:
         profile: FirmwareProfile | None = None,
         bypass_rate_limit: bool = False,
     ) -> dict[str, Any] | None:
-        """Fetch ES.GetMode, trying instance id 0 and 1 and caching the winner.
+        """Fetch ES.GetMode, preferring instance id 0 then falling back to 1.
 
-        Some devices answer only ``id=0`` (Open API default used here); others
-        answer only ``id=1`` (vendor library default). Both are tried; the
-        working id is cached per IP so later polls send one request.
+        This integration's Open API default is ``id=0``. Some firmwares and the
+        vendor library answer ``id=1`` instead. Probe ``0`` first, then ``1``,
+        and cache the working id so later polls send one request.
         """
         last_error: Exception | None = None
         for instance_id in self._es_mode_instance_order(device_ip):

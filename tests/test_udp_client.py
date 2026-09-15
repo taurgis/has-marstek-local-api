@@ -1892,6 +1892,33 @@ class TestEsGetModeCompatibility:
 
         mock_sleep.assert_called_once_with(1.5)
 
+    async def test_empty_result_on_id_0_does_not_probe_id_1(self) -> None:
+        """A result object on id=0 is our success path; do not probe vendor id=1."""
+        client = self._client()
+        get_mode_ids: list[int] = []
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            payload = json.loads(message)
+            if payload.get("method") == "ES.GetMode":
+                get_mode_ids.append(int(payload["params"]["id"]))
+                return {"id": 1, "result": {}}
+            return {"id": 2, "result": {"bat_soc": 50, "bat_power": 0}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()):
+                result = await client.get_device_status(
+                    "192.168.1.100",
+                    delay_between_requests=0,
+                    include_em=False,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                )
+
+        assert get_mode_ids == [0]
+        assert result["device_mode"] is None
+        assert client._es_mode_device_ids["192.168.1.100"] == 0
+
 
 class TestPeriodicCleanup:
     """Tests for periodic cleanup in listen_for_responses."""

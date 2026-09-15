@@ -112,9 +112,10 @@ def normalize_operating_mode(raw: object) -> str | None:
     """Map an ES.GetMode wire value to a Home Assistant operating-mode key.
 
     The Open API documents string names and this integration still *sends*
-    those strings on ``ES.SetMode``. Some firmwares and the vendor library
-    report integers ``0-4`` instead, so reads accept both encodings.
-    Booleans are rejected because ``bool`` is a subclass of ``int``.
+    those strings on ``ES.SetMode``. Integer codes ``0-4`` are accepted on
+    *read* only so firmwares that speak the vendor library encoding still
+    show a mode. Unknown strings keep being lowercased instead of rejected.
+    Booleans are ignored because ``bool`` is a subclass of ``int``.
     """
     if isinstance(raw, bool) or raw is None:
         return None

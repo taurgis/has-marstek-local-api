@@ -63,6 +63,9 @@ def parse_es_mode_response(
     battery_soc = result.get("bat_soc")
     ongrid_power = result.get("ongrid_power")
     raw_mode = result.get("mode")
+    # Convert API mode to HA mode. Prefer documented string names; also accept
+    # integer 0-4 used by some firmwares. Never treat ongrid_power as battery
+    # power (the vendor library does; ES.GetStatus owns battery_power).
     device_mode = normalize_operating_mode(raw_mode)
 
     # NOTE: ongrid_power is GRID power, not battery power!

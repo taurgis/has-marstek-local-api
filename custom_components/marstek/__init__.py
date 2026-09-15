@@ -157,21 +157,12 @@ async def _async_verify_device_connection(
     """Verify device connectivity using a lightweight API request."""
     try:
         _LOGGER.info("Attempting connection to %s:%s", host, port)
-        last_error: Exception | None = None
-        for instance_id in (0, 1):
-            try:
-                await udp_client.send_request(
-                    get_es_mode(instance_id),
-                    host,
-                    port,
-                    timeout=5.0,
-                )
-                break
-            except (TimeoutError, OSError, ValueError) as ex:
-                last_error = ex
-        else:
-            assert last_error is not None
-            raise last_error
+        await udp_client.send_request(
+            get_es_mode(0),
+            host,
+            port,
+            timeout=5.0,  # Increased timeout for initial connection
+        )
         _LOGGER.info(
             "Connection successful to device at %s - using config_entry data",
             host,
