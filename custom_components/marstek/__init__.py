@@ -22,7 +22,7 @@ from .device_info import get_device_identifier
 from .firmware_profile import FirmwareProfile
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
-from .pymarstek import MarstekUDPClient, get_es_mode
+from .pymarstek import MarstekUDPClient
 from .scanner import MarstekScanner
 from .services import async_setup_services
 
@@ -157,12 +157,9 @@ async def _async_verify_device_connection(
     """Verify device connectivity using a lightweight API request."""
     try:
         _LOGGER.info("Attempting connection to %s:%s", host, port)
-        await udp_client.send_request(
-            get_es_mode(0),
-            host,
-            port,
-            timeout=5.0,  # Increased timeout for initial connection
-        )
+        mode_data = await udp_client.fetch_es_mode(host, port, timeout=5.0)
+        if mode_data is None:
+            raise TimeoutError(f"No usable ES.GetMode response from {host}")
         _LOGGER.info(
             "Connection successful to device at %s - using config_entry data",
             host,

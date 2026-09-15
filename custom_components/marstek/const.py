@@ -98,6 +98,41 @@ API_TO_MODE: Final[dict[str, str]] = {
     API_MODE_UPS: MODE_UPS,
 }
 
+# Integer ES.GetMode values used by some Rev 3.1 firmwares / vendor libraries
+WIRE_INT_MODE_TO_HA: Final[dict[int, str]] = {
+    0: MODE_AUTO,
+    1: MODE_AI,
+    2: MODE_MANUAL,
+    3: MODE_PASSIVE,
+    4: MODE_UPS,
+}
+
+
+def normalize_operating_mode(raw: object) -> str | None:
+    """Map an ES.GetMode wire value to a Home Assistant operating-mode key.
+
+    The Open API documents string names and this integration still *sends*
+    those strings on ``ES.SetMode``. Some firmwares and the vendor library
+    report integers ``0-4`` instead, so reads accept both encodings.
+    Booleans are rejected because ``bool`` is a subclass of ``int``.
+    """
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, int):
+        return WIRE_INT_MODE_TO_HA.get(raw)
+    if isinstance(raw, str) and raw:
+        folded = raw.casefold()
+        for api_name, ha_name in API_TO_MODE.items():
+            if api_name.casefold() == folded:
+                return ha_name
+        if folded in MODE_TO_API:
+            return folded
+        if raw.isascii() and raw.isdecimal():
+            return WIRE_INT_MODE_TO_HA.get(int(raw, 10))
+        return raw.lower()
+    return None
+
+
 # Weekday bitmask mapping for manual schedules
 # mon=1, tue=2, wed=4, thu=8, fri=16, sat=32, sun=64
 WEEKDAY_MAP: Final[dict[str, int]] = {
@@ -151,12 +186,18 @@ _DEVICE_POWER_LIMITS: Final[dict[str, int]] = {
     "venusc": 2500,
     "venusd": 2200,
     "venuse": 2500,
+    # Vendor discovery SKUs (VNSA-0 / VNSD-0 / VNSE3-0) alongside Venus names.
+    "vnsa": 1500,
+    "vnsd": 2200,
+    "vnse3": 2500,
 }
 
 _DEVICE_SOCKET_LIMIT_DEFAULTS: Final[frozenset[str]] = frozenset({
     "venusc",
     "venusd",
     "venuse",
+    "vnsd",
+    "vnse3",
 })
 
 

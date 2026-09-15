@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from custom_components.marstek.const import (
+    device_default_socket_limit,
+    get_device_power_limits,
+)
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
@@ -21,6 +25,11 @@ from custom_components.marstek.firmware_profile import (
         ("Venus D Pro", DeviceFamily.VENUS_D, True, 9),
         ("VenusE 3.0", DeviceFamily.VENUS_E, False, 9),
         ("  VENUS E MINI 3.0 ", DeviceFamily.VENUS_E_MINI, False, 5),
+        ("VNSA-0", DeviceFamily.VENUS_A, True, 9),
+        ("VNSD-0", DeviceFamily.VENUS_D, True, 9),
+        ("VNSE3-0", DeviceFamily.VENUS_E, False, 9),
+        ("vnse3 0", DeviceFamily.VENUS_E, False, 9),
+        ("VNSE2-0", DeviceFamily.UNKNOWN, False, 9),
         ("Some Energy Device", DeviceFamily.UNKNOWN, False, 9),
     ],
 )
@@ -240,3 +249,25 @@ def test_resolve_firmware_profile_from_metadata_uses_device_type_and_version() -
     assert profile.family is DeviceFamily.VENUS_E
     assert profile.firmware_version == 150
     assert profile.supports_ups is True
+
+
+@pytest.mark.parametrize(
+    ("device_type", "max_discharge", "socket_default"),
+    [
+        ("VenusA", 1500, False),
+        ("VNSA-0", 1500, False),
+        ("VenusD", 2200, True),
+        ("VNSD-0", 2200, True),
+        ("VenusE", 2500, True),
+        ("VNSE3-0", 2500, True),
+        ("VNSE2-0", 5000, False),
+    ],
+)
+def test_sku_and_venus_names_share_power_limits(
+    device_type: str, max_discharge: int, socket_default: bool
+) -> None:
+    """Vendor SKUs use the same family power limits as Venus display names."""
+    _min_charge, max_power = get_device_power_limits(device_type)
+
+    assert max_power == max_discharge
+    assert device_default_socket_limit(device_type) is socket_default

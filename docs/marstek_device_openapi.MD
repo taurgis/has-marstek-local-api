@@ -360,14 +360,14 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or null | Instance ID |
+| `id` | number or null | Instance ID. This integration tries `0` then `1` and caches the working id per device. |
 
 **Result**
 
 | Property | Type | Unit | Description |
 |----------|------|------|-------------|
 | `id` | number or null | — | Instance ID |
-| `mode` | string or null | — | `Auto`, `AI`, `Manual`, `Passive`, `UPS` |
+| `mode` | string, integer, or null | — | String names `Auto`, `AI`, `Manual`, `Passive`, `UPS` **or** integers `0–4` (`0` Auto … `4` UPS). Reads accept both. `ES.SetMode` still sends the string names. |
 | `ongrid_power` | number or null | W | Grid-tied power |
 | `offgrid_power` | number or null | W | Off-grid power |
 | `bat_soc` | number or null | % | SoC |
@@ -378,6 +378,8 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 | `output_energy` | number or null | **0.1 Wh** (`× 0.1` → Wh) | Cumulative output energy |
 
 `ES.GetMode` does **not** return `passive_cfg`. The integration stores the last Passive settings locally.
+
+Some published Open API samples and some devices disagree on whether `mode` is a string or an integer, and whether `params.id` is `0` or `1`. This integration keeps the documented string/`id=0` mapping and also accepts the integer/`id=1` variant.
 
 Rev 3.1 CT/energy fields on `ES.GetMode` are used only as fallbacks when `EM.GetStatus` omits them. Phase-power sensors are not duplicated.
 
@@ -476,6 +478,8 @@ Exact family matching matters. **Venus E mini is not Venus E.**
 
 Venus **E2.0 is not supported** by this integration.
 
+Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `VenusE 3.0`) **or** vendor SKUs (`VNSA-0`, `VNSD-0`, `VNSE3-0`). Both map to the same families. `VNSE2` is not mapped (E2.0 remains unknown).
+
 ### 4.2 Integration firmware-profile behavior (shipped)
 
 Inputs: device family + integer discovery `ver`. Unknown/unparseable `ver` is legacy-safe.
@@ -501,3 +505,4 @@ When the scanner sees a `ver` or model change that unlocks or removes setup-time
 
 - **2025-08-09** Vendor PDF: Version number Rev 1.0 (historical).
 - **2026-09-10** Vendor PDF metadata: Open API **Rev 3.1** (SYS, UPS, Venus E mini, field-specific energy units). Local reference updated to match that revision and the shipped firmware-profile integration.
+- **2026-09-15** Reads accept both string and integer `ES.GetMode` values, both instance id `0` and `1`, and both Venus display names and vendor SKUs (`VNSA-0` / `VNSD-0` / `VNSE3-0`). Writes still use the documented string mode names.

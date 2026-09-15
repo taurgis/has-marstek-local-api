@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..const import normalize_operating_mode
 from ..firmware_profile import FirmwareProfile, resolve_firmware_profile
 
 _LOGGER: logging.Logger | None = None
@@ -62,8 +63,7 @@ def parse_es_mode_response(
     battery_soc = result.get("bat_soc")
     ongrid_power = result.get("ongrid_power")
     raw_mode = result.get("mode")
-    # Convert API mode to lowercase HA mode (ignore non-string placeholders)
-    device_mode = raw_mode.lower() if isinstance(raw_mode, str) and raw_mode else None
+    device_mode = normalize_operating_mode(raw_mode)
 
     # NOTE: ongrid_power is GRID power, not battery power!
     # Positive = exporting to grid, Negative = importing from grid

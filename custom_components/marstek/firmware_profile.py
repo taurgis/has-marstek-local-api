@@ -75,6 +75,11 @@ _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
     (DeviceFamily.VENUS_C, re.compile(r"^venus\s*c(?:\s|$|\d)", re.IGNORECASE)),
     (DeviceFamily.VENUS_D, re.compile(r"^venus\s*d(?:\s|$|\d)", re.IGNORECASE)),
     (DeviceFamily.VENUS_E, re.compile(r"^venus\s*e(?:\s|$|\d)", re.IGNORECASE)),
+    # Vendor SKU discovery names; keep Venus* labels as the primary mapping.
+    (DeviceFamily.VENUS_A, re.compile(r"^vnsa(?:\s|$|\d)", re.IGNORECASE)),
+    (DeviceFamily.VENUS_D, re.compile(r"^vnsd(?:\s|$|\d)", re.IGNORECASE)),
+    # VNSE3 is Venus E 3.x. Do not match VNSE2 (unsupported E2.0).
+    (DeviceFamily.VENUS_E, re.compile(r"^vnse3(?:\s|$|\d)", re.IGNORECASE)),
 )
 
 
