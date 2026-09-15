@@ -30,6 +30,16 @@ from custom_components.marstek.pymarstek.data_parser import (
 )
 
 
+def test_entity_key_from_unique_id() -> None:
+    """MAC-based unique IDs must yield the entity key, including underscored keys."""
+    extract = MarstekDataUpdateCoordinator._entity_key_from_unique_id
+    assert extract("aa:bb:cc:dd:ee:ff_bat_temp") == "bat_temp"
+    assert extract("aa:bb:cc:dd:ee:ff_wifi_sta_ip") == "wifi_sta_ip"
+    assert extract("no-separator") is None
+    assert extract("trailing_") is None
+    assert extract("") is None
+
+
 def test_gated_status_keys_match_entity_descriptions() -> None:
     """Guard against drift between the coordinator key sets and entity keys.
 
@@ -267,8 +277,8 @@ async def test_coordinator_non_gated_entities_do_not_open_bat_gate(
     """Test that enabled entities outside the gated key set keep the gate shut.
 
     bat_cap (ES.GetStatus-backed) and battery_soc are close cousins of the
-    gated keys; a suffix-matching regression must not let them re-enable
-    the reset-triggering Bat.GetStatus call.
+    gated keys; a unique-id key-parsing regression must not let them
+    re-enable the reset-triggering Bat.GetStatus call.
     """
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
@@ -464,6 +474,61 @@ async def test_coordinator_bat_and_wifi_slow_timers_are_independent(
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_bat"] is True
     assert kwargs["include_wifi"] is False
+
+
+@pytest.mark.asyncio
+async def test_coordinator_first_slow_fetch_when_monotonic_below_interval(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """First WiFi/Bat fetch must run even if monotonic time is below the interval.
+
+    `_last_*_fetch` used to start at 0.0, so a host whose monotonic clock was
+    still under the 300s slow interval (fresh CI runners) skipped the first
+    fetch even with an enabled entity.
+    """
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 300}
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_wifi_rssi",
+        config_entry=mock_config_entry,
+    )
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    with patch(
+        "custom_components.marstek.coordinator.time.monotonic", return_value=10.0
+    ):
+        await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_wifi"] is True
+    assert kwargs["include_bat"] is True
+
+    with patch(
+        "custom_components.marstek.coordinator.time.monotonic", return_value=11.0
+    ):
+        await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_wifi"] is False
+    assert kwargs["include_bat"] is False
 
 
 @pytest.mark.asyncio

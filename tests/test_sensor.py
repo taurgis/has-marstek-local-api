@@ -485,10 +485,16 @@ async def test_battery_detail_sensors_disabled_by_default(
         # and diagnostic, per the HA quality scale pairing guidance
         entity_registry = er.async_get(hass)
         device_identifier = get_device_identifier(mock_config_entry.data)
-        for key in ("bat_temp", "bat_capacity", "bat_rated_capacity"):
+        for domain, key in (
+            ("sensor", "bat_temp"),
+            ("sensor", "bat_capacity"),
+            ("sensor", "bat_rated_capacity"),
+            ("binary_sensor", "bat_charg_flag"),
+            ("binary_sensor", "bat_dischrg_flag"),
+        ):
             unique_id = f"{device_identifier}_{key}"
             entity_id = entity_registry.async_get_entity_id(
-                "sensor", DOMAIN, unique_id
+                domain, DOMAIN, unique_id
             )
             assert entity_id is not None
             entry = entity_registry.async_get(entity_id)

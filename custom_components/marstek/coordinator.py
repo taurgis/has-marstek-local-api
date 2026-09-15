@@ -77,13 +77,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         device_type = config_entry.data.get("device_type", "")
         self._supports_pv = device_supports_pv(device_type)
 
-        # Track last fetch times for tiered polling. WiFi and battery details
-        # are stamped separately so that enabling an entity mid-cycle triggers
-        # its first fetch on the next update instead of waiting out a shared
-        # slow-tier timestamp bumped by a cycle that skipped the request.
-        self._last_pv_fetch: float = 0.0  # Medium interval
-        self._last_wifi_fetch: float = 0.0  # Slow interval (WiFi status)
-        self._last_bat_fetch: float = 0.0  # Slow interval (battery details)
+        # Track last fetch times for tiered polling. None means "never fetched"
+        # so the first cycle always runs even when time.monotonic() is still
+        # below the interval (fresh CI runners / recently rebooted hosts).
+        # WiFi and battery details are stamped separately so that enabling an
+        # entity mid-cycle triggers its first fetch on the next update instead
+        # of waiting out a shared slow-tier timestamp bumped by a skip.
+        self._last_pv_fetch: float | None = None  # Medium interval
+        self._last_wifi_fetch: float | None = None  # Slow interval (WiFi status)
+        self._last_bat_fetch: float | None = None  # Slow interval (battery details)
 
         # Track if this is the initial setup (use faster delays)
         self._is_initial_setup = is_initial_setup
@@ -127,22 +129,27 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             " [INITIAL SETUP - fast delays]" if is_initial_setup else "",
         )
 
+    @staticmethod
+    def _interval_elapsed(
+        last_fetch: float | None, current_time: float, interval: float
+    ) -> bool:
+        """Return True if this tier has never been fetched or its interval elapsed."""
+        return last_fetch is None or (current_time - last_fetch) >= interval
+
     def _select_polling_tiers(
         self, current_time: float
     ) -> tuple[bool, bool, bool]:
         """Decide which polling tiers to include for this update cycle."""
-        include_pv = self._supports_pv and (
-            (current_time - self._last_pv_fetch) >= self._get_medium_interval()
+        include_pv = self._supports_pv and self._interval_elapsed(
+            self._last_pv_fetch, current_time, self._get_medium_interval()
         )
         slow_interval = self._get_slow_interval()
-        include_wifi = (
-            (current_time - self._last_wifi_fetch) >= slow_interval
-            and self._is_wifi_status_enabled()
-        )
-        include_bat = (
-            (current_time - self._last_bat_fetch) >= slow_interval
-            and self._is_bat_status_enabled()
-        )
+        include_wifi = self._interval_elapsed(
+            self._last_wifi_fetch, current_time, slow_interval
+        ) and self._is_wifi_status_enabled()
+        include_bat = self._interval_elapsed(
+            self._last_bat_fetch, current_time, slow_interval
+        ) and self._is_bat_status_enabled()
         return include_pv, include_wifi, include_bat
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
@@ -235,19 +242,25 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
 
+    @staticmethod
+    def _entity_key_from_unique_id(unique_id: str) -> str | None:
+        """Return the entity key from a MAC-based unique_id (`{mac}_{key}`)."""
+        _, separator, key = unique_id.partition("_")
+        return key if separator and key else None
+
     def _has_enabled_entities(self, keys: frozenset[str]) -> bool:
         """Return True if any entity with one of these keys is enabled."""
         entity_registry = er.async_get(self.hass)
         entries = er.async_entries_for_config_entry(
             entity_registry, self._entry.entry_id
         )
-        suffixes = tuple(f"_{key}" for key in keys)
-        return any(
-            entry.unique_id
-            and entry.disabled_by is None
-            and entry.unique_id.endswith(suffixes)
-            for entry in entries
-        )
+        for entry in entries:
+            if entry.disabled_by is not None:
+                continue
+            key = self._entity_key_from_unique_id(entry.unique_id or "")
+            if key is not None and key in keys:
+                return True
+        return False
 
     def _is_wifi_status_enabled(self) -> bool:
         """Return True if any WiFi status entity is enabled for this entry."""
