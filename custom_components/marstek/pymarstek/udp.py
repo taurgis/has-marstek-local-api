@@ -15,7 +15,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any, cast
 
-from ..firmware_profile import FirmwareProfile
+from ..firmware_profile import FirmwareProfile, extract_discovery_version
 from .command_builder import (
     discover,
     get_battery_status,
@@ -65,17 +65,18 @@ def _new_command_stats() -> dict[str, Any]:
 def _build_discovered_device(result: dict[str, Any]) -> dict[str, Any]:
     """Build device info dict from discovery response."""
     device_ip = result.get("ip", "")
+    version = extract_discovery_version(result)
     return {
         "id": result.get("id", 0),
         "device_type": result.get("device", "Unknown"),
-        "version": result.get("ver", 0),
+        "version": version,
         "wifi_name": result.get("wifi_name", ""),
         "ip": device_ip,
         "wifi_mac": result.get("wifi_mac", ""),
         "ble_mac": result.get("ble_mac", ""),
         "mac": result.get("wifi_mac") or result.get("ble_mac", ""),
         "model": result.get("device", "Unknown"),
-        "firmware": str(result.get("ver", 0)),
+        "firmware": "" if version is None else str(version),
     }
 
 

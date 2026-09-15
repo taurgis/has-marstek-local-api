@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -76,6 +77,13 @@ def _normalize_version(version: Any) -> int | None:
         if stripped and stripped.isascii() and stripped.isdecimal():
             return int(stripped, 10)
     return None
+
+
+def extract_discovery_version(result: Mapping[str, Any] | None) -> Any:
+    """Return raw discovery `ver` without substituting 0 for a missing field."""
+    if not isinstance(result, Mapping) or "ver" not in result:
+        return None
+    return result["ver"]
 
 
 def resolve_firmware_profile(

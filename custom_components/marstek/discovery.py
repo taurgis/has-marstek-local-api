@@ -16,6 +16,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .const import DEFAULT_UDP_PORT
+from .firmware_profile import extract_discovery_version
 from .pymarstek.network import get_broadcast_addresses
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,10 +50,11 @@ def _build_discovery_message() -> bytes:
 
 def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int) -> dict[str, Any]:
     """Build device info dict from discovery response result."""
+    version = extract_discovery_version(result)
     return {
         "id": result.get("id", 0),
         "device_type": result.get("device", "Unknown"),
-        "version": result.get("ver", 0),
+        "version": version,
         "wifi_name": result.get("wifi_name", ""),
         "ip": device_ip,
         "port": device_port,
@@ -60,7 +62,7 @@ def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int)
         "ble_mac": result.get("ble_mac", ""),
         "mac": result.get("wifi_mac") or result.get("ble_mac", ""),
         "model": result.get("device", "Unknown"),
-        "firmware": str(result.get("ver", 0)),
+        "firmware": "" if version is None else str(version),
     }
 
 

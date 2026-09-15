@@ -1140,3 +1140,20 @@ class TestDiscoverDevicesEdgeCases:
         
         # Should still have results (OSError is caught)
         assert "255.255.255.255" in result
+
+
+def test_discovery_omitted_ver_stays_unknown() -> None:
+    """A GetDevice payload without ver must not be stored as firmware 0."""
+    from custom_components.marstek.discovery import _build_device_info
+    from custom_components.marstek.firmware_profile import resolve_firmware_profile
+
+    info = _build_device_info(
+        {"device": "Venus E mini", "ble_mac": "aabbccddeeff"},
+        "192.168.1.50",
+        30000,
+    )
+
+    assert info["version"] is None
+    profile = resolve_firmware_profile(info["device_type"], info["version"])
+    assert profile.firmware_known is False
+    assert profile.supports_sys_dod is False

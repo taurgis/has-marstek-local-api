@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
+    extract_discovery_version,
     resolve_firmware_profile,
 )
 
@@ -111,6 +112,28 @@ def test_profile_exposes_legacy_encoding_contract() -> None:
     assert profile.pv_channel_1_power_scale == 0.1
     assert profile.em_energy_scale == 1.0
     assert profile.supports_em_energy is False
+
+
+def test_missing_discovery_ver_is_unknown_not_zero() -> None:
+    """A payload without `ver` must not be treated as firmware 0."""
+    raw = extract_discovery_version({"device": "Venus E mini", "ble_mac": "aabbccddeeff"})
+
+    assert raw is None
+    profile = resolve_firmware_profile("Venus E mini", raw)
+    assert profile.firmware_known is False
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+
+
+def test_present_discovery_ver_zero_is_a_known_integer() -> None:
+    """An explicit ver of 0 is a known integer, not a missing field."""
+    raw = extract_discovery_version({"ver": 0})
+
+    assert raw == 0
+    profile = resolve_firmware_profile("Venus E mini", raw)
+    assert profile.firmware_known is True
+    assert profile.supports_sys_dod is True
+    assert profile.supports_ups is False
 
 
 def test_device_supports_pv_compatibility_facade_uses_profile() -> None:
