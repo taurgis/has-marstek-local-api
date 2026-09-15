@@ -153,7 +153,8 @@
           "auto": "Auto",
           "ai": "AI",
           "manual": "Manual",
-          "passive": "Passive"
+          "passive": "Passive",
+          "ups": "UPS"
         }
       },
       "battery_status": {
@@ -316,7 +317,8 @@
           "auto": "Auto",
           "ai": "AI",
           "manual": "Manual",
-          "passive": "Passive"
+          "passive": "Passive",
+          "ups": "UPS"
         }
       }
     },
@@ -452,6 +454,9 @@
     },
     "invalid_mode": {
       "message": "Invalid operating mode: {mode}"
+    },
+    "mode_not_supported": {
+      "message": "Operating mode {mode} is not supported by this device firmware."
     },
     "no_host_configured": {
       "message": "Device IP address not configured"

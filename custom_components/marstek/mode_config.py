@@ -10,6 +10,7 @@ from .const import (
     MODE_MANUAL,
     MODE_PASSIVE,
     MODE_TO_API,
+    MODE_UPS,
     WEEKDAYS_ALL,
 )
 
@@ -67,6 +68,12 @@ def build_mode_config(mode: str) -> dict[str, Any]:
                 "power": 0,
                 "cd_time": 3600,
             },
+        }
+
+    if mode == MODE_UPS:
+        return {
+            "mode": api_mode,
+            "ups_cfg": {"enable": 1},
         }
 
     raise ValueError(f"Unknown mode: {mode}")

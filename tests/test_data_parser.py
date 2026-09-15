@@ -734,6 +734,14 @@ class TestParseEsModeResponse:
         assert result["battery_soc"] == 55
         assert result["ongrid_power"] == -150
 
+    def test_parse_ups_mode(self) -> None:
+        """ES.GetMode wire value UPS becomes Home Assistant state ups."""
+        result = parse_es_mode_response(
+            {"id": 1, "result": {"mode": "UPS", "bat_soc": 80, "ongrid_power": 0}}
+        )
+
+        assert result["device_mode"] == "ups"
+
 
 class TestParseEsStatusResponse:
     """Tests for parse_es_status_response."""

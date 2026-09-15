@@ -24,7 +24,7 @@ mock_device/
 
 - **Dynamic Battery Simulation**: SOC increases/decreases based on power flow
 - **Power Fluctuations**: Realistic ±5% variations in power readings
-- **Mode Support**: Auto, AI, Manual, and Passive modes with proper behavior
+- **Mode Support**: Auto, AI, Manual, Passive, and firmware-gated UPS (accepted when the shared firmware profile reports `supports_ups`)
 - **Passive Mode Timer**: Automatic expiration after configured duration
 - **Manual Schedules**: Supports schedule slots with day/time configuration
 - **Household Simulation**: Realistic time-of-day consumption patterns

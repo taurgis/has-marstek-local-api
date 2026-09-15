@@ -24,6 +24,7 @@ MODE_AUTO = "Auto"
 MODE_AI = "AI"
 MODE_MANUAL = "Manual"
 MODE_PASSIVE = "Passive"
+MODE_UPS = "UPS"
 
 # Battery status labels (lowercase translation keys)
 STATUS_CHARGING = "charging"

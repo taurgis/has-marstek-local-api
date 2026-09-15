@@ -52,7 +52,10 @@
         "default": "mdi:network"
       },
       "device_mode": {
-        "default": "mdi:cog"
+        "default": "mdi:cog",
+        "state": {
+          "ups": "mdi:uninterruptible-power-supply"
+        }
       },
       "battery_status": {
         "default": "mdi:battery"
@@ -179,7 +182,10 @@
     },
     "select": {
       "operating_mode": {
-        "default": "mdi:cog"
+        "default": "mdi:cog",
+        "state": {
+          "ups": "mdi:uninterruptible-power-supply"
+        }
       }
     }
   }

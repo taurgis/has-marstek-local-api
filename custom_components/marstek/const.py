@@ -6,7 +6,7 @@ from typing import Final
 
 from homeassistant.const import Platform
 
-from .firmware_profile import resolve_firmware_profile
+from .firmware_profile import FirmwareProfile, resolve_firmware_profile
 
 DOMAIN: Final = "marstek"
 DATA_UDP_CLIENT: Final = "udp_client"  # Key for shared UDP client in hass.data
@@ -56,12 +56,19 @@ MODE_AUTO: Final = "auto"
 MODE_AI: Final = "ai"
 MODE_MANUAL: Final = "manual"
 MODE_PASSIVE: Final = "passive"
+MODE_UPS: Final = "ups"
 
-OPERATING_MODES: Final[list[str]] = [
+SELECTABLE_BASE_MODES: Final[list[str]] = [
     MODE_AUTO,
     MODE_AI,
     MODE_MANUAL,
     MODE_PASSIVE,
+]
+
+# Complete recognized operating-mode vocabulary (parsing and enum translation)
+OPERATING_MODES: Final[list[str]] = [
+    *SELECTABLE_BASE_MODES,
+    MODE_UPS,
 ]
 
 # API mode values (as expected by Marstek device)
@@ -69,6 +76,7 @@ API_MODE_AUTO: Final = "Auto"
 API_MODE_AI: Final = "AI"
 API_MODE_MANUAL: Final = "Manual"
 API_MODE_PASSIVE: Final = "Passive"
+API_MODE_UPS: Final = "UPS"
 
 # Mapping from HA modes to API modes
 MODE_TO_API: Final[dict[str, str]] = {
@@ -76,6 +84,7 @@ MODE_TO_API: Final[dict[str, str]] = {
     MODE_AI: API_MODE_AI,
     MODE_MANUAL: API_MODE_MANUAL,
     MODE_PASSIVE: API_MODE_PASSIVE,
+    MODE_UPS: API_MODE_UPS,
 }
 
 # Mapping from API modes to HA modes
@@ -84,6 +93,7 @@ API_TO_MODE: Final[dict[str, str]] = {
     API_MODE_AI: MODE_AI,
     API_MODE_MANUAL: MODE_MANUAL,
     API_MODE_PASSIVE: MODE_PASSIVE,
+    API_MODE_UPS: MODE_UPS,
 }
 
 # Weekday bitmask mapping for manual schedules
@@ -164,6 +174,13 @@ def device_default_socket_limit(device_type: str | None) -> bool:
 def device_supports_pv(device_type: str | None) -> bool:
     """Return PV support through the canonical firmware profile."""
     return resolve_firmware_profile(device_type, None).supports_pv
+
+
+def selectable_operating_modes(profile: FirmwareProfile) -> list[str]:
+    """Return operating-mode select options authorized by the firmware profile."""
+    if profile.supports_ups:
+        return list(OPERATING_MODES)
+    return list(SELECTABLE_BASE_MODES)
 
 
 def get_device_power_limits(

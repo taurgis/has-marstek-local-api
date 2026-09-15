@@ -92,7 +92,7 @@ class MarstekOperatingModeSelect(
     @property
     def options(self) -> list[str]:
         """Return the list of available options."""
-        return self.entity_description.options_fn()
+        return self.entity_description.options_fn(self.coordinator.profile)
 
     @property
     def current_option(self) -> str | None:
@@ -107,6 +107,12 @@ class MarstekOperatingModeSelect(
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="invalid_mode",
+                translation_placeholders={"mode": option},
+            )
+        if option not in self.options:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="mode_not_supported",
                 translation_placeholders={"mode": option},
             )
 
