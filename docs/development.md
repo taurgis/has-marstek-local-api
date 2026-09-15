@@ -55,6 +55,7 @@ Run the mock device to develop without hardware. `--device` and `--ver` select a
 ```
 cd tools
 python -m mock_device --ver 145
+python -m mock_device --device "VenusE 3.0" --ver 150
 python -m mock_device --device "VenusA" --ver 150
 ```
 

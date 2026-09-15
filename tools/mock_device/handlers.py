@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from custom_components.marstek.firmware_profile import FirmwareProfile
+from custom_components.marstek.firmware_profile import DeviceFamily, FirmwareProfile
 
 from .const import STATUS_IDLE
 
@@ -100,32 +100,63 @@ def handle_es_get_status(
     return result
 
 
+def _getmode_instance_id(params: dict[str, Any] | None) -> int:
+    """Echo ES.GetMode params.id when the client sent a non-boolean integer."""
+    if not isinstance(params, dict):
+        return 0
+    raw_id = params.get("id", 0)
+    if isinstance(raw_id, bool) or not isinstance(raw_id, int):
+        return 0
+    return raw_id
+
+
+def _venus_e_getmode_meter_template() -> dict[str, int]:
+    """Return the unpopulated Rev 3.1 GetMode CT/energy keys.
+
+    Observed on Venus E 3.0 firmware 150: these fields are present but stay
+    zeros while EM.GetStatus reports a live CT.
+    """
+    return {
+        "ct_state": 0,
+        "a_power": 0,
+        "b_power": 0,
+        "c_power": 0,
+        "total_power": 0,
+        "input_energy": 0,
+        "output_energy": 0,
+    }
+
+
 def handle_es_get_mode(
     request_id: int,
     src: str,
     state: dict[str, Any],
     *,
     profile: FirmwareProfile,
+    params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Handle ES.GetMode request."""
     result: dict[str, Any] = {
-        "id": 0,
+        "id": _getmode_instance_id(params),
         "mode": state["mode"],
         "ongrid_power": state["grid_power"],
         "offgrid_power": 0,
         "bat_soc": state["soc"],
     }
     if profile.supports_em_energy:
-        result.update(
-            {
-                "ct_state": 1 if state["ct_connected"] else 0,
-                "a_power": state.get("em_a_power", 0),
-                "b_power": state.get("em_b_power", 0),
-                "c_power": state.get("em_c_power", 0),
-                "total_power": state["grid_power"],
-                **_encoded_meter_energy(state, profile),
-            }
-        )
+        if profile.family is DeviceFamily.VENUS_E:
+            result.update(_venus_e_getmode_meter_template())
+        else:
+            result.update(
+                {
+                    "ct_state": 1 if state["ct_connected"] else 0,
+                    "a_power": state.get("em_a_power", 0),
+                    "b_power": state.get("em_b_power", 0),
+                    "c_power": state.get("em_c_power", 0),
+                    "total_power": state["grid_power"],
+                    **_encoded_meter_energy(state, profile),
+                }
+            )
     return {
         "id": request_id,
         "src": src,
@@ -320,15 +351,20 @@ def handle_sys_write(request_id: int, src: str) -> dict[str, Any]:
     }
 
 
-def handle_method_not_found(request_id: int, src: str) -> dict[str, Any]:
+def handle_method_not_found(
+    request_id: int, src: str, *, extra_data: int | None = None
+) -> dict[str, Any]:
     """Return JSON-RPC method-not-found for unsupported commands."""
+    error: dict[str, Any] = {
+        "code": -32601,
+        "message": "Method not found",
+    }
+    if extra_data is not None:
+        error["data"] = extra_data
     return {
         "id": request_id,
         "src": src,
-        "error": {
-            "code": -32601,
-            "message": "Method not found",
-        },
+        "error": error,
     }
 
 

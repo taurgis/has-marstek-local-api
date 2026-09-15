@@ -32,7 +32,8 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.20", "--ver", "145", "--soc", "50"]
 
   # Mock device 2 - Venus E 3.0, default UDP port 30000
-  # Legacy firmware 145: no SYS/UPS
+  # Firmware 150 Rev 3.1: SYS + UPS + EM energy; GetMode CT keys are zeros
+  # (matches LAN capture of a real Venus E 3.0 / ver 150)
   mock-marstek-2:
     build:
       context: ..
@@ -43,7 +44,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.25
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--ver", "145", "--ble-mac", "02deadbeef02", "--wifi-mac", "02cafebabe02", "--soc", "75"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--device", "VenusE 3.0", "--ver", "150", "--ble-mac", "02deadbeef02", "--wifi-mac", "02cafebabe02", "--soc", "52"]
 
   # Mock device 3 - Venus E 3.0, custom UDP port 30001
   # Legacy firmware 145: no SYS/UPS

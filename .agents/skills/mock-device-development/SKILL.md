@@ -48,13 +48,13 @@ The devcontainer supports multiple mock devices:
 ```yaml
 # .devcontainer/docker-compose.yml
 mock-marstek:
-  command: ["python", "-m", "mock_device", "--ip", "172.28.0.20"]
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.20", "--ver", "145"]
 
 mock-marstek-2:
-  command: ["python", "-m", "mock_device", "--ip", "172.28.0.21", "--ble-mac", "009b08a5bb40", "--soc", "75"]
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--ver", "150", "--ble-mac", "02deadbeef02"]
 
 mock-marstek-3:
-  command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--ble-mac", "009b08a5cc41", "--soc", "30"]
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--port", "30001", "--ver", "145", "--ble-mac", "02deadbeef03"]
 ```
 
 ### Adding a New Mock Device

@@ -11,6 +11,20 @@ from ..firmware_profile import FirmwareProfile, resolve_firmware_profile
 _LOGGER: logging.Logger | None = None
 _LEGACY_PROFILE = resolve_firmware_profile(None, None)
 
+# ES.GetMode Rev 3.1 CT/power/energy keys that overlap EM.GetStatus.
+_GETMODE_EM_FALLBACK_KEYS = frozenset(
+    {
+        "ct_state",
+        "ct_connected",
+        "em_a_power",
+        "em_b_power",
+        "em_c_power",
+        "em_total_power",
+        "em_input_energy",
+        "em_output_energy",
+    }
+)
+
 
 def _get_logger() -> logging.Logger:
     """Lazy import logger to avoid circular imports."""
@@ -75,6 +89,7 @@ def parse_es_mode_response(
         "battery_soc": battery_soc,
         "device_mode": device_mode,
         "ongrid_power": ongrid_power,
+        "offgrid_power": result.get("offgrid_power"),
         # Don't set battery_power here - it comes from ES.GetStatus
     }
 
@@ -534,7 +549,8 @@ def merge_device_status(
     Priority order for overlapping keys:
     1. es_status_data (most accurate for battery_power, battery_status)
     2. em_status_data (CT connection, phase powers, meter energy)
-    3. es_mode_data (device_mode, ongrid_power; Rev 3.1 CT/power/energy fallback)
+    3. es_mode_data (device_mode, ongrid_power, offgrid_power; Rev 3.1 CT/power/energy
+       fills only keys that are still empty — never overwrites last-known EM values)
     4. bat_status_data (battery temperature, capacity details)
     5. wifi_status_data (WiFi RSSI, network info)
     6. pv_status_data (PV channel data)
@@ -626,9 +642,23 @@ def merge_device_status(
     if pv_status_data:
         _apply_updates(pv_status_data)
 
-    # Mode CT/power/energy fills gaps; current EM.GetStatus wins field-by-field.
+    # Mode CT/power/energy fills gaps only. Venus E 3.0 firmware 150 returns
+    # those GetMode fields as zeros even while EM.GetStatus has a live CT, and
+    # Wi-Fi polls often time out — never clobber last-known or current EM data.
     if es_mode_data:
-        _apply_updates(es_mode_data)
+        mode_core = {
+            key: value
+            for key, value in es_mode_data.items()
+            if key not in _GETMODE_EM_FALLBACK_KEYS
+        }
+        _apply_updates(mode_core)
+        for key, value in es_mode_data.items():
+            if key not in _GETMODE_EM_FALLBACK_KEYS:
+                continue
+            if value is None or _is_unknown_value(value):
+                continue
+            if status.get(key) is None:
+                status[key] = value
 
     if em_status_data:
         _apply_updates(em_status_data)

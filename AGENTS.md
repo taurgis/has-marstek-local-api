@@ -418,7 +418,7 @@ python -m mock_device --soc 30
 python -m mock_device --device VenusA --ver 150
 ```
 
-**In devcontainer:** Five mock devices run automatically. At least one is legacy firmware 145 and one is firmware 150 (Venus A watt PV vs Venus D deciwatt PV). See `tools/mock_device/README.md`.
+**In devcontainer:** Five mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). Venus D @ 145 vs Venus A @ 150 remains the deciwatt-versus-watt PV pair. See `tools/mock_device/README.md`.
 
 ### Tool selection guide
 

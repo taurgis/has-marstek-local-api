@@ -1381,3 +1381,142 @@ class TestFirmwareProfileDecoding:
         assert merged["em_total_power"] == 360
         assert merged["em_input_energy"] == 308632
         assert merged["em_output_energy"] == 2.0
+
+    def test_getmode_zeros_do_not_clobber_previous_em_values(self) -> None:
+        """Venus E 150 GetMode CT zeros must not wipe last-known EM readings."""
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
+        previous = {
+            "ct_state": 1,
+            "ct_connected": True,
+            "em_a_power": 2581,
+            "em_b_power": 0,
+            "em_c_power": 0,
+            "em_total_power": 2581,
+            "em_input_energy": 0.0,
+            "em_output_energy": 0.0,
+        }
+        mode = parse_es_mode_response(
+            {
+                "id": 2,
+                "result": {
+                    "id": 0,
+                    "mode": "Auto",
+                    "ongrid_power": 1246,
+                    "offgrid_power": 0,
+                    "bat_soc": 52,
+                    "ct_state": 0,
+                    "a_power": 0,
+                    "b_power": 0,
+                    "c_power": 0,
+                    "total_power": 0,
+                    "input_energy": 0,
+                    "output_energy": 0,
+                },
+            },
+            profile,
+        )
+        merged = merge_device_status(
+            es_mode_data=mode, previous_status=previous
+        )
+
+        assert merged["device_mode"] == "auto"
+        assert merged["ongrid_power"] == 1246
+        assert merged["offgrid_power"] == 0
+        assert merged["ct_state"] == 1
+        assert merged["em_a_power"] == 2581
+        assert merged["em_total_power"] == 2581
+
+    def test_venus_e_150_observed_payloads_merge_like_the_lan_capture(self) -> None:
+        """Parser output matches the 2026-09-15 Venus E 3.0 / ver 150 GET capture."""
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
+        assert profile.supports_pv is False
+        assert profile.supports_ups is True
+        assert profile.supports_em_energy is True
+        assert profile.em_energy_scale == 0.1
+
+        mode = parse_es_mode_response(
+            {
+                "id": 2,
+                "result": {
+                    "id": 0,
+                    "mode": "Auto",
+                    "ongrid_power": 1246,
+                    "offgrid_power": 0,
+                    "bat_soc": 52,
+                    "ct_state": 0,
+                    "a_power": 0,
+                    "b_power": 0,
+                    "c_power": 0,
+                    "total_power": 0,
+                    "input_energy": 0,
+                    "output_energy": 0,
+                },
+            },
+            profile,
+        )
+        es_status = parse_es_status_response(
+            {
+                "id": 4,
+                "result": {
+                    "id": 0,
+                    "bat_soc": 52,
+                    "bat_cap": 5120,
+                    "pv_power": 0,
+                    "ongrid_power": 1246,
+                    "offgrid_power": 0,
+                    "total_pv_energy": 0,
+                    "total_grid_output_energy": 969749,
+                    "total_grid_input_energy": 1167238,
+                    "total_load_energy": 0,
+                },
+            },
+            profile,
+        )
+        em = parse_em_status_response(
+            {
+                "id": 5,
+                "result": {
+                    "id": 0,
+                    "ct_state": 1,
+                    "a_power": 2581,
+                    "b_power": 0,
+                    "c_power": 0,
+                    "total_power": 2581,
+                    "input_energy": 0,
+                    "output_energy": 0,
+                },
+            },
+            profile,
+        )
+        bat = parse_bat_status_response(
+            {
+                "id": 8,
+                "result": {
+                    "id": 0,
+                    "soc": 51,
+                    "charg_flag": True,
+                    "dischrg_flag": True,
+                    "bat_temp": 31.0,
+                    "bat_capacity": 2652.0,
+                    "rated_capacity": 5120.0,
+                },
+            }
+        )
+        merged = merge_device_status(
+            es_mode_data=mode,
+            es_status_data=es_status,
+            em_status_data=em,
+            bat_status_data=bat,
+        )
+
+        assert merged["device_mode"] == "auto"
+        assert merged["battery_soc"] == 52
+        assert merged["battery_power"] == 1246
+        assert merged["battery_status"] == "discharging"
+        assert merged["ct_state"] == 1
+        assert merged["em_total_power"] == 2581
+        assert merged["em_input_energy"] == 0
+        assert merged["em_output_energy"] == 0
+        assert merged["total_grid_input_energy"] == 1167238
+        assert merged["bat_temp"] == 31.0
+        assert merged["bat_soc_detailed"] == 51

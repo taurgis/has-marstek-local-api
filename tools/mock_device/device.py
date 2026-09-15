@@ -339,11 +339,21 @@ class MockMarstekDevice:
             )
 
         elif method == "ES.GetMode":
-            return handle_es_get_mode(request_id, src, state, profile=self.profile)
+            return handle_es_get_mode(
+                request_id, src, state, profile=self.profile, params=params
+            )
 
         elif method == "PV.GetStatus":
             if not self.profile.supports_pv:
-                return handle_method_not_found(request_id, src)
+                extra_data = (
+                    424
+                    if self.profile.firmware_version is not None
+                    and self.profile.firmware_version >= 150
+                    else None
+                )
+                return handle_method_not_found(
+                    request_id, src, extra_data=extra_data
+                )
             pv_channels = self.config.get("pv_channels")
             if isinstance(pv_channels, list) and pv_channels:
                 pv_state = {

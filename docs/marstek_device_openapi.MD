@@ -139,7 +139,7 @@ Network diagnostics.
 
 | Method | Purpose | Integration use |
 |--------|---------|-----------------|
-| `Wifi.GetStatus` | Station IP, RSSI, gateway, DNS | Slow-tier diagnostic sensors; sent only while a Wi-Fi entity is enabled |
+| `Wifi.GetStatus` | Station IP, RSSI, gateway, DNS | Slow-tier diagnostic sensors; sent only while a Wi-Fi entity is enabled. Method name is case-sensitive: `Wifi.GetStatus` answers, `wifi.GetStatus` does not. |
 
 #### 3.2.1 Wifi.GetStatus
 
@@ -184,7 +184,7 @@ Connection status only. Advertising on/off is a **SYS** write (`Ble.Adv`), not t
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `state` | string | Bluetooth state (for example `connect`) |
+| `state` | string | Bluetooth state. Observed values include `connect` and `disconnect`. |
 | `ble_mac` | string | Bluetooth MAC |
 
 ---
@@ -291,7 +291,7 @@ The mock device encodes physical watts according to the selected profile. The pa
 | `pv_power` | number or null | W | W |
 | `ongrid_power` | number or null | W | W |
 | `offgrid_power` | number or null | W | W |
-| `bat_power` | number or null | W | W (often omitted; integration may fall back to `pv_power - ongrid_power`) |
+| `bat_power` | number or null | W | W (often omitted on Venus E 3.0 / firmware 150; integration falls back to `pv_power - ongrid_power`) |
 | `total_pv_energy` | number or null | **0.01 kWh** on Rev 3.1 / observed Venus A `ver >= 149`; **Wh** on explicit legacy profiles | Wh (`raw × 10` when the profile uses 0.01 kWh) |
 | `total_grid_output_energy` | number or null | **Wh** | Wh (never scaled with PV energy) |
 | `total_grid_input_energy` | number or null | **Wh** | Wh (never scaled with PV energy) |
@@ -381,7 +381,7 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 
 Some published Open API samples and some devices disagree on whether `mode` is a string or an integer, and whether `params.id` is `0` or `1`. **This integration prefers its own contract:** `ES.SetMode` sends string names, `ES.GetMode` is requested with `id=0` first, and battery power comes from `ES.GetStatus` (`bat_power`, never `abs(ongrid_power)`). Integer `mode` values and `id=1` are accepted on **read/fallback** only.
 
-Rev 3.1 CT/energy fields on `ES.GetMode` are used only as fallbacks when `EM.GetStatus` omits them. Phase-power sensors are not duplicated.
+Venus E 3.0 firmware **150** answers both `id=0` and `id=1` with the string mode name (`"Auto"`, not `0`). It also includes the Rev 3.1 CT/power/energy keys, but those values can be zeros / `ct_state=0` while `EM.GetStatus` reports a live CT. This integration uses GetMode CT/energy only to fill empty coordinator keys; current and last-known `EM.GetStatus` values always win. Phase-power sensors are not duplicated.
 
 ---
 
@@ -499,6 +499,28 @@ Inputs: device family + integer discovery `ver`. Unknown/unparseable `ver` is le
 
 When the scanner sees a `ver` or model change that unlocks or removes setup-time capabilities, the config entry reloads so entities are created or omitted. Cosmetic metadata updates do not reload.
 
+### 4.3 Observed Venus E 3.0 firmware 150 (LAN read, 2026-09-15)
+
+Live GET-only capture against a `VenusE 3.0` with discovery `ver` **150**. UDP timeouts on Wi-Fi are common; retries eventually returned a JSON-RPC result or error for every method below. Identifiers (MAC, SSID, IP) are omitted here.
+
+Firmware profile this integration applies: family **Venus E**, no PV, SYS DOD/BLE/LED **yes**, UPS **yes**, manual slots **0–9**, EM energy scale **0.1 Wh → Wh**.
+
+| Method | `params.id` | Observed |
+|--------|-------------|----------|
+| `Marstek.GetDevice` | — | `device`: `"VenusE 3.0"`; `ver`: `150` (integer). Display name, not SKU `VNSE3-0`. |
+| `ES.GetMode` | `0` (preferred) | `mode`: `"Auto"` (string). Also `ongrid_power`, `offgrid_power`, `bat_soc`, plus Rev 3.1 `ct_state` / phase power / `input_energy` / `output_energy`. CT/power/energy were **zeros** (`ct_state=0`) at the same time `EM.GetStatus` showed a connected CT. |
+| `ES.GetMode` | `1` (fallback) | Same payload shape; `result.id` echoes `1`. First attempt timed out; a retry succeeded. |
+| `ES.GetStatus` | `0` | `bat_soc`, `bat_cap` (5120 Wh), `pv_power` (0), `ongrid_power`, `offgrid_power`, lifetime energy fields. **`bat_power` omitted.** `total_pv_energy` / `total_load_energy` present as `0`. Grid totals in **Wh** (not 0.01 kWh). |
+| `EM.GetStatus` | `0` | Live CT: `ct_state=1`, `a_power` / `total_power` non-zero, `b_power` / `c_power` 0. `input_energy` and `output_energy` present as `0` (scaled `× 0.1` → 0 Wh). |
+| `Wifi.GetStatus` | `0` | Full station fields including `wifi_mac`, `ssid`, `rssi`, `sta_ip`, `sta_gate`, `sta_mask`, `sta_dns`. Lowercase `wifi.GetStatus` did not answer. |
+| `BLE.GetStatus` | `0` | `state`: `"disconnect"`; `ble_mac` present. Slow / flaky on Wi-Fi; not polled by this integration. |
+| `Bat.GetStatus` | `0` | `soc` number, `charg_flag` / `dischrg_flag` booleans, `bat_temp` °C, `bat_capacity` / `rated_capacity` Wh. |
+| `PV.GetStatus` | `0` | JSON-RPC **`-32601 Method not found`**. Error object may include an extra integer `data` field (observed `424`). Matches chapter 4 (no PV on Venus E). This integration does not send `PV.GetStatus` for Venus E. |
+
+`ES.GetStatus` still reports `pv_power` / `total_pv_energy` as zero on this non-PV family; those keys are not treated as a PV array.
+
+The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile.
+
 ---
 
 ## V. Change logs
@@ -506,3 +528,4 @@ When the scanner sees a `ver` or model change that unlocks or removes setup-time
 - **2025-08-09** Vendor PDF: Version number Rev 1.0 (historical).
 - **2026-09-10** Vendor PDF metadata: Open API **Rev 3.1** (SYS, UPS, Venus E mini, field-specific energy units). Local reference updated to match that revision and the shipped firmware-profile integration.
 - **2026-09-15** Reads accept integer `ES.GetMode` values `0–4` and fall back to instance id `1` when `id=0` fails. Writes, battery-power math, BLE-MAC unique IDs, and the `id=0` default stay this integration's contract. Vendor SKUs `VNSA-0` / `VNSD-0` / `VNSE3-0` map onto existing Venus families.
+- **2026-09-15** Venus E 3.0 firmware 150 LAN capture: string `ES.GetMode` names, omitted `ES.GetStatus` `bat_power`, GetMode CT zeros vs live `EM.GetStatus`, `PV.GetStatus` `-32601`, case-sensitive `Wifi.GetStatus`. GetMode CT/energy fills empty keys only so Wi-Fi timeouts do not clobber last-known meter readings.

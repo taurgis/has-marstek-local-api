@@ -803,3 +803,82 @@ class TestSysWrites:
             assert response["error"]["code"] == -32601
             assert response["error"]["message"] == "Method not found"
 
+
+class TestVenusEFirmware150Capture:
+    """Mock Venus E 3.0 / ver 150 matches the 2026-09-15 LAN GET capture."""
+
+    def test_legacy_getmode_omits_rev31_meter_keys(self) -> None:
+        """Firmware 145 Venus E does not invent GetMode CT/energy fields."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 145},
+        )
+
+        response = device.build_response(1, "ES.GetMode", {"id": 0})
+
+        assert response is not None
+        result = response["result"]
+        assert result["mode"] == "Auto"
+        assert result["id"] == 0
+        assert "ct_state" not in result
+        assert "input_energy" not in result
+
+    def test_getmode_ct_keys_are_zeros_while_em_is_live(self) -> None:
+        """Firmware 150 Venus E GetMode CT template stays zeros; EM has the live CT."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 150},
+        )
+        device._static_power = 800
+
+        mode = device.build_response(1, "ES.GetMode", {"id": 0})
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+        status = device.build_response(3, "ES.GetStatus", {"id": 0})
+
+        assert mode is not None
+        assert em is not None
+        assert status is not None
+        assert mode["result"]["mode"] == "Auto"
+        assert mode["result"]["id"] == 0
+        assert mode["result"]["ct_state"] == 0
+        assert mode["result"]["a_power"] == 0
+        assert mode["result"]["total_power"] == 0
+        assert mode["result"]["input_energy"] == 0
+        assert em["result"]["ct_state"] == 1
+        assert "input_energy" in em["result"]
+        assert "bat_power" not in status["result"]
+        assert status["result"]["pv_power"] == 0
+
+    def test_getmode_echoes_instance_id(self) -> None:
+        """Both GetMode instance ids answer; result.id echoes the request."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 150},
+        )
+
+        id0 = device.build_response(1, "ES.GetMode", {"id": 0})
+        id1 = device.build_response(2, "ES.GetMode", {"id": 1})
+
+        assert id0 is not None
+        assert id1 is not None
+        assert id0["result"]["id"] == 0
+        assert id1["result"]["id"] == 1
+        assert id0["result"]["mode"] == "Auto"
+
+    def test_pv_method_not_found_includes_observed_data_field(self) -> None:
+        """Firmware 150 Venus E PV.GetStatus matches the captured -32601 payload."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 150},
+        )
+
+        response = device.build_response(1, "PV.GetStatus", {"id": 0})
+
+        assert response is not None
+        assert response["error"] == {
+            "code": -32601,
+            "message": "Method not found",
+            "data": 424,
+        }
+        assert "result" not in response
+

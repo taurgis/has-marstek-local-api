@@ -78,6 +78,9 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 ### Examples
 
 ```bash
+# Rev 3.1 Venus E (GetMode CT zeros, omitted bat_power, SYS/UPS)
+python -m mock_device --device "VenusE 3.0" --ver 150 --soc 52
+
 # Legacy Venus E (default ver 145): no SYS/UPS
 python -m mock_device --soc 30
 
@@ -98,7 +101,7 @@ The devcontainer runs **exactly these five** mock devices. There is no optional 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
 | mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh |
-| mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS |
+| mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 150 | Rev 3.1 | n/a (no PV) | SYS + UPS + EM energy; GetMode CT keys are zeros (LAN capture) |
 | mock-marstek-3 | 172.28.0.22 | 30001 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; custom port |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
 | mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 150 | Rev 3.1 | All channels **watts**; solar 0.01 kWh | PV + SYS + UPS + EM energy |
