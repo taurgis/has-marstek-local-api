@@ -285,3 +285,41 @@ class TestModeCommands:
             assert manual_cfg["start_time"] == "00:00"
             assert manual_cfg["end_time"] == "23:59"
             assert manual_cfg["week_set"] == 127
+
+
+class TestSysCommands:
+    """Tests for SYS write command builders."""
+
+    def setup_method(self) -> None:
+        """Reset request ID before each test."""
+        reset_request_id()
+
+    def test_set_dod_payload(self) -> None:
+        """DOD.SET payload contains only the integer value."""
+        from custom_components.marstek.pymarstek.command_builder import set_dod
+
+        parsed = json.loads(set_dod(50))
+        assert parsed["method"] == "DOD.SET"
+        assert parsed["params"] == {"value": 50}
+
+    def test_set_ble_advertising_payloads(self) -> None:
+        """Ble.Adv 0 enables advertising and 1 disables it."""
+        from custom_components.marstek.pymarstek.command_builder import (
+            set_ble_advertising,
+        )
+
+        enabled = json.loads(set_ble_advertising(0))
+        disabled = json.loads(set_ble_advertising(1))
+        assert enabled["method"] == "Ble.Adv"
+        assert enabled["params"] == {"enable": 0}
+        assert disabled["params"] == {"enable": 1}
+
+    def test_set_led_payloads(self) -> None:
+        """Led.Ctrl 1 is on and 0 is off."""
+        from custom_components.marstek.pymarstek.command_builder import set_led
+
+        on = json.loads(set_led(1))
+        off = json.loads(set_led(0))
+        assert on["method"] == "Led.Ctrl"
+        assert on["params"] == {"state": 1}
+        assert off["params"] == {"state": 0}

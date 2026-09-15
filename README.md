@@ -283,13 +283,10 @@ python mock_marstek.py
 ## Troubleshooting
 
 ### LED Light Switch
-- The current documented Marstek Open API does not expose a known LED light
-  status field or LED control command, so this integration cannot add an LED
-  light switch yet.
-- If a newer firmware adds an undocumented local API for LED control, please
-  open an issue with your device model, firmware version, diagnostics, debug
-  logs, and—if possible—a raw API capture from
-  `python3 tools/capture_device.py <IP_ADDRESS> -o marstek-device.json`.
+- Capable firmware (Venus A/C/D/E at firmware 150 or newer, and Venus E mini with a known firmware version) exposes a **Panel LED** switch.
+- Older or unknown regular firmware does not get the switch, because those devices reject `Led.Ctrl`.
+- The Open API has no readable LED state. Home Assistant restores the last value it successfully wrote; changes made in the Marstek app or on the device itself may not be reflected.
+- Bluetooth advertising and depth of discharge use the same firmware gate and the same restored optimistic state.
 
 ### Device Not Found
 - Ensure OPEN API is enabled in the Marstek app on your device

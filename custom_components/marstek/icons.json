@@ -187,6 +187,27 @@
           "ups": "mdi:uninterruptible-power-supply"
         }
       }
+    },
+    "number": {
+      "depth_of_discharge": {
+        "default": "mdi:battery-arrow-down"
+      }
+    },
+    "switch": {
+      "bluetooth_advertising": {
+        "default": "mdi:bluetooth",
+        "state": {
+          "on": "mdi:bluetooth",
+          "off": "mdi:bluetooth-off"
+        }
+      },
+      "panel_led": {
+        "default": "mdi:led-on",
+        "state": {
+          "on": "mdi:led-on",
+          "off": "mdi:led-off"
+        }
+      }
     }
   }
 }

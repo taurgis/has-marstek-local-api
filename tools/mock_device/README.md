@@ -25,6 +25,7 @@ mock_device/
 - **Dynamic Battery Simulation**: SOC increases/decreases based on power flow
 - **Power Fluctuations**: Realistic ±5% variations in power readings
 - **Mode Support**: Auto, AI, Manual, Passive, and firmware-gated UPS (accepted when the shared firmware profile reports `supports_ups`)
+- **SYS writes**: Capable firmware accepts `DOD.SET`, `Ble.Adv`, and `Led.Ctrl` with `set_result: true`; legacy firmware returns JSON-RPC `-32601 Method not found`
 - **Passive Mode Timer**: Automatic expiration after configured duration
 - **Manual Schedules**: Supports schedule slots with day/time configuration
 - **Household Simulation**: Realistic time-of-day consumption patterns

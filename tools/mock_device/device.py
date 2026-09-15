@@ -12,6 +12,11 @@ from custom_components.marstek.firmware_profile import (
     FirmwareProfile,
     resolve_firmware_profile,
 )
+from custom_components.marstek.pymarstek.const import (
+    CMD_BLE_ADV,
+    CMD_DOD_SET,
+    CMD_LED_CTRL,
+)
 
 from .const import (
     DEFAULT_CONFIG,
@@ -22,6 +27,7 @@ from .const import (
     MODE_PASSIVE,
     MODE_UPS,
 )
+
 from .handlers import (
     get_static_state,
     handle_bat_get_status,
@@ -31,7 +37,9 @@ from .handlers import (
     handle_es_get_status,
     handle_es_set_mode,
     handle_get_device,
+    handle_method_not_found,
     handle_pv_get_status,
+    handle_sys_write,
     handle_wifi_get_status,
 )
 from .simulators import BatterySimulator
@@ -335,15 +343,7 @@ class MockMarstekDevice:
 
         elif method == "PV.GetStatus":
             if not self.profile.supports_pv:
-                # Return error for unsupported method on Venus C/E devices
-                return {
-                    "id": request_id,
-                    "src": src,
-                    "error": {
-                        "code": -32601,
-                        "message": "Method not found",
-                    },
-                }
+                return handle_method_not_found(request_id, src)
             pv_channels = self.config.get("pv_channels")
             if isinstance(pv_channels, list) and pv_channels:
                 pv_state = {
@@ -374,14 +374,7 @@ class MockMarstekDevice:
             config = params.get("config", {})
             mode = config.get("mode", MODE_AUTO)
             if mode == MODE_UPS and not self.profile.supports_ups:
-                return {
-                    "id": request_id,
-                    "src": src,
-                    "error": {
-                        "code": -32601,
-                        "message": "Method not found",
-                    },
-                }
+                return handle_method_not_found(request_id, src)
             if mode == MODE_MANUAL:
                 manual_config = config.get("manual_cfg", {})
                 schedule_slot = (
@@ -418,6 +411,16 @@ class MockMarstekDevice:
 
             print(f"   Mode changed to: {mode}")
             return handle_es_set_mode(request_id, src)
+
+        sys_supported = {
+            CMD_DOD_SET: self.profile.supports_sys_dod,
+            CMD_BLE_ADV: self.profile.supports_sys_ble_advertising,
+            CMD_LED_CTRL: self.profile.supports_sys_led,
+        }
+        if method in sys_supported:
+            if not sys_supported[method]:
+                return handle_method_not_found(request_id, src)
+            return handle_sys_write(request_id, src)
 
         return None
 

@@ -759,3 +759,47 @@ class TestUpsMode:
         assert get_response is not None
         parsed = parse_es_mode_response(get_response, profile)
         assert parsed["device_mode"] == "ups"
+
+
+class TestSysWrites:
+    """SYS method accept/reject behavior follows the firmware profile."""
+
+    SYS_REQUESTS = (
+        ("DOD.SET", {"value": 50}),
+        ("Ble.Adv", {"enable": 0}),
+        ("Led.Ctrl", {"state": 1}),
+    )
+
+    def test_capable_profile_accepts_sys_methods(self) -> None:
+        """Firmware 150+ regular devices return set_result true for SYS writes."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusA", "ver": 150},
+        )
+        for method, params in self.SYS_REQUESTS:
+            response = device.build_response(1, method, params)
+            assert response is not None
+            assert "error" not in response
+            assert response["result"]["set_result"] is True
+
+    def test_e_mini_known_ver_accepts_sys_without_firmware_150(self) -> None:
+        """Venus E mini with a known integer ver accepts SYS without the 150 gate."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "Venus E mini", "ver": 12},
+        )
+        assert device.profile.supports_sys_dod is True
+        for method, params in self.SYS_REQUESTS:
+            response = device.build_response(1, method, params)
+            assert response is not None
+            assert response["result"]["set_result"] is True
+
+    def test_legacy_profile_returns_method_not_found(self) -> None:
+        """Legacy mock returns JSON-RPC -32601 instead of timing out."""
+        device = MockMarstekDevice(simulate=False)
+        for method, params in self.SYS_REQUESTS:
+            response = device.build_response(1, method, params)
+            assert response is not None
+            assert response["error"]["code"] == -32601
+            assert response["error"]["message"] == "Method not found"
+

@@ -1,23 +1,21 @@
 # Troubleshooting
 
-## LED light switch availability
+## Panel LED, Bluetooth advertising, and depth of discharge
 
-The current Marstek Open API documentation used by this integration does not
-document any LED light status field or LED control command. Because of that,
-the integration cannot safely expose an LED light switch yet.
+Capable firmware exposes three write-only SYS settings:
 
-If your firmware shows an LED toggle in the Marstek app, please include as much
-of the following as you can in a feature request:
+- Venus A/C/D/E at firmware **150 or newer**
+- Venus E mini with a **known integer** firmware `ver` (no 150 minimum)
+- Unknown, unparseable, or older regular firmware omits all three
 
-- device model
-- firmware version
-- downloaded Marstek diagnostics
-- debug logs captured during a refresh
-- if possible, a raw API capture from
-  `python3 tools/capture_device.py <IP_ADDRESS> -o marstek-device.json`
+The Open API documents no GET methods for these settings. Home Assistant
+restores the last value it successfully wrote. Changes made in the Marstek app,
+after a device reboot, or by another controller are not detected.
 
-If that capture shows a stable local API field or write command for LED
-control, support can be added in a future release.
+Older troubleshooting notes that LED control was undocumented applied to
+legacy Open API firmware. Capable firmware has a **Panel LED** switch.
+
+`Set.Ver` and factory reset are intentionally not exposed in the default UI.
 
 ## Device not discovered
 

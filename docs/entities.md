@@ -89,6 +89,27 @@ Created when the device reports those values (typically Venus A/D with PV channe
 
 > Manual and Passive require extra parameters and are set via services (see [Services](services.md)). UPS is an enable-only mode on ES-capable firmware `ver >= 150` (including Venus E mini).
 
+## Number (configuration)
+
+Created only when the firmware profile reports SYS support. Venus A/C/D/E need firmware `ver >= 150`. Venus E mini needs a known integer `ver` (no 150 gate). Unknown or unparseable firmware omits these controls.
+
+| Entity name | Key | Unit | Range | Category | Default |
+|---|---|---|---|---|---|
+| Depth of discharge | `depth_of_discharge` | % | 30–88, step 1 | Config | Enabled (if supported). Starts at 88 when nothing valid was restored. |
+
+The Open API has no GET for DOD. Home Assistant restores the last value it successfully wrote. Changes made in the Marstek app or by another controller are not detected.
+
+## Switch (configuration)
+
+Same firmware/model availability as depth of discharge. There are no documented GET methods, so Home Assistant restores the last successful write. With no valid history the switch stays `unknown` until you set it.
+
+| Entity name | Key | Category | Notes |
+|---|---|---|---|
+| Bluetooth advertising | `bluetooth_advertising` | Config | On enables advertising (`Ble.Adv.enable = 0`); off disables it (`enable = 1`). |
+| Panel LED | `panel_led` | Config | On sends `Led.Ctrl.state = 1`; off sends `state = 0`. |
+
+`Set.Ver` and `Reset.Factory` are intentionally not exposed.
+
 ## Device grouping
 
 Entities are grouped under one device, and unique IDs remain stable across IP changes.
