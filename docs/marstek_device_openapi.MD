@@ -1,743 +1,503 @@
-# Marstek Device Open API (Rev 1.0)
+# Marstek Device Open API (Rev 3.1)
+
+Local reference for the Marstek Device Open API **Rev 3.1**, mapped to the behavior this Home Assistant integration actually ships.
+
+Vendor source: [Marstek Device Open API Rev 3.1 PDF](https://static-eu.marstekenergy.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf) (same family also published at [eu.hamedata.com](https://eu.hamedata.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf)). There is no separate HTML API.
 
 > **Disclaimer:** The Local API is provided "as is" for local use only. Use at your own risk. Marstek is not liable for any damages, data loss, or legal issues caused by your use of the API. You are responsible for lawful and appropriate use.
+
+> **Vendor PDF warning:** The official PDF is poorly typeset. JSON examples are shuffled across chapters, punctuation and capitalization are inconsistent, and several samples contain errors such as `set_result: ture`. **Field tables and shipped/tested behavior take precedence over malformed examples.** This reference therefore uses Markdown tables for commands, parameters, units, and firmware gates instead of copying those examples.
+
+> **Protocol vs Home Assistant UI:** Chapter 4 of Rev 3.1 documents which *methods a device may accept*. This integration omits unsupported capability-gated entities rather than leaving them permanently unavailable, and it intentionally does **not** expose every documented write (see [Set.Ver and Reset.Factory](#setver-and-resetfactory-not-in-the-default-ui)). Unknown or unparseable discovery `ver` stays **legacy-safe**: no SYS/UPS writes, and energy scaling only where the firmware profile is known.
 
 ---
 
 ## I. Preface
 
-### Welcome!
+This document introduces the Open API for Marstek devices. It is available to device owners and enables integration with third-party systems.
 
-This document provides an introduction to the Open API for Marstek devices, which is available to device owners and enables integration with third-party systems.
-
-While Marstek offers an official mobile app and cloud services, this Open API is designed for advanced users who wish to gain greater control over their devices and seamlessly integrate them into other management platforms.
+Marstek also offers an official mobile app and cloud services. This Open API is for local LAN control.
 
 ---
 
 ## II. General Description
 
-Marstek devices communicate with third-party systems over a Local Area Network (LAN). Before using this API, please ensure that:
+Marstek devices communicate with third-party systems over a Local Area Network (LAN). Before using this API:
 
-- The Marstek device is properly connected to your home network.
-- The Open API feature has been enabled via the Marstek mobile app.
+- The Marstek device must be connected to the home network.
+- Open API must be enabled in the Marstek mobile app.
 
-Please note that different Marstek models may support only a subset of the commands described in this documentation. Additionally, enabling the Open API may cause certain built-in features of the device to be disabled in order to prevent command conflicts. For detailed information about supported commands and any functional limitations for specific models, please refer to Chapter 4 of this document.
+Different models support only a subset of the commands below. Enabling Open API may disable some built-in app features to prevent command conflicts. Model and firmware support is in [Chapter 4](#iv-devices-and-firmware).
 
 ### 2.1 Protocol Format
 
-The protocol utilizes the JSON format, with commands primarily categorized into query commands, configuration commands, and certain special commands.
+JSON messages over UDP. Commands are queries, configuration writes, or a few special SYS commands.
 
-#### Command Format
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | number or string | An identifier established by the Client. |
-| `method` | string | A Structured value that holds the parameter values to be used during the invocation of the method. |
-| `params` | object | Parameters that the method takes. |
-
-**Example Command:**
-
-```json
-{
-  "id": 0,
-  "method": "string",
-  "params": {
-    "id": 0
-  }
-}
-```
-
-#### Device Response Format
+#### Command format
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or string | An identifier established by the Client. |
-| `src` | string | Name of the source of the request. |
-| `result` | object | This member is required on success. |
-| `error` | object | This member is required on error. |
+| `id` | number or string | Client-chosen request identifier |
+| `method` | string | Method name, for example `ES.GetStatus` |
+| `params` | object | Method parameters (often includes instance `id`) |
 
-#### Error Codes
+Typical request shape:
+
+| Field | Example |
+|-------|---------|
+| `id` | `1` |
+| `method` | `"ES.GetStatus"` |
+| `params.id` | `0` |
+
+#### Device response format
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | number or string | Echo of the client identifier |
+| `src` | string | Source name of the device |
+| `result` | object | Present on success |
+| `error` | object | Present on failure |
+
+#### Error codes
 
 | Code | Message | Meaning |
 |------|---------|---------|
-| -32700 | Parse error | Invalid JSON was received by the server. An error occurred on the server while parsing the JSON text. |
-| -32600 | Invalid Request | The JSON sent is not a valid Request object. |
-| -32601 | Method not found | The method does not exist / is not available. |
-| -32602 | Invalid params | Invalid method parameter(s). |
-| -32603 | Internal error | Internal JSON-RPC error. |
-| -32000 to -32099 | Server error | Reserved for implementation-defined server-errors. The remainder of the space is available for application defined errors. |
+| -32700 | Parse error | Invalid JSON |
+| -32600 | Invalid Request | Not a valid request object |
+| -32601 | Method not found | Method missing or not available on this firmware |
+| -32602 | Invalid params | Invalid method parameters |
+| -32603 | Internal error | Internal JSON-RPC error |
+| -32000 to -32099 | Server error | Implementation-defined server errors |
 
-**Example response on success:**
-
-```json
-{
-  "id": 0,
-  "src": "device",
-  "result": {
-    "id": 0
-  }
-}
-```
-
-**Example response on error:**
-
-```json
-{
-  "id": 0,
-  "src": "device",
-  "error": {
-    "code": -32700,
-    "message": "Parse error"
-  }
-}
-```
+Legacy firmware that does not implement SYS or UPS returns **-32601 Method not found** for those writes. That is expected, not a transport failure.
 
 ### 2.2 API over UDP
 
-#### 2.2.1 First-Time Use
+#### 2.2.1 First-time use
 
-When users first use the Open API service, they need to follow the configuration process below:
+1. Power on the device.
+2. Bind it in the Marstek app and join Wi-Fi or Ethernet.
+3. Enable Open API in the app and set the UDP port. Default is **30000**. The spec recommends **49152–65535**.
 
-1. Connect the device to power and turn it on.
-2. Use the Marstek APP to connect and bind the device, and configure the WiFi network for the device or connect it to the Ethernet.
-3. Enable the device's API feature in the APP, and set the UDP port number. The default port number is **30000**, and the recommended port number is between **49152** and **65535**.
+The device then accepts UDP commands from the same LAN.
 
-After completing the above operations, the Marstek device can normally receive UDP commands from the same local area network.
+#### 2.2.2 Discovering devices
 
-#### 2.2.2 Discovering Devices
+LAN discovery is a UDP broadcast of `Marstek.GetDevice` with `ble_mac` set to `"0"`.
 
-To discover Marstek devices within the LAN, a UDP broadcast is utilized. The broadcast content is as follows:
+| Direction | Field | Value |
+|-----------|-------|-------|
+| Request `method` | `Marstek.GetDevice` | |
+| Request `params.ble_mac` | `"0"` | Discover all devices |
+| Response `result.device` | string | Model name |
+| Response `result.ver` | number | Firmware integer used as the profile gate |
+| Response `result.ble_mac` | string | Bluetooth MAC (stable unique ID) |
+| Response `result.wifi_mac` | string | Wi-Fi MAC |
+| Response `result.wifi_name` | string | SSID |
+| Response `result.ip` | string | Current IPv4 address |
 
-```json
-{
-  "id": 0,
-  "method": "Marstek.GetDevice",
-  "params": {
-    "ble_mac": "0"
-  }
-}
-```
+The IP can also come from the Marstek app or the router. A static IP is recommended for long-term use.
 
-If there are Marstek devices within the LAN, taking Venus C as an example, the following response will be received:
-
-```json
-{
-  "id": 0,
-  "src": "venusC-123456789012",
-  "result": {
-    "device": "VenusC",
-    "ver": 111,
-    "ble_mac": "123456789012",
-    "wifi_mac": "123456789012",
-    "wifi_name": "MY_HOME",
-    "ip": "192.168.1.11"
-  }
-}
-```
-
-The device's IP address can be directly obtained from the Marstek APP or the home router. If this functionality is to be used on a long-term basis, it is recommended to configure the device with a static IP address.
+This integration uses the configured IP at setup. A background scanner repeats broadcast discovery to update the config entry when the IP changes. It does **not** discover during coordinator polling.
 
 ---
 
 ## III. Components
 
-This chapter mainly introduces the components and services supported by the Marstek device.
-
 ### 3.1 Marstek
 
-Marstek contains some basic information about the product, and is mainly used for discovering devices and querying basic device information.
+Basic product identity. Used for discovery and device info.
 
-- **Marstek.GetDevice**: Locate Marstek devices on the local area network.
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `Marstek.GetDevice` | Locate devices / read identity | Discovery, scanner, `sw_version` from `ver` |
 
 #### 3.1.1 Marstek.GetDevice
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `ble_mac` | string | Valid mac, can be used to identify a specific device. |
+| `ble_mac` | string | `"0"` to discover all; a specific MAC targets one device |
 
-**Response (result):**
+**Result**
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `device` | string | Device model |
-| `ver` | number | Device firmware version |
+| `ver` | number | Firmware version integer |
 | `ble_mac` | string | Bluetooth MAC |
-| `wifi_mac` | string | WiFi MAC |
-| `wifi_name` | string | WiFi name |
+| `wifi_mac` | string | Wi-Fi MAC |
+| `wifi_name` | string | Wi-Fi name |
 | `ip` | string | Device IP |
 
-**Example:**
-
-Sending:
-```json
-{
-  "id": 0,
-  "method": "Marstek.GetDevice",
-  "params": {
-    "ble_mac": "123456789012"
-  }
-}
-```
-
-Response:
-```json
-{
-  "id": 0,
-  "src": "venusC-123456789012",
-  "result": {
-    "device": "venusc",
-    "ver": 111,
-    "ble_mac": "123456789012",
-    "wifi_mac": "012123456789",
-    "wifi_name": "MY_HOME",
-    "ip": "192.168.1.11"
-  }
-}
-```
+---
 
 ### 3.2 WiFi
 
-The WiFi component is mainly used for configuring the device's WiFi and obtaining the device's basic network information.
+Network diagnostics.
 
-- **Wifi.GetStatus**: Obtain the device's basic network information.
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `Wifi.GetStatus` | Station IP, RSSI, gateway, DNS | Slow-tier diagnostic sensors; sent only while a Wi-Fi entity is enabled |
 
 #### 3.2.1 Wifi.GetStatus
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
+| `id` | number | Instance ID |
 
-**Response (result):**
+**Result**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
-| `wifi_mac` | string | WiFi MAC |
-| `ssid` | string or null | WiFi name |
-| `rssi` | number | WiFi signal strength |
+| `id` | number | Instance ID |
+| `wifi_mac` | string | Wi-Fi MAC |
+| `ssid` | string or null | Wi-Fi name |
+| `rssi` | number | Signal strength, dBm |
 | `sta_ip` | string or null | Device IP |
 | `sta_gate` | string or null | Gateway |
 | `sta_mask` | string or null | Subnet mask |
 | `sta_dns` | string or null | DNS |
 
-**Example:**
-
-Sending:
-```json
-{
-  "id": 1,
-  "method": "wifi.GetStatus",
-  "params": {
-    "id": 0
-  }
-}
-```
-
-Response:
-```json
-{
-  "id": 1,
-  "src": "venusc-mac",
-  "result": {
-    "id": 0,
-    "ssid": "Home",
-    "rssi": -59,
-    "sta_ip": "192.168.137.41",
-    "sta_gate": "192.168.137.1",
-    "sta_mask": "255.255.255.0",
-    "sta_dns": "192.168.137.1"
-  }
-}
-```
+---
 
 ### 3.3 Bluetooth
 
-The BLE (Bluetooth) component can view the Bluetooth-related information of the device.
+Connection status only. Advertising on/off is a **SYS** write (`Ble.Adv`), not this GET.
 
-- **BLE.GetStatus**: Check the Bluetooth connection status of the device.
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `BLE.GetStatus` | Bluetooth connection state and MAC | Not polled as a dedicated entity source |
 
 #### 3.3.1 BLE.GetStatus
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
+| `id` | number | Instance ID |
 
-**Response (result):**
+**Result**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `state` | string | Bluetooth state |
+| `state` | string | Bluetooth state (for example `connect`) |
 | `ble_mac` | string | Bluetooth MAC |
 
-**Example:**
-
-Sending:
-```json
-{
-  "id": 1,
-  "method": "BLE.GetStatus",
-  "params": {
-    "id": 0
-  }
-}
-```
-
-Response:
-```json
-{
-  "id": 1,
-  "src": "venusC-123456789012",
-  "result": {
-    "id": 0,
-    "state": "connect",
-    "ble_mac": "123456789012"
-  }
-}
-```
+---
 
 ### 3.4 Battery
 
-The Bat (Battery) component contains basic information about the device's battery.
-
-- **Bat.GetStatus**: Query the device's battery information and operating status.
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `Bat.GetStatus` | Temperature, remaining/rated capacity, charge/discharge flags | Slow-tier; **disabled by default** because some firmwares reset on this call ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)) |
 
 #### 3.4.1 Bat.GetStatus
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
+| `id` | number | Instance ID |
 
-**Response (result):**
+**Result**
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | number | ID of Instance |
-| `SOC` | string | SOC |
-| `charg_flag` | boolean | Charging permission flag |
-| `dischrg_flag` | boolean | Discharge permission flag |
-| `bat_temp` | number or null | Battery temperature, [°C] |
-| `bat_capacity` | number or null | Battery remaining capacity, [Wh] |
-| `rated_capacity` | number or null | Battery rated capacity, [Wh] |
+| Property | Type | Unit | Description |
+|----------|------|------|-------------|
+| `id` | number | — | Instance ID |
+| `soc` | number | % | Battery SoC (PDF type text is inconsistent; devices return a number) |
+| `charg_flag` | boolean | — | Charging permission |
+| `dischrg_flag` | boolean | — | Discharge permission |
+| `bat_temp` | number or null | °C | Battery temperature |
+| `bat_capacity` | number or null | Wh | Remaining capacity |
+| `rated_capacity` | number or null | Wh | Rated capacity |
 
-**Example:**
+---
 
-Sending:
-```json
-{
-  "id": 1,
-  "method": "Bat.GetStatus",
-  "params": {
-    "id": 0
-  }
-}
-```
+### 3.5 PV (Venus A/D only)
 
-Response:
-```json
-{
-  "id": 1,
-  "src": "venusC-mac",
-  "result": {
-    "id": 0,
-    "soc": 98,
-    "charg_flag": true,
-    "dischrg_flag": true,
-    "bat_temp": 25.0,
-    "bat_capacity": 2508.0,
-    "rated_capacity": 2560.0
-  }
-}
-```
+Rev 3.1 documents PV for **Venus A and Venus D only**. Venus C, Venus E, and Venus E mini do not expose PV. The integration skips `PV.GetStatus` and omits PV entities on non-PV families.
 
-### 3.5 PV
-
-The PV (Photovoltaic) component contains the photovoltaic information connected to the device.
-
-- **PV.GetStatus**: Query the device's connected photovoltaic information and power generation status.
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `PV.GetStatus` | MPPT power, voltage, current, state | Medium-tier; up to four channels when reported |
 
 #### 3.5.1 PV.GetStatus
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
+| `id` | number | Instance ID |
 
-**Response (result):**
+**Result (single-channel form)**
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | number | ID of Instance |
-| `pv_power` | number | Photovoltaic charging power, [W] |
-| `pv_voltage` | number | Photovoltaic charging voltage, [V] |
-| `pv_current` | number | Photovoltaic charging current, [A] |
+| Property | Type | Unit | Description |
+|----------|------|------|-------------|
+| `id` | number | — | Instance ID |
+| `pv_power` | number | see [PV power encoding](#pv-power-encoding) | PV charging power |
+| `pv_voltage` | number | V | PV voltage |
+| `pv_current` | number | A | PV current |
+| `PV_state` | number | — | `1` work, `0` standby (capitalization varies in the PDF) |
 
-**Example:**
+**Result (multi-channel form observed on Venus A/D)**
 
-Sending:
-```json
-{
-  "id": 1,
-  "method": "PV.GetStatus",
-  "params": {
-    "id": 0
-  }
-}
-```
+| Property | Type | Unit | Description |
+|----------|------|------|-------------|
+| `pvN_power` | number | see [PV power encoding](#pv-power-encoding) | Channel N power, N = 1–4 |
+| `pvN_voltage` | number | V | Channel N voltage |
+| `pvN_current` | number | A | Channel N current |
+| `pvN_state` | number | — | Channel N work/standby |
 
-Response:
-```json
-{
-  "id": 1,
-  "src": "VenusC-mac",
-  "result": {
-    "id": 0,
-    "pv_power": 580.0,
-    "pv_voltage": 40.0,
-    "pv_current": 12.0
-  }
-}
-```
+##### PV power encoding
 
-### 3.6 ES
+The PDF labels PV power as watts. Observed firmware does not always do that.
 
-The ES (Energy System) component contains the device's basic power information and energy statistics, and can configure or monitor the device's operating status.
+| Profile | Channel 1 on the wire | Other channels | Home Assistant |
+|---------|----------------------|----------------|----------------|
+| Legacy Venus A/D (`ver < 150`, including unknown `ver`) | Deciwatts (divide by 10 → W) | Watts | W |
+| Rev 3.1 Venus A/D (`ver >= 150`) | Watts | Watts | W |
 
-- **ES.GetStatus**: Query the device's basic electrical energy information.
-- **ES.SetMode**: Configure the device's operating mode.
-- **ES.GetMode**: Get information about the operating mode of the device.
+The mock device encodes physical watts according to the selected profile. The parser always stores **W**.
+
+---
+
+### 3.6 ES (Energy System)
+
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `ES.GetStatus` | SoC, power, lifetime energy | Fast-tier sensors |
+| `ES.SetMode` | Set Auto / AI / Manual / Passive / UPS | Operating-mode select, services, device actions |
+| `ES.GetMode` | Current mode plus optional CT/power/energy fallbacks | Fast-tier; extra CT fields fill gaps only — no duplicate phase-power entities |
 
 #### 3.6.1 ES.GetStatus
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or null | ID of Instance |
+| `id` | number or null | Instance ID |
 
-**Response (result):**
+**Result — units are per field, not a blanket energy conversion**
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | number or null | ID of Instance |
-| `bat_soc` | number or null | Total battery SOC, [%] |
-| `bat_cap` | number or null | Total battery capacity, [Wh] |
-| `pv_power` | number or null | Solar charging power, [W] |
-| `ongrid_power` | number or null | Grid-tied power, [W] |
-| `offgrid_power` | number or null | Off-grid power, [W] |
-| `bat_power` | number or null | Battery power, [W] |
-| `total_pv_energy` | number or null | Total solar energy generated, [Wh] |
-| `total_grid_output_energy` | number or null | Total grid output energy, [Wh] |
-| `total_grid_input_energy` | number or null | Total grid input energy, [Wh] |
-| `total_load_energy` | number or null | Total load (or off-grid) energy consumed, [Wh] |
+| Property | Type | Wire unit (Rev 3.1 table / observed) | Home Assistant |
+|----------|------|--------------------------------------|----------------|
+| `id` | number or null | — | — |
+| `bat_soc` | number or null | % | % |
+| `bat_cap` | number or null | Wh | Wh |
+| `pv_power` | number or null | W | W |
+| `ongrid_power` | number or null | W | W |
+| `offgrid_power` | number or null | W | W |
+| `bat_power` | number or null | W | W (often omitted; integration may fall back to `pv_power - ongrid_power`) |
+| `total_pv_energy` | number or null | **0.01 kWh** on Rev 3.1 / observed Venus A `ver >= 149`; **Wh** on explicit legacy profiles | Wh (`raw × 10` when the profile uses 0.01 kWh) |
+| `total_grid_output_energy` | number or null | **Wh** | Wh (never scaled with PV energy) |
+| `total_grid_input_energy` | number or null | **Wh** | Wh (never scaled with PV energy) |
+| `total_load_energy` | number or null | **Wh** | Wh |
 
-**Example:**
+Issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35) is the Venus A firmware 149 evidence that solar totals were stored about 10× too low when the 0.01 kWh wire unit was treated as Wh.
 
-Sending:
-```json
-{
-  "id": 1,
-  "method": "ES.GetStatus",
-  "params": {
-    "id": 0
-  }
-}
-```
-
-Response:
-```json
-{
-  "id": 1,
-  "src": "venusc-mac",
-  "result": {
-    "id": 0,
-    "bat_soc": 98,
-    "bat_cap": 2560,
-    "pv_power": 0,
-    "ongrid_power": 100,
-    "offgrid_power": 0,
-    "bat_power": 0,
-    "total_pv_energy": 0,
-    "total_grid_output_energy": 844,
-    "total_grid_input_energy": 1607,
-    "total_load_energy": 0
-  }
-}
-```
+Unknown firmware does not invent PV energy scaling.
 
 #### 3.6.2 ES.SetMode
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
-| `config` | object | Config Parameters |
+| `id` | number | Instance ID |
+| `config` | object | Mode payload |
 
-**Config Parameters (config object):**
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `mode` | string | Device power generation mode: `"Auto"`, `"AI"`, `"Manual"`, `"Passive"` |
-| `auto_cfg` | object | Configuration parameters for Auto mode |
-| `ai_cfg` | object | Configuration parameters for AI mode |
-| `manual_cfg` | object | Configuration parameters for Manual mode |
-| `passive_cfg` | object | Configuration parameters for Passive mode |
-
-**Auto Mode Config (auto_cfg):**
+**`config`**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `enable` | number | ON: 1; OFF: Set another mode |
+| `mode` | string | `"Auto"`, `"AI"`, `"Manual"`, `"Passive"`, `"UPS"` (PDF also writes `"Ups"`; this integration sends `"UPS"`) |
+| `auto_cfg` | object | Auto: `enable` `1` |
+| `ai_cfg` | object | AI: `enable` `1` |
+| `manual_cfg` | object | One schedule slot |
+| `passive_cfg` | object | Power and countdown |
+| `ups_cfg` | object | UPS: `enable` `1` |
 
-**AI Mode Config (ai_cfg):**
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `enable` | number | ON: 1; OFF: Set another mode |
-
-**Manual Mode Config (manual_cfg):**
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `time_num` | number | Time period serial number, Venus C/E supports 0-9 |
-| `start_time` | string | Start time, hours: minutes, [hh:mm] |
-| `end_time` | string | End time, hours: minutes, [hh:mm] |
-| `week_set` | number | Week, a byte 8 bits, the low 7 bits effective. `0000 0001` (1) = Monday, `0111 1111` (127) = Entire week. |
-| `power` | number | Setting power, [W] |
-| `enable` | number | ON: 1; OFF: 0 |
-
-**Passive Mode Config (passive_cfg):**
+**`manual_cfg`**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `power` | number | Setting power, [W] |
-| `cd_time` | number | Power countdown, [s] |
+| `time_num` | number | Slot index. **Venus A/C/D/E: 0–9. Venus E mini: 0–5.** Exact family matching matters; Venus E mini must not inherit Venus E slot counts by substring. |
+| `start_time` | string | `HH:MM` |
+| `end_time` | string | `HH:MM` |
+| `week_set` | number | Bitmask, low 7 bits. `1` = Monday … `127` = all days |
+| `power` | number | W (negative charge / positive discharge in this integration) |
+| `enable` | number | `1` on, `0` off |
 
-**Response (result):**
+**`passive_cfg`**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number | ID of Instance |
-| `set_result` | boolean | true: succeeded; false: failed |
+| `power` | number | W |
+| `cd_time` | number | Countdown seconds |
 
-**Examples:**
+**`ups_cfg`**
 
-Auto Mode:
-```json
-{
-  "id": 1,
-  "method": "ES.SetMode",
-  "params": {
-    "id": 0,
-    "config": {
-      "mode": "Auto",
-      "auto_cfg": {
-        "enable": 1
-      }
-    }
-  }
-}
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| `enable` | number | `1` enable UPS. Selecting another mode disables it. |
 
-AI Mode:
-```json
-{
-  "id": 1,
-  "method": "ES.SetMode",
-  "params": {
-    "id": 0,
-    "config": {
-      "mode": "AI",
-      "ai_cfg": {
-        "enable": 1
-      }
-    }
-  }
-}
-```
+**Result**
 
-Manual Mode:
-```json
-{
-  "id": 1,
-  "method": "ES.SetMode",
-  "params": {
-    "id": 0,
-    "config": {
-      "mode": "Manual",
-      "manual_cfg": {
-        "time_num": 1,
-        "start_time": "08:30",
-        "end_time": "20:30",
-        "week_set": 127,
-        "power": 100,
-        "enable": 1
-      }
-    }
-  }
-}
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | number | Instance ID |
+| `set_result` | boolean | Success / failure (PDF examples misspell this as `ture`) |
 
-Passive Mode:
-```json
-{
-  "id": 1,
-  "method": "ES.SetMode",
-  "params": {
-    "id": 0,
-    "config": {
-      "mode": "Passive",
-      "passive_cfg": {
-        "power": 100,
-        "cd_time": 300
-      }
-    }
-  }
-}
-```
+UPS is an ES mode, not a SYS command. This integration offers UPS on the operating-mode **select** when `supports_ups` is true (ES-capable family and `ver >= 150`, including Venus E mini). Auto, AI, and UPS are selectable directly. Manual and Passive still require parameterized services so empty defaults are never applied.
 
 #### 3.6.3 ES.GetMode
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or null | ID of Instance |
+| `id` | number or null | Instance ID |
 
-**Response (result):**
+**Result**
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | number or null | ID of Instance |
-| `mode` | string or null | `Auto`: Auto mode; `AI`: AI mode; `Manual`: manual mode; `Passive`: Passive control mode |
-| `ongrid_power` | number or null | Grid-tied power, [W] |
-| `offgrid_power` | number or null | Off-grid power, [W] |
-| `bat_soc` | number or null | SOC, [%] |
+| Property | Type | Unit | Description |
+|----------|------|------|-------------|
+| `id` | number or null | — | Instance ID |
+| `mode` | string or null | — | `Auto`, `AI`, `Manual`, `Passive`, `UPS` |
+| `ongrid_power` | number or null | W | Grid-tied power |
+| `offgrid_power` | number or null | W | Off-grid power |
+| `bat_soc` | number or null | % | SoC |
+| `ct_state` | number or null | — | `0` disconnected, `1` connected (Auto/AI note in PDF) |
+| `a_power` / `b_power` / `c_power` | number or null | W | Phase power (Auto/AI note in PDF) |
+| `total_power` | number or null | W | CT total power |
+| `input_energy` | number or null | **0.1 Wh** (`× 0.1` → Wh) | Cumulative input energy |
+| `output_energy` | number or null | **0.1 Wh** (`× 0.1` → Wh) | Cumulative output energy |
 
-**Example:**
+`ES.GetMode` does **not** return `passive_cfg`. The integration stores the last Passive settings locally.
 
-Sending:
-```json
-{
-  "id": 0,
-  "method": "ES.GetMode",
-  "params": {
-    "id": 0
-  }
-}
-```
+Rev 3.1 CT/energy fields on `ES.GetMode` are used only as fallbacks when `EM.GetStatus` omits them. Phase-power sensors are not duplicated.
 
-Response:
-```json
-{
-  "id": 0,
-  "src": "VenusC-mac",
-  "result": {
-    "id": 0,
-    "mode": "Passive",
-    "ongrid_power": 100,
-    "offgrid_power": 0,
-    "bat_soc": 98
-  }
-}
-```
+---
 
-> **Important Note:** The official API response for `ES.GetMode` does **not** include `passive_cfg` values (power, cd_time). The `passive_cfg` is only used in the `ES.SetMode` command to configure passive mode. To track passive mode settings, the integration stores the last set values locally in the coordinator.
+### 3.7 EM (Energy Meter / CT)
 
-### 3.7 EM
-
-The Energy Meter (EM) module contains status information and power measurement data from the energy meter, or data obtained from the current transformer (CT).
-
-- **EM.GetStatus**: Queries the basic status and data information of the energy meter.
+| Method | Purpose | Integration use |
+|--------|---------|-----------------|
+| `EM.GetStatus` | CT connection, phase power, lifetime meter energy | Fast-tier; meter energy sensors exist only when those fields are present |
 
 #### 3.7.1 EM.GetStatus
 
-**Sending (params):**
+**Params**
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or null | ID of Instance |
+| `id` | number or null | Instance ID |
 
-**Response (result):**
+**Result**
+
+| Property | Type | Wire unit | Home Assistant |
+|----------|------|-----------|----------------|
+| `id` | number or null | — | — |
+| `ct_state` | number or null | `0` / `1` | CT binary sensor |
+| `a_power` / `b_power` / `c_power` | number or null | W | W |
+| `total_power` | number or null | W | W |
+| `input_energy` | number or null | **0.1 Wh** on Rev 3.1 (`ver >= 150` known families) | Wh (`raw × 0.1`) |
+| `output_energy` | number or null | **0.1 Wh** on Rev 3.1 | Wh (`raw × 0.1`) |
+
+Legacy profiles do not create EM lifetime energy sensors unless the payload actually reports those fields; the Rev 3.1 scale is applied only when the firmware profile says so.
+
+---
+
+### 3.8 SYS
+
+Rev 3.1 adds system writes. **No GET methods are documented for DOD, Bluetooth advertising, or LED state.** This integration does not invent reads, does not poll SYS, and restores the last successful write (DOD defaults to **88** when nothing valid was restored; BLE/LED stay `unknown` until set).
+
+| Method | Params | Semantics | HA UI |
+|--------|--------|-----------|-------|
+| `DOD.SET` | `value` integer **30–88**, default **88** | Depth of discharge | Number entity when SYS is supported |
+| `Ble.Adv` | `enable`: **`0` enable advertising**, **`1` disable** | Polarity is inverted vs the English method name; implement from the table | Switch (on = advertising) |
+| `Led.Ctrl` | `state`: **`1` on**, **`0` off** | Panel LED | Switch |
+| `Set.Ver` | `version` | Charge/discharge power “version” (800 / 1200 VA / 1500 VA / 2200 VD / 2500 VE in the PDF) | **Not exposed** |
+| `Reset.Factory` | `type` `1` clear totals, `2` keep totals (PDF wording) | Factory reset | **Not exposed** |
+
+SYS writes pause coordinator polling like other controls.
+
+#### 3.8.1 DOD.SET
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | number or null | ID of Instance |
-| `ct_state` | number or null | CT Status: 0: Not connected; 1: Connected |
-| `a_power` | number or null | Phase A power, [W] |
-| `b_power` | number or null | Phase B power, [W] |
-| `c_power` | number or null | Phase C power, [W] |
-| `total_power` | number or null | Total power, [W] |
+| `value` | number | DOD 30–88. Device default 88 |
 
-**Example:**
+Result: `set_result` boolean.
 
-Sending:
-```json
-{
-  "id": 1,
-  "method": "EM.GetStatus",
-  "params": {
-    "id": 0
-  }
-}
-```
+#### 3.8.2 Ble.Adv
 
-Response:
-```json
-{
-  "id": 1,
-  "src": "VenusC-mac",
-  "result": {
-    "id": 0,
-    "ct_state": 0,
-    "a_power": 0,
-    "b_power": 0,
-    "c_power": 0,
-    "total_power": 0
-  }
-}
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| `enable` | number | `0` enable Bluetooth advertising; `1` disable |
+
+Result: `set_result` boolean.
+
+#### 3.8.3 Led.Ctrl
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `state` | number | `1` panel LED on; `0` off |
+
+Result: `set_result` boolean.
+
+#### Set.Ver and Reset.Factory (not in the default UI)
+
+These methods exist in Rev 3.1. They are destructive or poorly specified (no readable current value). This integration documents them here and **does not** offer them as entities, services, or recommended actions.
 
 ---
 
-## IV. Devices
+## IV. Devices and firmware
 
-This chapter describes the extent of support for the components and services in this API documentation by different Marstek devices.
+Exact family matching matters. **Venus E mini is not Venus E.**
 
-### 4.1 Venus C/E
+### 4.1 Vendor-documented protocol support (Rev 3.1 chapter 4)
 
-| Component | Supported |
-|-----------|-----------|
-| Marstek | ✓ |
-| WiFi | ✓ |
-| Bluetooth | ✓ |
-| Battery | ✓ |
-| ES | ✓ |
-| EM | ✓ |
+| Component | Venus C / Venus E | Venus A / Venus D | Venus E mini |
+|-----------|-------------------|-------------------|--------------|
+| Marstek | yes | yes | yes |
+| WiFi | yes | yes | yes |
+| Bluetooth | yes | yes | yes |
+| Battery | yes | yes | yes |
+| PV | **no** | **yes** | **no** |
+| ES | yes | yes | yes |
+| EM | yes | yes | yes |
+| SYS DOD / BLE / LED | firmware **`ver >= 150`** | firmware **`ver >= 150`** | SYS subset **without** the 150 gate |
+| UPS (`ES.SetMode`) | firmware that implements it (`ver >= 150` in this integration) | same | same (`ver >= 150`; unknown `ver` → no UPS) |
 
-### 4.2 Venus D
+Venus **E2.0 is not supported** by this integration.
 
-| Component | Supported |
-|-----------|-----------|
-| Marstek | ✓ |
-| WiFi | ✓ |
-| Bluetooth | ✓ |
-| Battery | ✓ |
-| PV | ✓ |
-| ES | ✓ |
-| EM | ✓ |
+### 4.2 Integration firmware-profile behavior (shipped)
+
+Inputs: device family + integer discovery `ver`. Unknown/unparseable `ver` is legacy-safe.
+
+| Family | `ver` | PV | SYS DOD/BLE/LED | UPS | Manual slots | PV energy | PV ch1 power | EM energy scale |
+|--------|-------|----|-----------------|-----|--------------|-----------|--------------|-----------------|
+| Venus A | unknown | yes | no | no | 0–9 | unscaled (legacy-safe) | deciwatt → W | none |
+| Venus A | 149 | yes | no | no | 0–9 | 0.01 kWh → Wh (`×10`) | deciwatt → W | none |
+| Venus A | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | watts | 0.1 Wh → Wh |
+| Venus D | < 150 or unknown | yes | no | no | 0–9 | unscaled unless profile says otherwise | deciwatt → W | none |
+| Venus D | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | watts | 0.1 Wh → Wh |
+| Venus C / Venus E | < 150 or unknown | no | no | no | 0–9 | n/a (no PV) | n/a | none |
+| Venus C / Venus E | >= 150 | no | yes | yes | 0–9 | n/a | n/a | 0.1 Wh → Wh |
+| Venus E mini | known integer, `< 150` | no | **yes** (no 150 gate) | no | **0–5** | n/a | n/a | none |
+| Venus E mini | >= 150 | no | yes | yes | **0–5** | n/a | n/a | 0.1 Wh → Wh |
+| Unknown family | any | no | no | no | 0–9 | no invented scaling | deciwatt fallback unused without PV | no |
+
+When the scanner sees a `ver` or model change that unlocks or removes setup-time capabilities, the config entry reloads so entities are created or omitted. Cosmetic metadata updates do not reload.
 
 ---
 
-## V. Change Logs
+## V. Change logs
 
-- **2025-08-09** Modified: Version number Rev 1.0
+- **2025-08-09** Vendor PDF: Version number Rev 1.0 (historical).
+- **2026-09-10** Vendor PDF metadata: Open API **Rev 3.1** (SYS, UPS, Venus E mini, field-specific energy units). Local reference updated to match that revision and the shipped firmware-profile integration.

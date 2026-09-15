@@ -1,19 +1,24 @@
 # Troubleshooting
 
-## Panel LED, Bluetooth advertising, and depth of discharge
+## Missing UPS, Panel LED, Bluetooth advertising, or depth of discharge
 
-Capable firmware exposes three write-only SYS settings:
+Those controls are firmware-profile gated. They are **omitted** when the device cannot accept the matching Open API write — they are not left permanently unavailable.
 
-- Venus A/C/D/E at firmware **150 or newer**
-- Venus E mini with a **known integer** firmware `ver` (no 150 minimum)
-- Unknown, unparseable, or older regular firmware omits all three
+| Control | When it appears |
+|---|---|
+| Depth of discharge, Bluetooth advertising, Panel LED | Venus A/C/D/E at firmware **`ver >= 150`**; Venus E mini when discovery `ver` is a **known integer** (no 150 minimum) |
+| UPS on the operating-mode select | ES-capable family (including Venus E mini) with **`ver >= 150`** |
 
-The Open API documents no GET methods for these settings. Home Assistant
-restores the last value it successfully wrote. Changes made in the Marstek app,
-after a device reboot, or by another controller are not detected.
+If they are missing:
 
-Older troubleshooting notes that LED control was undocumented applied to
-legacy Open API firmware. Capable firmware has a **Panel LED** switch.
+1. Check the device model on the device page (Venus E mini is not Venus E).
+2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** → `firmware_profile`).
+3. Unknown or unparseable `ver` stays legacy-safe: no SYS and no UPS.
+4. After a firmware update that crosses the gate, the scanner reloads the config entry; you do not need to delete and re-add the device.
+
+The Open API documents **no GET methods** for DOD, Bluetooth advertising, or LED. Home Assistant restores the last value it successfully wrote. Changes made in the Marstek app, after a device reboot, or by another controller are not detected.
+
+Older notes that “LED is not in the API” applied to legacy Open API firmware. Capable firmware has a **Panel LED** switch (`Led.Ctrl`).
 
 `Set.Ver` and factory reset are intentionally not exposed in the default UI.
 

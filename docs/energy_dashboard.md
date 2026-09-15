@@ -6,7 +6,17 @@ This page maps Marstek entities to Home Assistant energy dashboard inputs and pr
 Note: Battery energy totals are not provided by this integration.
 
 ## Why Wh instead of kWh
-The integration stores energy totals in Wh, a Home Assistant-supported energy unit. Some Open API fields are already Wh on the wire (ES grid/load totals). Others are encoded differently (`total_pv_energy` as 0.01 kWh on Rev 3.1 / Venus A firmware 149+, EM meter energies as 0.1 Wh) and are converted to Wh before they reach sensors. `0.01 kWh` is a wire encoding, not a custom Home Assistant unit.
+
+The integration stores energy totals in Wh, a Home Assistant-supported energy unit. Open API energy fields are **not** all Wh on the wire. Each field is normalized individually:
+
+| Field | Typical wire unit | Home Assistant | When the scale applies |
+| --- | --- | --- | --- |
+| `total_pv_energy` | 0.01 kWh on Rev 3.1 / observed Venus A firmware 149+; Wh on explicit legacy profiles | Wh (`raw × 10` when 0.01 kWh) | Known family at firmware 150+, and Venus A at 149+ ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
+| `total_grid_input_energy` / `total_grid_output_energy` | Wh | Wh (never scaled with PV) | Always |
+| `total_load_energy` | Wh | Wh | Always |
+| `EM.GetStatus` `input_energy` / `output_energy` | 0.1 Wh on Rev 3.1 | Wh (`raw × 0.1`) | Known family at firmware 150+; sensors omitted when the fields are absent |
+
+`0.01 kWh` is a wire encoding, not a custom Home Assistant unit. Energy Dashboard eligibility still requires `device_class: energy`, `state_class: total` or `total_increasing`, and a supported unit such as Wh or kWh ([Energy FAQ](https://www.home-assistant.io/docs/energy/faq/)).
 
 ## Energy totals mapping
 | Dashboard input | Entity name | Entity key | Unit |

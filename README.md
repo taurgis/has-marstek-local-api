@@ -4,7 +4,7 @@
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.10%2B-blue.svg)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-A **custom Home Assistant integration** for monitoring and controlling Marstek energy storage devices (Venus A/D/E 3.0, etc.) using **local UDP communication** via the Marstek Open API.
+A **custom Home Assistant integration** for monitoring and controlling Marstek energy storage devices (Venus A/D/E 3.0, Venus E mini, etc.) using **local UDP communication** via the Marstek **Open API Rev 3.1**. Capabilities, energy units, and schedule limits depend on **device family + firmware `ver`** — not every device exposes the same modes or encodings.
 
 > **Note**: This is an independent community project and is **not affiliated with or endorsed by Marstek**. This integration was originally inspired by Marstek's reference implementation but has been completely rewritten with a custom architecture, UDP client, and feature set.
 
@@ -15,18 +15,20 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 - **Battery Power** - Real-time charge/discharge power (W)
 - **Battery Temperature** - Battery pack temperature (disabled by default, see below)
 - **Battery Status** - Current operational status
-- **Operating Mode** - Current device mode (Auto, AI, Manual, Passive)
-- **PV Metrics** - Solar panel power, voltage, current, and state (up to 4 channels; Venus A/D)
+- **Operating Mode** - Current device mode (Auto, AI, Manual, Passive, and UPS on capable firmware)
+- **PV Metrics** - Solar panel power, voltage, current, and state (up to 4 channels; Venus A/D only)
 - **On-grid Power** - Total grid power from energy meter (3-phase support)
 - **WiFi Signal Strength** - RSSI for connectivity diagnostics
 - **CT Connection Status** - Current transformer connection state
+- **Meter lifetime energy** - EM input/output totals when the firmware reports them
 - **Device Information** - IP address, firmware version, MAC addresses
 
 ### Control
-- **Operating Mode Selection** - Switch between Auto, AI, Manual, and Passive modes
+- **Operating Mode Selection** - Auto and AI (and UPS when the firmware profile allows it). Manual and Passive still require parameterized services.
 - **Passive Mode Control** - Set charge/discharge power with duration (service)
-- **Manual Scheduling** - Configure up to 10 time-based charge/discharge schedules
+- **Manual Scheduling** - Time-based charge/discharge slots: **0–9** on Venus A/C/D/E, **0–5** on Venus E mini
 - **Bulk Schedule Management** - Set multiple schedules via YAML or clear all schedules
+- **SYS settings** - Depth of discharge, Bluetooth advertising, and panel LED on capable firmware (write-only; restored last value)
 - **Data Sync** - Trigger immediate device refresh on demand
 
 ### Architecture
@@ -119,16 +121,20 @@ Extended documentation (with screenshots) lives in `docs/`:
 - [Services](docs/services.md)
 - [Repairs](docs/repairs.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Open API Rev 3.1 reference](docs/marstek_device_openapi.MD)
 
 ## Supported Devices
 
-| Device | Status |
-|--------|--------|
-| Venus A 3.0 | Supported (PV supported) |
-| Venus D 3.0 | Supported (PV supported) |
-| Venus E 3.0 | Supported |
-| Venus E 2.0 | Not compatible |
-| Other OPEN API devices | May work (untested) |
+Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseable `ver` stays legacy-safe (no SYS/UPS; no invented energy scaling). Unsupported capability-gated entities are **omitted**, not left permanently unavailable.
+
+| Device | Status | Notes |
+|--------|--------|-------|
+| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware 149; SYS/UPS from 150; PV channel 1 is deciwatts below 150 and watts at 150+ |
+| Venus D 3.0 | Supported (PV) | SYS/UPS and watt PV encoding from firmware 150 |
+| Venus C / Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
+| Venus E mini | Supported (no PV) | SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |
+| Venus E 2.0 | **Not compatible** | May disconnect the device from CT003 |
+| Other OPEN API devices | May work (untested) | Treated as unknown family (legacy-safe) |
 
 ## Services
 
@@ -141,7 +147,7 @@ Set the device to passive mode with specified power and duration.
 
 ### marstek.set_manual_schedule
 Configure a single manual schedule slot.
-- **schedule_slot**: Slot number (0-9)
+- **schedule_slot**: Slot number (`0–9` on Venus A/C/D/E, `0–5` on Venus E mini)
 - **start_time**: Schedule start time
 - **end_time**: Schedule end time
 - **power**: Target power in watts
@@ -273,11 +279,12 @@ Changesets prerelease mode uses SemVer prerelease identifiers such as `-rc.0`.
 
 ### Mock Device
 
-A mock device is available for testing without physical hardware:
+A mock device is available for testing without physical hardware. Pass `--device` and `--ver` to select a firmware profile (legacy vs Rev 3.1 encodings and capabilities):
 
 ```bash
-cd tools/mock_device
-python mock_marstek.py
+cd tools
+python -m mock_device --ver 145
+python -m mock_device --device VenusA --ver 150
 ```
 
 ## Troubleshooting
@@ -287,6 +294,12 @@ python mock_marstek.py
 - Older or unknown regular firmware does not get the switch, because those devices reject `Led.Ctrl`.
 - The Open API has no readable LED state. Home Assistant restores the last value it successfully wrote; changes made in the Marstek app or on the device itself may not be reflected.
 - Bluetooth advertising and depth of discharge use the same firmware gate and the same restored optimistic state.
+
+### Missing UPS or SYS settings
+- UPS appears on the operating-mode select only for ES-capable firmware `ver >= 150`.
+- Depth of discharge, Bluetooth advertising, and panel LED use the SYS gate (Venus A/C/D/E at 150+, Venus E mini with a known integer `ver`).
+- Download diagnostics and check `firmware_profile` if a control is missing. Unsupported features are omitted, not left unavailable.
+- See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ### Device Not Found
 - Ensure OPEN API is enabled in the Marstek app on your device

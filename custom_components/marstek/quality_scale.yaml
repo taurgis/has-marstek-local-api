@@ -75,7 +75,7 @@ rules:
     comment: All exceptions use translation_domain, translation_key, and translation_placeholders
   icon-translations:
     status: done
-    comment: Created icons.json with icons for all sensor and select entities
+    comment: Created icons.json with icons for sensor, binary_sensor, select, number, and switch entities
   reconfiguration-flow: done
   repair-issues: done
   stale-devices: done

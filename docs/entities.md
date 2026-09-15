@@ -2,6 +2,10 @@
 
 All entities are **coordinator-backed** (no per-entity polling). Names below match the English UI strings.
 
+Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only when the firmware profile supports them**. Unsupported features are omitted from the device page rather than left permanently unavailable. After a firmware update that unlocks or removes those capabilities, the scanner reloads the config entry so the entity set matches the new profile.
+
+Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Firmware `ver >= 150` on a known family scales the wire unit 0.1 Wh → Wh; older profiles leave a present value unscaled.
+
 > Note: Some entities are **Diagnostic** and **disabled by default** (can be enabled in the entity registry).
 
 > ⚠️ The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically; disabling them all stops it again.
@@ -85,9 +89,15 @@ Created when the device reports those values (typically Venus A/D with PV channe
 
 | Entity name | Key | Options |
 |---|---|---|
-| Operating mode | `operating_mode` | Auto, AI, Manual, Passive, and UPS when the firmware profile supports it |
+| Operating mode | `operating_mode` | Auto, AI, Manual, Passive. **UPS** is added only when the firmware profile reports `supports_ups`. |
 
-> Manual and Passive require extra parameters and are set via services (see [Services](services.md)). UPS is an enable-only mode on ES-capable firmware `ver >= 150` (including Venus E mini).
+| Availability | UPS on the select |
+|---|---|
+| Venus A/C/D/E and Venus E mini with `ver >= 150` | Yes |
+| Venus E mini with a known `ver` below 150 | No (SYS still appears; UPS does not) |
+| Unknown or unparseable `ver` | No |
+
+> Auto, AI, and UPS (when listed) are selectable directly. Manual and Passive still require extra parameters and are set via services (see [Services](services.md)). `Set.Ver` and factory reset are not operating modes and are not offered here.
 
 ## Number (configuration)
 
