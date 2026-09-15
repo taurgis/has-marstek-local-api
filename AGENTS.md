@@ -88,7 +88,7 @@ If you add/modify device control:
 |----------|---------|
 | `sensor` | Battery SoC, power, status; device mode; PV power/voltage/current (4ch, Venus A/D); on-grid power (3-phase); WiFi diagnostics; battery details (temperature, capacity — disabled by default, see Polling intervals) |
 | `binary_sensor` | CT connection status |
-| `select` | Operating mode (Auto/AI/Manual/Passive, plus UPS when the firmware profile allows it) |
+| `select` | Operating mode (Auto/AI/Manual/Passive) |
 | `number` | Depth of discharge (firmware-gated SYS write; restored optimistic state) |
 | `switch` | Bluetooth advertising and panel LED (firmware-gated SYS writes; restored optimistic state) |
 

@@ -116,6 +116,22 @@ async def _setup_entry(
     return client
 
 
+def _disable_coordinator_refresh(
+    entry: MockConfigEntry, client: MagicMock
+) -> AsyncMock:
+    """Replace coordinator refresh so SYS writes can prove they skip it."""
+    client.get_device_status.reset_mock()
+    refresh = AsyncMock()
+    entry.runtime_data.coordinator.async_request_refresh = refresh
+    return refresh
+
+
+def _assert_no_status_or_refresh(client: MagicMock, refresh: AsyncMock) -> None:
+    """SYS writes must not poll status or request a coordinator refresh."""
+    client.get_device_status.assert_not_called()
+    refresh.assert_not_called()
+
+
 def _command_after_setup(client: MagicMock, setup_calls: int) -> dict[str, Any]:
     sent = [
         json.loads(call.args[0])
@@ -177,7 +193,8 @@ async def test_sys_entities_follow_firmware_profile(
             assert hass.states.get(entity_id) is not None
         else:
             assert entity_id is None
-            assert hass.states.get(f"{platform}.unused_{key}") is None
+            for existing in hass.states.async_entity_ids():
+                assert key not in existing
 
 
 async def test_unsupported_sys_controls_leave_no_registry_entries(
@@ -191,6 +208,8 @@ async def test_unsupported_sys_controls_leave_no_registry_entries(
             registry.async_get_entity_id(_platform_for_key(key), DOMAIN, _unique_id(key))
             is None
         )
+        for existing in hass.states.async_entity_ids():
+            assert key not in existing
 
 
 @pytest.mark.parametrize("version", [150, 200])
@@ -265,10 +284,7 @@ async def test_dod_write_sends_integer_value(
         setup_calls = client.send_request.call_count
         entity_id = _entity_id(hass, "number", SYS_NUMBER_KEY)
         assert entity_id is not None
-        client.get_device_status.reset_mock()
-
-        refresh = AsyncMock()
-        entry.runtime_data.coordinator.async_request_refresh = refresh
+        refresh = _disable_coordinator_refresh(entry, client)
 
         await hass.services.async_call(
             "number",
@@ -282,8 +298,7 @@ async def test_dod_write_sends_integer_value(
         assert payload["params"] == {"value": value}
         assert isinstance(payload["params"]["value"], int)
         assert float(hass.states.get(entity_id).state) == value
-        client.get_device_status.assert_not_called()
-        refresh.assert_not_called()
+        _assert_no_status_or_refresh(client, refresh)
 
 
 @pytest.mark.parametrize("value", [29, 89])
@@ -420,6 +435,7 @@ async def test_bluetooth_advertising_wire_polarity(
         setup_calls = client.send_request.call_count
         entity_id = _entity_id(hass, "switch", "bluetooth_advertising")
         assert entity_id is not None
+        refresh = _disable_coordinator_refresh(entry, client)
 
         await hass.services.async_call(
             "switch", service, {"entity_id": entity_id}, blocking=True
@@ -430,6 +446,7 @@ async def test_bluetooth_advertising_wire_polarity(
         assert payload["params"] == {"enable": enable}
         expected_state = STATE_ON if service == "turn_on" else STATE_OFF
         assert hass.states.get(entity_id).state == expected_state
+        _assert_no_status_or_refresh(client, refresh)
 
 
 @pytest.mark.parametrize(
@@ -449,6 +466,7 @@ async def test_panel_led_wire_polarity(
         setup_calls = client.send_request.call_count
         entity_id = _entity_id(hass, "switch", "panel_led")
         assert entity_id is not None
+        refresh = _disable_coordinator_refresh(entry, client)
 
         await hass.services.async_call(
             "switch", service, {"entity_id": entity_id}, blocking=True
@@ -459,6 +477,7 @@ async def test_panel_led_wire_polarity(
         assert payload["params"] == {"state": wire_state}
         expected_state = STATE_ON if service == "turn_on" else STATE_OFF
         assert hass.states.get(entity_id).state == expected_state
+        _assert_no_status_or_refresh(client, refresh)
 
 
 @pytest.mark.parametrize("restored", [STATE_ON, STATE_OFF])

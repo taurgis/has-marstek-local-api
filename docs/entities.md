@@ -105,8 +105,8 @@ Same firmware/model availability as depth of discharge. There are no documented 
 
 | Entity name | Key | Category | Notes |
 |---|---|---|---|
-| Bluetooth advertising | `bluetooth_advertising` | Config | On enables advertising (`Ble.Adv.enable = 0`); off disables it (`enable = 1`). |
-| Panel LED | `panel_led` | Config | On sends `Led.Ctrl.state = 1`; off sends `state = 0`. |
+| Bluetooth advertising | `bluetooth_advertising` | Config | On enables advertising; off disables it. |
+| Panel LED | `panel_led` | Config | On turns the panel LED on; off turns it off. |
 
 `Set.Ver` and `Reset.Factory` are intentionally not exposed.
 

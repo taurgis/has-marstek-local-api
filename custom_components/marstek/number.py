@@ -32,29 +32,36 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
 
 
-def _coerce_dod_int(value: float, description: MarstekNumberEntityDescription) -> int:
-    """Convert a Home Assistant number value into a valid DOD integer."""
+def _parse_dod_int(
+    value: Any, description: MarstekNumberEntityDescription
+) -> int | None:
+    """Return a DOD integer in range, or None when the value is unusable."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="sys_write_invalid",
-            translation_placeholders={"error": f"value must be an integer (got {value})"},
-        )
+        return None
     if not float(value).is_integer():
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="sys_write_invalid",
-            translation_placeholders={"error": f"value must be an integer (got {value})"},
-        )
+        return None
     int_value = int(value)
     min_value = int(description.native_min_value or 0)
     max_value = int(description.native_max_value or 0)
     if int_value < min_value or int_value > max_value:
+        return None
+    return int_value
+
+
+def _coerce_dod_int(value: float, description: MarstekNumberEntityDescription) -> int:
+    """Convert a Home Assistant number value into a valid DOD integer."""
+    int_value = _parse_dod_int(value, description)
+    if int_value is None:
+        min_value = int(description.native_min_value or 0)
+        max_value = int(description.native_max_value or 0)
         raise HomeAssistantError(
             translation_domain=DOMAIN,
             translation_key="sys_write_invalid",
             translation_placeholders={
-                "error": f"value must be between {min_value} and {max_value} (got {int_value})"
+                "error": (
+                    f"value must be an integer between {min_value} and "
+                    f"{max_value} (got {value})"
+                )
             },
         )
     return int_value
@@ -64,16 +71,7 @@ def _restored_dod_value(
     native_value: Any, description: MarstekNumberEntityDescription
 ) -> int | None:
     """Return a restored DOD integer, or None when the stored value is unusable."""
-    if isinstance(native_value, bool) or not isinstance(native_value, (int, float)):
-        return None
-    if not float(native_value).is_integer():
-        return None
-    int_value = int(native_value)
-    min_value = int(description.native_min_value or 0)
-    max_value = int(description.native_max_value or 0)
-    if int_value < min_value or int_value > max_value:
-        return None
-    return int_value
+    return _parse_dod_int(native_value, description)
 
 
 async def async_setup_entry(

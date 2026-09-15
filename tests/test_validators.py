@@ -717,6 +717,12 @@ class TestSysWriteCommands:
             validate_params("Led.Ctrl", {"state": state})
         assert exc_info.value.field == "state"
 
+    def test_led_ctrl_rejects_extra_parameters(self) -> None:
+        """Unknown Led.Ctrl parameters are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("Led.Ctrl", {"state": 1, "enable": 0})
+        assert exc_info.value.field == "params"
+
     def test_sys_methods_are_write_commands(self) -> None:
         """SYS methods are registered as write commands."""
         for method in ("DOD.SET", "Ble.Adv", "Led.Ctrl"):
