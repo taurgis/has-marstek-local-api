@@ -212,6 +212,38 @@ async def test_no_pv_entities_when_data_missing(
         assert pv_power is None
 
 
+async def test_e_mini_profile_omits_pv_entities_even_with_stale_data(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A non-PV profile does not create PV entities from stale coordinator keys."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "Venus E mini",
+            "version": 150,
+        },
+    )
+    client = create_mock_client(
+        status={
+            "device_mode": "auto",
+            "battery_soc": 55,
+            "pv_power": 320,
+            "pv1_power": 320,
+            "total_pv_energy": 257420,
+        }
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.venus_e_mini_pv_power") is None
+    assert hass.states.get("sensor.venus_e_mini_pv1_power") is None
+    assert hass.states.get("sensor.venus_e_mini_total_solar_energy") is None
+
+
 async def test_pv_power_overridden_when_api_returns_zero(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -222,6 +254,10 @@ async def test_pv_power_overridden_when_api_returns_zero(
     override pv_power with the calculated sum from channels.
     """
     mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusA", "version": 145},
+    )
 
     # This status simulates what comes from merge_device_status when
     # ES.GetStatus pv_power=0 is overridden with calculated sum
@@ -244,7 +280,7 @@ async def test_pv_power_overridden_when_api_returns_zero(
         await hass.async_block_till_done()
 
         # PV power should show the overridden value (sum of channels)
-        state = hass.states.get("sensor.venus_pv_power")
+        state = hass.states.get("sensor.venus_a_pv_power")
         assert state is not None
         assert float(state.state) == 184.5
 
@@ -254,6 +290,10 @@ async def test_pv_power_partial_channels(
 ) -> None:
     """Test pv_power with only some channels reporting."""
     mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusA", "version": 145},
+    )
 
     status = {
         "device_mode": "auto",
@@ -273,7 +313,7 @@ async def test_pv_power_partial_channels(
         await hass.async_block_till_done()
 
         # PV power should show sum of available channels
-        state = hass.states.get("sensor.venus_pv_power")
+        state = hass.states.get("sensor.venus_a_pv_power")
         assert state is not None
         assert float(state.state) == 150.0
 
@@ -619,6 +659,10 @@ async def test_all_new_sensors_with_full_status(
 ) -> None:
     """Test all new sensors are created when full device status is available."""
     mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusA", "version": 145},
+    )
 
     # Full status with all new fields
     status = {
@@ -671,49 +715,49 @@ async def test_all_new_sensors_with_full_status(
         # WiFi and CT sensors are disabled by default
         assert (
             entity_registry.async_get(
-                "sensor.venus_wifi_signal_strength"
+                "sensor.venus_a_wifi_signal_strength"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.venus_wi_fi_ip_address"
+                "sensor.venus_a_wi_fi_ip_address"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.venus_wi_fi_gateway"
+                "sensor.venus_a_wi_fi_gateway"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.venus_wi_fi_subnet_mask"
+                "sensor.venus_a_wi_fi_subnet_mask"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.venus_wi_fi_dns"
+                "sensor.venus_a_wi_fi_dns"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "binary_sensor.venus_ct_connection"
+                "binary_sensor.venus_a_ct_connection"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "binary_sensor.venus_charge_permission"
+                "binary_sensor.venus_a_charge_permission"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "binary_sensor.venus_discharge_permission"
+                "binary_sensor.venus_a_discharge_permission"
             )
             is not None
         )
@@ -721,44 +765,44 @@ async def test_all_new_sensors_with_full_status(
         # Battery detail sensors are disabled by default (issue #14)
         assert (
             entity_registry.async_get(
-                "sensor.venus_battery_temperature"
+                "sensor.venus_a_battery_temperature"
             )
             is not None
         )
         # Grid power is enabled
         assert (
-            hass.states.get("sensor.venus_total_power")
+            hass.states.get("sensor.venus_a_total_power")
             is not None
         )
-        assert hass.states.get("sensor.venus_on_grid_power") is not None
-        assert hass.states.get("sensor.venus_off_grid_power") is not None
+        assert hass.states.get("sensor.venus_a_on_grid_power") is not None
+        assert hass.states.get("sensor.venus_a_off_grid_power") is not None
         # PV power (overridden from calculated sum when API returns 0)
-        pv_power = hass.states.get("sensor.venus_pv_power")
+        pv_power = hass.states.get("sensor.venus_a_pv_power")
         assert pv_power is not None
         assert float(pv_power.state) == 320.0  # 100 + 120 + 50 + 50
         assert (
             entity_registry.async_get(
-                "sensor.venus_battery_remaining_capacity"
+                "sensor.venus_a_battery_remaining_capacity"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.venus_battery_rated_capacity"
+                "sensor.venus_a_battery_rated_capacity"
             )
             is not None
         )
         assert (
             entity_registry.async_get(
-                "sensor.venus_battery_total_capacity"
+                "sensor.venus_a_battery_total_capacity"
             )
             is not None
         )
         
         # Phase sensors (entity_id uses em_X_power)
-        assert hass.states.get("sensor.venus_phase_a_power") is not None
-        assert hass.states.get("sensor.venus_phase_b_power") is not None
-        assert hass.states.get("sensor.venus_phase_c_power") is not None
+        assert hass.states.get("sensor.venus_a_phase_a_power") is not None
+        assert hass.states.get("sensor.venus_a_phase_b_power") is not None
+        assert hass.states.get("sensor.venus_a_phase_c_power") is not None
 
 
 def test_command_success_rate_calculates_percentage() -> None:

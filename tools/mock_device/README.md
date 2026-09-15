@@ -51,6 +51,7 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 - `--port PORT` - UDP port (default: 30000)
 - `--ip IP` - Override reported IP address
 - `--device TYPE` - Device type (default: "VenusE 3.0")
+- `--ver INTEGER` - Non-negative firmware version returned by discovery (default: 145)
 - `--ble-mac MAC` - BLE MAC address (unique per device)
 - `--wifi-mac MAC` - WiFi MAC address
 - `--soc PERCENT` - Initial battery SOC percentage (default: 50)

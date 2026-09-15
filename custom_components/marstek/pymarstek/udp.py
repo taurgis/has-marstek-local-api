@@ -15,6 +15,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any, cast
 
+from ..firmware_profile import FirmwareProfile
 from .command_builder import (
     discover,
     get_battery_status,
@@ -684,6 +685,7 @@ class MarstekUDPClient:
         parallel_requests: bool = False,
         delay_between_requests: float = 2.0,
         previous_status: dict[str, Any] | None = None,
+        profile: FirmwareProfile | None = None,
     ) -> dict[str, Any]:
         """Get complete device status including battery, PV, WiFi, and EM data.
 
@@ -713,6 +715,12 @@ class MarstekUDPClient:
         wifi_status_data: dict[str, Any] | None = None
         em_status_data: dict[str, Any] | None = None
         bat_status_data: dict[str, Any] | None = None
+
+        def _parse_es_status(response: dict[str, Any]) -> dict[str, Any]:
+            return parse_es_status_response(response, profile)
+
+        def _parse_pv_status(response: dict[str, Any]) -> dict[str, Any]:
+            return parse_pv_status_response(response, profile)
 
         # Track if we've made a request (to know when to add delay)
         made_request = False
@@ -836,7 +844,7 @@ class MarstekUDPClient:
             _schedule_request(
                 "es_status",
                 get_es_status(0),
-                parse_es_status_response,
+                _parse_es_status,
                 _log_es_status,
                 "ES.GetStatus failed for %s: %s",
             )
@@ -852,7 +860,7 @@ class MarstekUDPClient:
                 _schedule_request(
                     "pv_status",
                     get_pv_status(0),
-                    parse_pv_status_response,
+                    _parse_pv_status,
                     _log_pv_status,
                     "PV.GetStatus failed for %s: %s",
                 )
@@ -901,7 +909,7 @@ class MarstekUDPClient:
             # Get ES status (battery_power, battery_status) - always fetched (fast tier)
             es_status_data = await _request_and_parse(
                 get_es_status(0),
-                parse_es_status_response,
+                _parse_es_status,
                 success_log=_log_es_status,
                 failure_log="ES.GetStatus failed for %s: %s",
                 apply_delay=True,
@@ -923,7 +931,7 @@ class MarstekUDPClient:
             if include_pv:
                 pv_status_data = await _request_and_parse(
                     get_pv_status(0),
-                    parse_pv_status_response,
+                    _parse_pv_status,
                     success_log=_log_pv_status,
                     failure_log="PV.GetStatus failed for %s: %s",
                     apply_delay=True,

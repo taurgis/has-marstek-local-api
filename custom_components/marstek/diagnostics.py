@@ -31,6 +31,7 @@ from .const import (
     DEFAULT_REQUEST_TIMEOUT,
     DOMAIN,
 )
+from .firmware_profile import resolve_firmware_profile
 
 TO_REDACT = {
     CONF_HOST,
@@ -184,6 +185,10 @@ async def async_get_config_entry_diagnostics(
 
     # Get polling configuration (actual values being used)
     polling_config = _build_polling_config(entry)
+    profile = resolve_firmware_profile(
+        entry.data.get("device_type"),
+        entry.data.get("version"),
+    )
 
     # Command diagnostics from shared UDP client (if available)
     # Only include device-specific stats for this entry's device
@@ -203,6 +208,17 @@ async def async_get_config_entry_diagnostics(
             "options": dict(entry.options),
         },
         "device_info": async_redact_data(device_info, TO_REDACT),
+        "firmware_profile": {
+            "family": profile.family.value,
+            "firmware_version": profile.firmware_version,
+            "firmware_known": profile.firmware_known,
+            "supports_pv": profile.supports_pv,
+            "supports_sys_dod": profile.supports_sys_dod,
+            "supports_sys_ble_advertising": profile.supports_sys_ble_advertising,
+            "supports_sys_led": profile.supports_sys_led,
+            "supports_ups": profile.supports_ups,
+            "max_manual_schedule_slot": profile.max_manual_schedule_slot,
+        },
         "polling_config": polling_config,
         "coordinator": {
             "last_update_success": coordinator.last_update_success,

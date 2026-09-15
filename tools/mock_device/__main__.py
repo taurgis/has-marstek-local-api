@@ -1,10 +1,23 @@
 """Entry point for mock Marstek device."""
 
+from __future__ import annotations
+
 import argparse
 
-from .const import DEFAULT_UDP_PORT
+from .const import DEFAULT_CONFIG, DEFAULT_UDP_PORT
 from .device import MockMarstekDevice
 from .utils import DEFAULT_STATE_DIR
+
+
+def firmware_version(value: str) -> int:
+    """Parse a non-negative integer firmware version for argparse."""
+    try:
+        version = int(value, 10)
+    except ValueError as err:
+        raise argparse.ArgumentTypeError("firmware must be an integer") from err
+    if version < 0:
+        raise argparse.ArgumentTypeError("firmware must be non-negative")
+    return version
 
 
 def main() -> None:
@@ -20,6 +33,12 @@ def main() -> None:
     )
     parser.add_argument("--ip", type=str, help="Override reported IP address")
     parser.add_argument("--device", type=str, default="VenusE 3.0", help="Device type")
+    parser.add_argument(
+        "--ver",
+        type=firmware_version,
+        default=DEFAULT_CONFIG["ver"],
+        help=f"Firmware version (default: {DEFAULT_CONFIG['ver']})",
+    )
     parser.add_argument(
         "--ble-mac", type=str, default="009b08a5aa39", help="BLE MAC address"
     )
@@ -61,6 +80,7 @@ def main() -> None:
 
     config = {
         "device": args.device,
+        "ver": args.ver,
         "ble_mac": args.ble_mac.replace(":", "").lower(),
         "wifi_mac": args.wifi_mac.replace(":", "").lower(),
     }
