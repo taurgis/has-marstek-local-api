@@ -113,10 +113,10 @@ def resolve_firmware_profile(
     supports_sys = (regular_family and firmware_150) or (
         family is DeviceFamily.VENUS_E_MINI and firmware_known
     )
-    rev31_energy = known_family and (
+    scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )
-    rev31_pv_watts = family in _PV_FAMILIES and firmware_150
+    watt_pv_channels = family in _PV_FAMILIES and firmware_150
     supports_em_energy = known_family and firmware_150
 
     return FirmwareProfile(
@@ -131,8 +131,8 @@ def resolve_firmware_profile(
         max_manual_schedule_slot=5
         if family is DeviceFamily.VENUS_E_MINI
         else 9,
-        pv_energy_scale=10.0 if rev31_energy else 1.0,
-        pv_channel_1_power_scale=1.0 if rev31_pv_watts else 0.1,
+        pv_energy_scale=10.0 if scaled_pv_energy else 1.0,
+        pv_channel_1_power_scale=1.0 if watt_pv_channels else 0.1,
         em_energy_scale=0.1 if supports_em_energy else 1.0,
         supports_em_energy=supports_em_energy,
     )

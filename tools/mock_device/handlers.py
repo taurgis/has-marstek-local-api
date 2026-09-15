@@ -123,16 +123,7 @@ def handle_es_get_mode(
                 "b_power": state.get("em_b_power", 0),
                 "c_power": state.get("em_c_power", 0),
                 "total_power": state["grid_power"],
-                "input_energy": _encode_value(
-                    state.get("em_input_energy", state.get("total_grid_input_energy", 0)),
-                    profile.em_energy_scale,
-                ),
-                "output_energy": _encode_value(
-                    state.get(
-                        "em_output_energy", state.get("total_grid_output_energy", 0)
-                    ),
-                    profile.em_energy_scale,
-                ),
+                **_encoded_meter_energy(state, profile),
             }
         )
     return {
@@ -215,6 +206,20 @@ def _encode_value(value: Any, scale: float) -> Any:
     return int(encoded) if encoded.is_integer() else encoded
 
 
+def _encoded_meter_energy(state: dict[str, Any], profile: FirmwareProfile) -> dict[str, Any]:
+    """Encode physical EM lifetime energy as 0.1 Wh wire values."""
+    return {
+        "input_energy": _encode_value(
+            state.get("em_input_energy", state.get("total_grid_input_energy", 0)),
+            profile.em_energy_scale,
+        ),
+        "output_energy": _encode_value(
+            state.get("em_output_energy", state.get("total_grid_output_energy", 0)),
+            profile.em_energy_scale,
+        ),
+    }
+
+
 def handle_wifi_get_status(
     request_id: int, src: str, config: dict[str, Any], ip: str, state: dict[str, Any]
 ) -> dict[str, Any]:
@@ -259,14 +264,7 @@ def handle_em_get_status(
         "total_power": state["grid_power"],
     }
     if profile.supports_em_energy:
-        result["input_energy"] = _encode_value(
-            state.get("em_input_energy", state.get("total_grid_input_energy", 0)),
-            profile.em_energy_scale,
-        )
-        result["output_energy"] = _encode_value(
-            state.get("em_output_energy", state.get("total_grid_output_energy", 0)),
-            profile.em_energy_scale,
-        )
+        result.update(_encoded_meter_energy(state, profile))
     return {
         "id": request_id,
         "src": src,

@@ -1247,6 +1247,19 @@ class TestFirmwareProfileDecoding:
         assert result["em_output_energy"] == 0
         assert "em_input_energy" in result
 
+        fractional = parse_em_status_response(
+            {
+                "id": 1,
+                "result": {
+                    "input_energy": 1,
+                    "output_energy": 15,
+                },
+            },
+            profile,
+        )
+        assert fractional["em_input_energy"] == 0.1
+        assert fractional["em_output_energy"] == 1.5
+
     def test_em_energy_fields_stay_missing_when_absent(self) -> None:
         """Missing EM energy fields are not manufactured as zero."""
         profile = resolve_firmware_profile("VenusE", 150)

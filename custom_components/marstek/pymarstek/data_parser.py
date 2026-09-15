@@ -26,6 +26,18 @@ def _scale_numeric(value: Any, scale: float) -> Any:
     return value
 
 
+def _add_scaled_meter_energy(
+    parsed: dict[str, Any],
+    result: dict[str, Any],
+    scale: float,
+) -> None:
+    """Copy present EM lifetime energy fields into coordinator keys."""
+    if "input_energy" in result:
+        parsed["em_input_energy"] = _scale_numeric(result.get("input_energy"), scale)
+    if "output_energy" in result:
+        parsed["em_output_energy"] = _scale_numeric(result.get("output_energy"), scale)
+
+
 def parse_es_mode_response(
     response: dict[str, Any],
     profile: FirmwareProfile | None = None,
@@ -79,15 +91,7 @@ def parse_es_mode_response(
         if source_key in result:
             parsed[dest_key] = result.get(source_key)
 
-    if "input_energy" in result:
-        parsed["em_input_energy"] = _scale_numeric(
-            result.get("input_energy"), active_profile.em_energy_scale
-        )
-    if "output_energy" in result:
-        parsed["em_output_energy"] = _scale_numeric(
-            result.get("output_energy"), active_profile.em_energy_scale
-        )
-
+    _add_scaled_meter_energy(parsed, result, active_profile.em_energy_scale)
     return parsed
 
 
@@ -321,14 +325,7 @@ def parse_em_status_response(
         "em_c_power": result.get("c_power"),  # Phase C power [W]
         "em_total_power": result.get("total_power"),  # Total grid power [W]
     }
-    if "input_energy" in result:
-        parsed["em_input_energy"] = _scale_numeric(
-            result.get("input_energy"), active_profile.em_energy_scale
-        )
-    if "output_energy" in result:
-        parsed["em_output_energy"] = _scale_numeric(
-            result.get("output_energy"), active_profile.em_energy_scale
-        )
+    _add_scaled_meter_energy(parsed, result, active_profile.em_energy_scale)
     return parsed
 
 
