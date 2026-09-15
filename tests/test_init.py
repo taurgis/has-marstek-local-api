@@ -87,9 +87,9 @@ async def test_setup_with_custom_port(
         assert entry.state == ConfigEntryState.LOADED
 
         # Verify connection was verified with custom port
-        client.fetch_es_mode.assert_called()
-        call_args = client.fetch_es_mode.call_args
-        assert call_args.args[1] == 30003  # port argument
+        client.send_request.assert_called()
+        call_args = client.send_request.call_args
+        assert call_args.args[2] == 30003  # port argument
 
         # Verify coordinator uses custom port for polling
         coordinator = entry.runtime_data.coordinator
