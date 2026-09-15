@@ -8,6 +8,7 @@ from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
     resolve_firmware_profile,
+    resolve_firmware_profile_from_metadata,
 )
 
 
@@ -187,3 +188,55 @@ def test_device_supports_pv_compatibility_facade_uses_profile() -> None:
     assert device_supports_pv("Venus D Pro") is True
     assert device_supports_pv("Venus E mini") is False
     assert device_supports_pv("NotVenusA") is False
+
+
+def test_setup_capability_signature_ignores_firmware_number_and_label() -> None:
+    """150 and 151 plus equivalent model names share setup-time capabilities."""
+    profile_150 = resolve_firmware_profile("VenusE 3.0", 150)
+    profile_151 = resolve_firmware_profile("Venus E 3.0", 151)
+
+    assert profile_150.setup_capability_signature == profile_151.setup_capability_signature
+    assert profile_150.firmware_version != profile_151.firmware_version
+
+
+def test_setup_capability_signature_changes_when_ups_and_sys_unlock() -> None:
+    """Venus E 149 and 150 differ in setup-time UPS and SYS availability."""
+    legacy = resolve_firmware_profile("VenusE", 149)
+    current = resolve_firmware_profile("VenusE", 150)
+
+    assert legacy.setup_capability_signature != current.setup_capability_signature
+    assert legacy.supports_ups is False
+    assert current.supports_ups is True
+    assert legacy.supports_sys_dod is False
+    assert current.supports_sys_dod is True
+
+
+def test_unparseable_firmware_uses_legacy_safe_setup_signature() -> None:
+    """Unknown firmware matches the conservative pre-150 setup capabilities."""
+    unknown = resolve_firmware_profile("VenusE", "not-a-version")
+    legacy = resolve_firmware_profile("VenusE", 149)
+
+    assert unknown.setup_capability_signature == legacy.setup_capability_signature
+    assert unknown.supports_ups is False
+    assert unknown.supports_sys_dod is False
+
+
+def test_setup_capability_signature_changes_when_pv_family_appears() -> None:
+    """Model changes that unlock PV sensors are setup-capability changes."""
+    venus_e = resolve_firmware_profile("VenusE 3.0", 150)
+    venus_a = resolve_firmware_profile("VenusA 3.0", 150)
+
+    assert venus_e.setup_capability_signature != venus_a.setup_capability_signature
+    assert venus_e.supports_pv is False
+    assert venus_a.supports_pv is True
+
+
+def test_resolve_firmware_profile_from_metadata_uses_device_type_and_version() -> None:
+    """Merged config-entry/discovery dicts resolve through the canonical helper."""
+    profile = resolve_firmware_profile_from_metadata(
+        {"device_type": "VenusE 3.0", "version": "150"}
+    )
+
+    assert profile.family is DeviceFamily.VENUS_E
+    assert profile.firmware_version == 150
+    assert profile.supports_ups is True

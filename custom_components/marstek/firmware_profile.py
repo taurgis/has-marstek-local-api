@@ -54,6 +54,17 @@ class FirmwareProfile:
         """Return whether discovery supplied a valid firmware integer."""
         return self.firmware_version is not None
 
+    @property
+    def setup_capability_signature(self) -> tuple[bool, bool, bool, bool, bool]:
+        """Return setup-time availability flags, independent of firmware number."""
+        return (
+            self.supports_pv,
+            self.supports_sys_dod,
+            self.supports_sys_ble_advertising,
+            self.supports_sys_led,
+            self.supports_ups,
+        )
+
 
 _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
     (
@@ -96,6 +107,11 @@ def extract_discovery_version(result: Mapping[str, Any] | None) -> Any:
     if not isinstance(result, Mapping) or "ver" not in result:
         return None
     return result["ver"]
+
+
+def resolve_firmware_profile_from_metadata(data: Mapping[str, Any]) -> FirmwareProfile:
+    """Resolve capabilities from config-entry or discovery metadata."""
+    return resolve_firmware_profile(data.get("device_type"), data.get("version"))
 
 
 def resolve_firmware_profile(
