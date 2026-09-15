@@ -1,9 +1,12 @@
 """API method handlers for mock Marstek device."""
 
-import random
+from __future__ import annotations
+
 from typing import Any
 
-from .const import MODE_AUTO, MODE_MANUAL, MODE_PASSIVE, STATUS_IDLE
+from custom_components.marstek.firmware_profile import FirmwareProfile
+
+from .const import STATUS_IDLE
 
 
 def handle_get_device(
@@ -45,17 +48,18 @@ def handle_es_get_status(
     state: dict[str, Any],
     device_type: str,
     *,
+    profile: FirmwareProfile,
     include_bat_power: bool = False,
 ) -> dict[str, Any]:
     """Handle ES.GetStatus request with full energy stats per API spec.
-    
+
     Energy stats are now tracked in the simulator and included in state.
-    
+
     Note: bat_power sign convention (per real device behavior):
       - Positive = charging (power flowing INTO battery)
       - Negative = discharging (power flowing OUT of battery)
     Internal simulator uses opposite convention, so we negate here.
-    
+
     Args:
         request_id: Request ID for response
         src: Source identifier for response
@@ -77,7 +81,9 @@ def handle_es_get_status(
             "pv_power": state.get("pv_power", 0),
             "ongrid_power": state["grid_power"],
             "offgrid_power": 0,
-            "total_pv_energy": state.get("total_pv_energy", 0),
+            "total_pv_energy": _encode_value(
+                state.get("total_pv_energy", 0), profile.pv_energy_scale
+            ),
             "total_grid_output_energy": state.get("total_grid_output_energy", 0),
             "total_grid_input_energy": state.get("total_grid_input_energy", 0),
             "total_load_energy": state.get("total_load_energy", 0),
@@ -114,6 +120,7 @@ def handle_es_get_mode(
 def handle_pv_get_status(
     request_id: int,
     src: str,
+    profile: FirmwareProfile,
     pv_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Handle PV.GetStatus request per API spec.
@@ -134,7 +141,8 @@ def handle_pv_get_status(
         if channel not in (None, 1):
             return value
         try:
-            return float(value) * 10
+            encoded = float(value) / profile.pv_channel_1_power_scale
+            return int(encoded) if encoded.is_integer() else encoded
         except (TypeError, ValueError):
             return value
 
@@ -174,6 +182,14 @@ def handle_pv_get_status(
     }
 
 
+def _encode_value(value: Any, scale: float) -> Any:
+    """Encode a physical value using the profile's wire-to-SI scale."""
+    if not isinstance(value, (int, float)):
+        return value
+    encoded = float(value) / scale
+    return int(encoded) if encoded.is_integer() else encoded
+
+
 def handle_wifi_get_status(
     request_id: int, src: str, config: dict[str, Any], ip: str, state: dict[str, Any]
 ) -> dict[str, Any]:
@@ -198,10 +214,10 @@ def handle_em_get_status(
     request_id: int, src: str, state: dict[str, Any]
 ) -> dict[str, Any]:
     """Handle EM.GetStatus (Energy Meter / P1 meter / CT clamp) request per API spec.
-    
+
     This returns the P1 meter reading - what's actually flowing at the meter AFTER
     battery contribution. The battery tracks its own contribution internally.
-    
+
     Positive values = importing from grid (household consuming more than battery provides)
     Negative values = exporting to grid (battery/solar producing more than household uses)
     """
@@ -223,7 +239,7 @@ def handle_bat_get_status(
     request_id: int, src: str, state: dict[str, Any], capacity_wh: int
 ) -> dict[str, Any]:
     """Handle Bat.GetStatus request per API spec.
-    
+
     API spec says charg_flag and dischrg_flag are booleans.
     """
     return {
@@ -243,7 +259,7 @@ def handle_bat_get_status(
 
 def handle_es_set_mode(request_id: int, src: str) -> dict[str, Any]:
     """Handle ES.SetMode response per API spec.
-    
+
     API spec: result contains id and set_result (boolean).
     """
     return {

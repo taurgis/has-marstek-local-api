@@ -33,7 +33,7 @@ from .helpers.service_helpers import (
 from .helpers.service_retry import send_mode_command_with_retries
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
-from .pymarstek import MAX_TIME_SLOTS, MarstekUDPClient
+from .pymarstek import MarstekUDPClient
 
 if TYPE_CHECKING:
     from . import MarstekConfigEntry
@@ -111,6 +111,24 @@ def _validate_power_for_device(power: int, entry: MarstekConfigEntry) -> None:
     validate_power_for_entry(entry, power, _power_error)
 
 
+def _validate_schedule_slot_for_device(
+    schedule_slot: int,
+    entry: MarstekConfigEntry,
+) -> None:
+    """Validate a schedule slot against the entry's current profile."""
+    max_slot = entry.runtime_data.coordinator.profile.max_manual_schedule_slot
+    if schedule_slot > max_slot:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="schedule_slot_out_of_range",
+            translation_placeholders={
+                "requested": str(schedule_slot),
+                "min": "0",
+                "max": str(max_slot),
+            },
+        )
+
+
 async def async_set_passive_mode(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle set_passive_mode service call."""
     device_id = _get_device_id_from_call(call)
@@ -160,6 +178,7 @@ async def async_set_manual_schedule(hass: HomeAssistant, call: ServiceCall) -> N
 
     entry, udp_client, host, port = _get_entry_and_client_from_device_id(hass, device_id)
 
+    _validate_schedule_slot_for_device(schedule_slot, entry)
     _validate_power_for_device(power, entry)
 
     # Normalize times to HH:MM and validate range
@@ -198,26 +217,27 @@ async def async_set_manual_schedule(hass: HomeAssistant, call: ServiceCall) -> N
 async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle clear_manual_schedules service call.
 
-    Note: This clears all 10 schedule slots sequentially. Each slot requires
+    Each profile slot is cleared sequentially. Each slot requires
     a separate API call to the device due to protocol limitations.
-    Polling is paused once for all 10 commands to avoid race conditions.
+    Polling is paused once for the batch to avoid race conditions.
     """
     device_id = _get_device_id_from_call(call)
 
     entry, udp_client, host, port = _get_entry_and_client_from_device_id(hass, device_id)
 
+    slot_count = entry.runtime_data.coordinator.profile.max_manual_schedule_slot + 1
     _LOGGER.info(
         "Clearing %d manual schedule slots for device %s...",
-        MAX_TIME_SLOTS,
+        slot_count,
         device_id,
     )
 
-    # Pause polling once for all 10 commands
+    # Pause polling once for the full batch
     await udp_client.pause_polling(host)
 
     try:
-        # Clear all 10 schedule slots by setting them to disabled
-        for slot in range(MAX_TIME_SLOTS):
+        # Clear every profile-supported slot by setting it to disabled
+        for slot in range(slot_count):
             config = build_manual_mode_config(
                 power=0,
                 enable=False,
@@ -238,7 +258,7 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
             _LOGGER.debug(
                 "Cleared manual schedule slot %d/%d for device %s",
                 slot + 1,
-                MAX_TIME_SLOTS,
+                slot_count,
                 device_id,
             )
     finally:
@@ -259,6 +279,8 @@ async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> 
     schedules = call.data[ATTR_SCHEDULES]
 
     entry, udp_client, host, port = _get_entry_and_client_from_device_id(hass, device_id)
+    for schedule in schedules:
+        _validate_schedule_slot_for_device(schedule[ATTR_SCHEDULE_SLOT], entry)
     # Pause polling once for all schedule commands
     await udp_client.pause_polling(host)
 

@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 from mock_device import MockMarstekDevice
+from mock_device.__main__ import main
+from custom_components.marstek.firmware_profile import resolve_firmware_profile
+from custom_components.marstek.pymarstek.data_parser import (
+    merge_device_status,
+    parse_es_status_response,
+    parse_pv_status_response,
+)
 
 
 class TestDeviceResponses:
@@ -203,7 +212,7 @@ class TestDeviceDiscovery:
         """Test Marstek.GetDevice returns device info."""
         device = MockMarstekDevice(port=30005, simulate=False)
 
-        response = device._build_response(1, "Marstek.GetDevice", {})
+        response = device.build_response(1, "Marstek.GetDevice", {})
 
         assert response is not None
         assert "result" in response
@@ -211,7 +220,65 @@ class TestDeviceDiscovery:
         assert "ble_mac" in result
         assert "device" in result  # device type
         assert "ip" in result
+        assert result["ver"] == 145
 
+    def test_requested_firmware_is_returned_as_integer(self) -> None:
+        """Programmatic firmware generation is visible in discovery."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={"device": "VenusD", "ver": "150"},
+        )
+
+        response = device.build_response(1, "Marstek.GetDevice", {})
+
+        assert response is not None
+        assert response["result"]["ver"] == 150
+        assert isinstance(response["result"]["ver"], int)
+
+    def test_legacy_profile_round_trips_physical_watts_and_wh(self) -> None:
+        """Legacy mock wire JSON decodes through production into SI units."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusD",
+                "ver": 145,
+                "pv_channels": [
+                    {
+                        "channel": 1,
+                        "pv_power": 320,
+                        "pv_voltage": 42,
+                        "pv_current": 7.6,
+                    },
+                    {
+                        "channel": 2,
+                        "pv_power": 280,
+                        "pv_voltage": 40,
+                        "pv_current": 7,
+                    },
+                ],
+            },
+        )
+        device.set_energy_totals(total_pv_energy=257420)
+        profile = resolve_firmware_profile("VenusD", 145)
+
+        pv_response = device.build_response(2, "PV.GetStatus", {})
+        es_response = device.build_response(3, "ES.GetStatus", {})
+
+        assert pv_response is not None
+        assert es_response is not None
+        assert pv_response["result"]["pv1_power"] == 3200
+        assert pv_response["result"]["pv2_power"] == 280
+        assert es_response["result"]["total_pv_energy"] == 257420
+
+        status = merge_device_status(
+            pv_status_data=parse_pv_status_response(pv_response, profile),
+            es_status_data=parse_es_status_response(es_response, profile),
+        )
+        assert status["pv1_power"] == 320
+        assert status["pv2_power"] == 280
+        assert status["total_pv_energy"] == 257420
     def test_wifi_get_status(self) -> None:
         """Test Wifi.GetStatus returns WiFi info."""
         device = MockMarstekDevice(port=30006, simulate=False)
@@ -274,6 +341,46 @@ class TestDeviceDiscovery:
         assert response is not None
         result = response["result"]
         assert "ct_state" in result  # CT clamp state
+
+
+class TestFirmwareCli:
+    """Tests for the versioned mock command line."""
+
+    def test_cli_passes_selected_firmware_to_discovery(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The CLI-selected integer is used by the running mock."""
+        selected: list[int | None] = []
+
+        def capture_start(device: MockMarstekDevice) -> None:
+            response = device.build_response(1, "Marstek.GetDevice", {})
+            assert response is not None
+            selected.append(response["result"]["ver"])
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["mock_device", "--ver", "150", "--state-dir", ""],
+        )
+        with patch.object(MockMarstekDevice, "start", capture_start):
+            main()
+
+        assert selected == [150]
+
+    @pytest.mark.parametrize("version", ["not-a-version", "-1"])
+    def test_cli_rejects_invalid_firmware(
+        self,
+        version: str,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Invalid firmware input exits with a clear command-line error."""
+        monkeypatch.setattr("sys.argv", ["mock_device", "--ver", version])
+
+        with pytest.raises(SystemExit) as err:
+            main()
+
+        assert err.value.code == 2
+        assert "--ver" in capsys.readouterr().err
 
 
 class TestStaticMode:
@@ -353,6 +460,74 @@ class TestAIMode:
             assert 0 <= result["bat_soc"] <= 100
         finally:
             device.simulator.stop()
+
+
+class TestManualScheduleSlots:
+    """Tests for profile-specific mock schedule validation."""
+
+    @staticmethod
+    def _manual_request(slot: object) -> dict[str, object]:
+        return {
+            "id": 0,
+            "config": {
+                "mode": "Manual",
+                "manual_cfg": {
+                    "time_num": slot,
+                    "start_time": "00:00",
+                    "end_time": "23:59",
+                    "week_set": 127,
+                    "power": 100,
+                    "enable": 1,
+                },
+            },
+        }
+
+    @pytest.mark.parametrize(
+        ("device_type", "accepted_slot", "rejected_slot"),
+        [("Venus E mini", 5, 6), ("VenusE", 9, 10), ("Other", 9, 10)],
+    )
+    def test_profile_schedule_boundaries(
+        self,
+        device_type: str,
+        accepted_slot: int,
+        rejected_slot: int,
+    ) -> None:
+        """Known and unknown families enforce their profile slot bounds."""
+        device = MockMarstekDevice(
+            simulate=True,
+            device_config={"device": device_type, "ver": 145},
+        )
+
+        accepted = device.build_response(
+            1, "ES.SetMode", self._manual_request(accepted_slot)
+        )
+        assert accepted is not None
+        assert accepted["result"]["set_result"] is True
+
+        rejected = device.build_response(
+            2, "ES.SetMode", self._manual_request(rejected_slot)
+        )
+        assert rejected is not None
+        assert rejected["error"] == {"code": -32602, "message": "Invalid params"}
+        mode = device.build_response(3, "ES.GetMode", {})
+        assert mode is not None
+        assert mode["result"]["mode"] == "Manual"
+
+    @pytest.mark.parametrize("slot", [-1, 1.5, "5", None, True])
+    def test_invalid_slot_does_not_mutate_state(self, slot: object) -> None:
+        """Invalid schedule slot types return JSON-RPC Invalid params."""
+        device = MockMarstekDevice(
+            simulate=True,
+            device_config={"device": "Venus E mini", "ver": 145},
+        )
+
+        response = device.build_response(1, "ES.SetMode", self._manual_request(slot))
+
+        assert response is not None
+        assert response["error"]["code"] == -32602
+        mode = device.build_response(2, "ES.GetMode", {})
+        assert mode is not None
+        assert mode["result"]["mode"] == "Auto"
 
 
 class TestPersistence:

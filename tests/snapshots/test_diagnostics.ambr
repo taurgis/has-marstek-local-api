@@ -57,6 +57,17 @@
       }),
       'title': 'Test Marstek Device',
     }),
+    'firmware_profile': dict({
+      'family': 'Unknown',
+      'firmware_known': True,
+      'firmware_version': 1,
+      'max_manual_schedule_slot': 9,
+      'supports_pv': False,
+      'supports_sys_ble_advertising': False,
+      'supports_sys_dod': False,
+      'supports_sys_led': False,
+      'supports_ups': False,
+    }),
     'last_exception': None,
     'polling_config': dict({
       'failure_threshold': 3,

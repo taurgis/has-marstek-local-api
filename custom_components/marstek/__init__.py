@@ -159,7 +159,7 @@ def _build_device_info_dict(
         "port": port,
         "mac": entry.data.get("mac", ""),
         "device_type": entry.data.get("device_type", "Unknown"),
-        "version": entry.data.get("version", 0),
+        "version": entry.data.get("version"),
         "wifi_name": entry.data.get("wifi_name", ""),
         "wifi_mac": entry.data.get("wifi_mac", ""),
         "ble_mac": entry.data.get("ble_mac", ""),

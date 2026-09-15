@@ -1,10 +1,17 @@
 """Mock Marstek device UDP server."""
 
+from __future__ import annotations
+
 import json
 import socket
 import threading
 import time
 from typing import Any
+
+from custom_components.marstek.firmware_profile import (
+    FirmwareProfile,
+    resolve_firmware_profile,
+)
 
 from .const import DEFAULT_CONFIG, DEFAULT_UDP_PORT, MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE
 from .handlers import (
@@ -42,15 +49,22 @@ class MockMarstekDevice:
         include_bat_power: bool = False,
         state_dir: str | None = None,
         reset_state: bool = False,
-    ):
+    ) -> None:
         self.port = port
         self.config = {**DEFAULT_CONFIG, **(device_config or {})}
+        self.profile: FirmwareProfile = resolve_firmware_profile(
+            self.config.get("device"),
+            self.config.get("ver"),
+        )
+        if self.profile.firmware_version is None:
+            raise ValueError("Mock firmware version must be a non-negative integer")
+        self.config["ver"] = self.profile.firmware_version
         self.ip = ip_override or get_local_ip()
         self.sock: socket.socket | None = None
         self._state_dir = (
             resolve_state_dir(state_dir) if state_dir is not None else None
         )
-        
+
         # Whether to include bat_power in ES.GetStatus responses
         # Default False since real Venus E 3.0 does NOT return bat_power
         # Enable for testing the direct bat_power code path
@@ -119,6 +133,7 @@ class MockMarstekDevice:
         print("MOCK MARSTEK DEVICE")
         print("=" * 60)
         print(f"Device: {self.config['device']}")
+        print(f"Firmware: {self.config['ver']}")
         print(f"BLE MAC: {self.config['ble_mac']}")
         print(f"WiFi MAC: {self.config['wifi_mac']}")
         print(f"IP: {self.ip}")
@@ -184,7 +199,7 @@ class MockMarstekDevice:
         print(f"   Method: {method}")
         print(f"   ID: {request_id}")
 
-        response = self._build_response(request_id, method, request.get("params", {}))
+        response = self.build_response(request_id, method, request.get("params", {}))
 
         if response:
             response_bytes = json.dumps(response).encode("utf-8")
@@ -243,10 +258,31 @@ class MockMarstekDevice:
         except OSError as exc:
             print(f"[WARN] Failed to persist mock state: {exc}")
 
-    def _build_response(
+    def set_energy_totals(
+        self,
+        *,
+        total_pv_energy: float = 0,
+        total_grid_output_energy: float = 0,
+        total_grid_input_energy: float = 0,
+        total_load_energy: float = 0,
+    ) -> None:
+        """Set physical energy totals used by subsequent status responses."""
+        totals = {
+            "total_pv_energy": total_pv_energy,
+            "total_grid_output_energy": total_grid_output_energy,
+            "total_grid_input_energy": total_grid_input_energy,
+            "total_load_energy": total_load_energy,
+        }
+        if self.simulate:
+            for key, value in totals.items():
+                setattr(self.simulator, key, value)
+        else:
+            self._static_totals.update(totals)
+
+    def build_response(
         self, request_id: int, method: str, params: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """Build response for a given method."""
+        """Build the Open API response for a request."""
         src = f"{self.config['device']}-{self.config['ble_mac']}"
         state = self._get_state()
 
@@ -266,6 +302,7 @@ class MockMarstekDevice:
                 src,
                 state_with_capacity,
                 self.config.get("device", ""),
+                profile=self.profile,
                 include_bat_power=self.include_bat_power,
             )
 
@@ -273,14 +310,7 @@ class MockMarstekDevice:
             return handle_es_get_mode(request_id, src, state)
 
         elif method == "PV.GetStatus":
-            # PV is supported by Venus A and Venus D; Venus C/E do NOT
-            device_type = self.config.get("device", "").lower()
-            if (
-                "venusa" not in device_type
-                and "venus a" not in device_type
-                and "venusd" not in device_type
-                and "venus d" not in device_type
-            ):
+            if not self.profile.supports_pv:
                 # Return error for unsupported method on Venus C/E devices
                 return {
                     "id": request_id,
@@ -301,7 +331,7 @@ class MockMarstekDevice:
                     "pv_voltage": state.get("pv_voltage", 0),
                     "pv_current": state.get("pv_current", 0),
                 }
-            return handle_pv_get_status(request_id, src, pv_state)
+            return handle_pv_get_status(request_id, src, self.profile, pv_state)
 
         elif method == "Wifi.GetStatus":
             return handle_wifi_get_status(request_id, src, self.config, self.ip, state)
@@ -317,6 +347,27 @@ class MockMarstekDevice:
         elif method == "ES.SetMode":
             config = params.get("config", {})
             mode = config.get("mode", MODE_AUTO)
+            if mode == MODE_MANUAL:
+                manual_config = config.get("manual_cfg", {})
+                schedule_slot = (
+                    manual_config.get("time_num")
+                    if isinstance(manual_config, dict)
+                    else None
+                )
+                if (
+                    isinstance(schedule_slot, bool)
+                    or not isinstance(schedule_slot, int)
+                    or schedule_slot < 0
+                    or schedule_slot > self.profile.max_manual_schedule_slot
+                ):
+                    return {
+                        "id": request_id,
+                        "src": src,
+                        "error": {
+                            "code": -32602,
+                            "message": "Invalid params",
+                        },
+                    }
 
             if self.simulate:
                 if mode == MODE_PASSIVE:
@@ -334,3 +385,9 @@ class MockMarstekDevice:
             return handle_es_set_mode(request_id, src)
 
         return None
+
+    def _build_response(
+        self, request_id: int, method: str, params: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Compatibility wrapper for older mock callers."""
+        return self.build_response(request_id, method, params)

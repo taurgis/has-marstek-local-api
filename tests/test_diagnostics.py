@@ -90,6 +90,17 @@ async def test_async_get_config_entry_diagnostics(
     assert result["entry"]["title"] == "Test Marstek Device"
     assert result["coordinator"]["last_update_success"] is True
     assert result["last_exception"] is None
+    assert result["firmware_profile"] == {
+        "family": "Unknown",
+        "firmware_version": 1,
+        "firmware_known": True,
+        "supports_pv": False,
+        "supports_sys_dod": False,
+        "supports_sys_ble_advertising": False,
+        "supports_sys_led": False,
+        "supports_ups": False,
+        "max_manual_schedule_slot": 9,
+    }
 
     # Verify polling_config has expected keys with defaults
     assert "poll_interval_fast" in result["polling_config"]
@@ -106,6 +117,58 @@ async def test_async_get_config_entry_diagnostics(
     assert result["polling_config"]["request_delay"] == 5.0
     assert result["polling_config"]["request_delay_effective"] == 5.0
     assert result["polling_config"]["udp_rate_limit_bypassed"] is False
+
+
+async def test_diagnostics_reports_capable_firmware_profile(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Diagnostics explain the resolved family and each capability flag."""
+    mock_config_entry.data = {
+        **mock_config_entry.data,
+        "device_type": "VenusA 3.0",
+        "version": "150",
+    }
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    assert result["firmware_profile"] == {
+        "family": "Venus A",
+        "firmware_version": 150,
+        "firmware_known": True,
+        "supports_pv": True,
+        "supports_sys_dod": True,
+        "supports_sys_ble_advertising": True,
+        "supports_sys_led": True,
+        "supports_ups": True,
+        "max_manual_schedule_slot": 9,
+    }
+
+
+async def test_diagnostics_reports_unknown_e_mini_firmware(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Malformed E mini firmware remains visible as conservative unknown."""
+    mock_config_entry.data = {
+        **mock_config_entry.data,
+        "device_type": "Venus E mini",
+        "version": "not-a-version",
+    }
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    profile = result["firmware_profile"]
+    assert profile["family"] == "Venus E mini"
+    assert profile["firmware_version"] is None
+    assert profile["firmware_known"] is False
+    assert profile["supports_sys_dod"] is False
+    assert profile["supports_ups"] is False
+    assert profile["max_manual_schedule_slot"] == 5
 
 
 async def test_diagnostics_parallel_mode_effective_delay(

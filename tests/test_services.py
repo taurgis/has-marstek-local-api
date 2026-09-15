@@ -361,6 +361,55 @@ async def test_set_manual_schedule_service(
 
 
 @pytest.mark.asyncio
+async def test_e_mini_single_schedule_rejects_slot_six_before_udp(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Single-schedule validation applies the current profile before transmission."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "Venus E mini",
+            "version": 145,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = dr.async_get(hass).async_get_device(
+            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        )
+        assert device is not None
+        client.send_request.reset_mock()
+
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_SET_MANUAL_SCHEDULE,
+                {
+                    ATTR_DEVICE_ID: device.id,
+                    ATTR_SCHEDULE_SLOT: 6,
+                    ATTR_START_TIME: "08:00",
+                    ATTR_END_TIME: "16:00",
+                    ATTR_POWER: 100,
+                    ATTR_DAYS: ["mon"],
+                    ATTR_ENABLE: True,
+                },
+                blocking=True,
+            )
+
+        assert err.value.translation_key == "schedule_slot_out_of_range"
+        assert err.value.translation_placeholders == {
+            "requested": "6",
+            "min": "0",
+            "max": "5",
+        }
+        client.send_request.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_clear_manual_schedules_service(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -396,6 +445,44 @@ async def test_clear_manual_schedules_service(
         # Polling should be paused/resumed once for the batch
         assert client.pause_polling.call_count == 1
         assert client.resume_polling.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_e_mini_clear_sends_six_commands_with_single_pause(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Clearing E mini schedules uses slots 0 through 5."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "Venus E mini",
+            "version": 145,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = dr.async_get(hass).async_get_device(
+            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        )
+        assert device is not None
+        client.send_request.reset_mock()
+        client.pause_polling.reset_mock()
+        client.resume_polling.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_CLEAR_MANUAL_SCHEDULES,
+            {ATTR_DEVICE_ID: device.id},
+            blocking=True,
+        )
+
+        assert client.send_request.call_count == 6
+        client.pause_polling.assert_awaited_once()
+        client.resume_polling.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -561,6 +648,59 @@ async def test_set_manual_schedules_service(
         # Polling should be paused/resumed once for the batch
         assert client.pause_polling.call_count == 1
         assert client.resume_polling.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_e_mini_batch_rejects_before_pause_or_udp(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Batch validation rejects any out-of-profile slot before the batch starts."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "Venus E mini",
+            "version": 145,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = dr.async_get(hass).async_get_device(
+            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        )
+        assert device is not None
+        client.send_request.reset_mock()
+        client.pause_polling.reset_mock()
+
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_SET_MANUAL_SCHEDULES,
+                {
+                    ATTR_DEVICE_ID: device.id,
+                    ATTR_SCHEDULES: [
+                        {
+                            ATTR_SCHEDULE_SLOT: 5,
+                            ATTR_START_TIME: "08:00",
+                            ATTR_END_TIME: "12:00",
+                        },
+                        {
+                            ATTR_SCHEDULE_SLOT: 6,
+                            ATTR_START_TIME: "12:00",
+                            ATTR_END_TIME: "16:00",
+                        },
+                    ],
+                },
+                blocking=True,
+            )
+
+        assert err.value.translation_key == "schedule_slot_out_of_range"
+        assert err.value.translation_placeholders["max"] == "5"
+        client.send_request.assert_not_called()
+        client.pause_polling.assert_not_awaited()
 
 
 @pytest.mark.asyncio

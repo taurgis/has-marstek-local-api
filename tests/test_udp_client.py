@@ -529,6 +529,27 @@ class TestDiscoverDevices:
         assert result[0]["device_type"] == "Venus"
         assert result[0]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
 
+    async def test_omitted_ver_is_not_coerced_to_zero(
+        self, udp_client: MarstekUDPClient
+    ) -> None:
+        """A discovery result without ver must keep firmware unknown."""
+        response = {
+            "id": 1,
+            "result": {
+                "device": "Venus E mini",
+                "ip": "192.168.1.100",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+            },
+        }
+
+        with patch.object(
+            udp_client, "send_broadcast_request", AsyncMock(return_value=[response])
+        ):
+            result = await udp_client.discover_devices(use_cache=False)
+
+        assert result[0]["version"] is None
+        assert result[0]["firmware"] == ""
+
     async def test_deduplicates_devices(self, udp_client: MarstekUDPClient) -> None:
         """Test that duplicate devices are filtered."""
         response = {

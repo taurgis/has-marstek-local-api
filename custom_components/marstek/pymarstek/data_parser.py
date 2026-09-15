@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..firmware_profile import FirmwareProfile, resolve_firmware_profile
+
 _LOGGER: logging.Logger | None = None
+_LEGACY_PROFILE = resolve_firmware_profile(None, None)
 
 
 def _get_logger() -> logging.Logger:
@@ -47,7 +50,10 @@ def parse_es_mode_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
+def parse_es_status_response(
+    response: dict[str, Any],
+    profile: FirmwareProfile | None = None,
+) -> dict[str, Any]:
     """Parse ES.GetStatus response into structured data.
 
     ES.GetStatus returns actual battery power and energy statistics.
@@ -60,6 +66,7 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
         Dictionary with parsed battery data (battery_power, battery_status, etc.)
     """
     result = response.get("result", {})
+    active_profile = profile or _LEGACY_PROFILE
 
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
     bat_soc = result.get("bat_soc")
@@ -123,6 +130,8 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
 
     # Energy totals
     total_pv_energy = result.get("total_pv_energy")
+    if isinstance(total_pv_energy, (int, float)):
+        total_pv_energy *= active_profile.pv_energy_scale
     total_grid_output_energy = result.get("total_grid_output_energy")
     total_grid_input_energy = result.get("total_grid_input_energy")
     total_load_energy = result.get("total_load_energy")
@@ -142,7 +151,10 @@ def parse_es_status_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
+def parse_pv_status_response(
+    response: dict[str, Any],
+    profile: FirmwareProfile | None = None,
+) -> dict[str, Any]:
     """Parse PV.GetStatus response into structured data.
 
     Note: The API spec shows single PV channel fields (pv_power, pv_voltage, pv_current).
@@ -156,6 +168,7 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
         Dictionary with parsed PV channel data (pv1-pv4 or single pv_)
     """
     result = response.get("result", {})
+    active_profile = profile or _LEGACY_PROFILE
 
     pv_data: dict[str, Any] = {}
 
@@ -169,7 +182,7 @@ def parse_pv_status_response(response: dict[str, Any]) -> dict[str, Any]:
         if channel not in (None, 1):
             return raw_value
         try:
-            return float(raw_value) / 10
+            return float(raw_value) * active_profile.pv_channel_1_power_scale
         except (TypeError, ValueError):
             return raw_value
 

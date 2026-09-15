@@ -465,6 +465,9 @@
     "power_out_of_range": {
       "message": "Requested power {requested} W is outside the supported range ({min} W to {max} W) for this device."
     },
+    "schedule_slot_out_of_range": {
+      "message": "Schedule slot {requested} is outside the allowed range ({min} to {max}) for this device."
+    },
     "passive_mode_requires_service": {
       "message": "Passive mode requires power and duration parameters. Use the 'Set passive mode' service (marstek.set_passive_mode) in Developer Tools > Services or in an automation."
     },

@@ -35,8 +35,8 @@ from .const import (
     DOMAIN,
     INITIAL_SETUP_REQUEST_DELAY,
     WIFI_STATUS_KEYS,
-    device_supports_pv,
 )
+from .firmware_profile import FirmwareProfile, resolve_firmware_profile
 from .helpers.coordinator_helpers import raise_if_invalid_status
 from .pymarstek import MarstekUDPClient
 from .scanner import MarstekScanner
@@ -71,11 +71,6 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Use initial IP/port, but read from config_entry.data dynamically
         self._initial_device_ip = device_ip
         self._initial_device_port = device_port
-
-        # Check device capabilities based on device type
-        # Venus A and Venus D support PV; Venus C/E do NOT
-        device_type = config_entry.data.get("device_type", "")
-        self._supports_pv = device_supports_pv(device_type)
 
         # Track last fetch times for tiered polling. None means "never fetched"
         # so the first cycle always runs even when time.monotonic() is still
@@ -140,7 +135,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, current_time: float
     ) -> tuple[bool, bool, bool]:
         """Decide which polling tiers to include for this update cycle."""
-        include_pv = self._supports_pv and self._interval_elapsed(
+        include_pv = self.profile.supports_pv and self._interval_elapsed(
             self._last_pv_fetch, current_time, self._get_medium_interval()
         )
         slow_interval = self._get_slow_interval()
@@ -276,6 +271,14 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._has_enabled_entities(BAT_STATUS_KEYS)
 
     @property
+    def profile(self) -> FirmwareProfile:
+        """Resolve the current firmware profile from config-entry metadata."""
+        return resolve_firmware_profile(
+            self._entry.data.get("device_type"),
+            self._entry.data.get("version"),
+        )
+
+    @property
     def device_ip(self) -> str:
         """Get current device IP from config entry (supports dynamic IP updates)."""
         ip = self._entry.data.get(CONF_HOST)
@@ -343,6 +346,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 parallel_requests=parallel_requests,
                 delay_between_requests=request_delay,
                 previous_status=self.data,  # Preserve values on partial failures
+                profile=self.profile,
             )
 
             # Update last fetch times for successful fetches

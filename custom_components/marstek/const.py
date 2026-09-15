@@ -6,6 +6,8 @@ from typing import Final
 
 from homeassistant.const import Platform
 
+from .firmware_profile import resolve_firmware_profile
+
 DOMAIN: Final = "marstek"
 DATA_UDP_CLIENT: Final = "udp_client"  # Key for shared UDP client in hass.data
 DATA_SUPPRESS_RELOADS: Final = "suppress_reload_entry_ids"  # Set of entry_ids to skip reload
@@ -130,14 +132,6 @@ DEFAULT_SOCKET_LIMIT: Final = False
 
 INITIAL_SETUP_REQUEST_DELAY: Final = 2.0  # Faster delay during first data fetch
 
-# Device capability detection
-# PV component is supported by Venus A and Venus D; Venus C/E do NOT.
-# Device names from API: "VenusA", "VenusD", "VenusE 3.0", etc.
-_DEVICE_PV_SUPPORT_TOKENS: Final[frozenset[str]] = frozenset({
-    "venusa",
-    "venusd",
-})
-
 # Device power limits (AC charge/discharge) in watts per model
 # Values are maximum absolute power in either direction unless socket limit is enabled.
 _DEVICE_POWER_LIMITS: Final[dict[str, int]] = {
@@ -168,18 +162,8 @@ def device_default_socket_limit(device_type: str | None) -> bool:
 
 
 def device_supports_pv(device_type: str | None) -> bool:
-    """Check if a device type supports PV (solar) components.
-
-    Venus A and Venus D support PV. Venus C/E do NOT have PV component support.
-
-    Args:
-        device_type: Device type string (e.g., "VenusE 3.0", "VenusD")
-
-    Returns:
-        True if device supports PV, False otherwise
-    """
-    normalized = _normalize_device_type(device_type)
-    return any(token in normalized for token in _DEVICE_PV_SUPPORT_TOKENS)
+    """Return PV support through the canonical firmware profile."""
+    return resolve_firmware_profile(device_type, None).supports_pv
 
 
 def get_device_power_limits(
