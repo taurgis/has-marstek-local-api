@@ -16,6 +16,8 @@ PLATFORMS: Final[list[Platform]] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.SELECT,
+    Platform.NUMBER,
+    Platform.SWITCH,
 ]
 
 # Entity keys backed by Wifi.GetStatus. The coordinator only sends the

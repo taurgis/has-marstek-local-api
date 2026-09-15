@@ -12,11 +12,14 @@ from typing import Any
 
 from .const import (
     CMD_BATTERY_STATUS,
+    CMD_BLE_ADV,
     CMD_DISCOVER,
+    CMD_DOD_SET,
     CMD_EM_STATUS,
     CMD_ES_MODE,
     CMD_ES_SET_MODE,
     CMD_ES_STATUS,
+    CMD_LED_CTRL,
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
 )
@@ -209,3 +212,18 @@ def get_em_status(device_id: int = 0) -> str:
     """
     # Validation happens in build_command via validate_command
     return build_command(CMD_EM_STATUS, {"id": device_id})
+
+
+def set_dod(value: int) -> str:
+    """Create a DOD.SET command."""
+    return build_command(CMD_DOD_SET, {"value": value})
+
+
+def set_ble_advertising(enable: int) -> str:
+    """Create a Ble.Adv command. 0 enables advertising, 1 disables it."""
+    return build_command(CMD_BLE_ADV, {"enable": enable})
+
+
+def set_led(state: int) -> str:
+    """Create a Led.Ctrl command. 1 turns the panel LED on, 0 turns it off."""
+    return build_command(CMD_LED_CTRL, {"state": state})

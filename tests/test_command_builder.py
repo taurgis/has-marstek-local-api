@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 import pytest
-import custom_components.marstek.pymarstek.command_builder as command_builder
 
+import custom_components.marstek.pymarstek.command_builder as command_builder
 from custom_components.marstek.pymarstek.command_builder import (
     build_command,
     discover,
@@ -18,8 +18,11 @@ from custom_components.marstek.pymarstek.command_builder import (
     get_pv_status,
     get_wifi_status,
     reset_request_id,
+    set_ble_advertising,
+    set_dod,
     set_es_mode_manual_charge,
     set_es_mode_manual_discharge,
+    set_led,
 )
 from custom_components.marstek.pymarstek.validators import ValidationError
 
@@ -285,3 +288,33 @@ class TestModeCommands:
             assert manual_cfg["start_time"] == "00:00"
             assert manual_cfg["end_time"] == "23:59"
             assert manual_cfg["week_set"] == 127
+
+
+class TestSysCommands:
+    """Tests for SYS write command builders."""
+
+    def setup_method(self) -> None:
+        """Reset request ID before each test."""
+        reset_request_id()
+
+    def test_set_dod_payload(self) -> None:
+        """DOD.SET payload contains only the integer value."""
+        parsed = json.loads(set_dod(50))
+        assert parsed["method"] == "DOD.SET"
+        assert parsed["params"] == {"value": 50}
+
+    def test_set_ble_advertising_payloads(self) -> None:
+        """Ble.Adv 0 enables advertising and 1 disables it."""
+        enabled = json.loads(set_ble_advertising(0))
+        disabled = json.loads(set_ble_advertising(1))
+        assert enabled["method"] == "Ble.Adv"
+        assert enabled["params"] == {"enable": 0}
+        assert disabled["params"] == {"enable": 1}
+
+    def test_set_led_payloads(self) -> None:
+        """Led.Ctrl 1 is on and 0 is off."""
+        on = json.loads(set_led(1))
+        off = json.loads(set_led(0))
+        assert on["method"] == "Led.Ctrl"
+        assert on["params"] == {"state": 1}
+        assert off["params"] == {"state": 0}

@@ -9,7 +9,7 @@ Verified against `dcc32efe` (2026-01-28).
 - Local UDP polling (single coordinator per device)
 - Automatic discovery + IP change handling
 - Stable entity IDs (survive IP changes)
-- Control: operating mode, passive mode, manual schedules
+- Control: operating mode, passive mode, manual schedules, and firmware-gated SYS settings (depth of discharge, Bluetooth advertising, panel LED)
 
 ## Compatibility
 

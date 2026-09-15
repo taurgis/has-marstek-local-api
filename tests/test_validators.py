@@ -664,3 +664,74 @@ class TestExportedConstants:
         """Test is_strict_mode function is exported."""
         from custom_components.marstek.pymarstek import is_strict_mode
         assert callable(is_strict_mode)
+
+
+class TestSysWriteCommands:
+    """Tests for DOD.SET, Ble.Adv, and Led.Ctrl validation."""
+
+    @pytest.mark.parametrize("value", [30, 88, 50])
+    def test_dod_set_accepts_range(self, value: int) -> None:
+        """DOD.SET accepts integers 30-88 inclusive."""
+        validate_params("DOD.SET", {"value": value})
+
+    @pytest.mark.parametrize("value", [29, 89, True, False, 50.0, "50", None])
+    def test_dod_set_rejects_invalid_values(self, value: object) -> None:
+        """DOD.SET rejects booleans, non-integers, and out-of-range values."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("DOD.SET", {"value": value})
+        assert exc_info.value.field == "value"
+
+    def test_dod_set_rejects_extra_parameters(self) -> None:
+        """Unknown DOD.SET parameters are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("DOD.SET", {"value": 50, "id": 0})
+        assert exc_info.value.field == "params"
+
+    @pytest.mark.parametrize("enable", [0, 1])
+    def test_ble_adv_accepts_enable_flags(self, enable: int) -> None:
+        """Ble.Adv accepts integer enable 0 and 1."""
+        validate_params("Ble.Adv", {"enable": enable})
+
+    @pytest.mark.parametrize("enable", [True, False, 2, -1, "0", 0.0])
+    def test_ble_adv_rejects_invalid_enable(self, enable: object) -> None:
+        """Ble.Adv rejects booleans, strings, and other enum values."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("Ble.Adv", {"enable": enable})
+        assert exc_info.value.field == "enable"
+
+    def test_ble_adv_rejects_extra_parameters(self) -> None:
+        """Unknown Ble.Adv parameters are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("Ble.Adv", {"enable": 0, "state": 1})
+        assert exc_info.value.field == "params"
+
+    @pytest.mark.parametrize("state", [0, 1])
+    def test_led_ctrl_accepts_state_flags(self, state: int) -> None:
+        """Led.Ctrl accepts integer state 0 and 1."""
+        validate_params("Led.Ctrl", {"state": state})
+
+    @pytest.mark.parametrize("state", [True, False, 2, "1", 1.0])
+    def test_led_ctrl_rejects_invalid_state(self, state: object) -> None:
+        """Led.Ctrl rejects booleans and unknown values."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("Led.Ctrl", {"state": state})
+        assert exc_info.value.field == "state"
+
+    def test_led_ctrl_rejects_extra_parameters(self) -> None:
+        """Unknown Led.Ctrl parameters are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_params("Led.Ctrl", {"state": 1, "enable": 0})
+        assert exc_info.value.field == "params"
+
+    def test_sys_methods_are_write_commands(self) -> None:
+        """SYS methods are registered as write commands."""
+        for method in ("DOD.SET", "Ble.Adv", "Led.Ctrl"):
+            assert VALID_METHODS[method].is_write_command is True
+
+    def test_set_ver_and_factory_reset_are_unknown(self) -> None:
+        """Destructive SYS methods stay out of outbound validation."""
+        for method in ("Set.Ver", "Reset.Factory"):
+            with pytest.raises(ValidationError) as exc_info:
+                validate_method(method)
+            assert exc_info.value.field == "method"
+

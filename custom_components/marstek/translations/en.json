@@ -336,6 +336,19 @@
       "discharge_permission": {
         "name": "Discharge permission"
       }
+    },
+    "number": {
+      "depth_of_discharge": {
+        "name": "Depth of discharge"
+      }
+    },
+    "switch": {
+      "bluetooth_advertising": {
+        "name": "Bluetooth advertising"
+      },
+      "panel_led": {
+        "name": "Panel LED"
+      }
     }
   },
   "device_automation": {
@@ -484,6 +497,21 @@
     },
     "manual_mode_requires_service": {
       "message": "Manual mode requires schedule configuration. Use the 'Set manual schedule' service (marstek.set_manual_schedule) in Developer Tools > Services or in an automation."
+    },
+    "sys_write_timeout": {
+      "message": "Timed out while changing the device setting"
+    },
+    "sys_write_failed": {
+      "message": "Failed to change the device setting: {error}"
+    },
+    "sys_write_rpc_error": {
+      "message": "The device rejected the setting change ({code}: {message})"
+    },
+    "sys_write_rejected": {
+      "message": "The device did not confirm the setting change"
+    },
+    "sys_write_invalid": {
+      "message": "Invalid setting: {error}"
     }
   },
   "issues": {

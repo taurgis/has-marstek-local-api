@@ -309,6 +309,29 @@ def handle_es_set_mode(request_id: int, src: str) -> dict[str, Any]:
     }
 
 
+def handle_sys_write(request_id: int, src: str) -> dict[str, Any]:
+    """Handle DOD.SET, Ble.Adv, and Led.Ctrl success per Open API Rev 3.1."""
+    return {
+        "id": request_id,
+        "src": src,
+        "result": {
+            "set_result": True,
+        },
+    }
+
+
+def handle_method_not_found(request_id: int, src: str) -> dict[str, Any]:
+    """Return JSON-RPC method-not-found for unsupported commands."""
+    return {
+        "id": request_id,
+        "src": src,
+        "error": {
+            "code": -32601,
+            "message": "Method not found",
+        },
+    }
+
+
 def get_static_state(
     soc: int,
     power: int,

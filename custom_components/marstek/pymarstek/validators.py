@@ -14,14 +14,23 @@ from datetime import time as dt_time
 from typing import Any, Final
 
 from .const import (
+    BLE_ADV_DISABLED,
+    BLE_ADV_ENABLED,
     CMD_BATTERY_STATUS,
+    CMD_BLE_ADV,
     CMD_DISCOVER,
+    CMD_DOD_SET,
     CMD_EM_STATUS,
     CMD_ES_MODE,
     CMD_ES_SET_MODE,
     CMD_ES_STATUS,
+    CMD_LED_CTRL,
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
+    DOD_MAX_VALUE,
+    DOD_MIN_VALUE,
+    LED_OFF,
+    LED_ON,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -135,6 +144,21 @@ VALID_METHODS: dict[str, MethodSpec] = {
         method=CMD_EM_STATUS,
         required_params=frozenset(),
         optional_params=frozenset({"id"}),
+    ),
+    CMD_DOD_SET: MethodSpec(
+        method=CMD_DOD_SET,
+        required_params=frozenset({"value"}),
+        is_write_command=True,
+    ),
+    CMD_BLE_ADV: MethodSpec(
+        method=CMD_BLE_ADV,
+        required_params=frozenset({"enable"}),
+        is_write_command=True,
+    ),
+    CMD_LED_CTRL: MethodSpec(
+        method=CMD_LED_CTRL,
+        required_params=frozenset({"state"}),
+        is_write_command=True,
     ),
 }
 
@@ -271,6 +295,42 @@ def validate_device_id(device_id: Any, field_name: str = "id") -> None:
     if device_id < 0 or device_id > MAX_DEVICE_ID:
         raise ValidationError(
             f"{field_name} must be between 0 and {MAX_DEVICE_ID} (got {device_id})",
+            field_name,
+        )
+
+
+def _require_int(value: Any, field_name: str) -> int:
+    """Require a non-boolean integer."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError(
+            f"{field_name} must be an integer (got {type(value).__name__})",
+            field_name,
+        )
+    return value
+
+
+def validate_dod_value(value: Any, field_name: str = "value") -> None:
+    """Validate depth-of-discharge as an integer in 30-88 inclusive."""
+    dod = _require_int(value, field_name)
+    if dod < DOD_MIN_VALUE or dod > DOD_MAX_VALUE:
+        raise ValidationError(
+            f"{field_name} must be between {DOD_MIN_VALUE} and {DOD_MAX_VALUE} "
+            f"(got {dod})",
+            field_name,
+        )
+
+
+def validate_sys_flag(
+    value: Any,
+    field_name: str,
+    allowed: frozenset[int],
+) -> None:
+    """Validate a SYS 0/1 flag, rejecting booleans."""
+    flag = _require_int(value, field_name)
+    if flag not in allowed:
+        allowed_text = ", ".join(str(item) for item in sorted(allowed))
+        raise ValidationError(
+            f"{field_name} must be one of {allowed_text} (got {flag})",
             field_name,
         )
 
@@ -586,6 +646,16 @@ def validate_params(method: str, params: dict[str, Any]) -> None:
     # Method-specific validation
     if method == CMD_ES_SET_MODE and "config" in params:
         validate_es_set_mode_config(params["config"])
+    elif method == CMD_DOD_SET:
+        validate_dod_value(params["value"])
+    elif method == CMD_BLE_ADV:
+        validate_sys_flag(
+            params["enable"],
+            "enable",
+            frozenset({BLE_ADV_ENABLED, BLE_ADV_DISABLED}),
+        )
+    elif method == CMD_LED_CTRL:
+        validate_sys_flag(params["state"], "state", frozenset({LED_OFF, LED_ON}))
 
 
 def validate_command(command: dict[str, Any]) -> None:
