@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
@@ -741,6 +743,43 @@ class TestParseEsModeResponse:
         )
 
         assert result["device_mode"] == "ups"
+
+    @pytest.mark.parametrize(
+        ("wire_mode", "expected"),
+        [
+            (0, "auto"),
+            (1, "ai"),
+            (2, "manual"),
+            (3, "passive"),
+            (4, "ups"),
+            ("Auto", "auto"),
+            ("AI", "ai"),
+            ("Manual", "manual"),
+            ("Passive", "passive"),
+            ("UPS", "ups"),
+            ("Ups", "ups"),
+            ("0", "auto"),
+            ("4", "ups"),
+            ("SelfUse", "selfuse"),
+        ],
+    )
+    def test_parse_integer_and_string_modes(
+        self, wire_mode: int | str, expected: str
+    ) -> None:
+        """Reads accept Open API strings, integer codes, and our unknown-string lowercase."""
+        result = parse_es_mode_response(
+            {"id": 1, "result": {"mode": wire_mode, "bat_soc": 80, "ongrid_power": 0}}
+        )
+
+        assert result["device_mode"] == expected
+        assert "battery_power" not in result
+
+    @pytest.mark.parametrize("wire_mode", [True, False, 5, -1, 4.0, None, "", "5"])
+    def test_parse_rejects_non_mode_wire_values(self, wire_mode: object) -> None:
+        """Booleans, unknown integers, and empty values are not operating modes."""
+        result = parse_es_mode_response({"id": 1, "result": {"mode": wire_mode}})
+
+        assert result["device_mode"] is None
 
 
 class TestParseEsStatusResponse:

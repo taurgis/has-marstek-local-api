@@ -79,8 +79,10 @@ def create_mock_client(
 
     if send_request_error:
         client.send_request = AsyncMock(side_effect=send_request_error)
+        client.fetch_es_mode = AsyncMock(return_value=None)
     else:
         client.send_request = AsyncMock(return_value={"result": {}})
+        client.fetch_es_mode = AsyncMock(return_value={"device_mode": "auto"})
 
     if isinstance(status, Exception):
         client.get_device_status = AsyncMock(side_effect=status)

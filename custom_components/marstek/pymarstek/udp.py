@@ -46,6 +46,10 @@ psutil: PsutilModule | object | None = _PSUTIL_AUTO
 # Rate limiting - minimum interval between requests to same device
 MIN_REQUEST_INTERVAL: float = 0.3  # 300ms minimum between requests to same IP
 
+# ES.GetMode instance ids observed in the wild. This integration prefers 0
+# (Open API default) and falls back to 1 (vendor library default).
+_ES_MODE_INSTANCE_IDS: tuple[int, ...] = (0, 1)
+
 
 def _new_command_stats() -> dict[str, Any]:
     """Create a new command stats bucket."""
@@ -128,6 +132,9 @@ class MarstekUDPClient:
         # Command diagnostics (per method, optional per device IP)
         self._command_stats: dict[str, dict[str, Any]] = {}
         self._command_stats_by_ip: dict[str, dict[str, dict[str, Any]]] = {}
+
+        # Working ES.GetMode params.id per device IP (0 or 1)
+        self._es_mode_device_ids: dict[str, int] = {}
 
     def _get_command_stats_bucket(
         self, method: str, *, device_ip: str | None = None
@@ -215,6 +222,7 @@ class MarstekUDPClient:
         self._polling_paused.clear()
         self._command_stats.clear()
         self._command_stats_by_ip.clear()
+        self._es_mode_device_ids.clear()
 
     async def _ensure_socket(self) -> socket.socket:
         """Ensure the UDP socket is initialized and return it."""
@@ -673,6 +681,76 @@ class MarstekUDPClient:
         finally:
             await self.resume_polling(target_ip)
 
+    def _es_mode_instance_order(self, device_ip: str) -> tuple[int, ...]:
+        """Return ES.GetMode instance ids, cached winner first."""
+        cached = self._es_mode_device_ids.get(device_ip)
+        if cached == 1:
+            return (1, 0)
+        return _ES_MODE_INSTANCE_IDS
+
+    @staticmethod
+    def _es_mode_response_usable(response: dict[str, Any]) -> bool:
+        """Return whether GetMode produced a JSON-RPC result object.
+
+        A result dict — even empty — is our historical success path. Retry the
+        other instance id only on transport failure, a JSON-RPC error, or a
+        missing/non-dict result (the vendor library's id=1 probe).
+        """
+        if "error" in response:
+            return False
+        return isinstance(response.get("result"), dict)
+
+    async def fetch_es_mode(
+        self,
+        device_ip: str,
+        port: int = DEFAULT_UDP_PORT,
+        timeout: float = 2.5,
+        *,
+        profile: FirmwareProfile | None = None,
+        bypass_rate_limit: bool = False,
+    ) -> dict[str, Any] | None:
+        """Fetch ES.GetMode, preferring instance id 0 then falling back to 1.
+
+        This integration's Open API default is ``id=0``. Some firmwares and the
+        vendor library answer ``id=1`` instead. Probe ``0`` first, then ``1``,
+        and cache the working id so later polls send one request.
+        """
+        last_error: Exception | None = None
+        for instance_id in self._es_mode_instance_order(device_ip):
+            try:
+                response = await self.send_request(
+                    get_es_mode(instance_id),
+                    device_ip,
+                    port,
+                    timeout=timeout,
+                    bypass_rate_limit=bypass_rate_limit,
+                )
+            except (TimeoutError, OSError, ValueError) as err:
+                last_error = err
+                _LOGGER.debug(
+                    "ES.GetMode id=%s failed for %s: %s",
+                    instance_id,
+                    device_ip,
+                    err,
+                )
+                continue
+            if not self._es_mode_response_usable(response):
+                _LOGGER.debug(
+                    "ES.GetMode id=%s returned no usable result for %s: %s",
+                    instance_id,
+                    device_ip,
+                    response,
+                )
+                continue
+            parsed = parse_es_mode_response(response, profile)
+            self._es_mode_device_ids[device_ip] = instance_id
+            return parsed
+
+        self._es_mode_device_ids.pop(device_ip, None)
+        if last_error is not None:
+            _LOGGER.debug("ES.GetMode failed for %s: %s", device_ip, last_error)
+        return None
+
     async def get_device_status(
         self,
         device_ip: str,
@@ -723,9 +801,6 @@ class MarstekUDPClient:
         def _parse_pv_status(response: dict[str, Any]) -> dict[str, Any]:
             return parse_pv_status_response(response, profile)
 
-        def _parse_es_mode(response: dict[str, Any]) -> dict[str, Any]:
-            return parse_es_mode_response(response, profile)
-
         def _parse_em_status(response: dict[str, Any]) -> dict[str, Any]:
             return parse_em_status_response(response, profile)
 
@@ -763,6 +838,30 @@ class MarstekUDPClient:
             except (TimeoutError, OSError, ValueError) as err:
                 _LOGGER.debug(failure_log, device_ip, err)
                 return None
+
+        async def _request_es_mode(
+            *,
+            apply_delay: bool,
+            bypass_rate_limit: bool,
+        ) -> dict[str, Any] | None:
+            """Fetch ES.GetMode with instance-id fallback and shared logging."""
+            nonlocal made_request, has_fresh_data
+            if apply_delay and made_request:
+                await asyncio.sleep(delay_between_requests)
+            parsed = await self.fetch_es_mode(
+                device_ip,
+                port,
+                timeout,
+                profile=profile,
+                bypass_rate_limit=bypass_rate_limit,
+            )
+            if parsed is None:
+                _LOGGER.debug("ES.GetMode failed for %s: no usable result", device_ip)
+                return None
+            made_request = True
+            has_fresh_data = True
+            _log_es_mode(parsed)
+            return parsed
 
         def _log_es_mode(data: dict[str, Any]) -> None:
             _LOGGER.debug(
@@ -841,12 +940,11 @@ class MarstekUDPClient:
                     )
                 )
 
-            _schedule_request(
-                "es_mode",
-                get_es_mode(0),
-                _parse_es_mode,
-                _log_es_mode,
-                "ES.GetMode failed for %s: %s",
+            request_keys.append("es_mode")
+            request_tasks.append(
+                asyncio.create_task(
+                    _request_es_mode(apply_delay=False, bypass_rate_limit=True)
+                )
             )
             _schedule_request(
                 "es_status",
@@ -904,11 +1002,7 @@ class MarstekUDPClient:
                     bat_status_data = result
         else:
             # Get ES mode (device_mode, ongrid_power) - always fetched (fast tier)
-            es_mode_data = await _request_and_parse(
-                get_es_mode(0),
-                _parse_es_mode,
-                success_log=_log_es_mode,
-                failure_log="ES.GetMode failed for %s: %s",
+            es_mode_data = await _request_es_mode(
                 apply_delay=True,
                 bypass_rate_limit=False,
             )
