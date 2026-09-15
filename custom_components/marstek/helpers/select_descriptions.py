@@ -8,14 +8,15 @@ from typing import Any
 
 from homeassistant.components.select import SelectEntityDescription
 
-from ..const import OPERATING_MODES
+from ..const import selectable_operating_modes
+from ..firmware_profile import FirmwareProfile
 
 
 @dataclass(kw_only=True)
 class MarstekSelectEntityDescription(SelectEntityDescription):  # type: ignore[misc]
     """Marstek select entity description."""
 
-    options_fn: Callable[[], list[str]]
+    options_fn: Callable[[FirmwareProfile], list[str]]
     value_fn: Callable[[dict[str, Any]], str | None]
 
 
@@ -23,7 +24,7 @@ SELECT_ENTITIES: tuple[MarstekSelectEntityDescription, ...] = (
     MarstekSelectEntityDescription(
         key="operating_mode",
         translation_key="operating_mode",
-        options_fn=lambda: OPERATING_MODES,
+        options_fn=selectable_operating_modes,
         value_fn=lambda data: data.get("device_mode"),
     ),
 )

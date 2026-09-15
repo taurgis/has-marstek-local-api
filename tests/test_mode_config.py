@@ -10,6 +10,7 @@ from custom_components.marstek.const import (
     MODE_MANUAL,
     MODE_PASSIVE,
     MODE_TO_API,
+    MODE_UPS,
     WEEKDAYS_ALL,
 )
 from custom_components.marstek.mode_config import build_mode_config
@@ -54,6 +55,13 @@ class TestBuildModeConfig:
         assert passive_cfg["power"] == 0
         assert passive_cfg["cd_time"] == 3600
 
+    def test_ups_mode(self) -> None:
+        """Test building UPS mode configuration."""
+        result = build_mode_config(MODE_UPS)
+
+        assert result == {"mode": "UPS", "ups_cfg": {"enable": 1}}
+        assert list(result.keys()) == ["mode", "ups_cfg"]
+
     def test_unknown_mode_raises(self) -> None:
         """Test that unknown mode raises ValueError."""
         with pytest.raises(ValueError, match="Unknown mode: invalid_mode"):
@@ -61,7 +69,7 @@ class TestBuildModeConfig:
 
     def test_all_modes_return_dict(self) -> None:
         """Test that all valid modes return dictionaries."""
-        for mode in [MODE_AUTO, MODE_AI, MODE_MANUAL, MODE_PASSIVE]:
+        for mode in [MODE_AUTO, MODE_AI, MODE_MANUAL, MODE_PASSIVE, MODE_UPS]:
             result = build_mode_config(mode)
             assert isinstance(result, dict)
             assert "mode" in result
@@ -73,6 +81,7 @@ class TestBuildModeConfig:
             API_MODE_AUTO,
             API_MODE_MANUAL,
             API_MODE_PASSIVE,
+            API_MODE_UPS,
         )
 
         auto_config = build_mode_config(MODE_AUTO)
@@ -86,3 +95,6 @@ class TestBuildModeConfig:
 
         passive_config = build_mode_config(MODE_PASSIVE)
         assert passive_config["mode"] == API_MODE_PASSIVE
+
+        ups_config = build_mode_config(MODE_UPS)
+        assert ups_config["mode"] == API_MODE_UPS

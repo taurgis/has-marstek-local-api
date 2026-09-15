@@ -139,7 +139,9 @@ VALID_METHODS: dict[str, MethodSpec] = {
 }
 
 # Valid operating modes (as expected by Marstek device API)
-VALID_MODES: Final[frozenset[str]] = frozenset({"Auto", "AI", "Manual", "Passive"})
+VALID_MODES: Final[frozenset[str]] = frozenset(
+    {"Auto", "AI", "Manual", "Passive", "UPS"}
+)
 
 # Time format pattern HH:MM
 TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
@@ -386,6 +388,29 @@ def validate_manual_config(config: dict[str, Any]) -> None:
         )
 
 
+def validate_ups_config(config: dict[str, Any]) -> None:
+    """Validate UPS mode configuration.
+
+    Args:
+        config: UPS configuration dictionary
+
+    Raises:
+        ValidationError: If configuration is invalid
+    """
+    if "enable" not in config:
+        raise ValidationError(
+            "ups_cfg missing required field: enable",
+            "enable",
+        )
+
+    enable = config.get("enable")
+    if enable not in (0, 1):
+        raise ValidationError(
+            f"enable must be 0 or 1 (got {enable})",
+            "enable",
+        )
+
+
 def validate_passive_config(config: dict[str, Any]) -> None:
     """Validate passive mode configuration.
 
@@ -473,6 +498,20 @@ def validate_es_set_mode_config(config: dict[str, Any]) -> None:
                 "passive_cfg",
             )
         validate_passive_config(passive_cfg)
+
+    elif mode == "UPS":
+        ups_cfg = config.get("ups_cfg")
+        if ups_cfg is None:
+            raise ValidationError(
+                "ups_cfg is required when mode is 'UPS'",
+                "ups_cfg",
+            )
+        if not isinstance(ups_cfg, dict):
+            raise ValidationError(
+                f"ups_cfg must be a dictionary (got {type(ups_cfg).__name__})",
+                "ups_cfg",
+            )
+        validate_ups_config(ups_cfg)
 
 
 def validate_method(method: str) -> MethodSpec:

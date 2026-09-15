@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.marstek.const import DOMAIN, MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE
+from custom_components.marstek.const import (
+    DOMAIN,
+    MODE_AI,
+    MODE_AUTO,
+    MODE_MANUAL,
+    MODE_PASSIVE,
+    MODE_UPS,
+    SELECTABLE_BASE_MODES,
+)
+from custom_components.marstek.firmware_profile import resolve_firmware_profile
 from custom_components.marstek.helpers.select_descriptions import SELECT_ENTITIES
 from custom_components.marstek.select import MarstekOperatingModeSelect, async_setup_entry
 
@@ -108,10 +118,8 @@ async def test_select_entity_options(hass: HomeAssistant, mock_config_entry):
     # Check options attribute
     options = state.attributes.get("options")
     assert options is not None
-    assert MODE_AUTO in options
-    assert MODE_AI in options
-    assert MODE_MANUAL in options
-    assert MODE_PASSIVE in options
+    assert options == SELECTABLE_BASE_MODES
+    assert MODE_UPS not in options
 
 
 async def test_select_setup_missing_udp_client(
@@ -361,3 +369,286 @@ async def test_select_no_host_configured() -> None:
 
     with pytest.raises(HomeAssistantError, match="no_host_configured"):
         await entity.async_select_option(MODE_AUTO)
+
+
+def _operating_mode_state(hass: HomeAssistant):
+    """Return the single operating-mode select state."""
+    states = [
+        state
+        for state in hass.states.async_all("select")
+        if state.entity_id.endswith("_operating_mode")
+    ]
+    assert len(states) == 1
+    return states[0]
+
+
+def _make_select_entity(
+    *,
+    device_type: str,
+    version: object,
+    udp_client: MagicMock | None = None,
+) -> tuple[MarstekOperatingModeSelect, MagicMock]:
+    """Build a select entity bound to a firmware profile."""
+    coordinator = MagicMock()
+    coordinator.async_add_listener.return_value = lambda: None
+    coordinator.last_update_success = True
+    coordinator.data = {"device_mode": MODE_AUTO}
+    coordinator.profile = resolve_firmware_profile(device_type, version)
+
+    config_entry = MagicMock()
+    config_entry.data = {"host": "1.2.3.4", "port": 30000}
+
+    client = udp_client or MagicMock()
+    client.send_request = AsyncMock(return_value={"result": {}})
+    client.pause_polling = AsyncMock(return_value=None)
+    client.resume_polling = AsyncMock(return_value=None)
+
+    entity = MarstekOperatingModeSelect(
+        coordinator,
+        {
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": device_type,
+            "version": version,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+        SELECT_ENTITIES[0],
+        client,
+        config_entry,
+    )
+    return entity, client
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "expect_ups"),
+    [
+        ("VenusE", 145, False),
+        ("VenusE", 150, True),
+        ("Venus E mini", 150, True),
+        ("Venus E mini", "not-a-version", False),
+        ("Marstek Energy Storage", 150, False),
+    ],
+)
+async def test_select_options_follow_firmware_profile(
+    hass: HomeAssistant,
+    mock_config_entry: Any,
+    device_type: str,
+    version: object,
+    expect_ups: bool,
+) -> None:
+    """UPS appears on the existing select only for UPS-capable profiles."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": device_type,
+            "version": version,
+        },
+    )
+
+    client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    state = _operating_mode_state(hass)
+    options = state.attributes.get("options")
+    assert options is not None
+    for mode in SELECTABLE_BASE_MODES:
+        assert mode in options
+    if expect_ups:
+        assert MODE_UPS in options
+    else:
+        assert MODE_UPS not in options
+
+
+async def test_select_ups_sends_exact_payload_and_pauses_polling(
+    hass: HomeAssistant, mock_config_entry: Any
+) -> None:
+    """Selecting UPS sends ES.SetMode with ups_cfg.enable = 1 and pauses polling."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+    )
+
+    client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        pause_before = client.pause_polling.call_count
+        resume_before = client.resume_polling.call_count
+        requests_before = client.send_request.call_count
+
+        entity_id = _operating_mode_state(hass).entity_id
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": entity_id, "option": MODE_UPS},
+            blocking=True,
+        )
+
+        assert client.pause_polling.call_count == pause_before + 1
+        assert client.resume_polling.call_count == resume_before + 1
+        assert client.send_request.call_count == requests_before + 1
+
+        command = client.send_request.call_args[0][0]
+        payload = json.loads(command)
+        assert payload["method"] == "ES.SetMode"
+        assert payload["params"]["config"] == {
+            "mode": "UPS",
+            "ups_cfg": {"enable": 1},
+        }
+
+
+async def test_select_ups_resumes_polling_after_failure(
+    hass: HomeAssistant, mock_config_entry: Any
+) -> None:
+    """UPS selection resumes polling when every retry fails."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+    )
+
+    call_count = 0
+
+    async def send_request_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return {"result": {}}
+        raise TimeoutError("timeout")
+
+    client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
+    client.send_request = AsyncMock(side_effect=send_request_side_effect)
+
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        resume_before = client.resume_polling.call_count
+        entity_id = _operating_mode_state(hass).entity_id
+        with pytest.raises(HomeAssistantError, match="mode_change_failed|Failed to set"):
+            await hass.services.async_call(
+                "select",
+                "select_option",
+                {"entity_id": entity_id, "option": MODE_UPS},
+                blocking=True,
+            )
+
+        assert client.resume_polling.call_count == resume_before + 1
+
+
+async def test_unsupported_direct_ups_selection_sends_no_request() -> None:
+    """A profile without UPS cannot transmit UPS even if invoked directly."""
+    entity, client = _make_select_entity(device_type="VenusE", version=145)
+
+    with pytest.raises(HomeAssistantError, match="mode_not_supported"):
+        await entity.async_select_option(MODE_UPS)
+
+    client.send_request.assert_not_called()
+    client.pause_polling.assert_not_called()
+    client.resume_polling.assert_not_called()
+
+
+async def test_unknown_profile_direct_ups_selection_sends_no_request() -> None:
+    """Unknown family firmware cannot transmit UPS."""
+    entity, client = _make_select_entity(
+        device_type="Marstek Energy Storage", version=150
+    )
+
+    with pytest.raises(HomeAssistantError, match="mode_not_supported"):
+        await entity.async_select_option(MODE_UPS)
+
+    client.send_request.assert_not_called()
+
+
+@pytest.mark.parametrize("mode", [MODE_AUTO, MODE_AI])
+async def test_auto_and_ai_remain_selectable_without_ups_profile(
+    hass: HomeAssistant, mock_config_entry: Any, mode: str
+) -> None:
+    """Auto and AI still send commands on profiles that omit UPS."""
+    mock_config_entry.add_to_hass(hass)
+
+    client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        requests_before = client.send_request.call_count
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {
+                "entity_id": "select.venus_operating_mode",
+                "option": mode,
+            },
+            blocking=True,
+        )
+        assert client.send_request.call_count > requests_before
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_message_part"),
+    [
+        (MODE_PASSIVE, "Passive mode requires power and duration"),
+        (MODE_MANUAL, "Manual mode requires schedule configuration"),
+    ],
+)
+async def test_manual_and_passive_remain_blocked_on_ups_capable_profile(
+    hass: HomeAssistant,
+    mock_config_entry: Any,
+    mode: str,
+    expected_message_part: str,
+) -> None:
+    """Manual and Passive stay service-only even when UPS is offered."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+    )
+
+    client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        requests_before = client.send_request.call_count
+        entity_id = _operating_mode_state(hass).entity_id
+        options = hass.states.get(entity_id)
+        assert options is not None
+        assert MODE_MANUAL in options.attributes["options"]
+        assert MODE_PASSIVE in options.attributes["options"]
+        assert MODE_UPS in options.attributes["options"]
+
+        with pytest.raises(HomeAssistantError, match=expected_message_part):
+            await hass.services.async_call(
+                "select",
+                "select_option",
+                {"entity_id": entity_id, "option": mode},
+                blocking=True,
+            )
+
+        assert client.send_request.call_count == requests_before
+
+
+async def test_select_reports_ups_state(
+    hass: HomeAssistant, mock_config_entry: Any
+) -> None:
+    """ES.GetMode UPS is represented as Home Assistant state ups."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+    )
+
+    client = _mock_client(status={"battery_soc": 55, "device_mode": MODE_UPS})
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    state = _operating_mode_state(hass)
+    assert state.state == MODE_UPS

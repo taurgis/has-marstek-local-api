@@ -661,3 +661,101 @@ class TestPersistence:
 
         assert restarted.simulator.soc == pytest.approx(50.0)
         assert restarted.simulator.total_grid_input_energy == 0.0
+
+
+def _ups_set_mode_params() -> dict[str, object]:
+    return {
+        "id": 0,
+        "config": {"mode": "UPS", "ups_cfg": {"enable": 1}},
+    }
+
+
+class TestUpsMode:
+    """Firmware-gated UPS handling on the mock Open API."""
+
+    def test_legacy_mock_rejects_ups_without_changing_mode(self) -> None:
+        """Legacy firmware returns Method not found and keeps Auto."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE", "ver": 145},
+        )
+
+        response = device.build_response(1, "ES.SetMode", _ups_set_mode_params())
+
+        assert response is not None
+        assert response["error"] == {"code": -32601, "message": "Method not found"}
+        assert "result" not in response
+        mode = device.build_response(2, "ES.GetMode", {})
+        assert mode is not None
+        assert mode["result"]["mode"] == "Auto"
+
+    def test_firmware_150_mock_accepts_ups_and_reports_it(self) -> None:
+        """Firmware 150+ stores UPS and reports it from ES.GetMode."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE", "ver": 150},
+        )
+
+        response = device.build_response(1, "ES.SetMode", _ups_set_mode_params())
+
+        assert response is not None
+        assert response["result"]["set_result"] is True
+        mode = device.build_response(2, "ES.GetMode", {})
+        assert mode is not None
+        assert mode["result"]["mode"] == "UPS"
+
+    def test_e_mini_150_mock_accepts_ups(self) -> None:
+        """Venus E mini at firmware 150 accepts UPS."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "Venus E mini", "ver": 150},
+        )
+
+        response = device.build_response(1, "ES.SetMode", _ups_set_mode_params())
+
+        assert response is not None
+        assert response["result"]["set_result"] is True
+        mode = device.build_response(2, "ES.GetMode", {})
+        assert mode is not None
+        assert mode["result"]["mode"] == "UPS"
+
+    def test_ups_profile_round_trip_through_parser(self) -> None:
+        """Profile → select option → encoded SetMode → mock → parsed GetMode ups."""
+        import json
+
+        from custom_components.marstek.const import (
+            CMD_ES_SET_MODE,
+            MODE_UPS,
+            selectable_operating_modes,
+        )
+        from custom_components.marstek.mode_config import build_mode_config
+        from custom_components.marstek.pymarstek.command_builder import build_command
+        from custom_components.marstek.pymarstek.data_parser import parse_es_mode_response
+
+        profile = resolve_firmware_profile("VenusE", 150)
+        assert profile.supports_ups is True
+        assert MODE_UPS in selectable_operating_modes(profile)
+
+        command = json.loads(
+            build_command(
+                CMD_ES_SET_MODE,
+                {"id": 0, "config": build_mode_config(MODE_UPS)},
+            )
+        )
+        assert command["params"]["config"] == {
+            "mode": "UPS",
+            "ups_cfg": {"enable": 1},
+        }
+
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": "VenusE", "ver": 150},
+        )
+        set_response = device.build_response(1, "ES.SetMode", command["params"])
+        assert set_response is not None
+        assert set_response["result"]["set_result"] is True
+
+        get_response = device.build_response(2, "ES.GetMode", {})
+        assert get_response is not None
+        parsed = parse_es_mode_response(get_response, profile)
+        assert parsed["device_mode"] == "ups"

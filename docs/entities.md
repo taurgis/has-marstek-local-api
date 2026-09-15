@@ -85,9 +85,9 @@ Created when the device reports those values (typically Venus A/D with PV channe
 
 | Entity name | Key | Options |
 |---|---|---|
-| Operating mode | `operating_mode` | Auto, AI, Manual, Passive |
+| Operating mode | `operating_mode` | Auto, AI, Manual, Passive, and UPS when the firmware profile supports it |
 
-> Manual and Passive require extra parameters and are set via services (see [Services](services.md)).
+> Manual and Passive require extra parameters and are set via services (see [Services](services.md)). UPS is an enable-only mode on ES-capable firmware `ver >= 150` (including Venus E mini).
 
 ## Device grouping
 

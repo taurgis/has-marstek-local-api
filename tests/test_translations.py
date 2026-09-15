@@ -215,3 +215,30 @@ class TestTranslationParity:
         assert strings_aborts == en_aborts, (
             f"Abort keys differ: strings.json has {strings_aborts}, en.json has {en_aborts}"
         )
+
+
+class TestUpsTranslations:
+    """UPS must have translated labels rather than raw keys."""
+
+    def test_operating_mode_select_includes_ups(
+        self, strings_json: dict, translations_en_json: dict
+    ) -> None:
+        """Operating-mode select translates ups."""
+        for payload in (strings_json, translations_en_json):
+            state = payload["entity"]["select"]["operating_mode"]["state"]
+            assert state["ups"] == "UPS"
+
+    def test_device_mode_sensor_includes_ups(
+        self, strings_json: dict, translations_en_json: dict
+    ) -> None:
+        """Device-mode sensor translates ups."""
+        for payload in (strings_json, translations_en_json):
+            state = payload["entity"]["sensor"]["device_mode"]["state"]
+            assert state["ups"] == "UPS"
+
+    def test_mode_not_supported_exception_exists(
+        self, strings_json: dict, translations_en_json: dict
+    ) -> None:
+        """Unsupported-mode writes have a translated exception."""
+        assert "mode_not_supported" in strings_json["exceptions"]
+        assert "mode_not_supported" in translations_en_json["exceptions"]

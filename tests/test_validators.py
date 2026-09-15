@@ -301,6 +301,39 @@ class TestValidateEsSetModeConfig:
         for mode in VALID_MODES:
             assert mode in exc_info.value.message
 
+    @pytest.mark.parametrize("enable", [0, 1])
+    def test_ups_mode_accepts_enable_flag(self, enable: int) -> None:
+        """UPS is valid only with a dictionary ups_cfg.enable of 0 or 1."""
+        validate_es_set_mode_config({"mode": "UPS", "ups_cfg": {"enable": enable}})
+
+    def test_ups_mode_requires_ups_cfg(self) -> None:
+        """Missing ups_cfg is rejected for UPS."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_es_set_mode_config({"mode": "UPS"})
+        assert exc_info.value.field == "ups_cfg"
+        assert "ups_cfg is required" in exc_info.value.message
+
+    def test_ups_cfg_must_be_dictionary(self) -> None:
+        """Non-dictionary ups_cfg is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_es_set_mode_config({"mode": "UPS", "ups_cfg": ["enable"]})
+        assert exc_info.value.field == "ups_cfg"
+        assert "must be a dictionary" in exc_info.value.message
+
+    def test_ups_cfg_requires_enable(self) -> None:
+        """ups_cfg without enable is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_es_set_mode_config({"mode": "UPS", "ups_cfg": {}})
+        assert exc_info.value.field == "enable"
+        assert "enable" in exc_info.value.message
+
+    @pytest.mark.parametrize("enable", [-1, 2, "1", None])
+    def test_ups_cfg_rejects_invalid_enable(self, enable: object) -> None:
+        """enable values other than 0 or 1 are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_es_set_mode_config({"mode": "UPS", "ups_cfg": {"enable": enable}})
+        assert exc_info.value.field == "enable"
+
 
 class TestValidateMethod:
     """Tests for validate_method."""

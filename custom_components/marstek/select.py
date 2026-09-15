@@ -22,6 +22,7 @@ from .const import (
     MODE_MANUAL,
     MODE_PASSIVE,
     OPERATING_MODES,
+    selectable_operating_modes,
 )
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
@@ -92,7 +93,7 @@ class MarstekOperatingModeSelect(
     @property
     def options(self) -> list[str]:
         """Return the list of available options."""
-        return self.entity_description.options_fn()
+        return self.entity_description.options_fn(self.coordinator.profile)
 
     @property
     def current_option(self) -> str | None:
@@ -107,6 +108,12 @@ class MarstekOperatingModeSelect(
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="invalid_mode",
+                translation_placeholders={"mode": option},
+            )
+        if option not in selectable_operating_modes(self.coordinator.profile):
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="mode_not_supported",
                 translation_placeholders={"mode": option},
             )
 

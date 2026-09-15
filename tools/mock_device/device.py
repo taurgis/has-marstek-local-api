@@ -13,7 +13,15 @@ from custom_components.marstek.firmware_profile import (
     resolve_firmware_profile,
 )
 
-from .const import DEFAULT_CONFIG, DEFAULT_UDP_PORT, MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE
+from .const import (
+    DEFAULT_CONFIG,
+    DEFAULT_UDP_PORT,
+    MODE_AI,
+    MODE_AUTO,
+    MODE_MANUAL,
+    MODE_PASSIVE,
+    MODE_UPS,
+)
 from .handlers import (
     get_static_state,
     handle_bat_get_status,
@@ -365,6 +373,15 @@ class MockMarstekDevice:
         elif method == "ES.SetMode":
             config = params.get("config", {})
             mode = config.get("mode", MODE_AUTO)
+            if mode == MODE_UPS and not self.profile.supports_ups:
+                return {
+                    "id": request_id,
+                    "src": src,
+                    "error": {
+                        "code": -32601,
+                        "message": "Method not found",
+                    },
+                }
             if mode == MODE_MANUAL:
                 manual_config = config.get("manual_cfg", {})
                 schedule_slot = (

@@ -52,6 +52,28 @@ async def test_coordinator_success_creates_entities(
         assert state.state == "55"
 
 
+async def test_device_mode_enum_accepts_ups(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """The device-mode enum includes ups rather than treating it as unknown."""
+    from custom_components.marstek.const import MODE_UPS, OPERATING_MODES
+
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": MODE_UPS, "battery_soc": 55, "battery_power": 0}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.venus_device_mode")
+    assert state is not None
+    assert state.state == MODE_UPS
+    assert state.attributes.get("options") == OPERATING_MODES
+    assert MODE_UPS in state.attributes["options"]
+
+
 async def test_coordinator_failure_marks_entities_unavailable(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
