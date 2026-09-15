@@ -123,6 +123,12 @@
       "em_c_power": {
         "default": "mdi:flash"
       },
+      "em_input_energy": {
+        "default": "mdi:meter-electric"
+      },
+      "em_output_energy": {
+        "default": "mdi:meter-electric-outline"
+      },
       "total_pv_energy": {
         "default": "mdi:solar-power"
       },

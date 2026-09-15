@@ -434,7 +434,7 @@ The ES (Energy System) component contains the device's basic power information a
 | `ongrid_power` | number or null | Grid-tied power, [W] |
 | `offgrid_power` | number or null | Off-grid power, [W] |
 | `bat_power` | number or null | Battery power, [W] |
-| `total_pv_energy` | number or null | Total solar energy generated, [Wh] |
+| `total_pv_energy` | number or null | Total solar energy generated, [Wh] (Rev 3.1 / Venus A firmware 149+: wire unit is 0.01 kWh; the integration stores Wh) |
 | `total_grid_output_energy` | number or null | Total grid output energy, [Wh] |
 | `total_grid_input_energy` | number or null | Total grid input energy, [Wh] |
 | `total_load_energy` | number or null | Total load (or off-grid) energy consumed, [Wh] |
@@ -622,6 +622,13 @@ Passive Mode:
 | `ongrid_power` | number or null | Grid-tied power, [W] |
 | `offgrid_power` | number or null | Off-grid power, [W] |
 | `bat_soc` | number or null | SOC, [%] |
+| `ct_state` | number or null | CT Status: 0: Not connected; 1: Connected (Rev 3.1 Auto/AI fallback) |
+| `a_power` | number or null | Phase A power, [W] (Rev 3.1 Auto/AI fallback) |
+| `b_power` | number or null | Phase B power, [W] (Rev 3.1 Auto/AI fallback) |
+| `c_power` | number or null | Phase C power, [W] (Rev 3.1 Auto/AI fallback) |
+| `total_power` | number or null | CT total power, [W] (Rev 3.1 Auto/AI fallback) |
+| `input_energy` | number or null | Cumulative input energy, [0.1 Wh] (Rev 3.1 Auto/AI fallback) |
+| `output_energy` | number or null | Cumulative output energy, [0.1 Wh] (Rev 3.1 Auto/AI fallback) |
 
 **Example:**
 
@@ -677,6 +684,8 @@ The Energy Meter (EM) module contains status information and power measurement d
 | `b_power` | number or null | Phase B power, [W] |
 | `c_power` | number or null | Phase C power, [W] |
 | `total_power` | number or null | Total power, [W] |
+| `input_energy` | number or null | Cumulative input energy, [0.1 Wh] (Rev 3.1; omitted on legacy firmware) |
+| `output_energy` | number or null | Cumulative output energy, [0.1 Wh] (Rev 3.1; omitted on legacy firmware) |
 
 **Example:**
 

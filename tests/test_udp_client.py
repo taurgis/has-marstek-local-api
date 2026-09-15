@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.marstek.firmware_profile import resolve_firmware_profile
 from custom_components.marstek.pymarstek.udp import MarstekUDPClient, MIN_REQUEST_INTERVAL
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
@@ -751,6 +752,66 @@ class TestGetDeviceStatus:
         assert result["has_fresh_data"]
         # Check merged data
         assert "device_mode" in result or "ongrid_power" in result
+
+    async def test_profile_is_per_call_and_does_not_leak(self) -> None:
+        """The shared UDP client must not reuse another entry's scaling profile."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+        methods: list[str] = []
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            method = str(json.loads(message).get("method"))
+            methods.append(method)
+            if method == "ES.GetStatus":
+                return {
+                    "id": 2,
+                    "result": {
+                        "bat_soc": 55,
+                        "total_pv_energy": 25742,
+                        "total_grid_input_energy": 1607,
+                    },
+                }
+            if method == "EM.GetStatus":
+                return {
+                    "id": 3,
+                    "result": {
+                        "ct_state": 1,
+                        "input_energy": 3086320,
+                        "output_energy": 0,
+                    },
+                }
+            return {"id": 1, "result": {"mode": "Auto"}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()):
+                scaled = await client.get_device_status(
+                    "192.168.1.10",
+                    delay_between_requests=0,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                    profile=resolve_firmware_profile("VenusA", 149),
+                )
+                legacy = await client.get_device_status(
+                    "192.168.1.11",
+                    delay_between_requests=0,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                    profile=resolve_firmware_profile("VenusD", 145),
+                )
+
+        assert scaled["total_pv_energy"] == 257420
+        assert scaled["total_grid_input_energy"] == 1607
+        assert legacy["total_pv_energy"] == 25742
+        assert legacy["em_input_energy"] == 3086320
+        assert methods.count("ES.GetMode") == 2
+        assert methods.count("ES.GetStatus") == 2
+        assert methods.count("EM.GetStatus") == 2
+        assert "PV.GetStatus" not in methods
+        assert len(methods) == 6
 
     async def test_sequential_mode_respects_delay_between_requests(self) -> None:
         """Test default sequential mode waits between request calls."""

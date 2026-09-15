@@ -102,12 +102,56 @@ def test_unknown_firmware_is_conservative(version: object) -> None:
     assert profile.supports_sys_ble_advertising is False
     assert profile.supports_sys_led is False
     assert profile.supports_ups is False
+    assert profile.pv_energy_scale == 1.0
+    assert profile.pv_channel_1_power_scale == 0.1
+    assert profile.em_energy_scale == 1.0
+    assert profile.supports_em_energy is False
 
 
 def test_profile_exposes_legacy_encoding_contract() -> None:
-    """All profiles preserve this ticket's legacy wire scaling."""
+    """Legacy firmware keeps unscaled Wh solar totals and channel-1 deciwatts."""
+    profile = resolve_firmware_profile("VenusA", 145)
+
+    assert profile.pv_energy_scale == 1.0
+    assert profile.pv_channel_1_power_scale == 0.1
+    assert profile.em_energy_scale == 1.0
+    assert profile.supports_em_energy is False
+
+
+def test_venus_a_149_uses_rev31_solar_energy_units() -> None:
+    """Venus A firmware 149 already encodes solar energy as 0.01 kWh."""
+    profile = resolve_firmware_profile("VenusA", 149)
+
+    assert profile.pv_energy_scale == 10.0
+    assert profile.pv_channel_1_power_scale == 0.1
+    assert profile.em_energy_scale == 1.0
+    assert profile.supports_em_energy is False
+
+
+def test_firmware_150_known_family_uses_rev31_energy_and_watts() -> None:
+    """Firmware 150+ on a known family enables Rev 3.1 energy and PV watts."""
     profile = resolve_firmware_profile("VenusA", 150)
 
+    assert profile.pv_energy_scale == 10.0
+    assert profile.pv_channel_1_power_scale == 1.0
+    assert profile.em_energy_scale == 0.1
+    assert profile.supports_em_energy is True
+
+
+def test_legacy_venus_d_keeps_deciwatt_pv_and_wh_solar() -> None:
+    """Venus D below 150 keeps channel-1 deciwatts and unscaled solar Wh."""
+    profile = resolve_firmware_profile("VenusD", 145)
+
+    assert profile.pv_energy_scale == 1.0
+    assert profile.pv_channel_1_power_scale == 0.1
+    assert profile.supports_em_energy is False
+
+
+def test_unknown_family_does_not_guess_rev31_scaling() -> None:
+    """A recognized firmware number cannot authorize Rev 3.1 wire units."""
+    profile = resolve_firmware_profile("Marstek Energy Storage", 150)
+
+    assert profile.family is DeviceFamily.UNKNOWN
     assert profile.pv_energy_scale == 1.0
     assert profile.pv_channel_1_power_scale == 0.1
     assert profile.em_energy_scale == 1.0

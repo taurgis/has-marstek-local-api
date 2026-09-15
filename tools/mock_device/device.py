@@ -227,6 +227,8 @@ class MockMarstekDevice:
             "total_grid_output_energy": 0.0,
             "total_grid_input_energy": 0.0,
             "total_load_energy": 0.0,
+            "em_input_energy": 0.0,
+            "em_output_energy": 0.0,
         }
 
     def _totals_from_state(self, state: dict[str, Any]) -> dict[str, float]:
@@ -239,6 +241,14 @@ class MockMarstekDevice:
                 state.get("total_grid_input_energy", 0.0)
             ),
             "total_load_energy": float(state.get("total_load_energy", 0.0)),
+            "em_input_energy": float(
+                state.get("em_input_energy", state.get("total_grid_input_energy", 0.0))
+            ),
+            "em_output_energy": float(
+                state.get(
+                    "em_output_energy", state.get("total_grid_output_energy", 0.0)
+                )
+            ),
         }
 
     def _persist_state(self, state: dict[str, Any] | None = None) -> None:
@@ -265,6 +275,8 @@ class MockMarstekDevice:
         total_grid_output_energy: float = 0,
         total_grid_input_energy: float = 0,
         total_load_energy: float = 0,
+        em_input_energy: float | None = None,
+        em_output_energy: float | None = None,
     ) -> None:
         """Set physical energy totals used by subsequent status responses."""
         totals = {
@@ -273,6 +285,10 @@ class MockMarstekDevice:
             "total_grid_input_energy": total_grid_input_energy,
             "total_load_energy": total_load_energy,
         }
+        if em_input_energy is not None:
+            totals["em_input_energy"] = em_input_energy
+        if em_output_energy is not None:
+            totals["em_output_energy"] = em_output_energy
         if self.simulate:
             for key, value in totals.items():
                 setattr(self.simulator, key, value)
@@ -307,7 +323,7 @@ class MockMarstekDevice:
             )
 
         elif method == "ES.GetMode":
-            return handle_es_get_mode(request_id, src, state)
+            return handle_es_get_mode(request_id, src, state, profile=self.profile)
 
         elif method == "PV.GetStatus":
             if not self.profile.supports_pv:
@@ -337,7 +353,9 @@ class MockMarstekDevice:
             return handle_wifi_get_status(request_id, src, self.config, self.ip, state)
 
         elif method == "EM.GetStatus":
-            return handle_em_get_status(request_id, src, state)
+            return handle_em_get_status(
+                request_id, src, state, profile=self.profile
+            )
 
         elif method == "Bat.GetStatus":
             return handle_bat_get_status(

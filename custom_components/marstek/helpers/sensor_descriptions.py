@@ -77,6 +77,11 @@ def _exists_key_with_value(key: str, data: dict[str, Any]) -> bool:
     return key in data
 
 
+def _exists_present_value(key: str, data: dict[str, Any]) -> bool:
+    """Return True when the coordinator value is present, including zero."""
+    return data.get(key) is not None
+
+
 def _api_success_rate_sensor(
     method: str, translation_key: str
 ) -> MarstekSensorEntityDescription:
@@ -336,6 +341,30 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         value_fn=lambda coordinator, _info, _entry: (
             _value_from_data("em_c_power", coordinator.data or {})
         ),
+    ),
+    MarstekSensorEntityDescription(
+        key="em_input_energy",
+        translation_key="em_input_energy",
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        value_fn=lambda coordinator, _info, _entry: (
+            _value_from_data("em_input_energy", coordinator.data or {})
+        ),
+        exists_fn=lambda data: _exists_present_value("em_input_energy", data),
+    ),
+    MarstekSensorEntityDescription(
+        key="em_output_energy",
+        translation_key="em_output_energy",
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        value_fn=lambda coordinator, _info, _entry: (
+            _value_from_data("em_output_energy", coordinator.data or {})
+        ),
+        exists_fn=lambda data: _exists_present_value("em_output_energy", data),
     ),
     MarstekSensorEntityDescription(
         key="total_pv_energy",

@@ -200,6 +200,12 @@
       "em_c_power": {
         "name": "Phase C power"
       },
+      "em_input_energy": {
+        "name": "Meter input energy"
+      },
+      "em_output_energy": {
+        "name": "Meter output energy"
+      },
       "total_pv_energy": {
         "name": "Total solar energy"
       },

@@ -723,6 +723,12 @@ class MarstekUDPClient:
         def _parse_pv_status(response: dict[str, Any]) -> dict[str, Any]:
             return parse_pv_status_response(response, profile)
 
+        def _parse_es_mode(response: dict[str, Any]) -> dict[str, Any]:
+            return parse_es_mode_response(response, profile)
+
+        def _parse_em_status(response: dict[str, Any]) -> dict[str, Any]:
+            return parse_em_status_response(response, profile)
+
         # Track if we've made a request (to know when to add delay)
         made_request = False
         # Track if any request returned data
@@ -838,7 +844,7 @@ class MarstekUDPClient:
             _schedule_request(
                 "es_mode",
                 get_es_mode(0),
-                parse_es_mode_response,
+                _parse_es_mode,
                 _log_es_mode,
                 "ES.GetMode failed for %s: %s",
             )
@@ -853,7 +859,7 @@ class MarstekUDPClient:
                 _schedule_request(
                     "em_status",
                     get_em_status(0),
-                    parse_em_status_response,
+                    _parse_em_status,
                     _log_em_status,
                     "EM.GetStatus failed for %s: %s",
                 )
@@ -900,7 +906,7 @@ class MarstekUDPClient:
             # Get ES mode (device_mode, ongrid_power) - always fetched (fast tier)
             es_mode_data = await _request_and_parse(
                 get_es_mode(0),
-                parse_es_mode_response,
+                _parse_es_mode,
                 success_log=_log_es_mode,
                 failure_log="ES.GetMode failed for %s: %s",
                 apply_delay=True,
@@ -921,7 +927,7 @@ class MarstekUDPClient:
             if include_em:
                 em_status_data = await _request_and_parse(
                     get_em_status(0),
-                    parse_em_status_response,
+                    _parse_em_status,
                     success_log=_log_em_status,
                     failure_log="EM.GetStatus failed for %s: %s",
                     apply_delay=True,

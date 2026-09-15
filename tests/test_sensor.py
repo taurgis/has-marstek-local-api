@@ -891,3 +891,97 @@ def test_overall_command_success_rate() -> None:
         "total_timeouts": 0,
         "total_failures": 0,
     }
+
+
+async def test_em_energy_sensors_created_when_values_present(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Meter energy sensors exist when coordinator values are present, including zero."""
+    mock_config_entry.add_to_hass(hass)
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": 120,
+        "em_input_energy": 0,
+        "em_output_energy": 308632,
+    }
+    client = create_mock_client(status=status)
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        input_state = hass.states.get("sensor.venus_meter_input_energy")
+        output_state = hass.states.get("sensor.venus_meter_output_energy")
+        assert input_state is not None
+        assert output_state is not None
+        assert input_state.state == "0"
+        assert output_state.state == "308632"
+        assert input_state.attributes["unit_of_measurement"] == "Wh"
+        assert input_state.attributes["device_class"] == "energy"
+        assert input_state.attributes["state_class"] == "total_increasing"
+
+        entity_registry = er.async_get(hass)
+        device_identifier = get_device_identifier(mock_config_entry.data)
+        input_entry = entity_registry.async_get("sensor.venus_meter_input_energy")
+        output_entry = entity_registry.async_get("sensor.venus_meter_output_energy")
+        assert input_entry is not None
+        assert output_entry is not None
+        assert input_entry.unique_id == f"{device_identifier}_em_input_energy"
+        assert output_entry.unique_id == f"{device_identifier}_em_output_energy"
+
+
+async def test_em_energy_sensors_omitted_when_values_missing(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Meter energy sensors are not created when coordinator values are absent."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={
+            "device_mode": "auto",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert hass.states.get("sensor.venus_meter_input_energy") is None
+        assert hass.states.get("sensor.venus_meter_output_energy") is None
+
+
+async def test_total_solar_energy_keeps_stable_unique_id_and_wh(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """The existing solar energy entity keeps its BLE-MAC unique ID and Wh unit."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VenusA", "version": 149},
+    )
+    client = create_mock_client(
+        status={
+            "device_mode": "auto",
+            "battery_soc": 55,
+            "battery_power": 120,
+            "total_pv_energy": 257420,
+        }
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_a_total_solar_energy")
+        assert state is not None
+        assert state.state == "257420"
+        assert state.attributes["unit_of_measurement"] == "Wh"
+
+        entity_registry = er.async_get(hass)
+        device_identifier = get_device_identifier(mock_config_entry.data)
+        entry = entity_registry.async_get("sensor.venus_a_total_solar_energy")
+        assert entry is not None
+        assert entry.unique_id == f"{device_identifier}_total_pv_energy"

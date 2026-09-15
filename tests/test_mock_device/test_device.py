@@ -13,6 +13,7 @@ from mock_device.__main__ import main
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
+    parse_em_status_response,
     parse_es_status_response,
     parse_pv_status_response,
 )
@@ -279,6 +280,76 @@ class TestDeviceDiscovery:
         assert status["pv1_power"] == 320
         assert status["pv2_power"] == 280
         assert status["total_pv_energy"] == 257420
+
+    def test_rev31_profile_round_trips_physical_watts_and_wh(self) -> None:
+        """Rev 3.1 mock wire JSON decodes through production into SI units."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusA",
+                "ver": 150,
+                "pv_channels": [
+                    {
+                        "channel": 1,
+                        "pv_power": 320,
+                        "pv_voltage": 44,
+                        "pv_current": 8.2,
+                    },
+                    {
+                        "channel": 2,
+                        "pv_power": 280,
+                        "pv_voltage": 41,
+                        "pv_current": 7.3,
+                    },
+                ],
+            },
+        )
+        device.set_energy_totals(
+            total_pv_energy=257420,
+            em_input_energy=308632,
+            em_output_energy=448751,
+        )
+        profile = resolve_firmware_profile("VenusA", 150)
+
+        pv_response = device.build_response(2, "PV.GetStatus", {})
+        es_response = device.build_response(3, "ES.GetStatus", {})
+        em_response = device.build_response(4, "EM.GetStatus", {})
+
+        assert pv_response is not None
+        assert es_response is not None
+        assert em_response is not None
+        assert pv_response["result"]["pv1_power"] == 320
+        assert pv_response["result"]["pv2_power"] == 280
+        assert es_response["result"]["total_pv_energy"] == 25742
+        assert em_response["result"]["input_energy"] == 3086320
+        assert em_response["result"]["output_energy"] == 4487510
+
+        status = merge_device_status(
+            pv_status_data=parse_pv_status_response(pv_response, profile),
+            es_status_data=parse_es_status_response(es_response, profile),
+            em_status_data=parse_em_status_response(em_response, profile),
+        )
+        assert status["pv1_power"] == 320
+        assert status["pv2_power"] == 280
+        assert status["total_pv_energy"] == 257420
+        assert status["em_input_energy"] == 308632
+        assert status["em_output_energy"] == 448751
+
+    def test_legacy_em_status_omits_energy_fields(self) -> None:
+        """Legacy mocks omit EM energy fields rather than sending null placeholders."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 145},
+        )
+
+        response = device.build_response(1, "EM.GetStatus", {})
+
+        assert response is not None
+        assert "input_energy" not in response["result"]
+        assert "output_energy" not in response["result"]
+
     def test_wifi_get_status(self) -> None:
         """Test Wifi.GetStatus returns WiFi info."""
         device = MockMarstekDevice(port=30006, simulate=False)
