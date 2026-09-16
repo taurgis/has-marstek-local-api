@@ -14,6 +14,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+import pytest_socket
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -51,6 +52,7 @@ def running_udp_mock_device(
     initial_soc: int = 50,
 ) -> Iterator[MockMarstekDevice]:
     """Bind a mock Marstek on an ephemeral UDP port and serve in a thread."""
+    pytest_socket.enable_socket()
     device = MockMarstekDevice(
         port=0,
         device_config=device_config,
@@ -123,10 +125,17 @@ def _config_entry_for_mock(port: int) -> MockConfigEntry:
 
 
 @pytest.mark.asyncio
+@pytest.mark.enable_socket
 async def test_set_passive_mode_live_venus_e_150_truncated_device_id(
     hass: HomeAssistant,
 ) -> None:
-    """Issue #34: truncated HA device IDs still set Passive on firmware 150."""
+    """Issue #34: truncated HA device IDs still set Passive on firmware 150.
+
+    pytest-homeassistant-custom-component disables INET sockets during
+    setup. Re-enable them here so the UDP mock and MarstekUDPClient can
+    talk on 127.0.0.1.
+    """
+    pytest_socket.enable_socket()
     with (
         running_udp_mock_device(device_config=_venus_e_150_config()) as mock,
         patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
