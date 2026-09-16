@@ -159,7 +159,7 @@ Configure multiple schedules via YAML:
 ```yaml
 service: marstek.set_manual_schedules
 data:
-  device_id: YOUR_DEVICE_ID
+  device_id: "YOUR_DEVICE_ID"
   schedules:
     - schedule_slot: 0
       start_time: "08:00"

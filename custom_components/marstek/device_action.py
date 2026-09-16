@@ -9,12 +9,11 @@ import voluptuous as vol
 from homeassistant.components.device_automation import (  # type: ignore[attr-defined]
     InvalidDeviceAutomationConfig,
 )
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_HOST, CONF_PORT, CONF_TYPE
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.typing import ConfigType, TemplateVarsType
 
@@ -32,6 +31,10 @@ from .const import (
     DEFAULT_REQUEST_TIMEOUT,
     DEFAULT_UDP_PORT,
     DOMAIN,
+)
+from .helpers.device_lookup import (
+    async_find_marstek_device,
+    async_get_marstek_entry,
 )
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
@@ -219,8 +222,7 @@ async def async_get_actions(
     hass: HomeAssistant, device_id: str
 ) -> list[dict[str, str]]:
     """List device actions for a Marstek device."""
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get(device_id)
+    device = async_find_marstek_device(hass, device_id)
     if not device:
         return []
 
@@ -497,30 +499,22 @@ async def _get_host_from_device(
     hass: HomeAssistant, device_id: str
 ) -> tuple[str, int] | None:
     """Resolve device IP address from device registry and config entries."""
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get(device_id)
+    device = async_find_marstek_device(hass, device_id)
     if not device:
         return None
 
-    # Priority 1: Get host (IP address) from config entry
-    # Identifiers store MAC addresses, not IP addresses, so we need the config entry
-    for entry_id in device.config_entries:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry and entry.domain == DOMAIN:
-            host = entry.data.get(CONF_HOST)  # Use CONF_HOST constant for consistency
-            port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
-            if host:
-                return host, int(port)
+    entry = async_get_marstek_entry(hass, device, require_loaded=False)
+    if entry:
+        host = entry.data.get(CONF_HOST)
+        port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
+        if host:
+            return host, int(port)
 
-    # Priority 2: Fallback to identifier if it looks like an IP address
-    # (This should rarely happen, as identifiers are typically MAC addresses)
+    # Fallback to identifier if it looks like an IP address
     for domain, identifier in device.identifiers:
         if domain == DOMAIN:
-            # Basic check: if identifier contains dots, it might be an IP address
-            # Otherwise it's likely a MAC address and we should skip it
             if "." in identifier:
                 return identifier, DEFAULT_UDP_PORT
-            # Normalize in case an IP-like identifier was saved without dots
             try:
                 _ = format_mac(identifier)
             except (ValueError, TypeError):
@@ -533,17 +527,7 @@ def _get_entry_from_device_id(
     hass: HomeAssistant, device_id: str, *, require_loaded: bool = True
 ) -> ConfigEntry | None:
     """Get config entry for a device ID."""
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get(device_id)
+    device = async_find_marstek_device(hass, device_id)
     if not device:
         return None
-
-    for config_entry_id in device.config_entries:
-        entry = hass.config_entries.async_get_entry(config_entry_id)
-        if not entry or entry.domain != DOMAIN:
-            continue
-        if require_loaded and entry.state is not ConfigEntryState.LOADED:
-            continue
-        return entry
-
-    return None
+    return async_get_marstek_entry(hass, device, require_loaded=require_loaded)

@@ -1053,3 +1053,61 @@ async def test_request_data_sync_skips_unloaded_entries(
             mock_refresh.assert_called_once()
             second_entry.runtime_data.coordinator.async_request_refresh.assert_called_once()
             third_entry.runtime_data.coordinator.async_request_refresh.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_passive_mode_accepts_truncated_device_id(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Issue #34: truncated registry IDs from YAML still control the device."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        device_registry = dr.async_get(hass)
+        device = device_registry.async_get_device(
+            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        )
+        assert device is not None
+        client.send_request.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_PASSIVE_MODE,
+            {
+                ATTR_DEVICE_ID: device.id[:-1],
+                ATTR_POWER: -500,
+                ATTR_DURATION: 300,
+            },
+            blocking=True,
+        )
+
+        assert client.send_request.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_set_passive_mode_accepts_entity_id_and_selector_list(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Entity IDs and single-item selector lists resolve to the battery."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        client.send_request.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_PASSIVE_MODE,
+            {
+                ATTR_DEVICE_ID: ["sensor.venus_battery_level"],
+                ATTR_POWER: -500,
+                ATTR_DURATION: 300,
+            },
+            blocking=True,
+        )
+
+        assert client.send_request.call_count >= 1
