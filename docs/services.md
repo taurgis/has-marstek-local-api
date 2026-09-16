@@ -4,7 +4,19 @@ The integration exposes services for advanced control and automation.
 
 > Tip: When automating control commands, prefer calling these services rather than trying to “poke” entity state.
 
-All services target a device via `device_id` (select the Marstek device).
+All services target a device via `device_id` (select the Marstek device in the UI).
+
+Home Assistant device IDs are **32-character hex** strings. Quote them in YAML so they stay strings:
+
+```yaml
+action: marstek.set_passive_mode
+data:
+  device_id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+  power: -500
+  duration: 300
+```
+
+If you are pasting YAML, prefer the device picker in Developer Tools, or pass the battery entity ID / MAC instead of copying a truncated ID from a template.
 
 Services are registered when Home Assistant starts and remain available even if
 no Marstek devices are currently loaded. If no matching device or config entry

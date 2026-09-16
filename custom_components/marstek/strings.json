@@ -454,7 +454,7 @@
       "message": "No device specified. Please select a device."
     },
     "invalid_device": {
-      "message": "Device {device_id} not found"
+      "message": "Device {device_id} not found. Use the device picker, a 32-character Home Assistant device ID, a Marstek entity ID, or the device MAC address."
     },
     "device_not_found": {
       "message": "Device {device_id} not found"

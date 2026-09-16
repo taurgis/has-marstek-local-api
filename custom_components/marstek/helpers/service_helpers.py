@@ -23,6 +23,17 @@ from ..pymarstek.validators import (
 )
 
 ATTR_DEVICE_ID = "device_id"
+
+
+def coerce_device_id(value: Any) -> str:
+    """Accept a device ID string or a single-item list from selectors."""
+    if isinstance(value, (list, tuple)):
+        if len(value) != 1:
+            raise vol.Invalid("device_id must contain exactly one device")
+        value = value[0]
+    return cv.string(value)
+
+
 ATTR_POWER = "power"
 ATTR_DURATION = "duration"
 ATTR_SCHEDULE_SLOT = "schedule_slot"
@@ -44,7 +55,7 @@ DEFAULT_SCHEDULE_DAYS: tuple[str, ...] = (
 
 SERVICE_SET_PASSIVE_MODE_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_DEVICE_ID): coerce_device_id,
         vol.Required(ATTR_POWER): vol.All(
             vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
         ),
@@ -56,7 +67,7 @@ SERVICE_SET_PASSIVE_MODE_SCHEMA = vol.Schema(
 
 SERVICE_SET_MANUAL_SCHEDULE_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_DEVICE_ID): coerce_device_id,
         vol.Optional(ATTR_SCHEDULE_SLOT, default=0): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
         ),
@@ -93,13 +104,13 @@ SCHEDULE_ITEM_SCHEMA = vol.Schema(
 
 SERVICE_CLEAR_MANUAL_SCHEDULES_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_DEVICE_ID): coerce_device_id,
     }
 )
 
 SERVICE_SET_MANUAL_SCHEDULES_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_DEVICE_ID): coerce_device_id,
         vol.Required(ATTR_SCHEDULES): vol.All(
             cv.ensure_list,
             [SCHEDULE_ITEM_SCHEMA],
@@ -109,7 +120,7 @@ SERVICE_SET_MANUAL_SCHEDULES_SCHEMA = vol.Schema(
 
 SERVICE_REQUEST_DATA_SYNC_SCHEMA = vol.Schema(
     {
-        vol.Optional(ATTR_DEVICE_ID): cv.string,
+        vol.Optional(ATTR_DEVICE_ID): coerce_device_id,
     }
 )
 

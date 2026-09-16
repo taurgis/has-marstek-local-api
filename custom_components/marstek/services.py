@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import device_registry as dr
 
 from .const import API_MODE_PASSIVE, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN
+from .helpers.device_lookup import (
+    async_resolve_marstek_device,
+    require_loaded_marstek_entry,
+)
 from .helpers.service_helpers import (
     ATTR_DAYS,
     ATTR_DEVICE_ID,
@@ -63,26 +66,15 @@ def _get_entry_and_client_from_device_id(
     hass: HomeAssistant, device_id: str
 ) -> tuple[MarstekConfigEntry, MarstekUDPClient, str, int]:
     """Get config entry and UDP client from device ID."""
-    device_registry = dr.async_get(hass)
-    device = device_registry.async_get(device_id)
-
-    if not device:
-        raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="invalid_device",
-            translation_placeholders={"device_id": device_id},
-        )
-
-    # Find the Marstek config entry for this device
-    for entry_id in device.config_entries:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry and entry.domain == DOMAIN and entry.state == ConfigEntryState.LOADED:
-            host = entry.data.get(CONF_HOST)
-            port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
-            # Get shared UDP client from hass.data
-            udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
-            if host and udp_client:
-                return entry, udp_client, host, int(port)
+    device = async_resolve_marstek_device(hass, device_id)
+    entry = cast(
+        "MarstekConfigEntry", require_loaded_marstek_entry(hass, device, device_id)
+    )
+    host = entry.data.get(CONF_HOST)
+    port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
+    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+    if host and udp_client:
+        return entry, udp_client, host, int(port)
 
     raise ServiceValidationError(
         translation_domain=DOMAIN,

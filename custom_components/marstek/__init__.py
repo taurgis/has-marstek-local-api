@@ -20,6 +20,7 @@ from .const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOM
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier
 from .firmware_profile import FirmwareProfile
+from .helpers.device_lookup import iter_device_config_entry_ids
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
 from .pymarstek import MarstekUDPClient, get_es_mode
@@ -369,7 +370,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     if not device:
         return
 
-    remaining_entries = set(device.config_entries) - {entry.entry_id}
+    remaining_entries = set(iter_device_config_entry_ids(device)) - {entry.entry_id}
     if not remaining_entries:
         _LOGGER.info("Removing stale device registry entry: %s", device.name)
         device_registry.async_remove_device(device.id)
