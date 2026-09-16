@@ -11,7 +11,7 @@ or a truncated registry ID.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -243,4 +243,4 @@ def require_loaded_marstek_entry(
             translation_key="no_config_entry",
             translation_placeholders={"device_id": device_id},
         )
-    return cast(ConfigEntry, entry)
+    return entry
