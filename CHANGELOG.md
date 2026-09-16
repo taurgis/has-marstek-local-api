@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+### Patch Changes
+
+- e0ec8e8: Fix set_passive_mode failing with Device not found when Home Assistant device IDs are truncated or passed as a config entry ID, MAC, or entity ID.
+
 ## 1.1.0
 
 ### Minor Changes
