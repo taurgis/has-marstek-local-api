@@ -148,8 +148,8 @@ def resolve_firmware_profile(
     # 148 or older (incl. 148.3): solar Wh, PV1 deciwatts — same as 1.0.0.
     # Venus A 149: solar 0.01 kWh → Wh (#35); PV1 still deciwatts.
     # 150+ (incl. app label 150.9): solar 0.01 kWh on known families;
-    # SYS/UPS/EM as gated below. PV1 stays deciwatts — 1.1.0 skipped ÷10
-    # at ver>=150 and #57 reports 10× high PV1 on 148.3 and 150.9.
+    # SYS/UPS/EM as gated below. PV1 stays deciwatts -- 1.1.0 skipped /10
+    # at ver>=150 and #57 reports 10x high PV1 on 148.3 and 150.9.
     scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )
