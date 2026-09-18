@@ -776,7 +776,6 @@ async def test_entries_on_different_ports_use_separate_udp_clients(
         },
     )
     first_entry.add_to_hass(hass)
-    second_entry.add_to_hass(hass)
 
     def _make_client(*_args: object, **_kwargs: object) -> object:
         return create_mock_client(
@@ -799,6 +798,9 @@ async def test_entries_on_different_ports_use_separate_udp_clients(
         ),
     ):
         await hass.config_entries.async_setup(first_entry.entry_id)
+        await hass.async_block_till_done()
+
+        second_entry.add_to_hass(hass)
         await hass.config_entries.async_setup(second_entry.entry_id)
         await hass.async_block_till_done()
 
