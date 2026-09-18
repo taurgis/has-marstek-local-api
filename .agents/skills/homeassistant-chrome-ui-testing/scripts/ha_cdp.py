@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import contextlib
 import json
 import os
 import signal
@@ -42,11 +43,13 @@ HELPER_JS = r"""
   const isVisible = (el) => {
     try {
       const s = getComputedStyle(el);
-      if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") {
+      if (s.display === "none" || s.visibility === "hidden") {
         return false;
       }
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
+      if (r.width > 0 && r.height > 0) return true;
+      const tag = (el.tagName || "").toLowerCase();
+      return tag.includes("dialog");
     } catch (e) {
       return true;
     }
@@ -81,8 +84,9 @@ HELPER_JS = r"""
         parts.push(n.textContent || "");
         return;
       }
-      if (n.nodeType === 1) {
-        if (SKIP.has(n.tagName)) return;
+      // 1 = element, 11 = DocumentFragment (open shadow roots)
+      if (n.nodeType === 1 || n.nodeType === 11) {
+        if (n.tagName && SKIP.has(n.tagName)) return;
         if (n.shadowRoot) rec(n.shadowRoot);
         for (const c of n.childNodes) rec(c);
       }
@@ -110,7 +114,9 @@ HELPER_JS = r"""
       ownText(el),
     ];
     try {
-      const lab = el.shadowRoot && el.shadowRoot.querySelector("label, .label, .mdc-floating-label");
+      const lab = el.shadowRoot && el.shadowRoot.querySelector(
+        "label, .label, .mdc-floating-label"
+      );
       if (lab) bits.push((lab.textContent || "").trim());
     } catch (e) {}
     return bits.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
@@ -143,10 +149,17 @@ HELPER_JS = r"""
     const tag = el.tagName.toLowerCase();
     const role = attr(el, "role");
     if (tag === "button" || tag === "a" || role === "button" || role === "listitem") return true;
+    if (role === "radio" || role === "option" || role === "menuitem") return true;
     if (tag.includes("button") || tag.includes("list-item") || tag.includes("list-item-button")) {
       return true;
     }
-    if (tag === "ha-md-list-item" || tag === "mwc-list-item" || tag === "md-list-item") {
+    if (
+      tag === "ha-md-list-item" ||
+      tag === "mwc-list-item" ||
+      tag === "md-list-item" ||
+      tag.includes("radio-option") ||
+      tag.includes("option")
+    ) {
       return true;
     }
     return attr(el, "type") === "submit";
@@ -182,14 +195,16 @@ HELPER_JS = r"""
         tag === "input" ||
         tag === "textarea" ||
         tag === "ha-textfield" ||
+        tag === "ha-form-string" ||
+        tag === "ha-form-integer" ||
+        tag === "ha-input" ||
+        tag === "wa-input" ||
         tag === "ha-selector-text" ||
         tag === "ha-selector-number" ||
         tag === "ha-combo-box" ||
-        tag === "ha-form" ||
         tag.includes("textfield") ||
         tag.includes("selector");
       if (!interesting) return;
-      if (tag === "ha-form") return;
       let value = "";
       try {
         value = el.value != null ? String(el.value) : "";
@@ -253,18 +268,22 @@ HELPER_JS = r"""
     const out = [];
     walk(document, (el) => {
       const tag = el.tagName.toLowerCase();
-      if (tag !== "ha-dialog" && tag !== "mwc-dialog" && !tag.endsWith("-dialog")) return;
+      const isDialog =
+        tag === "ha-dialog" ||
+        tag === "mwc-dialog" ||
+        tag === "wa-dialog" ||
+        tag === "dialog-data-entry-flow" ||
+        tag.endsWith("-dialog");
+      if (!isDialog) return;
       if (!isVisible(el)) return;
-      const heading =
-        attr(el, "heading") ||
-        el.heading ||
-        (el.shadowRoot &&
-          (el.shadowRoot.querySelector("[slot=heading], .heading, h2, h1") || {}).textContent) ||
-        "";
+      let heading = attr(el, "heading") || el.heading || "";
+      try {
+        heading = heading || (el.innerText || "").split("\n")[0];
+      } catch (e) {}
       out.push({
         tag,
         heading: String(heading || deepText(el).slice(0, 80)).replace(/\s+/g, " ").trim(),
-        text: deepText(el).slice(0, 500),
+        text: (el.innerText || deepText(el)).slice(0, 500),
       });
     });
     return out;
@@ -289,11 +308,23 @@ HELPER_JS = r"""
       const score = matches(it, needle, near);
       if (score) scored.push({ score, idx, it });
     });
-    scored.sort((a, b) => b.score - a.score);
+    const tagRank = (tag) => {
+      if (!tag) return 0;
+      if (tag.startsWith("ha-form")) return 5;
+      if (tag === "ha-button" || tag === "ha-textfield" || tag === "ha-input") return 4;
+      if (tag.includes("list-item")) return 3;
+      if (tag === "wa-input") return 2;
+      if (tag === "button" || tag === "input" || tag === "a") return 1;
+      return 2;
+    };
+    scored.sort((a, b) => b.score - a.score || tagRank(b.it.tag) - tagRank(a.it.tag));
     const exact = scored.filter((s) => s.score === 2);
     const pool = exact.length ? exact : scored;
     if (!pool.length) return { ok: false, error: "not found", needle, near };
     if (nth == null && pool.length > 1) {
+      if (tagRank(pool[0].it.tag) > tagRank(pool[1].it.tag)) {
+        return { ok: true, item: pool[0].it };
+      }
       return {
         ok: false,
         error: "ambiguous",
@@ -356,15 +387,29 @@ HELPER_JS = r"""
         }
       } catch (e) {}
       try { el.value = value; } catch (e) {}
-      try {
-        el.dispatchEvent(
-          new CustomEvent("value-changed", {
-            detail: { value },
-            bubbles: true,
-            composed: true,
-          })
-        );
-      } catch (e) {}
+      let n = el;
+      for (let i = 0; i < 8 && n; i++) {
+        const tag = (n.tagName || "").toLowerCase();
+        if (
+          tag === "ha-form-string" ||
+          tag === "ha-form-integer" ||
+          tag === "ha-input" ||
+          tag === "wa-input" ||
+          tag === "ha-textfield"
+        ) {
+          try { n.value = value; } catch (e) {}
+          try {
+            n.dispatchEvent(
+              new CustomEvent("value-changed", {
+                detail: { value },
+                bubbles: true,
+                composed: true,
+              })
+            );
+          } catch (e) {}
+        }
+        n = n.parentNode || (n.getRootNode && n.getRootNode().host) || null;
+      }
       const { _el, ...rest } = picked.item;
       return { ok: true, filled: { ...rest, value } };
     },
@@ -417,6 +462,8 @@ def chrome_main_pids() -> list[int]:
         exe = parts[0]
         if "chrome" not in exe.lower():
             continue
+        if "crashpad" in exe.lower():
+            continue
         if any(arg.startswith("--type=") for arg in parts):
             continue
         pids.append(int(proc.name))
@@ -442,10 +489,8 @@ def quit_chrome() -> list[int]:
             continue
     for pid in pids:
         if not _wait_pid_exit(pid, 8):
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             _wait_pid_exit(pid, 3)
     return pids
 
@@ -457,10 +502,7 @@ def prepare_profile() -> None:
         subprocess.run(["cp", "-a", str(src), str(dest)], check=True)
     dest.mkdir(parents=True, exist_ok=True)
     for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
-        try:
-            (dest / name).unlink()
-        except FileNotFoundError:
-            pass
+        (dest / name).unlink(missing_ok=True)
 
 
 def launch_chrome(url: str) -> subprocess.Popen[bytes]:
@@ -602,15 +644,15 @@ async def with_page(url_substr: str | None, fn: Any) -> Any:
         )
     page = pick_page(status["pages"], url_substr)
     ws_url = page["webSocketDebuggerUrl"]
-    async with aiohttp.ClientSession() as session:
-        async with session.ws_connect(
-            ws_url, origin=f"http://{CDP_HOST}:{CDP_PORT}"
-        ) as ws:
-            cdp = Cdp(ws)
-            await cdp.call("Page.enable")
-            await cdp.call("Runtime.enable")
-            await cdp.inject()
-            return await fn(cdp, page)
+    async with (
+        aiohttp.ClientSession() as session,
+        session.ws_connect(ws_url, origin=f"http://{CDP_HOST}:{CDP_PORT}") as ws,
+    ):
+        cdp = Cdp(ws)
+        await cdp.call("Page.enable")
+        await cdp.call("Runtime.enable")
+        await cdp.inject()
+        return await fn(cdp, page)
 
 
 def _print(data: Any, as_json: bool) -> None:
@@ -658,9 +700,34 @@ async def cmd_fill(
     await cdp.inject()
     near_js = json.dumps(near)
     nth_js = "null" if nth is None else str(nth)
-    return await cdp.evaluate(
+    result = await cdp.evaluate(
         f"window.__haCdp.fill({json.dumps(field)}, {json.dumps(value)}, {near_js}, {nth_js})"
     )
+    if not result.get("ok"):
+        return result
+    # wa-input ignores some .value writes; type into the focused native input.
+    await cdp.call(
+        "Input.dispatchKeyEvent",
+        {
+            "type": "keyDown",
+            "key": "a",
+            "code": "KeyA",
+            "modifiers": 2,
+            "windowsVirtualKeyCode": 65,
+        },
+    )
+    await cdp.call(
+        "Input.dispatchKeyEvent",
+        {
+            "type": "keyUp",
+            "key": "a",
+            "code": "KeyA",
+            "modifiers": 2,
+            "windowsVirtualKeyCode": 65,
+        },
+    )
+    await cdp.call("Input.insertText", {"text": value})
+    return result
 
 
 async def cmd_eval(cdp: Cdp, _page: dict[str, Any], expression: str) -> Any:
@@ -669,10 +736,8 @@ async def cmd_eval(cdp: Cdp, _page: dict[str, Any], expression: str) -> Any:
 
 async def cmd_navigate(cdp: Cdp, _page: dict[str, Any], url: str) -> dict[str, Any]:
     result = await cdp.call("Page.navigate", {"url": url})
-    try:
+    with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(wait_load(cdp), timeout=15)
-    except TimeoutError:
-        pass
     await cdp.inject()
     return {"ok": True, "url": url, "frameId": result.get("frameId")}
 
@@ -815,7 +880,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         code = asyncio.run(async_main(args))
-    except Exception as err:  # noqa: BLE001 — CLI boundary
+    except Exception as err:
         print(f"error: {err}", file=sys.stderr)
         sys.exit(1)
     sys.exit(code)

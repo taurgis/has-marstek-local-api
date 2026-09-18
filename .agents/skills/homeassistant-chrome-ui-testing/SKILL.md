@@ -61,7 +61,7 @@ Rules:
 
 1. `dump` before every click. Match **visible text / aria-label**, not pixels.
 2. Several **Add** buttons exist. Pass `--near` (MAC / unique_id / dialog heading) or `--nth`. If the result is `ambiguous`, dump and retry — do not guess.
-3. Fill IP/port by **field label**, then `click Submit` or `press Enter`. Do not click an empty host field “somewhere in the dialog”.
+3. Fill IP/port by **field label** (`IP address`, `Port`). The helper targets `ha-form-string` / `ha-form-integer` (HA 2025 `wa-input`) and types into the focused native input. Do not click an empty host field “somewhere in the dialog”.
 4. `computerUse` may **look** at the screen. It must not click HA. `xdotool` may focus the Chrome window only.
 5. Type HA URLs into `navigate` (or Chrome’s address bar). Do not walk Overview → Settings → Devices & services unless recording a user-facing demo.
 
@@ -154,8 +154,8 @@ This is `async_step_confirm` from `SOURCE_INTEGRATION_DISCOVERY`. It always unic
 
 1. `click 'Add integration'` → wait → search `Marstek`.
 2. Wait for the picker (broadcast can take ~10s).
-3. `click` **Enter IP/port manually** (or land here when discovery is empty).
-4. `fill 'IP address'` / `fill Port` (labels, not pixels) → Submit with `press Enter`.
+3. `click` **Enter IP/port manually** (a `ha-radio-option` on the device picker; or land here when discovery is empty).
+4. Submit the picker, then `fill 'IP address'` / `fill Port` (labels, not pixels) → Submit with `press Enter`.
 
 Same unicast probe as Confirm device. Manual does not reuse the cached broadcast result.
 
