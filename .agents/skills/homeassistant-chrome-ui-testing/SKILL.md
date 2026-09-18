@@ -69,6 +69,8 @@ python3 $H click Delete
 python3 $H click Delete --near 'permanently deleted'
 python3 $H device-actions '<device_id>'
 python3 $H run-script '{"domain":"marstek","type":"discharge","device_id":"<id>","metadata":{}}'
+python3 $H click 'Overflow menu' --near 'Marstek CDP discharge test' --nth 0
+python3 $H click 'Run actions'
 python3 $H fire-event marstek_cdp_test
 python3 $H entities --prefix venus_d
 ```
@@ -253,7 +255,9 @@ python3 $H service switch turn_off --data '{"entity_id":"switch.venus_c_panel_le
 python3 $H service marstek set_passive_mode --data '{"device_id":"<id>","power":-400,"duration":90}'
 ```
 
-Device actions (Then do → Device): **Charge battery**, **Discharge battery**, **Stop charging/discharging**. List and fire them without the UI:
+Device actions (Then do → Device): **Charge battery**, **Discharge battery**, **Stop charging/discharging**. List them with `device-actions`. Firing via `run-script` uses WS `execute_script` ([device automation actions](https://developers.home-assistant.io/docs/device_automation_action)).
+
+**Do not block a recording on `run-script` for Marstek charge/discharge/stop.** Those actions verify for up to 8 × ~60s (`poll_cycle`). Mode often flips to `manual` within seconds; verification then retries because mock power does not match the requested watts. Start the script, then `wait-state sensor.*_device_mode --equals manual`. Prefer `set_passive_mode` or `select.select_option` when you only need a mode change. New device automations are not accepted for new integrations; this repo already has them.
 
 ```bash
 python3 $H device-actions '<device_id>'
@@ -261,17 +265,19 @@ python3 $H run-script '{"domain":"marstek","type":"discharge","device_id":"<id>"
 python3 $H wait-state sensor.venus_c_device_mode --equals manual --timeout 90
 ```
 
-`run-script` is WS `execute_script` ([device automation actions](https://developers.home-assistant.io/docs/device_automation_action)). New device automations are not accepted for new integrations; this repo already has them.
-
 ### Automations
 
 UI: **`/config/automation/dashboard`** (singular). `/config/automations/dashboard` is the wrong path.
+
+Overflow **Overflow menu** on that page lives in a data-table row. After extending `contextOf` with `data-table` / `tr`, `--near 'Marstek CDP discharge test'` matches. Then click **Run actions** (`ha-dropdown-item`). Last triggered should change to **now**.
 
 Prefer building in the UI when recording. `POST /api/config/automation/config/{id}` is **not** in the official REST docs; do not treat it as the supported API.
 
 To exercise an existing event automation:
 
 ```bash
+python3 $H click 'Overflow menu' --near 'Marstek CDP discharge test' --nth 0
+python3 $H click 'Run actions'
 python3 $H fire-event marstek_cdp_test
 python3 $H wait-state sensor.venus_c_device_mode --equals manual --timeout 90
 ```
@@ -289,8 +295,8 @@ Run this against Docker mocks after a UDP/config-flow change. Keep compose up.
 5. Delete a **unique-port** device (Venus A `:30001` / Venus D `:30002`). Manual re-add is allowed immediately; discovery Confirm may wait for the 10 min scanner. GetDevice without `via pooled` is expected if no other client remains on that port.
 6. `request_data_sync` + `wait-state --changed` on battery power for each re-added device.
 7. Device page / services: select `ai` then `auto`; `set_passive_mode`; SYS number/switch if the profile allows it.
-8. `device-actions` + `run-script` charge/discharge/stop. Mode should become `manual` then return toward auto after stop (stop sets 0 W manual; then select `auto`).
-9. Open `/config/automation/dashboard`, create or run an automation that calls a Marstek device action or `fire-event`.
+8. `device-actions` to confirm charge/discharge/stop exist. Use `set_passive_mode` or `select.select_option` for a fast mode change. If you `run-script` a device action, do not wait for `execute_script` to return (verification can take many minutes).
+9. Open `/config/automation/dashboard`, overflow **Run actions** on a Marstek discharge automation, and/or `fire-event`. Last triggered must update.
 
 Do not cite 0-byte `mp4` files. Discard failed recordings.
 

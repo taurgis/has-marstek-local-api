@@ -19,7 +19,7 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py entities` | WS `config/entity_registry/list` | `unique_id` stays BLE-MAC based after delete/re-add. |
 | `ha_cdp.py entries` | entries + devices joined | Adds `device_id` / `mac` / `model`. |
 | `ha_cdp.py device-actions DEVICE_ID` | WS `device_automation/action/list` | Charge / discharge / stop plus generic entity actions. |
-| `ha_cdp.py run-script JSON` | WS `execute_script` | There is no “fire device action” command; pass the action dict from `device-actions`. |
+| `ha_cdp.py run-script JSON` | WS `execute_script` | There is no “fire device action” command; pass the action dict from `device-actions`. Marstek charge/discharge/stop **block** until verification finishes (up to 8 × ~60s). Do not wait on that in a recording. |
 
 ## Entity services ([select](https://www.home-assistant.io/integrations/select), [number](https://www.home-assistant.io/integrations/number), [switch](https://www.home-assistant.io/integrations/switch))
 

@@ -133,7 +133,10 @@ HELPER_JS = r"""
         tag.includes("flow") ||
         tag.includes("list-item") ||
         tag.includes("config-entry") ||
-        tag.includes("integration")
+        tag.includes("integration") ||
+        tag.includes("data-table") ||
+        tag === "tr" ||
+        tag.includes("data-row")
       ) {
         chunks.push(deepText(n).slice(0, 240));
         try {
