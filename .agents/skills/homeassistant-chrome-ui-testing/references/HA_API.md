@@ -6,13 +6,20 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 
 | Command | HA API | Notes |
 |---------|--------|--------|
-| `ha_cdp.py api GET config/config_entries/entry` | GET `/api/config/config_entries/entry` | List entries. This HA version omits `unique_id` / `data` on the list payload. |
-| `ha_cdp.py delete-entry ENTRY_ID` | DELETE `/api/config/config_entries/entry/{entry_id}` | Only delete mechanism ([config entries](https://developers.home-assistant.io/docs/config_entries_index)). No WebSocket delete. Keep the HTTP call open until it returns. |
-| `ha_cdp.py api POST config/config_entries/entry/{id}/reload` | POST reload | Unload + setup without wiping the entity registry. |
-| `ha_cdp.py service select select_option --data '{...}'` | POST `/api/services/<domain>/<service>` | Same path the UI uses. |
+| `ha_cdp.py api GET config/config_entries/entry` | GET `/api/config/config_entries/entry` | List entries. This HA version omits `unique_id` / `data` on the list payload. Config-entry HTTP routes are implemented in core (`config/config_entries.py`) and are **not** listed on the REST reference page. |
+| `ha_cdp.py delete-entry ENTRY_ID` | DELETE `/api/config/config_entries/entry/{entry_id}` | Only delete mechanism ([config entries](https://developers.home-assistant.io/docs/config_entries_index)). No WebSocket delete. Keep the HTTP call open until it returns ([core issue #178092](https://github.com/home-assistant/core/issues/178092)). |
+| `ha_cdp.py reload-entry ENTRY_ID` | POST `/api/config/config_entries/entry/{id}/reload` | Unload + setup without wiping the entity registry. Same “don’t cancel the HTTP call” caveat. |
+| `ha_cdp.py flows` | WS `config_entries/flow/progress` | Discovery flows waiting for the user. Does **not** list user-initiated flows. |
+| `ha_cdp.py wait-flow --unique-id MAC` | polls `flow/progress` | After delete, wait for scanner rediscovery (up to 10 min). |
+| `ha_cdp.py abort-flow FLOW_ID` | DELETE `/api/config/config_entries/flow/{flow_id}` | Abort an in-progress confirm/manual flow. |
+| `ha_cdp.py service …` | POST `/api/services/<domain>/<service>` | Same path the UI uses. Blocks until the service finishes. |
+| `ha_cdp.py fire-event TYPE` | POST `/api/events/{event_type}` | Official fire-event path. |
 | `ha_cdp.py states --entity ID` | `hass.states` | Live entity object. |
-| `ha_cdp.py devices` | WS `config/device_registry/list` | MAC is `identifiers[0][1]` (`marstek`, BLE-MAC). |
+| `ha_cdp.py devices` | WS `config/device_registry/list` | MAC is `identifiers[0][1]` (`marstek`, BLE-MAC). HA 2026.8 adds `config_entry_id`; `config_entries` is a compatibility shim ([blog](https://developers.home-assistant.io/blog/2026/07/21/device-registry-single-config-entry/)). Child devices (2026.9 `parent_device_id`) are skipped. |
+| `ha_cdp.py entities` | WS `config/entity_registry/list` | `unique_id` stays BLE-MAC based after delete/re-add. |
 | `ha_cdp.py entries` | entries + devices joined | Adds `device_id` / `mac` / `model`. |
+| `ha_cdp.py device-actions DEVICE_ID` | WS `device_automation/action/list` | Charge / discharge / stop plus generic entity actions. |
+| `ha_cdp.py run-script JSON` | WS `execute_script` | There is no “fire device action” command; pass the action dict from `device-actions`. |
 
 ## Entity services ([select](https://www.home-assistant.io/integrations/select), [number](https://www.home-assistant.io/integrations/number), [switch](https://www.home-assistant.io/integrations/switch))
 
@@ -29,15 +36,21 @@ python3 scripts/ha_cdp.py service marstek set_passive_mode \
   --data '{"device_id":"<device_registry_id>","power":-500,"duration":60}'
 ```
 
+Official action pages: [select.select_option](https://www.home-assistant.io/actions/select.select_option/), [number.set_value](https://www.home-assistant.io/actions/number.set_value/).
+
 Marstek **select** accepts `auto` / `ai` / `ups` (profile-gated). `manual` and `passive` raise from the select entity; use services or device actions for those.
 
 ## Device actions
 
 [Device automation actions](https://developers.home-assistant.io/docs/device_automation_action): Charge battery / Discharge battery / Stop charging/discharging (`charge` / `discharge` / `stop`). Official note: new device automations are not accepted for new integrations; this repo already has them.
 
-Build them in the automation editor (Then do → Device) or store them in an automation `action` dict with `domain: marstek`, `device_id`, `type`.
+```bash
+python3 scripts/ha_cdp.py device-actions '<device_id>'
+python3 scripts/ha_cdp.py run-script \
+  '{"domain":"marstek","type":"discharge","device_id":"<device_id>","metadata":{}}'
+```
 
-`POST /api/config/automation/config/{id}` is **not** in the official REST docs. Prefer the UI at `/config/automation/dashboard` for creating automations during Chrome tests.
+Build them in the automation editor (Then do → Device) at **`/config/automation/dashboard`** (singular). `POST /api/config/automation/config/{id}` is **not** in the official REST docs.
 
 ## Unique IDs after delete / re-add
 

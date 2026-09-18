@@ -1,13 +1,13 @@
 ---
 name: homeassistant-chrome-ui-testing
-description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port) and walkthroughs.
+description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, actions, automations) and walkthroughs.
 ---
 
 # Home Assistant Chrome UI testing
 
 Use this when exercising the Marstek custom integration in Chrome against `.devcontainer/docker-compose.yml`.
 
-**Drive the UI with CDP. Do not click screenshot coordinates.** Pixel clicks miss Ignore vs Add, Submit, IP focus, and the wrong Chrome tab. `xdotool` guessed `x,y` and computerUse screenshot clicks are forbidden for HA dialogs.
+**Drive the UI with CDP. Do not click screenshot coordinates.** Pixel clicks miss Ignore vs Add, Submit, IP focus, overflow Menu, and the wrong Chrome tab. `xdotool` guessed `x,y` and computerUse screenshot clicks are forbidden for HA dialogs.
 
 ## Restore DevTools first
 
@@ -45,31 +45,43 @@ Official notes: [Chrome 136 remote-debugging-port](https://developer.chrome.com/
 Script: `.agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py` (needs `aiohttp`).
 
 ```bash
-python3 …/scripts/ha_cdp.py dump
-python3 …/scripts/ha_cdp.py click Add --near '00:9b:08:a5:aa:39'
-python3 …/scripts/ha_cdp.py fill 'IP address' 172.28.0.20
-python3 …/scripts/ha_cdp.py fill Port 30000
-python3 …/scripts/ha_cdp.py click Submit
-python3 …/scripts/ha_cdp.py wait 'already_in_progress' --timeout 8
-python3 …/scripts/ha_cdp.py press Escape
-python3 …/scripts/ha_cdp.py navigate 'http://127.0.0.1:8123/config/integrations/dashboard'
-python3 …/scripts/ha_cdp.py screenshot /tmp/ha.png
-python3 …/scripts/ha_cdp.py token
-python3 …/scripts/ha_cdp.py entries
-python3 …/scripts/ha_cdp.py devices
-python3 …/scripts/ha_cdp.py states --prefix venus_c
-python3 …/scripts/ha_cdp.py wait-state sensor.venus_c_battery_power --changed --timeout 90
-python3 …/scripts/ha_cdp.py service marstek request_data_sync --data '{"device_id":"<id>"}'
-python3 …/scripts/ha_cdp.py delete-entry '<entry_id>'
+H=.agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py
+python3 $H dump
+python3 $H click Add --near '00:9b:08:a5:aa:39'
+python3 $H fill 'IP address' 172.28.0.20
+python3 $H fill Port 30000
+python3 $H click Submit
+python3 $H wait 'already_in_progress' --timeout 8
+python3 $H press Escape
+python3 $H navigate 'http://127.0.0.1:8123/config/integrations/dashboard'
+python3 $H screenshot /tmp/ha.png
+python3 $H token
+python3 $H entries
+python3 $H devices
+python3 $H flows
+python3 $H wait-flow --unique-id '02:de:ad:be:ef:04' --timeout 700
+python3 $H states --prefix venus_c
+python3 $H wait-state sensor.venus_c_battery_power --changed --timeout 90
+python3 $H service marstek request_data_sync --data '{"device_id":"<id>"}'
+python3 $H delete-entry '<entry_id>'
+python3 $H click Menu --near 'Marstek VenusD 1 device' --nth 0
+python3 $H click Delete
+python3 $H click Delete --near 'permanently deleted'
+python3 $H device-actions '<device_id>'
+python3 $H run-script '{"domain":"marstek","type":"discharge","device_id":"<id>","metadata":{}}'
+python3 $H fire-event marstek_cdp_test
+python3 $H entities --prefix venus_d
 ```
 
 Rules:
 
 1. `dump` before every click. Match **visible text / aria-label**, not pixels.
-2. Several **Add** buttons exist. Pass `--near` (MAC / unique_id / dialog heading) or `--nth`. If the result is `ambiguous`, dump and retry — do not guess.
-3. Fill IP/port by **field label** (`IP address`, `Port`). The helper targets `ha-form-string` / `ha-form-integer` (HA 2025 `wa-input`) and types into the focused native input. Do not click an empty host field “somewhere in the dialog”.
-4. `computerUse` may **look** at the screen. It must not click HA. `xdotool` may focus the Chrome window only.
-5. Type HA URLs into `navigate` (or Chrome’s address bar). Do not walk Overview → Settings → Devices & services unless recording a user-facing demo.
+2. Several **Add** / **Menu** / **Delete** buttons exist. Pass `--near` (MAC, unique_id, `Marstek VenusD 1 device`, dialog heading) or `--nth`. If the result is `ambiguous`, dump and retry — do not guess.
+3. Overflow **Menu** context is the `list-item` / config-entry row. Use `--near '<title> 1 device'` and `--nth 0` if the device registry row also matches.
+4. Fill IP/port by **field label** (`IP address`, `Port`). The helper targets `ha-form-string` / `ha-form-integer` (HA 2025 `wa-input`) and types into the focused native input. It must **never** assign `ha-form.value` (that clobbers the whole form to a scalar, e.g. Port `30000` wiping the host).
+5. Menu items are `ha-dropdown-item`. Radio rows on the picker are `ha-radio-option` (`Enter IP/port manually`).
+6. `computerUse` may **look** at the screen. It must not click HA. `xdotool` may focus the Chrome window only.
+7. Type HA URLs into `navigate` (or Chrome’s address bar). Do not walk Overview → Settings → Devices & services unless recording a user-facing demo.
 
 ## Bring-up
 
@@ -114,11 +126,11 @@ Base: `http://127.0.0.1:8123`
 | Path | Use for |
 |------|---------|
 | `/config/integrations/dashboard` | **Start here.** Discovered cards + Configured list + “+ Add integration” |
-| `/config/integrations/integration/marstek` | Only Marstek entries |
+| `/config/integrations/integration/marstek` | Only Marstek entries (delete Menu lives here) |
 | `/config/devices/dashboard` | Device tiles (SoC/mode live check) |
 | `/config/entities?domain=marstek` | Entity states |
 | `/config/logs` | UI log (also `sudo docker logs marstek-ha-dev`) |
-| `/config/automations/dashboard` | Create/run automations (device actions live here) |
+| `/config/automation/dashboard` | Automations (singular `automation`, not `automations`) |
 | `/config/devices/device/<id>` | Device page: mode select, SoC, power, SYS number/switch |
 
 ## Mock devices
@@ -155,7 +167,7 @@ PY
 
 This is `async_step_confirm` from `SOURCE_INTEGRATION_DISCOVERY`. It always unicast-probes with `get_device_info`. That probe must reuse the pooled UDP client for the target port. Pausing the coordinator listener is **not** enough (see Same-port GetDevice).
 
-`already_in_progress` means that MAC already has an open confirm flow — `press Escape` / click Close, do not start a second manual add for the same device.
+`already_in_progress` means that MAC already has an open confirm flow — `press Escape` / click Close, do not start a second manual add for the same device. `flows` lists those (`step_id=confirm`).
 
 ### 2) Manual add, no auto-detect
 
@@ -186,30 +198,44 @@ Right path: `get_device_info(..., udp_client=pooled_client)`. Log: `Querying dev
 
 Use this when Venus C (`172.28.0.26:30000`) is already configured and you add Venus E (`172.28.0.20:30000`) via manual or Confirm device.
 
+If the last entry on that port was deleted, there is **no** pooled client. Then the log is `Querying device info from HOST:PORT` without `via pooled UDP client`. That is expected (unique-port Venus D on 30002 after delete; Venus A on 30001). Same-port re-add while C or another E is still loaded **must** show `via pooled`.
+
 ## Delete, re-add, live updates, actions
 
-Use `entries` / `devices` / `states` before mutating anything. Join key is BLE-MAC on `devices[].identifiers`.
+Use `entries` / `devices` / `states` / `entities` before mutating anything. Join key is BLE-MAC on `devices[].identifiers`. HA 2026.8+ also exposes `config_entry_id` (one entry per device).
 
 ### Delete
 
-UI: `/config/integrations/integration/marstek` → overflow **Menu** `--near '<title>'` → **Delete** → confirm. REST (official): `delete-entry ENTRY_ID` → `DELETE /api/config/config_entries/entry/{id}` ([config entries](https://developers.home-assistant.io/docs/config_entries_index)). No WebSocket delete. Hold the call until it returns.
+Prefer REST so the HTTP call stays open until it finishes ([config entries](https://developers.home-assistant.io/docs/config_entries_index); no WebSocket delete):
 
-After delete, the scanner should rediscover the MAC. Wait for a Discovered **Add** `--near '<mac>'`.
+```bash
+python3 $H delete-entry '<entry_id>'
+```
+
+UI recipe (when recording): `/config/integrations/integration/marstek` → overflow **Menu** `--near 'Marstek VenusD 1 device' --nth 0` → **Delete** (`ha-dropdown-item`) → confirm **Delete** `--near 'permanently deleted'`.
+
+After delete, the scanner should rediscover the MAC. Periodic scan is **10 minutes** (`SCAN_INTERVAL`). Unconfigured discovery is debounced **1 hour** only while the MAC stays in `_unconfigured_seen`; configuring the device prunes that cache, so a **delete then next scan** can re-create the flow immediately. Poll:
+
+```bash
+python3 $H wait-flow --unique-id '<ble-mac>' --timeout 700
+```
+
+Then `click Add --near '<mac>'` on the dashboard. Do not assume 60s.
 
 ### Re-add
 
-1. Discovery Confirm (`async_step_confirm`) — same as path 1 above. Proves pooled GetDevice.
-2. Manual IP/port — path 2. Use this after delete when you want to type host/port again.
+1. Discovery Confirm (`async_step_confirm`) — same as path 1 above. Proves pooled GetDevice when another device still owns that UDP port.
+2. Manual IP/port — path 2. Use this after delete when you want to type host/port again without waiting for the scanner.
 
-Entity IDs must come back the same (`sensor.venus_d_battery_level`, not `_2`) because unique IDs are BLE-MAC. See [references/HA_API.md](references/HA_API.md).
+Entity IDs must come back the same (`sensor.venus_d_battery_level`, not `_2`) because unique IDs are BLE-MAC. Check with `entities --prefix venus_d`. See [references/HA_API.md](references/HA_API.md).
 
 ### Live updates
 
 Mock power/SoC move every coordinator cycle (fast tier default 30s). Do **not** add per-entity polling.
 
 ```bash
-python3 …/scripts/ha_cdp.py service marstek request_data_sync --data '{"device_id":"<device_id>"}'
-python3 …/scripts/ha_cdp.py wait-state sensor.venus_c_battery_power --changed --timeout 90
+python3 $H service marstek request_data_sync --data '{"device_id":"<device_id>"}'
+python3 $H wait-state sensor.venus_c_battery_power --changed --timeout 90
 ```
 
 `last_updated` changing counts as a change even if the watt value is identical.
@@ -220,14 +246,60 @@ On `/config/devices/device/<id>`: Battery SoC, power, status, operating mode. Ve
 
 Select entity options: `auto`, `ai`, `ups` (profile-gated). **Do not** pick `manual`/`passive` on the select — those need `marstek.set_passive_mode` or device actions.
 
-Device actions (Then do → Device): **Charge battery**, **Discharge battery**, **Stop charging/discharging**. Automation UI: `/config/automations/dashboard`. Details: [references/HA_API.md](references/HA_API.md).
+```bash
+python3 $H service select select_option --data '{"entity_id":"select.venus_c_operating_mode","option":"ai"}'
+python3 $H service number set_value --data '{"entity_id":"number.venus_c_depth_of_discharge","value":80}'
+python3 $H service switch turn_off --data '{"entity_id":"switch.venus_c_panel_led"}'
+python3 $H service marstek set_passive_mode --data '{"device_id":"<id>","power":-400,"duration":90}'
+```
+
+Device actions (Then do → Device): **Charge battery**, **Discharge battery**, **Stop charging/discharging**. List and fire them without the UI:
+
+```bash
+python3 $H device-actions '<device_id>'
+python3 $H run-script '{"domain":"marstek","type":"discharge","device_id":"<id>","metadata":{}}'
+python3 $H wait-state sensor.venus_c_device_mode --equals manual --timeout 90
+```
+
+`run-script` is WS `execute_script` ([device automation actions](https://developers.home-assistant.io/docs/device_automation_action)). New device automations are not accepted for new integrations; this repo already has them.
+
+### Automations
+
+UI: **`/config/automation/dashboard`** (singular). `/config/automations/dashboard` is the wrong path.
+
+Prefer building in the UI when recording. `POST /api/config/automation/config/{id}` is **not** in the official REST docs; do not treat it as the supported API.
+
+To exercise an existing event automation:
+
+```bash
+python3 $H fire-event marstek_cdp_test
+python3 $H wait-state sensor.venus_c_device_mode --equals manual --timeout 90
+```
+
+`POST /api/events/{event_type}` is the official fire-event path.
+
+## Extensive live campaign
+
+Run this against Docker mocks after a UDP/config-flow change. Keep compose up.
+
+1. `entries` / `flows` / `states --prefix venus` — inventory.
+2. Discovery Confirm: Add a leftover Discovered MAC (`click Add --near '<mac>'` → Submit). Watch logs for `via pooled UDP client` when the port is shared.
+3. Delete one configured device (`delete-entry` or UI Menu). `wait-flow --unique-id '<mac>' --timeout 700`. Confirm re-add. Entity IDs must not grow `_2`.
+4. Delete a **same-port** device while another still uses 30000. Manual re-add IP/port. Must log pooled GetDevice.
+5. Delete a **unique-port** device (Venus A `:30001` / Venus D `:30002`). Manual re-add is allowed immediately; discovery Confirm may wait for the 10 min scanner. GetDevice without `via pooled` is expected if no other client remains on that port.
+6. `request_data_sync` + `wait-state --changed` on battery power for each re-added device.
+7. Device page / services: select `ai` then `auto`; `set_passive_mode`; SYS number/switch if the profile allows it.
+8. `device-actions` + `run-script` charge/discharge/stop. Mode should become `manual` then return toward auto after stop (stop sets 0 W manual; then select `auto`).
+9. Open `/config/automation/dashboard`, create or run an automation that calls a Marstek device action or `fire-event`.
+
+Do not cite 0-byte `mp4` files. Discard failed recordings.
 
 ## Recording
 
 1. `ha_cdp.py ensure` and land on `/config/integrations/dashboard` **before** `START_RECORDING`.
 2. Record only the add/confirm/entity proof. Drive clicks with `ha_cdp.py` while the screen records.
 3. After Submit, wait for the device page: Battery SoC, mode, and (Venus A/D) PV must not stay `unavailable`.
-4. If Confirm device or manual fails, **discard** the recording, grab `docker logs`, fix, then re-record a passing run. Do not cite 0-byte `mp4` files.
+4. If Confirm device or manual fails, **discard** the recording, grab `docker logs`, fix, then re-record a passing run.
 5. computerUse auto-resume hits a **100-image cap**. Prefer CDP + `ffmpeg` / `RecordScreen` over screenshot loops.
 
 Enable debug for a failing run (token from `ha_cdp.py token`):
