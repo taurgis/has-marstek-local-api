@@ -10,7 +10,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from .const import API_MODE_PASSIVE, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN
+from .const import API_MODE_PASSIVE, DEFAULT_UDP_PORT, DOMAIN
 from .helpers.device_lookup import (
     async_resolve_marstek_device,
     require_loaded_marstek_entry,
@@ -34,6 +34,7 @@ from .helpers.service_helpers import (
     build_manual_schedule_config,
 )
 from .helpers.service_retry import send_mode_command_with_retries
+from .helpers.udp_clients import get_udp_client_for_entry
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
 from .pymarstek import MarstekUDPClient
@@ -72,7 +73,7 @@ def _get_entry_and_client_from_device_id(
     )
     host = entry.data.get(CONF_HOST)
     port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
-    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+    udp_client = get_udp_client_for_entry(hass, entry)
     if host and udp_client:
         return entry, udp_client, host, int(port)
 

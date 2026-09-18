@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
@@ -16,15 +16,22 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
+from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier
 from .firmware_profile import FirmwareProfile
 from .helpers.device_lookup import iter_device_config_entry_ids
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
+from .helpers.udp_clients import (
+    async_cleanup_all_udp_clients,
+    async_release_udp_client_for_entry,
+    bind_port_for_host,
+    get_udp_client,
+    store_udp_client,
+    udp_client_lock,
+)
 from .pymarstek import MarstekUDPClient, get_es_mode
-from .pymarstek.network import is_loopback_host
 from .scanner import MarstekScanner
 from .services import async_setup_services
 
@@ -105,19 +112,9 @@ def _async_remove_unsupported_capability_entities(
                 registry.async_remove(entity_id)
 
 
-def _get_shared_udp_client(hass: HomeAssistant) -> MarstekUDPClient | None:
-    """Get the shared UDP client if it exists."""
-    client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
-    if client is not None:
-        return cast(MarstekUDPClient, client)
-    return None
-
-
 async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
     """Clean up shared resources when the last entry unloads."""
-    udp_client = _get_shared_udp_client(hass)
-    if udp_client:
-        await udp_client.async_cleanup()
+    await async_cleanup_all_udp_clients(hass)
 
     # Stop scanner before resetting singleton to ensure clean state on reload
     scanner = MarstekScanner.async_get(hass)
@@ -128,47 +125,30 @@ async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
     hass.data.pop(DOMAIN, None)
 
 
-
-async def _get_or_create_shared_udp_client(
-    hass: HomeAssistant, *, bind_port: int, host: str
+async def _get_or_create_udp_client(
+    hass: HomeAssistant, *, port: int, host: str
 ) -> MarstekUDPClient:
-    """Get existing shared UDP client or create a new one.
+    """Get or create the UDP client bound to this device's Open API port.
 
-    All Marstek config entries share a single UDP client to avoid two sockets
-    competing for the same Open API port. The client binds to the device's
-    configured listen port because firmware replies there instead of to an
-    ephemeral source port.
+    Firmware replies to the device listen port rather than an ephemeral
+    source port, so each unique listen port needs its own socket. Entries
+    that share a port reuse one client so two sockets do not steal replies
+    from each other.
     """
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
+    effective_bind_port = bind_port_for_host(host, port)
+    async with udp_client_lock(hass):
+        existing = get_udp_client(hass, effective_bind_port)
+        if existing is not None:
+            return existing
 
-    if DATA_UDP_CLIENT not in hass.data[DOMAIN]:
-        # Binding the client to the device listen port on loopback collides
-        # with a local mock/device socket on the same host+port.
-        effective_bind_port = 0 if is_loopback_host(host) else bind_port
         _LOGGER.debug(
-            "Creating shared UDP client for Marstek integration (bind_port=%s)",
+            "Creating UDP client for Marstek Open API port (bind_port=%s)",
             effective_bind_port,
         )
-        udp_client = MarstekUDPClient(port=bind_port, bind_port=effective_bind_port)
+        udp_client = MarstekUDPClient(port=port, bind_port=effective_bind_port)
         await udp_client.async_setup()
-        hass.data[DOMAIN][DATA_UDP_CLIENT] = udp_client
-
-    client: MarstekUDPClient = hass.data[DOMAIN][DATA_UDP_CLIENT]
-    existing_bind_port = getattr(client, "_bind_port", None)
-    requested_bind_port = 0 if is_loopback_host(host) else bind_port
-    if (
-        isinstance(existing_bind_port, int)
-        and existing_bind_port != requested_bind_port
-    ):
-        _LOGGER.warning(
-            "Shared UDP client already bound to port %s; entry requested %s. "
-            "Marstek devices reply to their Open API listen port, so a second "
-            "device on a different port may not receive responses.",
-            existing_bind_port,
-            requested_bind_port,
-        )
-    return client
+        store_udp_client(hass, effective_bind_port, udp_client)
+        return udp_client
 
 
 async def _async_verify_device_connection(
@@ -288,9 +268,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
 
     stored_ip = entry.data[CONF_HOST]
     stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
-    # Use shared UDP client to avoid port conflicts between multiple devices
-    udp_client = await _get_or_create_shared_udp_client(
-        hass, bind_port=stored_port, host=stored_ip
+    # One UDP client per Open API port; devices on the same port share it
+    udp_client = await _get_or_create_udp_client(
+        hass, port=stored_port, host=stored_ip
     )
 
     # Only use BLE-MAC for device identification (user feedback)
@@ -334,8 +314,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     # Clear any prior connection issue after successful setup
     _clear_connection_issue(hass, entry)
 
-    # Store coordinator and device_info in runtime_data
-    # Note: UDP client is shared via hass.data[DOMAIN][DATA_UDP_CLIENT]
+    # Store coordinator and device_info in runtime_data.
+    # UDP clients are pooled per Open API bind port in hass.data.
     entry.runtime_data = MarstekRuntimeData(
         coordinator=coordinator,
         device_info=device_info_dict,
@@ -366,6 +346,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
 
     if not remaining_entries:
         await _async_cleanup_last_entry(hass)
+    else:
+        await async_release_udp_client_for_entry(hass, entry)
 
     return unload_ok
 

@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+import socket
 from collections.abc import Iterable
 from typing import Any
 
@@ -182,28 +183,29 @@ async def discover_devices(
         scan_ports,
     )
 
-    # Bind to the Open API listen port. Venus C / firmware 153 (and jaapp's
-    # working client) require sending from the same UDP port the device uses;
-    # replies go to that port rather than an ephemeral source port.
+    # Bind one socket per scan port. Firmware replies to the device listen
+    # port, so a probe sent from 30000 will miss a device configured on 30003.
     # Official protocol: https://static-eu.marstekenergy.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf
-    # Prefer the caller port (default 30000) when it is in the scan list so
-    # Venus C firmware that replies to the Open API listen port can answer.
-    if port in scan_ports:
-        primary_port = port
-    elif DEFAULT_UDP_PORT in scan_ports:
-        primary_port = DEFAULT_UDP_PORT
-    else:
-        primary_port = scan_ports[0]
-    try:
-        sock = create_udp_socket(
-            bind_port=primary_port,
-            broadcast=True,
-            fallback_ephemeral=True,
-            logger=_LOGGER,
-        )
-    except OSError as err:
-        _LOGGER.error("Failed to bind UDP socket: %s", err)
-        raise
+    sockets: list[tuple[int, socket.socket]] = []
+    bind_error: OSError | None = None
+    for scan_port in scan_ports:
+        try:
+            sock = create_udp_socket(
+                bind_port=scan_port,
+                broadcast=True,
+                fallback_ephemeral=True,
+                logger=_LOGGER,
+            )
+        except OSError as err:
+            bind_error = err
+            _LOGGER.error("Failed to bind UDP socket on port %s: %s", scan_port, err)
+            continue
+        sockets.append((scan_port, sock))
+
+    if not sockets:
+        if bind_error is not None:
+            raise bind_error
+        raise OSError("Failed to bind UDP socket")
 
     loop = asyncio.get_running_loop()
 
@@ -214,83 +216,79 @@ async def discover_devices(
     broadcast_addrs = _get_broadcast_addresses()
     _LOGGER.debug("Broadcast addresses: %s", broadcast_addrs)
 
-    # Send discovery broadcasts
-    for addr in broadcast_addrs:
-        for target_port in scan_ports:
+    for scan_port, sock in sockets:
+        for addr in broadcast_addrs:
             try:
-                await loop.sock_sendto(sock, message, (addr, target_port))
-                _LOGGER.debug("Sent discovery to %s:%d", addr, target_port)
+                await loop.sock_sendto(sock, message, (addr, scan_port))
+                _LOGGER.debug("Sent discovery to %s:%d", addr, scan_port)
             except OSError as err:
-                _LOGGER.warning("Failed to send to %s:%d: %s", addr, target_port, err)
+                _LOGGER.warning("Failed to send to %s:%d: %s", addr, scan_port, err)
 
-    # Collect responses
     devices: list[dict[str, Any]] = []
     seen_ips: set[str] = set()
     echoes_filtered = 0
     start_time = loop.time()
 
-    while (loop.time() - start_time) < timeout:
-        try:
-            data, addr = await asyncio.wait_for(
-                loop.sock_recvfrom(sock, 4096),
-                timeout=0.5,
-            )
+    try:
+        while (loop.time() - start_time) < timeout:
+            remaining = timeout - (loop.time() - start_time)
+            if remaining <= 0:
+                break
+            per_wait = min(0.5, remaining)
+            for _scan_port, sock in sockets:
+                try:
+                    data, addr = await asyncio.wait_for(
+                        loop.sock_recvfrom(sock, 4096),
+                        timeout=per_wait,
+                    )
+                except TimeoutError:
+                    continue
+                except OSError as err:
+                    _LOGGER.error("Socket error during discovery: %s", err)
+                    continue
 
-            # addr is tuple[str, int] for IPv4
-            sender_ip: str = addr[0]
-            sender_port = int(addr[1])
+                sender_ip: str = addr[0]
+                sender_port = int(addr[1])
 
-            try:
-                response = json.loads(data.decode("utf-8"))
-            except json.JSONDecodeError:
-                _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
-                continue
+                try:
+                    response = json.loads(data.decode("utf-8"))
+                except json.JSONDecodeError:
+                    _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
+                    continue
 
-            # Filter echoed requests
-            if _is_echo_response(response):
-                echoes_filtered += 1
-                _LOGGER.debug("Filtered echo from %s:%d", sender_ip, sender_port)
-                continue
+                if _is_echo_response(response):
+                    echoes_filtered += 1
+                    _LOGGER.debug("Filtered echo from %s:%d", sender_ip, sender_port)
+                    continue
 
-            # Validate device response
-            if not _is_valid_device_response(response):
-                _LOGGER.debug(
-                    "Invalid device response from %s:%d: %s",
-                    sender_ip,
-                    sender_port,
-                    response,
+                if not _is_valid_device_response(response):
+                    _LOGGER.debug(
+                        "Invalid device response from %s:%d: %s",
+                        sender_ip,
+                        sender_port,
+                        response,
+                    )
+                    continue
+
+                result = response["result"]
+                device_ip = _normalize_ip(result.get("ip", sender_ip))
+                if device_ip in seen_ips:
+                    _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
+                    continue
+
+                seen_ips.add(device_ip)
+                src = _non_empty_str(response.get("src"))
+                device = _build_device_info(result, device_ip, sender_port, src=src)
+                devices.append(device)
+                _LOGGER.info(
+                    "Discovered device: %s at %s (BLE MAC: %s)",
+                    device["device_type"],
+                    device["ip"],
+                    device["ble_mac"],
                 )
-                continue
-
-            result = response["result"]
-            device_ip = _normalize_ip(result.get("ip", sender_ip))
-
-            # Skip duplicates
-            if device_ip in seen_ips:
-                _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
-                continue
-
-            seen_ips.add(device_ip)
-
-            # Build device info dict (compatible with pymarstek format)
-            src = _non_empty_str(response.get("src"))
-            device = _build_device_info(result, device_ip, sender_port, src=src)
-            devices.append(device)
-            _LOGGER.info(
-                "Discovered device: %s at %s (BLE MAC: %s)",
-                device["device_type"],
-                device["ip"],
-                device["ble_mac"],
-            )
-
-        except TimeoutError:
-            # No response in this interval, continue waiting
-            continue
-        except OSError as err:
-            _LOGGER.error("Socket error during discovery: %s", err)
-            break
-
-    sock.close()
+    finally:
+        for _, sock in sockets:
+            sock.close()
 
     _LOGGER.debug(
         "Discovery complete: found %d device(s), filtered %d echo(es)",

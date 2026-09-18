@@ -9,7 +9,8 @@ from homeassistant.const import Platform
 from .firmware_profile import FirmwareProfile, resolve_firmware_profile
 
 DOMAIN: Final = "marstek"
-DATA_UDP_CLIENT: Final = "udp_client"  # Key for shared UDP client in hass.data
+DATA_UDP_CLIENTS: Final = "udp_clients"  # dict[int, MarstekUDPClient] keyed by bind port
+DATA_UDP_CLIENTS_LOCK: Final = "udp_clients_lock"
 DATA_SUPPRESS_RELOADS: Final = "suppress_reload_entry_ids"  # Set of entry_ids to skip reload
 
 PLATFORMS: Final[list[Platform]] = [

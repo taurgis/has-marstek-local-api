@@ -42,7 +42,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 
 | Integration | Repository | Summary | Strengths | Tradeoffs |
 |---|---|---|---|---|
-| **This integration** | https://github.com/taurgis/has-marstek-local-api | Local UDP with centralized polling, scanner-based IP updates, strong HA patterns. | Shared UDP client, tiered polling, robust config flow/options/services, strict validation & typing. | Focused on per-device setup (no multi-device aggregation). |
+| **This integration** | https://github.com/taurgis/has-marstek-local-api | Local UDP with centralized polling, scanner-based IP updates, strong HA patterns. | Per-port UDP sockets, tiered polling, robust config flow/options/services, strict validation & typing. | Focused on per-device setup (no multi-device aggregation). |
 | **Marstek Local API** | https://github.com/jaapp/ha-marstek-local-api | Feature-rich local API integration with multi-device aggregation. | Multi-device support, aggregate sensors, extensive diagnostics. | Heavier complexity; discovery may pause active clients. |
 | **MarstekEnergy reference** | https://github.com/marstekEnergy/ha_marstek | Vendor reference implementation. | Simple setup, uses upstream py-marstek. | Less robust networking (per-entry sockets), fewer HA best-practice patterns. |
 

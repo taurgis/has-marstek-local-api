@@ -15,7 +15,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
 
 from custom_components.marstek import MarstekRuntimeData
-from custom_components.marstek.const import DATA_UDP_CLIENT, DOMAIN
+from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
 from custom_components.marstek.scanner import MarstekScanner, _build_discovery_flow_data
 
 
@@ -169,7 +169,7 @@ async def test_scanner_pauses_shared_receiver_during_scan(hass: HomeAssistant) -
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()
-    hass.data[DOMAIN] = {DATA_UDP_CLIENT: client}
+    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client}}
     scanner = MarstekScanner(hass)
 
     with patch(
@@ -182,6 +182,29 @@ async def test_scanner_pauses_shared_receiver_during_scan(hass: HomeAssistant) -
     client.async_resume_receiver.assert_awaited_once()
 
 
+async def test_scanner_pauses_all_port_clients_during_scan(hass: HomeAssistant) -> None:
+    """Test scanner pauses every pooled UDP listener, not only the first port."""
+    client_a = MagicMock()
+    client_a.async_pause_receiver = AsyncMock()
+    client_a.async_resume_receiver = AsyncMock()
+    client_b = MagicMock()
+    client_b.async_pause_receiver = AsyncMock()
+    client_b.async_resume_receiver = AsyncMock()
+    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client_a, 30003: client_b}}
+    scanner = MarstekScanner(hass)
+
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(return_value=[]),
+    ):
+        await scanner._async_scan_impl()
+
+    client_a.async_pause_receiver.assert_awaited_once()
+    client_b.async_pause_receiver.assert_awaited_once()
+    client_a.async_resume_receiver.assert_awaited_once()
+    client_b.async_resume_receiver.assert_awaited_once()
+
+
 async def test_scanner_resumes_shared_receiver_after_scan_error(
     hass: HomeAssistant,
 ) -> None:
@@ -189,7 +212,7 @@ async def test_scanner_resumes_shared_receiver_after_scan_error(
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()
-    hass.data[DOMAIN] = {DATA_UDP_CLIENT: client}
+    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client}}
     scanner = MarstekScanner(hass)
 
     with patch(

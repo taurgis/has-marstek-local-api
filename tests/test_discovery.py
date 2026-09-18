@@ -473,6 +473,9 @@ class TestDiscoverDevices:
 
         loop.sock_sendto.assert_any_await(mock_socket, ANY, ("255.255.255.255", 30000))
         loop.sock_sendto.assert_any_await(mock_socket, ANY, ("255.255.255.255", 30003))
+        bind_ports = [call.args[0][1] for call in mock_socket.bind.call_args_list]
+        assert 30000 in bind_ports
+        assert 30003 in bind_ports
 
     @pytest.mark.asyncio
     async def test_discovery_filters_echo(self) -> None:

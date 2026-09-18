@@ -14,7 +14,6 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
-from .const import DATA_UDP_CLIENT, DOMAIN
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
 from .helpers.switch_descriptions import (
@@ -41,9 +40,9 @@ async def async_setup_entry(
     """Set up Marstek switch entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
-    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
-    if not udp_client:
-        _LOGGER.error("Shared UDP client not found for switch entity setup")
+    udp_client = coordinator.udp_client
+    if udp_client is None:
+        _LOGGER.error("UDP client not found for switch entity setup")
         return
 
     profile = coordinator.profile

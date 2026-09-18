@@ -21,7 +21,6 @@ from .const import (
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
-    DATA_UDP_CLIENT,
     DEFAULT_FAILURE_THRESHOLD,
     DEFAULT_PARALLEL_API_REQUESTS,
     DEFAULT_POLL_INTERVAL_FAST,
@@ -29,9 +28,9 @@ from .const import (
     DEFAULT_POLL_INTERVAL_SLOW,
     DEFAULT_REQUEST_DELAY,
     DEFAULT_REQUEST_TIMEOUT,
-    DOMAIN,
 )
 from .firmware_profile import resolve_firmware_profile_from_metadata
+from .helpers.udp_clients import get_udp_client_for_entry
 
 TO_REDACT = {
     CONF_HOST,
@@ -187,16 +186,18 @@ async def async_get_config_entry_diagnostics(
     polling_config = _build_polling_config(entry)
     profile = resolve_firmware_profile_from_metadata(entry.data)
 
-    # Command diagnostics from shared UDP client (if available)
-    # Only include device-specific stats for this entry's device
-    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+    # Command diagnostics from this device's UDP client (if available)
+    udp_client = get_udp_client_for_entry(hass, entry)
     device_command_stats: dict[str, dict[str, Any]] = {}
-    if udp_client is not None and hasattr(udp_client, "get_command_stats_for_ip"):
-        raw_stats = udp_client.get_command_stats_for_ip(coordinator.device_ip)
-        device_command_stats = {
-            method: _summarize_command_stats(stats)
-            for method, stats in raw_stats.items()
-        }
+    get_stats = getattr(udp_client, "get_command_stats_for_ip", None)
+    if callable(get_stats):
+        raw_stats = get_stats(coordinator.device_ip)
+        if isinstance(raw_stats, dict):
+            device_command_stats = {
+                method: _summarize_command_stats(stats)
+                for method, stats in raw_stats.items()
+                if isinstance(stats, dict)
+            }
 
     return {
         "entry": {

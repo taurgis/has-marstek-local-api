@@ -17,7 +17,7 @@ In code, this is encapsulated by the `py-marstek` library (`pymarstek`).
 ## Transport & Message Shape
 
 - Transport is UDP to the device (default port **30000**).
-- Bind the local socket to the **same port the device listens on**. Several firmware builds (Venus C `ver` 153 among them) reply to that listen port instead of the client’s ephemeral source port. `SO_REUSEPORT` is set so a second client can share the port; still pause the shared listener while discovery binds it.
+- Bind the local socket to the **same port the device listens on**. Several firmware builds reply to that listen port instead of the client’s ephemeral source port. The Open API port is **user-configurable**, so the integration keeps **one socket per unique listen port** (devices that share a port share a socket). `SO_REUSEPORT` is set so a second client can share a port; still pause every pooled listener while discovery binds those ports.
 - Messages are JSON objects with a `method` and `params`, e.g.:
   - Discovery: `Marstek.GetDevice`
   - Status: `ES.GetStatus`, `ES.GetMode`, `Bat.GetStatus`, `PV.GetStatus`, `EM.GetStatus`

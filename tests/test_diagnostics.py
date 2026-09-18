@@ -10,7 +10,6 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.marstek import MarstekConfigEntry
 from custom_components.marstek.diagnostics import async_get_config_entry_diagnostics
-from custom_components.marstek.const import DATA_UDP_CLIENT, DOMAIN
 
 
 @pytest.fixture
@@ -360,7 +359,7 @@ async def test_diagnostics_includes_command_stats(
         }
     }
 
-    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENT] = udp_client
+    mock_runtime_data.coordinator.udp_client = udp_client
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -423,7 +422,7 @@ async def test_diagnostics_snapshot(
             "last_updated": 1738170001.0,
         }
     }
-    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENT] = udp_client
+    mock_runtime_data.coordinator.udp_client = udp_client
 
     with patch("custom_components.marstek.diagnostics.dt_util.now", return_value=fixed_now):
         result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
