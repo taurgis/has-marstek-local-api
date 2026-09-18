@@ -258,7 +258,7 @@ The PDF labels PV power as watts. Observed firmware does not always do that.
 
 | Profile | Channel 1 on the wire | Other channels | Home Assistant |
 |---------|----------------------|----------------|----------------|
-| Legacy Venus A/D (`ver < 150`, including unknown `ver`) | Deciwatts (divide by 10 → W) | Watts | W |
+| Legacy Venus A/D (`ver < 150`, including 148 / `148.3` and 149) | Deciwatts (divide by 10 → W) | Watts | W |
 | Rev 3.1 Venus A/D (`ver >= 150`) | Watts | Watts | W |
 
 The mock device encodes physical watts according to the selected profile. The parser always stores **W**.
@@ -482,11 +482,12 @@ Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `Venus
 
 ### 4.2 Integration firmware-profile behavior (shipped)
 
-Inputs: device family + integer discovery `ver`. Unknown/unparseable `ver` is legacy-safe.
+Inputs: device family + integer discovery `ver`. App labels such as `148.3` use the leading integer (`148`). Unknown/unparseable `ver` is legacy-safe.
 
 | Family | `ver` | PV | SYS DOD/BLE/LED | UPS | Manual slots | PV energy | PV ch1 power | EM energy scale |
 |--------|-------|----|-----------------|-----|--------------|-----------|--------------|-----------------|
 | Venus A | unknown | yes | no | no | 0–9 | unscaled (legacy-safe) | deciwatt → W | none |
+| Venus A | <= 148 | yes | no | no | 0–9 | unscaled Wh | deciwatt → W | none |
 | Venus A | 149 | yes | no | no | 0–9 | 0.01 kWh → Wh (`×10`) | deciwatt → W | none |
 | Venus A | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | watts | 0.1 Wh → Wh |
 | Venus D | < 150 or unknown | yes | no | no | 0–9 | unscaled unless profile says otherwise | deciwatt → W | none |
@@ -519,7 +520,7 @@ Firmware profile this integration applies: family **Venus E**, no PV, SYS DOD/BL
 
 `ES.GetStatus` still reports `pv_power` / `total_pv_energy` as zero on this non-PV family; those keys are not treated as a PV array.
 
-The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile.
+The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile. Venus A energy encodings are the Docker pair `mock-marstek-3` (`172.28.0.22`, `--device VenusA --ver 145`, solar Wh) and `mock-marstek-5` (`172.28.0.24`, `--device VenusA --ver 149`, solar 0.01 kWh with channel-1 still deciwatts).
 
 ---
 
@@ -528,4 +529,4 @@ The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wi
 - **2025-08-09** Vendor PDF: Version number Rev 1.0 (historical).
 - **2026-09-10** Vendor PDF metadata: Open API **Rev 3.1** (SYS, UPS, Venus E mini, field-specific energy units). Local reference updated to match that revision and the shipped firmware-profile integration.
 - **2026-09-15** Reads accept integer `ES.GetMode` values `0–4` and fall back to instance id `1` when `id=0` fails. Writes, battery-power math, BLE-MAC unique IDs, and the `id=0` default stay this integration's contract. Vendor SKUs `VNSA-0` / `VNSD-0` / `VNSE3-0` map onto existing Venus families.
-- **2026-09-15** Venus E 3.0 firmware 150 LAN capture: string `ES.GetMode` names, omitted `ES.GetStatus` `bat_power`, GetMode CT zeros vs live `EM.GetStatus`, `PV.GetStatus` `-32601`, case-sensitive `Wifi.GetStatus`. GetMode CT/energy fills empty keys only so Wi-Fi timeouts do not clobber last-known meter readings.
+- **2026-09-18** Venus A Docker mocks: firmware **145** (solar Wh, channel-1 deciwatts) beside firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). App firmware labels such as `148.3` use the leading Open API integer.

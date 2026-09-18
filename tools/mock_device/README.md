@@ -84,7 +84,10 @@ python -m mock_device --device "VenusE 3.0" --ver 150 --soc 52
 # Legacy Venus E (default ver 145): no SYS/UPS
 python -m mock_device --soc 30
 
-# Venus A firmware 149: scaled solar energy, still no SYS/UPS
+# Venus A firmware 145: solar energy in Wh, channel-1 deciwatts, no SYS/UPS
+python -m mock_device --device VenusA --ver 145
+
+# Venus A firmware 149: scaled solar energy, still deciwatt PV, no SYS/UPS
 python -m mock_device --device VenusA --ver 149
 
 # Rev 3.1 Venus A: watt PV, SYS, UPS, EM energy
@@ -102,11 +105,11 @@ The devcontainer runs **exactly these five** mock devices. There is no optional 
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
 | mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh |
 | mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 150 | Rev 3.1 | n/a (no PV) | SYS + UPS + EM energy; GetMode CT keys are zeros (LAN capture) |
-| mock-marstek-3 | 172.28.0.22 | 30001 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; custom port |
+| mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
-| mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 150 | Rev 3.1 | All channels **watts**; solar 0.01 kWh | PV + SYS + UPS + EM energy |
+| mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 149 | Venus A 149 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; no SYS, no UPS ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
 
-Venus D @ 145 vs Venus A @ 150 is the deciwatt-versus-watt PV pair.
+Venus A @ 145 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair. Both still encode channel-1 PV as deciwatts. Venus D @ 145 remains the other PV family on legacy encoding. Rev 3.1 watt-PV (`ver >= 150`) is covered by unit tests and `python -m mock_device --device VenusA --ver 150`.
 
 > **Note:** MAC addresses use the locally-administered range (`02:xx:xx:xx:xx:xx`) with memorable patterns (`deadbeef`, `cafebabe`) to clearly distinguish mock devices from real hardware.
 

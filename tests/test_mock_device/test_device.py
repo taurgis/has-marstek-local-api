@@ -281,6 +281,94 @@ class TestDeviceDiscovery:
         assert status["pv2_power"] == 280
         assert status["total_pv_energy"] == 257420
 
+    def test_venus_a_145_round_trips_unscaled_energy_and_deciwatt_pv(self) -> None:
+        """Older Venus A keeps solar Wh on the wire and channel-1 deciwatts."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusA",
+                "ver": 145,
+                "pv_channels": [
+                    {
+                        "channel": 1,
+                        "pv_power": 360,
+                        "pv_voltage": 44,
+                        "pv_current": 8.2,
+                    },
+                    {
+                        "channel": 2,
+                        "pv_power": 300,
+                        "pv_voltage": 41,
+                        "pv_current": 7.3,
+                    },
+                ],
+            },
+        )
+        device.set_energy_totals(total_pv_energy=257420)
+        profile = resolve_firmware_profile("VenusA", 145)
+
+        pv_response = device.build_response(2, "PV.GetStatus", {})
+        es_response = device.build_response(3, "ES.GetStatus", {})
+
+        assert pv_response is not None
+        assert es_response is not None
+        assert pv_response["result"]["pv1_power"] == 3600
+        assert pv_response["result"]["pv2_power"] == 300
+        assert es_response["result"]["total_pv_energy"] == 257420
+
+        status = merge_device_status(
+            pv_status_data=parse_pv_status_response(pv_response, profile),
+            es_status_data=parse_es_status_response(es_response, profile),
+        )
+        assert status["pv1_power"] == 360
+        assert status["pv2_power"] == 300
+        assert status["total_pv_energy"] == 257420
+
+    def test_venus_a_149_round_trips_scaled_energy_and_deciwatt_pv(self) -> None:
+        """Venus A 149 encodes solar as 0.01 kWh but still reports channel-1 deciwatts."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusA",
+                "ver": 149,
+                "pv_channels": [
+                    {
+                        "channel": 1,
+                        "pv_power": 360,
+                        "pv_voltage": 44,
+                        "pv_current": 8.2,
+                    },
+                    {
+                        "channel": 2,
+                        "pv_power": 300,
+                        "pv_voltage": 41,
+                        "pv_current": 7.3,
+                    },
+                ],
+            },
+        )
+        device.set_energy_totals(total_pv_energy=257420)
+        profile = resolve_firmware_profile("VenusA", 149)
+
+        pv_response = device.build_response(2, "PV.GetStatus", {})
+        es_response = device.build_response(3, "ES.GetStatus", {})
+
+        assert pv_response is not None
+        assert es_response is not None
+        assert pv_response["result"]["pv1_power"] == 3600
+        assert pv_response["result"]["pv2_power"] == 300
+        assert es_response["result"]["total_pv_energy"] == 25742
+
+        status = merge_device_status(
+            pv_status_data=parse_pv_status_response(pv_response, profile),
+            es_status_data=parse_es_status_response(es_response, profile),
+        )
+        assert status["pv1_power"] == 360
+        assert status["pv2_power"] == 300
+        assert status["total_pv_energy"] == 257420
+
     def test_rev31_profile_round_trips_physical_watts_and_wh(self) -> None:
         """Rev 3.1 mock wire JSON decodes through production into SI units."""
         device = MockMarstekDevice(

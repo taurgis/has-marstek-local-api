@@ -284,7 +284,8 @@ A mock device is available for testing without physical hardware. Pass `--device
 ```bash
 cd tools
 python -m mock_device --ver 145
-python -m mock_device --device VenusA --ver 150
+python -m mock_device --device VenusA --ver 145
+python -m mock_device --device VenusA --ver 149
 ```
 
 ## Troubleshooting
