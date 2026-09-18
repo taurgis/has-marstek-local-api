@@ -127,7 +127,14 @@ HELPER_JS = r"""
     const chunks = [];
     for (let i = 0; i < 12 && n; i++) {
       const tag = (n.tagName || "").toLowerCase();
-      if (tag.includes("card") || tag.includes("dialog") || tag.includes("flow")) {
+      if (
+        tag.includes("card") ||
+        tag.includes("dialog") ||
+        tag.includes("flow") ||
+        tag.includes("list-item") ||
+        tag.includes("config-entry") ||
+        tag.includes("integration")
+      ) {
         chunks.push(deepText(n).slice(0, 240));
         try {
           const flow = n.flow;
@@ -159,9 +166,11 @@ HELPER_JS = r"""
       tag === "md-list-item" ||
       tag === "ha-md-menu-item" ||
       tag === "md-menu-item" ||
+      tag === "ha-dropdown-item" ||
       tag.includes("radio-option") ||
       tag.includes("option") ||
-      tag.includes("menu-item")
+      tag.includes("menu-item") ||
+      tag.includes("dropdown-item")
     ) {
       return true;
     }
@@ -314,6 +323,8 @@ HELPER_JS = r"""
     const tagRank = (tag) => {
       if (!tag) return 0;
       if (tag.startsWith("ha-form")) return 5;
+      if (tag === "ha-dropdown-item" || tag.includes("dropdown-item")) return 5;
+      if (tag.includes("radio-option")) return 4;
       if (tag === "ha-button" || tag === "ha-textfield" || tag === "ha-input") return 4;
       if (tag.includes("list-item")) return 3;
       if (tag === "wa-input") return 2;
@@ -375,8 +386,10 @@ HELPER_JS = r"""
       const el = picked.item._el;
       el.scrollIntoView({ block: "center" });
       const input = deepestInput(el) || el;
+      const rootTag = (el.tagName || "").toLowerCase();
+      const isHaForm = rootTag.startsWith("ha-form");
       try { input.focus(); } catch (e) {}
-      try { el.focus && el.focus(); } catch (e) {}
+      try { if (!isHaForm && el.focus) el.focus(); } catch (e) {}
       try {
         if (input.tagName === "INPUT" || input.tagName === "TEXTAREA") {
           const proto = input.tagName === "TEXTAREA"
@@ -389,17 +402,18 @@ HELPER_JS = r"""
           input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         }
       } catch (e) {}
-      try { el.value = value; } catch (e) {}
+      // Never assign ha-form.value — it replaces the whole form data with a scalar.
+      if (!isHaForm) {
+        try { el.value = value; } catch (e) {}
+      }
       let n = el;
       for (let i = 0; i < 8 && n; i++) {
         const tag = (n.tagName || "").toLowerCase();
-        if (
-          tag === "ha-form-string" ||
-          tag === "ha-form-integer" ||
-          tag === "ha-input" ||
-          tag === "wa-input" ||
-          tag === "ha-textfield"
-        ) {
+        if (tag.startsWith("ha-form")) {
+          n = n.parentNode || (n.getRootNode && n.getRootNode().host) || null;
+          continue;
+        }
+        if (tag === "ha-input" || tag === "wa-input" || tag === "ha-textfield") {
           try { n.value = value; } catch (e) {}
           try {
             n.dispatchEvent(
@@ -971,19 +985,144 @@ async def cmd_devices(cdp: Cdp, _page: dict[str, Any], integration: str) -> Any:
     devices = await cmd_ws(cdp, _page, {"type": "config/device_registry/list"})
     out = []
     for dev in devices:
+        if dev.get("parent_device_id"):
+            continue
         idents = dev.get("identifiers") or []
         if integration and not any(
             ident and ident[0] == integration for ident in idents
         ):
             continue
+        entries = list(dev.get("config_entries") or [])
+        entry_id = dev.get("config_entry_id")
+        if entry_id and str(entry_id) not in {str(e) for e in entries}:
+            entries.append(entry_id)
         out.append(
             {
                 "id": dev.get("id"),
                 "name": dev.get("name_by_user") or dev.get("name"),
                 "identifiers": idents,
-                "config_entries": list(dev.get("config_entries") or []),
+                "config_entries": entries,
+                "config_entry_id": entry_id,
                 "model": dev.get("model"),
                 "sw_version": dev.get("sw_version"),
+            }
+        )
+    return out
+
+
+async def cmd_flows(
+    cdp: Cdp, _page: dict[str, Any], handler: str | None
+) -> list[dict[str, Any]]:
+    flows = await cmd_ws(cdp, _page, {"type": "config_entries/flow/progress"})
+    out: list[dict[str, Any]] = []
+    for flow in flows or []:
+        if handler and flow.get("handler") != handler:
+            continue
+        ctx = flow.get("context") or {}
+        out.append(
+            {
+                "flow_id": flow.get("flow_id"),
+                "handler": flow.get("handler"),
+                "step_id": flow.get("step_id"),
+                "source": ctx.get("source"),
+                "unique_id": ctx.get("unique_id"),
+            }
+        )
+    return out
+
+
+async def cmd_wait_flow(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    unique_id: str,
+    handler: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    needle = unique_id.lower()
+    last: list[dict[str, Any]] = []
+    while time.time() < deadline:
+        last = await cmd_flows(cdp, _page, handler)
+        matches = [
+            flow
+            for flow in last
+            if needle in str(flow.get("unique_id") or "").lower()
+        ]
+        if matches:
+            return {"ok": True, "flows": matches}
+        await asyncio.sleep(2)
+    return {"ok": False, "error": "timeout", "unique_id": unique_id, "last": last}
+
+
+async def cmd_abort_flow(cdp: Cdp, _page: dict[str, Any], flow_id: str) -> Any:
+    return await cmd_api(
+        cdp, _page, "DELETE", f"config/config_entries/flow/{flow_id}", None
+    )
+
+
+async def cmd_reload_entry(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
+    return await cmd_api(
+        cdp,
+        _page,
+        "POST",
+        f"config/config_entries/entry/{entry_id}/reload",
+        None,
+    )
+
+
+async def cmd_device_actions(cdp: Cdp, _page: dict[str, Any], device_id: str) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {"type": "device_automation/action/list", "device_id": device_id},
+    )
+
+
+async def cmd_run_script(cdp: Cdp, _page: dict[str, Any], sequence: Any) -> Any:
+    if isinstance(sequence, dict):
+        sequence = [sequence]
+    if not isinstance(sequence, list):
+        return {"ok": False, "error": "sequence must be a list or action dict"}
+    return await cmd_ws(cdp, _page, {"type": "execute_script", "sequence": sequence})
+
+
+async def cmd_fire_event(
+    cdp: Cdp, _page: dict[str, Any], event_type: str, data: dict[str, Any] | None
+) -> Any:
+    return await cmd_api(cdp, _page, "POST", f"events/{event_type}", data or {})
+
+
+async def cmd_entities(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    device_id: str | None,
+    prefix: str | None,
+) -> list[dict[str, Any]]:
+    ents = await cmd_ws(cdp, _page, {"type": "config/entity_registry/list"})
+    prefix_l = (prefix or "").lower()
+    out: list[dict[str, Any]] = []
+    for ent in ents or []:
+        if device_id and ent.get("device_id") != device_id:
+            continue
+        entity_id = str(ent.get("entity_id") or "")
+        unique_id = str(ent.get("unique_id") or "")
+        platform = str(ent.get("platform") or "")
+        if prefix_l and prefix_l not in entity_id.lower() and prefix_l not in unique_id.lower():
+            continue
+        if (
+            not device_id
+            and not prefix_l
+            and platform != "marstek"
+            and "venus" not in entity_id.lower()
+        ):
+            continue
+        out.append(
+            {
+                "entity_id": entity_id,
+                "unique_id": unique_id,
+                "device_id": ent.get("device_id"),
+                "platform": platform,
+                "disabled_by": ent.get("disabled_by"),
             }
         )
     return out
@@ -1047,6 +1186,26 @@ def build_parser() -> argparse.ArgumentParser:
     svc.add_argument("--data", default="{}")
     delete = sub.add_parser("delete-entry", help="DELETE a config entry by entry_id")
     delete.add_argument("entry_id")
+    reload_e = sub.add_parser("reload-entry", help="POST reload a config entry")
+    reload_e.add_argument("entry_id")
+    flows = sub.add_parser("flows", help="WS config_entries/flow/progress")
+    flows.add_argument("--handler", default="marstek")
+    wait_flow = sub.add_parser("wait-flow", help="Wait for a discovery confirm flow")
+    wait_flow.add_argument("--unique-id", required=True)
+    wait_flow.add_argument("--handler", default="marstek")
+    wait_flow.add_argument("--timeout", type=float, default=700)
+    abort_flow = sub.add_parser("abort-flow", help="DELETE an in-progress config flow")
+    abort_flow.add_argument("flow_id")
+    dact = sub.add_parser("device-actions", help="WS device_automation/action/list")
+    dact.add_argument("device_id")
+    run_script = sub.add_parser("run-script", help="WS execute_script")
+    run_script.add_argument("sequence", help="JSON list of actions, or one action dict")
+    fire = sub.add_parser("fire-event", help="POST /api/events/<event_type>")
+    fire.add_argument("event_type")
+    fire.add_argument("--data", default="{}")
+    ents = sub.add_parser("entities", help="Entity registry rows")
+    ents.add_argument("--device-id", default=None)
+    ents.add_argument("--prefix", default="")
     return parser
 
 
@@ -1107,6 +1266,24 @@ async def async_main(args: argparse.Namespace) -> int:
                 f"config/config_entries/entry/{args.entry_id}",
                 None,
             )
+        if args.cmd == "reload-entry":
+            return await cmd_reload_entry(cdp, page, args.entry_id)
+        if args.cmd == "flows":
+            return await cmd_flows(cdp, page, args.handler)
+        if args.cmd == "wait-flow":
+            return await cmd_wait_flow(
+                cdp, page, args.unique_id, args.handler, args.timeout
+            )
+        if args.cmd == "abort-flow":
+            return await cmd_abort_flow(cdp, page, args.flow_id)
+        if args.cmd == "device-actions":
+            return await cmd_device_actions(cdp, page, args.device_id)
+        if args.cmd == "run-script":
+            return await cmd_run_script(cdp, page, json.loads(args.sequence))
+        if args.cmd == "fire-event":
+            return await cmd_fire_event(cdp, page, args.event_type, json.loads(args.data))
+        if args.cmd == "entities":
+            return await cmd_entities(cdp, page, args.device_id, args.prefix or None)
         raise RuntimeError(args.cmd)
 
     data = await with_page(args.page, run)
@@ -1126,6 +1303,14 @@ async def async_main(args: argparse.Namespace) -> int:
             "wait-state",
             "service",
             "delete-entry",
+            "reload-entry",
+            "flows",
+            "wait-flow",
+            "abort-flow",
+            "device-actions",
+            "run-script",
+            "fire-event",
+            "entities",
         },
     )
     return _fail_if_needed(data)
