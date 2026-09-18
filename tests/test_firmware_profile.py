@@ -128,14 +128,14 @@ def test_profile_exposes_legacy_encoding_contract() -> None:
     assert profile.supports_em_energy is False
 
 
-@pytest.mark.parametrize("version", [148, "148", "148.3"])
-def test_venus_a_148_keeps_legacy_energy_and_deciwatt_pv(
+@pytest.mark.parametrize("version", [145, 148, "148", "148.3"])
+def test_venus_a_148_or_older_keeps_legacy_energy_and_deciwatt_pv(
     version: int | str,
 ) -> None:
-    """Firmware 148, including app labels like 148.3, must not get Rev 3.1 scales."""
+    """Firmware 148 or older must keep 1.0.0 solar Wh and PV1 ÷10 (#57)."""
     profile = resolve_firmware_profile("VenusA", version)
 
-    assert profile.firmware_version == 148
+    assert profile.firmware_version in {145, 148}
     assert profile.firmware_known is True
     assert profile.pv_energy_scale == 1.0
     assert profile.pv_channel_1_power_scale == 0.1

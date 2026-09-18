@@ -281,14 +281,14 @@ class TestDeviceDiscovery:
         assert status["pv2_power"] == 280
         assert status["total_pv_energy"] == 257420
 
-    def test_venus_a_145_round_trips_unscaled_energy_and_deciwatt_pv(self) -> None:
-        """Older Venus A keeps solar Wh on the wire and channel-1 deciwatts."""
+    def test_venus_a_148_round_trips_unscaled_energy_and_deciwatt_pv(self) -> None:
+        """Venus A 148 keeps solar Wh on the wire and channel-1 deciwatts."""
         device = MockMarstekDevice(
             port=30005,
             simulate=False,
             device_config={
                 "device": "VenusA",
-                "ver": 145,
+                "ver": 148,
                 "pv_channels": [
                     {
                         "channel": 1,
@@ -306,7 +306,7 @@ class TestDeviceDiscovery:
             },
         )
         device.set_energy_totals(total_pv_energy=257420)
-        profile = resolve_firmware_profile("VenusA", 145)
+        profile = resolve_firmware_profile("VenusA", 148)
 
         pv_response = device.build_response(2, "PV.GetStatus", {})
         es_response = device.build_response(3, "ES.GetStatus", {})

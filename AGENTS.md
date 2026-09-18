@@ -414,11 +414,12 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 # Start with 30% battery for low-SOC testing
 python -m mock_device --soc 30
 
-# Start a Rev 3.1 Venus A (watt PV, SYS/UPS)
-python -m mock_device --device VenusA --ver 150
+# Start Venus A 148 (solar Wh, PV1 deciwatts) or 149 (solar 0.01 kWh, PV1 still deciwatts)
+python -m mock_device --device VenusA --ver 148
+python -m mock_device --device VenusA --ver 149
 ```
 
-**In devcontainer:** Five mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). `172.28.0.22` is Venus A firmware **145** (solar Wh, channel-1 deciwatts). `172.28.0.24` is Venus A firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). Venus D @ 145 remains the other PV family on legacy encoding. See `tools/mock_device/README.md`.
+**In devcontainer:** Five mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). `172.28.0.22` is Venus A firmware **148** (solar Wh, channel-1 deciwatts; 148 or older). `172.28.0.24` is Venus A firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). Venus D @ 145 remains the other PV family on legacy encoding. See `tools/mock_device/README.md`.
 
 ### Tool selection guide
 

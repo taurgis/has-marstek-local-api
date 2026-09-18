@@ -40,10 +40,11 @@ Physical values inside the simulator are always SI (W, Wh). Before a UDP respons
 
 | Generation | Typical `--ver` | Wire encoding | Accepted extras |
 |------------|-----------------|---------------|-----------------|
-| Legacy | `145` (default) | Solar energy as Wh; Venus A/D channel-1 PV power as deciwatts; no EM 0.1 Wh totals | SYS and UPS return **Method not found** |
-| Rev 3.1 | `150` or newer | Solar energy as 0.01 kWh (`Wh / 10` on the wire); PV channel power as watts; EM energies as 0.1 Wh | SYS + UPS accepted on families that support them |
+| Legacy (148 or older) | `145` (default) or `148` | Solar energy as Wh; Venus A/D channel-1 PV power as deciwatts; no EM 0.1 Wh totals | SYS and UPS return **Method not found** |
+| Venus A 149 | `149` | Solar energy as 0.01 kWh (`Wh / 10` on the wire); channel-1 PV still deciwatts | SYS and UPS return **Method not found** |
+| Rev 3.1 | `150` or newer | Solar energy as 0.01 kWh; PV channel power as watts; EM energies as 0.1 Wh | SYS + UPS accepted on families that support them |
 
-Venus A firmware **149** is the observed solar-unit case: PV energy uses the Rev 3.1 0.01 kWh encoding even though SYS/UPS stay off. Pass `--device VenusA --ver 149` to exercise that path.
+Issue [#57](https://github.com/taurgis/has-marstek-local-api/issues/57) is Venus A firmware **148.3** after integration **1.1.0**: PV1 showed 10× too high. Firmware **148 or older** must keep the 1.0.0 encodings (solar Wh and PV1 ÷10). Firmware **149** is the solar-unit case from issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35): PV energy uses 0.01 kWh even though PV1 stays deciwatts and SYS/UPS stay off. Do not collapse 148 and 149 onto a single Venus A 150 mock.
 
 Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be configured as Venus E if you need the SYS-without-150 and slots 0–5 behavior.
 
@@ -84,8 +85,8 @@ python -m mock_device --device "VenusE 3.0" --ver 150 --soc 52
 # Legacy Venus E (default ver 145): no SYS/UPS
 python -m mock_device --soc 30
 
-# Venus A firmware 145: solar energy in Wh, channel-1 deciwatts, no SYS/UPS
-python -m mock_device --device VenusA --ver 145
+# Venus A firmware 148 or older: solar energy in Wh, channel-1 deciwatts, no SYS/UPS
+python -m mock_device --device VenusA --ver 148
 
 # Venus A firmware 149: scaled solar energy, still deciwatt PV, no SYS/UPS
 python -m mock_device --device VenusA --ver 149
@@ -105,11 +106,11 @@ The devcontainer runs **exactly these five** mock devices. There is no optional 
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
 | mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh |
 | mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 150 | Rev 3.1 | n/a (no PV) | SYS + UPS + EM energy; GetMode CT keys are zeros (LAN capture) |
-| mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
+| mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 148 | 148 or older | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)) |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
 | mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 149 | Venus A 149 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; no SYS, no UPS ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
 
-Venus A @ 145 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair. Both still encode channel-1 PV as deciwatts. Venus D @ 145 remains the other PV family on legacy encoding. Rev 3.1 watt-PV (`ver >= 150`) is covered by unit tests and `python -m mock_device --device VenusA --ver 150`.
+Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair. Both still encode channel-1 PV as deciwatts (the 1.1.0 watt-PV change is **150+** only). Venus D @ 145 remains the other PV family on legacy encoding. Rev 3.1 watt-PV (`ver >= 150`) is covered by unit tests and `python -m mock_device --device VenusA --ver 150`.
 
 > **Note:** MAC addresses use the locally-administered range (`02:xx:xx:xx:xx:xx`) with memorable patterns (`deadbeef`, `cafebabe`) to clearly distinguish mock devices from real hardware.
 
