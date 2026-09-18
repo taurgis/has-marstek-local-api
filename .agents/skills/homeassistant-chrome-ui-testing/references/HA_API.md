@@ -35,6 +35,20 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py start-repair ISSUE_ID` | POST `/api/repairs/issues/fix` | Starts `CannotConnectRepairFlow` ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
 | `ha_cdp.py repair-next FLOW_ID JSON` | POST `/api/repairs/issues/fix/{flow_id}` | Submit host/port. Errors: `cannot_connect`, `unique_id_mismatch`. |
 | `ha_cdp.py abort-repair FLOW_ID` | DELETE `/api/repairs/issues/fix/{flow_id}` | Drop an in-progress Fix dialog. |
+| `ha_cdp.py get-entry ENTRY_ID` | WS `config_entries/get_single` | Prefs, state, `supported_subentry_types`. HTTP list omits some of these. |
+| `ha_cdp.py update-entry ENTRY_ID --disable-polling true` | WS `config_entries/update` | `pref_disable_new_entities` / `pref_disable_polling` / `title`. Reloads when polling pref changes ([async_update_entry](https://developers.home-assistant.io/blog/2024/02/12/async_update_entry/)). |
+| `ha_cdp.py wait-entry ENTRY_ID --state setup_retry` | polls `get_single` | `ConfigEntryNotReady` → `setup_retry` ([setup failures](https://developers.home-assistant.io/docs/integration_setup_failures)). |
+| `ha_cdp.py ignore-flow FLOW_ID` | WS `config_entries/ignore_flow` | Requires unique_id. Creates a `SOURCE_IGNORE` entry ([config flow](https://developers.home-assistant.io/docs/config_entries_config_flow_handler)). |
+| `ha_cdp.py ignore-issue ISSUE_ID [--unignore]` | WS `repairs/ignore_issue` | Ignored issues stay in `list_issues` with `ignored: true` until deleted and recreated ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
+| `ha_cdp.py rename-device DEVICE_ID NAME` | WS `config/device_registry/update` `name_by_user` | `--clear` restores the integration name ([device registry](https://developers.home-assistant.io/docs/device_registry_index)). |
+| `ha_cdp.py set-device-area DEVICE_ID AREA_ID` | same WS `area_id` | `-` / `none` clears. |
+| `ha_cdp.py create-area NAME` / `areas` | WS `config/area_registry/create` / `list` | [area registry](https://developers.home-assistant.io/docs/area_registry_index) |
+| `ha_cdp.py create-label NAME` / `set-device-labels` | WS `config/label_registry/create` + device `labels` | User-only; integrations cannot pre-assign labels. |
+| `ha_cdp.py hide-entity ID` / `unhide-entity` | WS `config/entity_registry/update` `hidden_by: user` | Hidden entities stay in the state machine ([hidden_by](https://developers.home-assistant.io/docs/entity_registry_disabled_by)). |
+| `ha_cdp.py expose-entity ID` / `exposed` | WS `homeassistant/expose_entity` / `…/list` | Assistants: `conversation` ([websocket](https://developers.home-assistant.io/docs/api/websocket/)). |
+| `ha_cdp.py history ENTITY` / `logbook` | GET `/api/history/period/{ts}` / `/api/logbook/{ts}` | Official REST ([REST](https://developers.home-assistant.io/docs/api/rest/)). |
+| `ha_cdp.py debug-logging --level debug` | WS `logger/integration_log_level` | UI **Enable debug logging**. Levels are uppercase (`DEBUG`). Persistence: `none` / `once` / `permanent`. |
+| `ha_cdp.py energy-prefs` / `energy-validate` | WS `energy/get_prefs` / `energy/validate` | ENERGY + TOTAL_INCREASING sensors ([energy](https://www.home-assistant.io/docs/energy/)). |
 | `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
 | `ha_cdp.py notifications` | WS `persistent_notification/get` | HA 2026 **does not** expose persistent notifications as `persistent_notification.*` entity states. Gap tests must use this WS type (or automation `last_triggered`). |
 

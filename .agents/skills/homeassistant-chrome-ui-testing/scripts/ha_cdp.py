@@ -19,6 +19,7 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -469,23 +470,39 @@ HELPER_JS = r"""
       }
     },
     async ws(message) {
-      return await this.hass().callWS(message);
+      try {
+        return await this.hass().callWS(message);
+      } catch (e) {
+        const out = { ok: false, error: "ws_error" };
+        if (e && typeof e === "object") {
+          out.code = e.code;
+          out.message = e.message || String(e);
+        } else {
+          out.message = String(e);
+        }
+        return out;
+      }
     },
     state(entityId) {
       const s = this.hass().states[entityId];
       if (!s) return null;
+      const a = s.attributes || {};
       return {
         entity_id: s.entity_id,
         state: s.state,
         last_changed: s.last_changed,
         last_updated: s.last_updated,
         attributes: {
-          friendly_name: s.attributes.friendly_name,
-          device_class: s.attributes.device_class,
-          options: s.attributes.options,
-          icon: s.attributes.icon,
-          last_triggered: s.attributes.last_triggered,
-          message: s.attributes.message,
+          friendly_name: a.friendly_name,
+          device_class: a.device_class,
+          state_class: a.state_class,
+          unit_of_measurement: a.unit_of_measurement,
+          entity_category: a.entity_category,
+          options: a.options,
+          icon: a.icon,
+          last_triggered: a.last_triggered,
+          message: a.message,
+          restored: a.restored,
         },
       };
     },
@@ -992,6 +1009,11 @@ async def cmd_entries(cdp: Cdp, _page: dict[str, Any], domain: str) -> Any:
                 "source": entry.get("source"),
                 "disabled_by": entry.get("disabled_by"),
                 "reason": entry.get("reason"),
+                "pref_disable_new_entities": entry.get("pref_disable_new_entities"),
+                "pref_disable_polling": entry.get("pref_disable_polling"),
+                "supports_reconfigure": entry.get("supports_reconfigure"),
+                "supports_options": entry.get("supports_options"),
+                "num_subentries": entry.get("num_subentries"),
                 "device_id": dev.get("id"),
                 "device_name": dev.get("name"),
                 "model": dev.get("model"),
@@ -1024,6 +1046,9 @@ async def cmd_devices(cdp: Cdp, _page: dict[str, Any], integration: str) -> Any:
                 "identifiers": idents,
                 "config_entries": entries,
                 "config_entry_id": entry_id,
+                "name_by_user": dev.get("name_by_user"),
+                "area_id": dev.get("area_id"),
+                "labels": list(dev.get("labels") or []),
                 "model": dev.get("model"),
                 "sw_version": dev.get("sw_version"),
                 "disabled_by": dev.get("disabled_by"),
@@ -1145,6 +1170,10 @@ async def cmd_entities(
                 "device_id": ent.get("device_id"),
                 "platform": platform,
                 "disabled_by": ent.get("disabled_by"),
+                "hidden_by": ent.get("hidden_by"),
+                "entity_category": ent.get("entity_category"),
+                "original_name": ent.get("original_name"),
+                "has_entity_name": ent.get("has_entity_name"),
             }
         )
     return out
@@ -1382,6 +1411,286 @@ async def cmd_abort_repair(cdp: Cdp, _page: dict[str, Any], flow_id: str) -> Any
     )
 
 
+def _parse_bool(value: str) -> bool:
+    lowered = value.strip().lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off", ""}:
+        return False
+    raise argparse.ArgumentTypeError(f"expected true/false, got {value!r}")
+
+
+def _ws_error(result: Any) -> dict[str, Any] | None:
+    if isinstance(result, dict) and result.get("error") == "ws_error":
+        return result
+    return None
+
+
+async def cmd_get_entry(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {"type": "config_entries/get_single", "entry_id": entry_id},
+    )
+
+
+async def cmd_update_entry(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    entry_id: str,
+    *,
+    title: str | None,
+    disable_new_entities: bool | None,
+    disable_polling: bool | None,
+) -> Any:
+    message: dict[str, Any] = {
+        "type": "config_entries/update",
+        "entry_id": entry_id,
+    }
+    if title is not None:
+        message["title"] = title
+    if disable_new_entities is not None:
+        message["pref_disable_new_entities"] = disable_new_entities
+    if disable_polling is not None:
+        message["pref_disable_polling"] = disable_polling
+    return await cmd_ws(cdp, _page, message)
+
+
+async def cmd_wait_entry(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    entry_id: str,
+    state: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    last: Any = None
+    while time.time() < deadline:
+        last = await cmd_get_entry(cdp, _page, entry_id)
+        err = _ws_error(last)
+        if err:
+            last = err
+        else:
+            entry = last.get("config_entry") if isinstance(last, dict) else None
+            current = (entry or {}).get("state") if isinstance(entry, dict) else None
+            if state is None or current == state:
+                return {"ok": True, "entry": entry, "raw": last}
+        await asyncio.sleep(2)
+    return {
+        "ok": False,
+        "error": "timeout",
+        "entry_id": entry_id,
+        "want": state,
+        "last": last,
+    }
+
+
+async def cmd_ignore_flow(
+    cdp: Cdp, _page: dict[str, Any], flow_id: str, title: str
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config_entries/ignore_flow",
+            "flow_id": flow_id,
+            "title": title,
+        },
+    )
+
+
+async def cmd_ignore_issue(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    issue_id: str,
+    domain: str,
+    ignore: bool,
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "repairs/ignore_issue",
+            "domain": domain,
+            "issue_id": issue_id,
+            "ignore": ignore,
+        },
+    )
+
+
+async def cmd_rename_device(
+    cdp: Cdp, _page: dict[str, Any], device_id: str, name: str | None
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/device_registry/update",
+            "device_id": device_id,
+            "name_by_user": name,
+        },
+    )
+
+
+async def cmd_set_device_area(
+    cdp: Cdp, _page: dict[str, Any], device_id: str, area_id: str | None
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/device_registry/update",
+            "device_id": device_id,
+            "area_id": area_id,
+        },
+    )
+
+
+async def cmd_set_device_labels(
+    cdp: Cdp, _page: dict[str, Any], device_id: str, labels: list[str]
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/device_registry/update",
+            "device_id": device_id,
+            "labels": labels,
+        },
+    )
+
+
+async def cmd_areas(cdp: Cdp, _page: dict[str, Any]) -> Any:
+    return await cmd_ws(cdp, _page, {"type": "config/area_registry/list"})
+
+
+async def cmd_create_area(cdp: Cdp, _page: dict[str, Any], name: str) -> Any:
+    return await cmd_ws(
+        cdp, _page, {"type": "config/area_registry/create", "name": name}
+    )
+
+
+async def cmd_labels(cdp: Cdp, _page: dict[str, Any]) -> Any:
+    return await cmd_ws(cdp, _page, {"type": "config/label_registry/list"})
+
+
+async def cmd_create_label(
+    cdp: Cdp, _page: dict[str, Any], name: str, color: str | None
+) -> Any:
+    message: dict[str, Any] = {"type": "config/label_registry/create", "name": name}
+    if color:
+        message["color"] = color
+    return await cmd_ws(cdp, _page, message)
+
+
+async def cmd_hide_entity(
+    cdp: Cdp, _page: dict[str, Any], entity_id: str, hidden: bool
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/entity_registry/update",
+            "entity_id": entity_id,
+            "hidden_by": "user" if hidden else None,
+        },
+    )
+
+
+async def cmd_expose_entity(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    entity_ids: list[str],
+    assistants: list[str],
+    should_expose: bool,
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "homeassistant/expose_entity",
+            "assistants": assistants,
+            "entity_ids": entity_ids,
+            "should_expose": should_expose,
+        },
+    )
+
+
+async def cmd_exposed(cdp: Cdp, _page: dict[str, Any], prefix: str | None) -> Any:
+    result = await cmd_ws(cdp, _page, {"type": "homeassistant/expose_entity/list"})
+    err = _ws_error(result)
+    if err:
+        return err
+    entities = result.get("exposed_entities") if isinstance(result, dict) else result
+    if prefix and isinstance(entities, dict):
+        needle = prefix.lower()
+        entities = {
+            key: value
+            for key, value in entities.items()
+            if needle in key.lower()
+        }
+        return {"exposed_entities": entities}
+    return result
+
+
+async def cmd_history(
+    cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float
+) -> Any:
+    start = (
+        datetime.now(timezone.utc) - timedelta(hours=hours)
+    ).isoformat(timespec="seconds")
+    path = f"history/period/{start}?filter_entity_id={entity_id}&minimal_response"
+    return await cmd_api(cdp, _page, "GET", path, None)
+
+
+async def cmd_logbook(
+    cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float
+) -> Any:
+    start = (
+        datetime.now(timezone.utc) - timedelta(hours=hours)
+    ).isoformat(timespec="seconds")
+    path = f"logbook/{start}?entity={entity_id}"
+    return await cmd_api(cdp, _page, "GET", path, None)
+
+
+async def cmd_debug_logging(
+    cdp: Cdp, _page: dict[str, Any], integration: str, level: str, persistence: str
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "logger/integration_log_level",
+            "integration": integration,
+            "level": level.upper(),
+            "persistence": persistence,
+        },
+    )
+
+
+async def cmd_log_info(cdp: Cdp, _page: dict[str, Any], domain: str | None) -> Any:
+    result = await cmd_ws(cdp, _page, {"type": "logger/log_info"})
+    err = _ws_error(result)
+    if err:
+        return err
+    if domain and isinstance(result, list):
+        needle = domain.lower()
+        return [
+            row
+            for row in result
+            if needle in str(row.get("domain") or "").lower()
+        ]
+    return result
+
+
+async def cmd_energy_prefs(cdp: Cdp, _page: dict[str, Any]) -> Any:
+    return await cmd_ws(cdp, _page, {"type": "energy/get_prefs"})
+
+
+async def cmd_energy_validate(cdp: Cdp, _page: dict[str, Any]) -> Any:
+    return await cmd_ws(cdp, _page, {"type": "energy/validate"})
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Control Home Assistant Chrome via CDP (no pixel clicks)."
@@ -1527,6 +1836,93 @@ def build_parser() -> argparse.ArgumentParser:
         "notifications",
         help="WS persistent_notification/get (HA 2026: not entity states)",
     )
+    get_e = sub.add_parser(
+        "get-entry", help="WS config_entries/get_single (prefs, state, subentries)"
+    )
+    get_e.add_argument("entry_id")
+    upd = sub.add_parser(
+        "update-entry",
+        help="WS config_entries/update title / pref_disable_*",
+    )
+    upd.add_argument("entry_id")
+    upd.add_argument("--title", default=None)
+    upd.add_argument(
+        "--disable-new-entities",
+        type=_parse_bool,
+        default=None,
+        metavar="BOOL",
+    )
+    upd.add_argument(
+        "--disable-polling",
+        type=_parse_bool,
+        default=None,
+        metavar="BOOL",
+    )
+    wait_e = sub.add_parser("wait-entry", help="Poll get_single until state matches")
+    wait_e.add_argument("entry_id")
+    wait_e.add_argument("--state", default=None)
+    wait_e.add_argument("--timeout", type=float, default=180)
+    ign_f = sub.add_parser(
+        "ignore-flow", help="WS config_entries/ignore_flow (SOURCE_IGNORE)"
+    )
+    ign_f.add_argument("flow_id")
+    ign_f.add_argument("--title", default="Marstek")
+    ign_i = sub.add_parser("ignore-issue", help="WS repairs/ignore_issue")
+    ign_i.add_argument("issue_id")
+    ign_i.add_argument("--domain", default="marstek")
+    ign_i.add_argument(
+        "--unignore",
+        action="store_true",
+        help="Set ignore=false (show the issue again)",
+    )
+    ren = sub.add_parser("rename-device", help="WS device_registry/update name_by_user")
+    ren.add_argument("device_id")
+    ren.add_argument("name", nargs="?", default=None)
+    ren.add_argument(
+        "--clear",
+        action="store_true",
+        help="Clear name_by_user (restore integration name)",
+    )
+    sarea = sub.add_parser("set-device-area", help="Assign or clear a device area")
+    sarea.add_argument("device_id")
+    sarea.add_argument("area_id", nargs="?", default="-")
+    slbl = sub.add_parser("set-device-labels", help="Replace device labels")
+    slbl.add_argument("device_id")
+    slbl.add_argument("labels", nargs="*")
+    sub.add_parser("areas", help="WS config/area_registry/list")
+    carea = sub.add_parser("create-area", help="WS config/area_registry/create")
+    carea.add_argument("name")
+    sub.add_parser("labels", help="WS config/label_registry/list")
+    clbl = sub.add_parser("create-label", help="WS config/label_registry/create")
+    clbl.add_argument("name")
+    clbl.add_argument("--color", default=None)
+    hide = sub.add_parser("hide-entity", help="WS entity_registry/update hidden_by=user")
+    hide.add_argument("entity_id")
+    unhide = sub.add_parser("unhide-entity", help="Clear entity hidden_by")
+    unhide.add_argument("entity_id")
+    exp = sub.add_parser("expose-entity", help="WS homeassistant/expose_entity")
+    exp.add_argument("entity_id")
+    exp.add_argument("--assistant", default="conversation")
+    exp.add_argument("--unexpose", action="store_true")
+    exposed = sub.add_parser("exposed", help="WS homeassistant/expose_entity/list")
+    exposed.add_argument("--prefix", default="venus")
+    hist = sub.add_parser("history", help="GET /api/history/period for one entity")
+    hist.add_argument("entity_id")
+    hist.add_argument("--hours", type=float, default=2)
+    logb = sub.add_parser("logbook", help="GET /api/logbook for one entity")
+    logb.add_argument("entity_id")
+    logb.add_argument("--hours", type=float, default=2)
+    dbg = sub.add_parser(
+        "debug-logging",
+        help="WS logger/integration_log_level (Enable debug logging)",
+    )
+    dbg.add_argument("--integration", default="marstek")
+    dbg.add_argument("--level", default="debug")
+    dbg.add_argument("--persistence", default="none", choices=["none", "once", "permanent"])
+    linfo = sub.add_parser("log-info", help="WS logger/log_info")
+    linfo.add_argument("--domain", default="marstek")
+    sub.add_parser("energy-prefs", help="WS energy/get_prefs")
+    sub.add_parser("energy-validate", help="WS energy/validate")
     return parser
 
 
@@ -1660,6 +2056,77 @@ async def async_main(args: argparse.Namespace) -> int:
             return await cmd_abort_repair(cdp, page, args.flow_id)
         if args.cmd == "notifications":
             return await cmd_notifications(cdp, page)
+        if args.cmd == "get-entry":
+            return await cmd_get_entry(cdp, page, args.entry_id)
+        if args.cmd == "update-entry":
+            return await cmd_update_entry(
+                cdp,
+                page,
+                args.entry_id,
+                title=args.title,
+                disable_new_entities=args.disable_new_entities,
+                disable_polling=args.disable_polling,
+            )
+        if args.cmd == "wait-entry":
+            return await cmd_wait_entry(
+                cdp, page, args.entry_id, args.state, args.timeout
+            )
+        if args.cmd == "ignore-flow":
+            return await cmd_ignore_flow(cdp, page, args.flow_id, args.title)
+        if args.cmd == "ignore-issue":
+            return await cmd_ignore_issue(
+                cdp, page, args.issue_id, args.domain, not args.unignore
+            )
+        if args.cmd == "rename-device":
+            name = None if args.clear else args.name
+            if name is None and not args.clear:
+                return {"ok": False, "error": "name required unless --clear"}
+            return await cmd_rename_device(cdp, page, args.device_id, name)
+        if args.cmd == "set-device-area":
+            area_id = args.area_id
+            if area_id in {"", "-", "null", "none"}:
+                area_id = None
+            return await cmd_set_device_area(cdp, page, args.device_id, area_id)
+        if args.cmd == "set-device-labels":
+            return await cmd_set_device_labels(
+                cdp, page, args.device_id, list(args.labels)
+            )
+        if args.cmd == "areas":
+            return await cmd_areas(cdp, page)
+        if args.cmd == "create-area":
+            return await cmd_create_area(cdp, page, args.name)
+        if args.cmd == "labels":
+            return await cmd_labels(cdp, page)
+        if args.cmd == "create-label":
+            return await cmd_create_label(cdp, page, args.name, args.color)
+        if args.cmd == "hide-entity":
+            return await cmd_hide_entity(cdp, page, args.entity_id, True)
+        if args.cmd == "unhide-entity":
+            return await cmd_hide_entity(cdp, page, args.entity_id, False)
+        if args.cmd == "expose-entity":
+            return await cmd_expose_entity(
+                cdp,
+                page,
+                [args.entity_id],
+                [args.assistant],
+                not args.unexpose,
+            )
+        if args.cmd == "exposed":
+            return await cmd_exposed(cdp, page, args.prefix or None)
+        if args.cmd == "history":
+            return await cmd_history(cdp, page, args.entity_id, args.hours)
+        if args.cmd == "logbook":
+            return await cmd_logbook(cdp, page, args.entity_id, args.hours)
+        if args.cmd == "debug-logging":
+            return await cmd_debug_logging(
+                cdp, page, args.integration, args.level, args.persistence
+            )
+        if args.cmd == "log-info":
+            return await cmd_log_info(cdp, page, args.domain or None)
+        if args.cmd == "energy-prefs":
+            return await cmd_energy_prefs(cdp, page)
+        if args.cmd == "energy-validate":
+            return await cmd_energy_validate(cdp, page)
         raise RuntimeError(args.cmd)
 
     data = await with_page(args.page, run)
@@ -1708,6 +2175,28 @@ async def async_main(args: argparse.Namespace) -> int:
             "repair-next",
             "abort-repair",
             "notifications",
+            "get-entry",
+            "update-entry",
+            "wait-entry",
+            "ignore-flow",
+            "ignore-issue",
+            "rename-device",
+            "set-device-area",
+            "set-device-labels",
+            "areas",
+            "create-area",
+            "labels",
+            "create-label",
+            "hide-entity",
+            "unhide-entity",
+            "expose-entity",
+            "exposed",
+            "history",
+            "logbook",
+            "debug-logging",
+            "log-info",
+            "energy-prefs",
+            "energy-validate",
         },
     )
     return _fail_if_needed(data)

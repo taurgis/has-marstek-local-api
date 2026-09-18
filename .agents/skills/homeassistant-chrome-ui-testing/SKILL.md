@@ -1,6 +1,6 @@
 ---
 name: homeassistant-chrome-ui-testing
-description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, disable, connection-loss repairs, actions, automations) and walkthroughs.
+description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, disable, connection-loss repairs, Ignore discovery, system options, registry/hide, history, energy, Assist expose, actions, automations) and walkthroughs.
 ---
 
 # Home Assistant Chrome UI testing
@@ -91,6 +91,23 @@ python3 $H wait-issue --issue-id 'cannot_connect_<entry_id>' --timeout 180
 python3 $H start-repair 'cannot_connect_<entry_id>'
 python3 $H repair-next '<flow_id>' '{"host":"172.28.0.23","port":30002}'
 python3 $H wait-issue --issue-id 'cannot_connect_<entry_id>' --gone --timeout 180
+python3 $H get-entry '<entry_id>'
+python3 $H update-entry '<entry_id>' --disable-polling true
+python3 $H wait-entry '<entry_id>' --state setup_retry --timeout 180
+python3 $H ignore-flow '<flow_id>' --title 'Marstek VenusA'
+python3 $H ignore-issue 'cannot_connect_<entry_id>'
+python3 $H ignore-issue 'cannot_connect_<entry_id>' --unignore
+python3 $H rename-device '<device_id>' 'Venus C Garage'
+python3 $H set-device-area '<device_id>' living_room
+python3 $H create-area Garage
+python3 $H create-label battery --color green
+python3 $H set-device-labels '<device_id>' battery
+python3 $H hide-entity sensor.venus_c_battery_status
+python3 $H unhide-entity sensor.venus_c_battery_status
+python3 $H expose-entity sensor.venus_c_battery_level
+python3 $H history sensor.venus_c_battery_level --hours 2
+python3 $H debug-logging --level debug --persistence none
+python3 $H energy-validate
 ```
 
 Rules:
@@ -401,6 +418,77 @@ Still exercise these (use a **different device** than one with an in-flight `exe
 | Script | `upsert-script` (no `id` in body) + `script.turn_on` calling `marstek.request_data_sync`. |
 
 `upsert-automation` / `upsert-script` hit `POST /api/config/automation/config/{id}` and `/api/config/script/config/{id}` — **not** in official REST docs. Prefer the UI when recording.
+
+## HA surfaces this integration supports but we had not live-tested
+
+Official HA exposes more than config-flow / polling / automations. These work **without extra Marstek code** once unique IDs, `DeviceInfo`, entity categories, ENERGY sensors, diagnostics, and the repair issue exist. Live-test them against Docker HA. Sources: [config flow unique ID / Ignore](https://developers.home-assistant.io/docs/config_entries_config_flow_handler), [async_update_entry prefs](https://developers.home-assistant.io/blog/2024/02/12/async_update_entry/), [repairs ignore](https://developers.home-assistant.io/docs/core/platform/repairs/), [device registry](https://developers.home-assistant.io/docs/device_registry_index), [entity hide/disable](https://developers.home-assistant.io/docs/entity_registry_disabled_by), [entity category](https://developers.home-assistant.io/docs/core/entity/), [diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics/), [history REST](https://developers.home-assistant.io/docs/api/rest/), [energy sensors](https://www.home-assistant.io/docs/energy/), [Assist expose](https://developers.home-assistant.io/docs/api/websocket/), [setup_retry](https://developers.home-assistant.io/docs/integration_setup_failures), [RestoreNumber](https://developers.home-assistant.io/docs/core/entity/number/), [area registry](https://developers.home-assistant.io/docs/area_registry_index), [manifest links](https://developers.home-assistant.io/docs/creating_integration_manifest/).
+
+| Surface | How to live-test | Skip / note |
+|---------|------------------|-------------|
+| Ignore discovered card | Delete a unique-port entry, `wait-flow`, `ignore-flow`, confirm `source=ignore`. Unignore = `delete-entry` on that ignore entry, then Confirm re-add. UI: Discovered → **Ignore**. | Needs unique_id (BLE-MAC). |
+| System options `pref_disable_polling` | `update-entry --disable-polling true` (reloads). Background `last_updated` must freeze. Restore `false`. | User-initiated `request_data_sync` may still refresh. |
+| System options `pref_disable_new_entities` | `update-entry --disable-new-entities true` then `get-entry`. | New entities only appear after a firmware/profile change. |
+| Ignore / unignore repair | Stop unique-port mock → `wait-issue` → `ignore-issue` (`ignored: true`) → `--unignore` → start mock → `--gone`. | Ignored issues stay in `list_issues` with `ignored: true` while active. |
+| `setup_retry` | Stop unique-port mock, `reload-entry`, `wait-entry --state setup_retry`. Start mock; HA retries until `loaded`. | Setup-time `ConfigEntryNotReady`, not post-setup `UpdateFailed`. |
+| Rename / area / labels | `rename-device`, `set-device-area living_room`, `create-label` + `set-device-labels`. Restore `--clear` / area `-` / empty labels. | User overrides; integration `DeviceInfo` is unchanged. |
+| Hide entity | `hide-entity` / `unhide-entity`. Entity **stays** in the state machine (`hidden_by: user`). | Distinct from `disable-entity` (leaves states). |
+| CONFIG vs DIAGNOSTIC | Device page: DOD / BLE / LED under Configuration; WiFi / IP under Diagnostic. | Automatic from `EntityCategory`. |
+| Enable debug logging | Integration overflow **Enable debug logging**, or `debug-logging --level debug`. `log-info --domain marstek`. Reset `--level warning`. | Uses manifest `loggers`. Persistence `none` unless testing restart. |
+| Download diagnostics UI | Overflow **Download diagnostics**. API: `diagnostics ENTRY`. | Already covered by REST; UI is the same GET. |
+| Copy entry ID | Overflow **Copy** on the integration row. Verify with `get-entry`. | No dedicated API; `entry_id` is the UUID. |
+| Add device / Add entry | Integration page starts a **user** flow (Marstek is not `single_config_entry`). Abort. | `supported_subentry_types` is `{}` — no subentry Add device. |
+| Documentation / Known issues | Manifest `documentation` / `issue_tracker` links on the integration page. | Automatic. |
+| History / Logbook | `history sensor.venus_c_battery_level` / `logbook`. UI `/history`. | Recorder automatic. |
+| Energy dashboard | `ENERGY` + `TOTAL_INCREASING` on EM/grid/PV/load. `energy-validate` after `energy/save_prefs`. | User adds sources; solar on Venus D can be `unknown`. |
+| Scenes | `scene.create` snapshot of `select.*_operating_mode` or DOD, change, `scene.turn_on`. | Core reproduce_state; Marstek has no `reproduce_state.py`. |
+| Assist expose | `expose-entity sensor.venus_c_battery_level` then `exposed`. | User-driven; no cloud Alexa in Docker. |
+| RestoreNumber after reload | Set `number.venus_c_depth_of_discharge`, `reload-entry`, value must persist. | SYS is write-only; restore is optimistic. |
+| HA restart persistence | `sudo docker restart marstek-ha-dev`. Same `entry_id` / BLE-MAC entities come back `loaded`. | `runtime_data` is not persisted. |
+| DHCP discovery | Manifest `hostname: marstek*` + `registered_devices`. `async_step_dhcp` is unit-tested. | No DHCP packets in this Docker net. |
+| Reauth banner | `async_step_reauth` exists; UDP loss uses **repairs**, not `ConfigEntryAuthFailed`. | Do not fake auth failure live. |
+| Config subentries | Not implemented. | Skip. |
+| Backup hooks | `.storage/core.config_entries` is in HA backups automatically. | No `backup.py` in Marstek. |
+| Last remaining entry teardown | Deleting every Marstek entry stops the scanner. | Do not run unless you will re-add. |
+| `Bat.GetStatus` enable | Disabled by default (issue #14). | **Do not enable** `bat_*`. |
+
+### Ignore discovery recipe
+
+Use a **unique-port** mock (Venus A `:30001` / Venus D `:30002`) so the 30000 pool stays up.
+
+```bash
+python3 $H delete-entry '<entry_id>'
+python3 $H wait-flow --unique-id '<ble-mac>' --timeout 700
+python3 $H ignore-flow '<flow_id>' --title 'Marstek VenusA'
+python3 $H entries   # one row source=ignore, no device
+# Unignore:
+python3 $H delete-entry '<ignore_entry_id>'
+python3 $H wait-flow --unique-id '<ble-mac>' --timeout 700
+python3 $H click Add --near '<ble-mac>'
+python3 $H click Submit
+```
+
+UI: `/config/integrations/dashboard` → Discovered Marstek card → **Ignore**. Restore via **Show ignored integrations**.
+
+### System options + RestoreNumber recipe (Venus C)
+
+```bash
+python3 $H update-entry '<entry_id>' --disable-polling true
+# wait ~40s; sensor last_updated must not advance from coordinator polls
+python3 $H update-entry '<entry_id>' --disable-polling false
+python3 $H service number set_value --data '{"entity_id":"number.venus_c_depth_of_discharge","value":73}'
+python3 $H reload-entry '<entry_id>'
+python3 $H wait-state number.venus_c_depth_of_discharge --equals 73 --timeout 60
+```
+
+### setup_retry recipe (unique-port Venus D)
+
+```bash
+sudo docker stop marstek-mock-device-4
+python3 $H reload-entry '<entry_id>'
+python3 $H wait-entry '<entry_id>' --state setup_retry --timeout 90
+sudo docker start marstek-mock-device-4
+python3 $H wait-entry '<entry_id>' --state loaded --timeout 180
+```
 
 ## Extensive live campaign
 
