@@ -230,6 +230,7 @@ async def discover_devices(
     start_time = loop.time()
 
     try:
+        recv_failed = False
         while (loop.time() - start_time) < timeout:
             remaining = timeout - (loop.time() - start_time)
             if remaining <= 0:
@@ -245,7 +246,8 @@ async def discover_devices(
                     continue
                 except OSError as err:
                     _LOGGER.error("Socket error during discovery: %s", err)
-                    continue
+                    recv_failed = True
+                    break
 
                 sender_ip: str = addr[0]
                 sender_port = int(addr[1])
@@ -286,6 +288,8 @@ async def discover_devices(
                     device["ip"],
                     device["ble_mac"],
                 )
+            if recv_failed:
+                break
     finally:
         for _, sock in sockets:
             sock.close()
