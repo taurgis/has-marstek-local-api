@@ -1159,6 +1159,86 @@ class TestGetDeviceInfo:
         assert result is None
         mock_socket.close.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_uses_provided_udp_client_instead_of_binding(self) -> None:
+        """Pooled-client GetDevice must not open a second SO_REUSEPORT socket."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(
+            return_value={
+                "id": 7,
+                "src": "VenusC-AABBCCDDEEFF",
+                "result": {
+                    "device": "VenusC",
+                    "ver": 153,
+                    "ip": "172.28.0.26",
+                },
+            }
+        )
+
+        with patch("socket.socket") as mock_socket:
+            result = await get_device_info(
+                "172.28.0.26",
+                port=30000,
+                timeout=5.0,
+                udp_client=client,
+            )
+
+        mock_socket.assert_not_called()
+        client.send_request.assert_awaited_once()
+        assert client.send_request.await_args is not None
+        sent_args = client.send_request.await_args.args
+        sent_kwargs = client.send_request.await_args.kwargs
+        assert sent_args[1] == "172.28.0.26"
+        assert sent_args[2] == 30000
+        payload = json.loads(sent_args[0])
+        assert payload["method"] == "Marstek.GetDevice"
+        assert sent_kwargs["bypass_rate_limit"] is True
+        assert result is not None
+        assert result["device_type"] == "VenusC"
+        assert result["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+        assert result["ip"] == "172.28.0.26"
+        assert result["port"] == 30000
+
+    @pytest.mark.asyncio
+    async def test_udp_client_timeout_returns_none(self) -> None:
+        """Timeout on the pooled client is cannot_connect, not a crash."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(side_effect=TimeoutError("timeout"))
+
+        result = await get_device_info("172.28.0.20", udp_client=client)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_udp_client_invalid_response_returns_none(self) -> None:
+        """Invalid GetDevice payloads from the pooled client are ignored."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(
+            return_value={"id": 1, "result": {"unknown": "value"}}
+        )
+
+        result = await get_device_info("172.28.0.20", udp_client=client)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_udp_client_oserror_returns_none(self) -> None:
+        """Socket errors on the pooled client return None."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(side_effect=OSError("network down"))
+
+        result = await get_device_info("172.28.0.20", udp_client=client)
+
+        assert result is None
+
 
 class TestDiscoverDevicesEdgeCases:
     """Additional edge case tests for discover_devices."""

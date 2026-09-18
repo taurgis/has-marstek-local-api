@@ -154,7 +154,7 @@ async def async_cleanup_all_udp_clients(hass: HomeAssistant) -> None:
 
 
 async def async_pause_udp_receivers(hass: HomeAssistant) -> tuple[MarstekUDPClient, ...]:
-    """Pause pooled listeners so discovery can bind the same Open API ports."""
+    """Pause pooled listeners so broadcast discovery can bind the same ports."""
     clients = iter_udp_clients(hass)
     paused: list[MarstekUDPClient] = []
     try:
@@ -185,12 +185,14 @@ async def async_resume_udp_receivers(clients: tuple[MarstekUDPClient, ...]) -> N
 async def async_paused_udp_receivers(
     hass: HomeAssistant,
 ) -> AsyncIterator[tuple[MarstekUDPClient, ...]]:
-    """Pause pooled Open API listeners for the duration of a UDP probe.
+    """Pause pooled Open API listeners while broadcast discovery binds ports.
 
     Linux ``SO_REUSEPORT`` load-balances datagrams across sockets bound to
-    the same port. Manual add, Confirm device, and broadcast discovery all
-    bind the device listen port, so the existing coordinator listener must
-    be paused or the probe never sees the reply.
+    the same port. Broadcast discovery must bind its own sockets, so pause
+    the coordinator listeners first. Unicast GetDevice (manual add, Confirm
+    device, repairs) must reuse the pooled client instead of binding again:
+    pause does not unbind, and the kernel still delivers the reply to the
+    existing socket.
     """
     paused = await async_pause_udp_receivers(hass)
     try:

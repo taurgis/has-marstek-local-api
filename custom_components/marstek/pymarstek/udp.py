@@ -210,10 +210,11 @@ class MarstekUDPClient:
     async def async_pause_receiver(self) -> None:
         """Stop the background UDP listener without closing the socket.
 
-        Discovery and unicast ``Marstek.GetDevice`` bind the Open API port.
-        Pausing this listener avoids two sockets competing for the same
-        replies. Nested pauses are ref-counted so a config-flow probe that
-        overlaps the scanner does not resume too early.
+        Broadcast discovery binds the Open API port on a new socket. Pause
+        this listener so ``SO_REUSEPORT`` does not steal those replies.
+        Nested pauses are ref-counted so a config-flow scan that overlaps
+        the scanner does not resume too early. Unicast GetDevice must reuse
+        this client rather than pausing; pause does not unbind.
         """
         self._receiver_pause_count += 1
         if self._receiver_pause_count > 1:

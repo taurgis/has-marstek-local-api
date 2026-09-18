@@ -53,7 +53,11 @@ from .helpers.flow_schemas import (
     build_polling_schema,
     build_power_schema,
 )
-from .helpers.udp_clients import async_paused_udp_receivers
+from .helpers.udp_clients import (
+    async_paused_udp_receivers,
+    bind_port_for_host,
+    get_udp_client,
+)
 
 
 class DhcpServiceInfoLike(Protocol):
@@ -286,14 +290,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_get_device_info(
         self, host: str, port: int
     ) -> dict[str, Any] | None:
-        """Unicast GetDevice while pooled listeners are paused.
+        """Unicast GetDevice on the pooled client when one already owns this port.
 
-        Confirm device and manual IP/port entry bind the Open API port. If an
-        existing coordinator socket stays listening, ``SO_REUSEPORT`` can
-        steal the reply and the UI shows cannot_connect.
+        Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
+        never sees that reply — Linux hashes it onto the coordinator socket
+        even if that listener is paused. Pause only for broadcast discovery,
+        which must bind its own sockets.
         """
-        async with async_paused_udp_receivers(self.hass):
-            return await get_device_info(host=host, port=port)
+        udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
+        return await get_device_info(host=host, port=port, udp_client=udp_client)
 
     async def _async_discover_devices(
         self, scan_ports: list[int]

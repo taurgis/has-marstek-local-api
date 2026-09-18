@@ -27,7 +27,7 @@ Older notes that “LED is not in the API” applied to legacy Open API firmware
 - Confirm **Open API is enabled** in the Marstek app.
 - Ensure HA and the device are on the **same LAN segment**.
 - Confirm UDP **port 30000** is allowed (router/AP isolation can break discovery).
-- This integration **sends from each device’s configured Open API port** (default 30000, but the port is user-configurable in the Marstek app). Some firmware replies only to that listen port and ignores ephemeral source ports. Devices on different ports each get their own local socket. If another integration already bound a device’s port without `SO_REUSEPORT`, setup can fail with `No valid response from device`; stop the other client or change the Marstek Open API port in the app.
+- This integration **sends from each device’s configured Open API port** (default 30000, but the port is user-configurable in the Marstek app). Some firmware replies only to that listen port and ignores ephemeral source ports. Devices on different ports each get their own local socket. Devices that share a port share that socket: adding a second same-port device reuses it for `Marstek.GetDevice` instead of binding again. If another integration already bound a device’s port without `SO_REUSEPORT`, setup can fail with `No valid response from device`; stop the other client or change the Marstek Open API port in the app.
 
 ## Entities unavailable
 

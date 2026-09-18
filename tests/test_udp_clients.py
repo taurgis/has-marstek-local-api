@@ -109,7 +109,7 @@ async def test_get_udp_client_for_entry_falls_back_to_pool(
 async def test_paused_udp_receivers_context_resumes_after_error(
     hass: HomeAssistant,
 ) -> None:
-    """Manual/confirm probes must resume listeners even when GetDevice fails."""
+    """Broadcast discovery must resume listeners even when a scan fails."""
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()

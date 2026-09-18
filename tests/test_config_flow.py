@@ -1471,8 +1471,8 @@ def _pooled_udp_client(hass: HomeAssistant) -> MagicMock:
     return client
 
 
-async def test_manual_add_pauses_udp_receivers(hass: HomeAssistant) -> None:
-    """Manual IP/port entry must pause pooled listeners before GetDevice."""
+async def test_manual_add_reuses_pooled_udp_client(hass: HomeAssistant) -> None:
+    """Manual IP/port entry must send GetDevice on the pooled client, not pause."""
     client = _pooled_udp_client(hass)
     device_info = {
         "ip": "172.28.0.20",
@@ -1495,21 +1495,28 @@ async def test_manual_add_pauses_udp_receivers(hass: HomeAssistant) -> None:
     client.async_pause_receiver.reset_mock()
     client.async_resume_receiver.reset_mock()
 
-    with patch_manual_connection(device_info=device_info):
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new_callable=AsyncMock,
+        return_value=device_info,
+    ) as mock_get_device_info:
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={"host": "172.28.0.20", "port": 30000},
         )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    client.async_pause_receiver.assert_awaited()
-    client.async_resume_receiver.assert_awaited()
+    mock_get_device_info.assert_awaited_once()
+    assert mock_get_device_info.await_args is not None
+    assert mock_get_device_info.await_args.kwargs["udp_client"] is client
+    client.async_pause_receiver.assert_not_called()
+    client.async_resume_receiver.assert_not_called()
 
 
-async def test_confirm_device_changed_endpoint_pauses_udp_receivers(
+async def test_confirm_device_changed_endpoint_reuses_pooled_udp_client(
     hass: HomeAssistant,
 ) -> None:
-    """Confirm device (discovered Add) must pause listeners when IP/port change."""
+    """Confirm device must reuse the pooled client when IP/port change."""
     client = _pooled_udp_client(hass)
     discovery_info = {
         "ip": "172.28.0.23",
@@ -1537,7 +1544,11 @@ async def test_confirm_device_changed_endpoint_pauses_udp_receivers(
         "firmware": "145",
     }
 
-    with patch_manual_connection(device_info=device_info):
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new_callable=AsyncMock,
+        return_value=device_info,
+    ) as mock_get_device_info:
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={"host": "172.28.0.20", "port": 30000},
@@ -1546,8 +1557,11 @@ async def test_confirm_device_changed_endpoint_pauses_udp_receivers(
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"]["host"] == "172.28.0.20"
     assert result["data"]["port"] == 30000
-    client.async_pause_receiver.assert_awaited()
-    client.async_resume_receiver.assert_awaited()
+    mock_get_device_info.assert_awaited_once()
+    assert mock_get_device_info.await_args is not None
+    assert mock_get_device_info.await_args.kwargs["udp_client"] is client
+    client.async_pause_receiver.assert_not_called()
+    client.async_resume_receiver.assert_not_called()
 
 
 async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
