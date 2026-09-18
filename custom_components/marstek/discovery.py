@@ -11,19 +11,25 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import socket
+import re
 from collections.abc import Iterable
 from typing import Any
 
 from .const import DEFAULT_UDP_PORT
 from .firmware_profile import extract_discovery_version
-from .pymarstek.network import get_broadcast_addresses
+from .pymarstek.network import create_udp_socket, get_broadcast_addresses
 
 _LOGGER = logging.getLogger(__name__)
 
 # Discovery settings
 DISCOVERY_TIMEOUT = 10.0  # Total discovery timeout in seconds
 DISCOVERY_METHOD = "Marstek.GetDevice"
+
+# Open API `src` is typically "{model}-{ble_mac}", e.g. "VenusC-AABBCCDDEEFF".
+_SRC_MAC_SEPARATED = re.compile(
+    r"(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}"
+)
+_SRC_MAC_COMPACT = re.compile(r"[0-9A-Fa-f]{12}")
 
 
 def _normalize_ip(ip: str) -> str:
@@ -48,9 +54,47 @@ def _build_discovery_message() -> bytes:
     return json.dumps(request).encode("utf-8")
 
 
-def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int) -> dict[str, Any]:
+def _non_empty_str(value: Any) -> str:
+    """Return a stripped string, or empty when the value is missing."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _mac_from_src(src: Any) -> str:
+    """Extract a MAC address from a GetDevice ``src`` field.
+
+    Some firmware builds (observed on Venus C ``ver`` 153) omit ``ble_mac`` /
+    ``wifi_mac`` from ``result`` while still embedding the BLE MAC in ``src``.
+    """
+    if not isinstance(src, str) or not src:
+        return ""
+    separated = _SRC_MAC_SEPARATED.search(src)
+    raw = separated.group(0) if separated else ""
+    if not raw:
+        compact = _SRC_MAC_COMPACT.search(src)
+        raw = compact.group(0) if compact else ""
+    if not raw:
+        return ""
+    hex_only = re.sub(r"[:\-]", "", raw)
+    if len(hex_only) != 12:
+        return ""
+    return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
+
+
+def _build_device_info(
+    result: dict[str, Any],
+    device_ip: str,
+    device_port: int,
+    *,
+    src: str = "",
+) -> dict[str, Any]:
     """Build device info dict from discovery response result."""
     version = extract_discovery_version(result)
+    ble_mac = _non_empty_str(result.get("ble_mac"))
+    wifi_mac = _non_empty_str(result.get("wifi_mac"))
+    if not ble_mac and not wifi_mac:
+        ble_mac = _mac_from_src(src)
     return {
         "id": result.get("id", 0),
         "device_type": result.get("device", "Unknown"),
@@ -58,9 +102,9 @@ def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int)
         "wifi_name": result.get("wifi_name", ""),
         "ip": device_ip,
         "port": device_port,
-        "wifi_mac": result.get("wifi_mac", ""),
-        "ble_mac": result.get("ble_mac", ""),
-        "mac": result.get("wifi_mac") or result.get("ble_mac", ""),
+        "wifi_mac": wifi_mac,
+        "ble_mac": ble_mac,
+        "mac": wifi_mac or ble_mac,
         "model": result.get("device", "Unknown"),
         "firmware": "" if version is None else str(version),
     }
@@ -138,21 +182,27 @@ async def discover_devices(
         scan_ports,
     )
 
-    # Create UDP socket with broadcast support
-    # Bind to an ephemeral port to avoid conflicts with the shared UDP client
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if hasattr(socket, "SO_REUSEPORT"):
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    sock.setblocking(False)
-
+    # Bind to the Open API listen port. Venus C / firmware 153 (and jaapp's
+    # working client) require sending from the same UDP port the device uses;
+    # replies go to that port rather than an ephemeral source port.
+    # Official protocol: https://static-eu.marstekenergy.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf
+    # Prefer the caller port (default 30000) when it is in the scan list so
+    # Venus C firmware that replies to the Open API listen port can answer.
+    if port in scan_ports:
+        primary_port = port
+    elif DEFAULT_UDP_PORT in scan_ports:
+        primary_port = DEFAULT_UDP_PORT
+    else:
+        primary_port = scan_ports[0]
     try:
-        sock.bind(("0.0.0.0", 0))
-        _LOGGER.debug("Socket bound to %s:%d", *sock.getsockname())
+        sock = create_udp_socket(
+            bind_port=primary_port,
+            broadcast=True,
+            fallback_ephemeral=True,
+            logger=_LOGGER,
+        )
     except OSError as err:
         _LOGGER.error("Failed to bind UDP socket: %s", err)
-        sock.close()
         raise
 
     loop = asyncio.get_running_loop()
@@ -223,7 +273,8 @@ async def discover_devices(
             seen_ips.add(device_ip)
 
             # Build device info dict (compatible with pymarstek format)
-            device = _build_device_info(result, device_ip, sender_port)
+            src = _non_empty_str(response.get("src"))
+            device = _build_device_info(result, device_ip, sender_port, src=src)
             devices.append(device)
             _LOGGER.info(
                 "Discovered device: %s at %s (BLE MAC: %s)",
@@ -269,12 +320,16 @@ async def get_device_info(
     """
     _LOGGER.debug("Querying device info from %s:%d", host, port)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setblocking(False)
-
-    # Bind to an ephemeral port to avoid conflicts with the shared UDP client
-    sock.bind(("0.0.0.0", 0))
+    try:
+        sock = create_udp_socket(
+            bind_port=port,
+            broadcast=True,
+            fallback_ephemeral=True,
+            logger=_LOGGER,
+        )
+    except OSError as err:
+        _LOGGER.error("Failed to bind UDP socket for %s:%d: %s", host, port, err)
+        return None
 
     # Build request
     message = _build_discovery_message()
@@ -321,6 +376,7 @@ async def get_device_info(
                     result,
                     _normalize_ip(result.get("ip", host)),
                     port,
+                    src=_non_empty_str(response.get("src")),
                 )
 
                 _LOGGER.info(

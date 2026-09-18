@@ -6,9 +6,72 @@ import ipaddress
 import logging
 import socket
 from collections.abc import Mapping
+from contextlib import suppress
 from typing import Protocol
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def create_udp_socket(
+    *,
+    bind_port: int,
+    broadcast: bool = False,
+    fallback_ephemeral: bool = False,
+    logger: logging.Logger | None = None,
+) -> socket.socket:
+    """Create a non-blocking IPv4 UDP socket bound to ``bind_port``.
+
+    Marstek Open API firmware replies to the device listen port (default
+    30000), not to an ephemeral client source port. Bind to that port so
+    unicast and broadcast replies are receivable.
+
+    See Python's ``loop.create_datagram_endpoint`` notes on ``reuse_port``:
+    https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.create_datagram_endpoint
+
+    Args:
+        bind_port: Local UDP port to bind. ``0`` asks the OS for ephemeral.
+        broadcast: Enable ``SO_BROADCAST`` for discovery probes.
+        fallback_ephemeral: If the requested port cannot be bound, bind to
+            an ephemeral port instead of raising.
+        logger: Optional logger for bind diagnostics.
+
+    Returns:
+        A non-blocking datagram socket bound to a local address.
+
+    Raises:
+        OSError: If the socket cannot be bound.
+    """
+    log = logger or _LOGGER
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if broadcast:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        with suppress(OSError):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    sock.setblocking(False)
+
+    try:
+        sock.bind(("0.0.0.0", bind_port))
+    except OSError as err:
+        if not fallback_ephemeral or bind_port == 0:
+            sock.close()
+            raise
+        log.warning(
+            "Could not bind UDP socket to port %s (%s); falling back to an ephemeral port",
+            bind_port,
+            err,
+        )
+        try:
+            sock.bind(("0.0.0.0", 0))
+        except OSError:
+            sock.close()
+            raise
+
+    bound = sock.getsockname()
+    if isinstance(bound, tuple) and len(bound) >= 2:
+        log.debug("UDP socket bound to %s:%s", bound[0], bound[1])
+    return sock
 
 
 class PsutilAddress(Protocol):

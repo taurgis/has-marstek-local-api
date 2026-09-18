@@ -15,7 +15,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
 
 from custom_components.marstek import MarstekRuntimeData
-from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.const import DATA_UDP_CLIENT, DOMAIN
 from custom_components.marstek.scanner import MarstekScanner, _build_discovery_flow_data
 
 
@@ -162,6 +162,44 @@ async def test_scanner_scan_impl_no_devices(hass: HomeAssistant):
 
         mock_discover.assert_called_once()
         assert "ports" in mock_discover.call_args.kwargs
+
+
+async def test_scanner_pauses_shared_receiver_during_scan(hass: HomeAssistant) -> None:
+    """Test scanner pauses the shared UDP listener while it binds the Open API port."""
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    hass.data[DOMAIN] = {DATA_UDP_CLIENT: client}
+    scanner = MarstekScanner(hass)
+
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(return_value=[]),
+    ):
+        await scanner._async_scan_impl()
+
+    client.async_pause_receiver.assert_awaited_once()
+    client.async_resume_receiver.assert_awaited_once()
+
+
+async def test_scanner_resumes_shared_receiver_after_scan_error(
+    hass: HomeAssistant,
+) -> None:
+    """Test scanner resumes the shared UDP listener even when discovery fails."""
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    hass.data[DOMAIN] = {DATA_UDP_CLIENT: client}
+    scanner = MarstekScanner(hass)
+
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(side_effect=OSError("bind failed")),
+    ):
+        await scanner._async_scan_impl()
+
+    client.async_pause_receiver.assert_awaited_once()
+    client.async_resume_receiver.assert_awaited_once()
 
 
 async def test_scanner_scan_impl_discovers_devices_no_ip_change(

@@ -16,6 +16,7 @@ from custom_components.marstek.const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIE
 
 from tests.conftest import (
     create_mock_client,
+    create_mock_scanner,
     patch_manual_connection,
     patch_marstek_integration,
 )
@@ -95,6 +96,56 @@ async def test_setup_with_custom_port(
         coordinator = entry.runtime_data.coordinator
         assert coordinator.device_port == 30003
 
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
+async def test_setup_binds_shared_udp_client_to_entry_port(
+    hass: HomeAssistant,
+) -> None:
+    """Test the shared UDP client binds to the config entry Open API port."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "port": 30003,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={
+            "device_mode": "SelfUse",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
+    scanner = create_mock_scanner()
+
+    with (
+        patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
+        patch(
+            "custom_components.marstek.MarstekUDPClient", return_value=client
+        ) as mock_udp,
+        patch(
+            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
+        ),
+        patch(
+            "custom_components.marstek.scanner.MarstekScanner.async_get",
+            return_value=scanner,
+        ),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        mock_udp.assert_called_once_with(port=30003, bind_port=30003)
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
 

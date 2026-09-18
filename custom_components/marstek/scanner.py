@@ -18,7 +18,7 @@ from homeassistant.helpers import discovery_flow
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
+from .const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENT, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
 from .firmware_profile import resolve_firmware_profile_from_metadata
 
@@ -43,7 +43,35 @@ _DEVICE_METADATA_FIELDS: tuple[str, ...] = (
     "firmware",
 )
 
-_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30030)
+def _shared_udp_client(hass: HomeAssistant) -> Any:
+    """Return the shared UDP client if the integration has created one."""
+    return hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+
+
+async def _await_maybe(result: Any) -> None:
+    """Await *result* when it is a coroutine."""
+    if asyncio.iscoroutine(result):
+        await result
+
+
+async def _async_pause_shared_receiver(hass: HomeAssistant) -> Any:
+    """Pause the shared UDP listener so discovery can bind the Open API port."""
+    client = _shared_udp_client(hass)
+    if client is None:
+        return None
+    pause = getattr(client, "async_pause_receiver", None)
+    if callable(pause):
+        await _await_maybe(pause())
+    return client
+
+
+async def _async_resume_shared_receiver(client: Any) -> None:
+    """Restart the shared UDP listener after a discovery scan."""
+    if client is None:
+        return
+    resume = getattr(client, "async_resume_receiver", None)
+    if callable(resume):
+        await _await_maybe(resume())
 
 
 def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
@@ -179,9 +207,11 @@ class MarstekScanner:
 
     async def _async_scan_impl(self) -> None:
         """Execute device discovery and check for IP changes."""
+        shared_client = None
         try:
             # Use local discovery module (workaround for pymarstek echo issues)
             _LOGGER.debug("Scanner: Starting device discovery (broadcast)")
+            shared_client = await _async_pause_shared_receiver(self._hass)
             scan_ports = self._build_scan_ports()
             devices = await discover_devices(ports=scan_ports)
 
@@ -296,6 +326,8 @@ class MarstekScanner:
             self._trigger_unconfigured_discovery(devices, configured_macs)
         except Exception as err:
             _LOGGER.debug("Scanner discovery failed: %s", err)
+        finally:
+            await _async_resume_shared_receiver(shared_client)
 
     def _build_scan_ports(self) -> list[int]:
         """Build the UDP port list for discovery scans.

@@ -27,6 +27,7 @@ Older notes that “LED is not in the API” applied to legacy Open API firmware
 - Confirm **Open API is enabled** in the Marstek app.
 - Ensure HA and the device are on the **same LAN segment**.
 - Confirm UDP **port 30000** is allowed (router/AP isolation can break discovery).
+- This integration **sends from the device Open API port** (default 30000). Some firmware, including Venus C `ver` 153, replies only to that port and ignores ephemeral source ports. If another integration already bound 30000 without `SO_REUSEPORT`, setup can fail with `No valid response from device`; stop the other client or change the Marstek Open API port in the app.
 
 ## Entities unavailable
 

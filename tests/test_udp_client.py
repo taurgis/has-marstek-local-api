@@ -266,6 +266,41 @@ class TestAsyncSetup:
         assert client._port == 30000
         await client.async_cleanup()
 
+    async def test_setup_enables_reuseport_when_available(self) -> None:
+        """Test that async_setup enables SO_REUSEPORT when the OS supports it."""
+        client = MarstekUDPClient(port=30000)
+        mock_socket = MagicMock()
+
+        with patch("socket.socket", return_value=mock_socket):
+            await client.async_setup()
+
+        if hasattr(socket, "SO_REUSEPORT"):
+            mock_socket.setsockopt.assert_any_call(
+                socket.SOL_SOCKET, socket.SO_REUSEPORT, 1
+            )
+
+        await client.async_cleanup()
+
+    async def test_pause_and_resume_receiver(self) -> None:
+        """Test pausing the listener cancels it and resume starts a new task."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+
+        async def never_ending() -> None:
+            await asyncio.sleep(3600)
+
+        client._listen_task = client._loop.create_task(never_ending())
+        await client.async_pause_receiver()
+        assert client._listen_task is None
+
+        with patch.object(client, "_ensure_listener") as mock_ensure:
+            await client.async_resume_receiver()
+            mock_ensure.assert_called_once()
+
+        client._socket = None
+        await client.async_resume_receiver()
+
 
 class TestSendRequest:
     """Tests for send_request method."""

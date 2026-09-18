@@ -76,6 +76,8 @@ def create_mock_client(
     client.is_polling_paused = MagicMock(return_value=False)
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.async_pause_receiver = AsyncMock(return_value=None)
+    client.async_resume_receiver = AsyncMock(return_value=None)
 
     if send_request_error:
         client.send_request = AsyncMock(side_effect=send_request_error)

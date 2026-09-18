@@ -80,7 +80,7 @@ If you add/modify device control:
 | Text/translations | `strings.json`, `translations/en.json` | Keep in sync; use translation keys in entities |
 | Icons | `icons.json` | Icon translations per entity |
 | Local API reference | `docs/marstek_device_openapi.MD` | UDP protocol + method list |
-| UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators |
+| UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators. The shared client binds to the device Open API port (devices reply there, not to an ephemeral source port). |
 | Request validation | `pymarstek/validators.py` | Validates methods, params, power/time ranges before transmission |
 
 ## Platforms & Entities

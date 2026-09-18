@@ -128,23 +128,38 @@ async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
 
 
 
-async def _get_or_create_shared_udp_client(hass: HomeAssistant) -> MarstekUDPClient:
+async def _get_or_create_shared_udp_client(
+    hass: HomeAssistant, *, bind_port: int
+) -> MarstekUDPClient:
     """Get existing shared UDP client or create a new one.
 
-    All Marstek config entries share a single UDP client to avoid port conflicts.
-    Multiple sockets bound to the same port with SO_REUSEADDR causes response
-    routing issues where responses go to the wrong socket.
+    All Marstek config entries share a single UDP client to avoid two sockets
+    competing for the same Open API port. The client binds to the device's
+    configured listen port because firmware replies there instead of to an
+    ephemeral source port.
     """
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
 
     if DATA_UDP_CLIENT not in hass.data[DOMAIN]:
-        _LOGGER.debug("Creating shared UDP client for Marstek integration")
-        udp_client = MarstekUDPClient(bind_port=0)
+        _LOGGER.debug(
+            "Creating shared UDP client for Marstek integration (bind_port=%s)",
+            bind_port,
+        )
+        udp_client = MarstekUDPClient(port=bind_port, bind_port=bind_port)
         await udp_client.async_setup()
         hass.data[DOMAIN][DATA_UDP_CLIENT] = udp_client
 
     client: MarstekUDPClient = hass.data[DOMAIN][DATA_UDP_CLIENT]
+    existing_bind_port = getattr(client, "_bind_port", None)
+    if isinstance(existing_bind_port, int) and existing_bind_port != bind_port:
+        _LOGGER.warning(
+            "Shared UDP client already bound to port %s; entry requested %s. "
+            "Marstek devices reply to their Open API listen port, so a second "
+            "device on a different port may not receive responses.",
+            existing_bind_port,
+            bind_port,
+        )
     return client
 
 
@@ -263,11 +278,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     scanner = MarstekScanner.async_get(hass)
     await scanner.async_setup()
 
-    # Use shared UDP client to avoid port conflicts between multiple devices
-    udp_client = await _get_or_create_shared_udp_client(hass)
-
     stored_ip = entry.data[CONF_HOST]
     stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
+    # Use shared UDP client to avoid port conflicts between multiple devices
+    udp_client = await _get_or_create_shared_udp_client(hass, bind_port=stored_port)
+
     # Only use BLE-MAC for device identification (user feedback)
     stored_ble_mac = entry.data.get("ble_mac")
 
