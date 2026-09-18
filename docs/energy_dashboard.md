@@ -11,7 +11,7 @@ The integration stores energy totals in Wh, a Home Assistant-supported energy un
 
 | Field | Typical wire unit | Home Assistant | When the scale applies |
 | --- | --- | --- | --- |
-| `total_pv_energy` | 0.01 kWh on Rev 3.1 / observed Venus A firmware 149+; Wh on explicit legacy profiles | Wh (`raw × 10` when 0.01 kWh) | Known family at firmware 150+, and Venus A at 149+ ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
+| `total_pv_energy` | 0.01 kWh on Rev 3.1 / observed Venus A firmware 149+; Wh on explicit legacy profiles | Wh (`raw × 10` when 0.01 kWh) | Known family at firmware 150+, and Venus A at 149+ ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)). Venus A 148 / `148.3` stays Wh. |
 | `total_grid_input_energy` / `total_grid_output_energy` | Wh | Wh (never scaled with PV) | Always |
 | `total_load_energy` | Wh | Wh | Always |
 | `EM.GetStatus` `input_energy` / `output_energy` | 0.1 Wh on Rev 3.1 | Wh (`raw × 0.1`) | Known family at firmware 150+; sensors omitted when the fields are absent |

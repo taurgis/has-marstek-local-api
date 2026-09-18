@@ -1235,6 +1235,21 @@ class TestFirmwareProfileDecoding:
         assert profile.pv_energy_scale == 1.0
         assert result["total_pv_energy"] == 25742
 
+    def test_venus_a_148_dot_label_does_not_scale_solar_energy(self) -> None:
+        """App firmware 148.3 follows the Open API 148 legacy solar unit."""
+        profile = resolve_firmware_profile("VenusA", "148.3")
+        result = parse_es_status_response(
+            {
+                "id": 1,
+                "result": {"total_pv_energy": 25742},
+            },
+            profile,
+        )
+
+        assert profile.firmware_version == 148
+        assert profile.pv_energy_scale == 1.0
+        assert result["total_pv_energy"] == 25742
+
     def test_legacy_pv_channel_1_deciwatts_decode_to_watts(self) -> None:
         """Legacy channel 1 3200 becomes 320 W; other channels stay watts."""
         profile = resolve_firmware_profile("VenusD", 145)
@@ -1249,6 +1264,24 @@ class TestFirmwareProfileDecoding:
             profile,
         )
 
+        assert result["pv1_power"] == 320
+        assert result["pv2_power"] == 280
+
+    def test_venus_a_148_dot_label_keeps_channel_1_deciwatts(self) -> None:
+        """App firmware 148.3 must not switch channel 1 to watts."""
+        profile = resolve_firmware_profile("VenusA", "148.3")
+        result = parse_pv_status_response(
+            {
+                "id": 1,
+                "result": {
+                    "pv1_power": 3200,
+                    "pv2_power": 280,
+                },
+            },
+            profile,
+        )
+
+        assert profile.pv_channel_1_power_scale == 0.1
         assert result["pv1_power"] == 320
         assert result["pv2_power"] == 280
 

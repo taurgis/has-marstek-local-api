@@ -95,15 +95,24 @@ def _normalize_family(device_type: str | None) -> DeviceFamily:
 
 
 def _normalize_version(version: Any) -> int | None:
-    """Normalize a non-negative integer firmware version."""
+    """Normalize a non-negative Open API firmware integer.
+
+    Discovery `ver` is an integer. App labels such as ``148.3`` share that
+    integer as a dotted prefix; only the leading number selects the profile.
+    """
     if isinstance(version, bool):
         return None
     if isinstance(version, int):
         return version if version >= 0 else None
     if isinstance(version, str):
         stripped = version.strip()
-        if stripped and stripped.isascii() and stripped.isdecimal():
+        if not stripped or not stripped.isascii():
+            return None
+        if stripped.isdecimal():
             return int(stripped, 10)
+        dotted = re.fullmatch(r"([0-9]+)\.[0-9]+(?:\.[0-9]+)*", stripped)
+        if dotted:
+            return int(dotted.group(1), 10)
     return None
 
 
