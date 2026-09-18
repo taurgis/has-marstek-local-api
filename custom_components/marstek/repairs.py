@@ -13,6 +13,7 @@ from homeassistant.helpers.device_registry import format_mac
 
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import get_device_info
+from .helpers.udp_clients import bind_port_for_host, get_udp_client
 
 
 class CannotConnectRepairFlow(RepairsFlow):
@@ -44,7 +45,12 @@ class CannotConnectRepairFlow(RepairsFlow):
                 errors["base"] = "cannot_connect"
             else:
                 try:
-                    device_info = await get_device_info(host=host, port=port)
+                    udp_client = get_udp_client(
+                        self.hass, bind_port_for_host(host, port)
+                    )
+                    device_info = await get_device_info(
+                        host=host, port=port, udp_client=udp_client
+                    )
                     if device_info:
                         unique_id_mac = (
                             device_info.get("ble_mac")

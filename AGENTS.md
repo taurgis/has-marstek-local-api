@@ -54,15 +54,16 @@ If you add/modify device control:
 
 ### 5) OPEN API semantics (UDP)
 - Devices must have OPEN API enabled in the Marstek app.
-- Default UDP port is 30000; the Open API spec recommends using a high port range.
+- Default UDP port is 30000; the Open API spec recommends using a high port range. The listen port is **user-configurable** per device.
 - LAN discovery uses UDP broadcast + `Marstek.GetDevice` (see `docs/marstek_device_openapi.MD`).
-- Shared UDP client is stored in `hass.data[DOMAIN][DATA_UDP_CLIENT]` and reused across entries.
+- UDP clients are stored in `hass.data[DOMAIN][DATA_UDP_CLIENTS]` **keyed by bind port** and reused across entries that share that Open API port. Mixed custom ports each get their own socket.
 
 ## Code map (where to implement changes)
 
 | Concern | File | Notes |
 |---|---|---|
-| Setup / teardown | `__init__.py` | Creates shared UDP client + coordinator; starts `MarstekScanner`; forwards platforms; uses `entry.async_on_unload()` |
+| Setup / teardown | `__init__.py` | Creates per-port UDP clients + coordinator; starts `MarstekScanner`; forwards platforms; uses `entry.async_on_unload()` |
+| UDP client pool | `helpers/udp_clients.py` | One `MarstekUDPClient` per Open API bind port; loopback uses ephemeral |
 | Config flow | `config_flow.py` | Broadcast discovery UI, DHCP updates, reauth, reconfigure, options flow with sections |
 | Polling + error handling | `coordinator.py` | Single source of truth; tiered polling (fast/medium/slow); returns previous data on connectivity issues |
 | IP change detection | `scanner.py` | Periodic broadcast discovery (60s); triggers discovery flow to update config entries |
@@ -80,7 +81,7 @@ If you add/modify device control:
 | Text/translations | `strings.json`, `translations/en.json` | Keep in sync; use translation keys in entities |
 | Icons | `icons.json` | Icon translations per entity |
 | Local API reference | `docs/marstek_device_openapi.MD` | UDP protocol + method list |
-| UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators |
+| UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators. Each unique Open API port binds its own socket (devices reply there, not to an ephemeral source port). |
 | Request validation | `pymarstek/validators.py` | Validates methods, params, power/time ranges before transmission |
 
 ## Platforms & Entities
@@ -420,7 +421,7 @@ python -m mock_device --device VenusA --ver 149
 python -m mock_device --device VenusA --ver 150
 ```
 
-**In devcontainer:** Five mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). `172.28.0.22` is Venus A firmware **148** (solar Wh, channel-1 deciwatts; 148 or older). `172.28.0.24` is Venus A firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). Venus D @ 145 remains the other PV family on legacy encoding. See `tools/mock_device/README.md`.
+**In devcontainer:** Six mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). `172.28.0.26` is Venus C firmware **153** (SYS/UPS, no PV). `172.28.0.22` is Venus A firmware **148** (solar Wh, channel-1 deciwatts; 148 or older). `172.28.0.24` is Venus A firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). Venus D @ 145 remains the other PV family on legacy encoding. Custom ports 30001/30002/30003 exercise the per-port UDP pool. See `tools/mock_device/README.md`.
 
 ### Tool selection guide
 

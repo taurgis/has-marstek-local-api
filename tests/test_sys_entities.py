@@ -823,12 +823,14 @@ async def test_sys_entity_properties_do_not_perform_io(
 async def test_number_and_switch_setup_missing_udp_client(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """SYS platforms skip setup when the shared UDP client is missing."""
+    """SYS platforms skip setup when the UDP client is missing."""
     hass.data.pop(DOMAIN, None)
     entry = _config_entry()
     entry.add_to_hass(hass)
+    coordinator = MagicMock(profile=resolve_firmware_profile("VenusE", 150))
+    coordinator.udp_client = None
     entry.runtime_data = SimpleNamespace(
-        coordinator=MagicMock(profile=resolve_firmware_profile("VenusE", 150)),
+        coordinator=coordinator,
         device_info={**entry.data, "ip": entry.data["host"]},
     )
     caplog.set_level(logging.ERROR)
@@ -837,5 +839,5 @@ async def test_number_and_switch_setup_missing_udp_client(
     await async_setup_number(hass, entry, async_add_entities)
     await async_setup_switch(hass, entry, async_add_entities)
 
-    assert "Shared UDP client not found" in caplog.text
+    assert "UDP client not found" in caplog.text
     async_add_entities.assert_not_called()

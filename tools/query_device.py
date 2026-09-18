@@ -13,7 +13,16 @@ async def query_device(host: str, port: int = 30000, timeout: float = 5.0):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     sock.setblocking(False)
+    # Bind to the device port; Marstek firmware replies to that port.
+    try:
+        sock.bind(("0.0.0.0", port))
+    except OSError as err:
+        print(f"Failed to bind UDP port {port}: {err}")
+        sock.close()
+        return None
 
     request = {"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}
     message = json.dumps(request).encode()

@@ -23,7 +23,6 @@ from .const import (
     CONF_POLL_INTERVAL_FAST,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
-    DATA_UDP_CLIENT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
     DEFAULT_POLL_INTERVAL_FAST,
@@ -36,6 +35,7 @@ from .helpers.device_lookup import (
     async_find_marstek_device,
     async_get_marstek_entry,
 )
+from .helpers.udp_clients import get_udp_client_for_entry
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
 from .pymarstek import MarstekUDPClient, build_command, get_es_status
@@ -275,8 +275,8 @@ async def async_call_action_from_config(
 
     command = _build_set_mode_command(power, enable)
 
-    # Get shared UDP client from hass.data
-    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
+    # Get the UDP client bound to this device's Open API port
+    udp_client = get_udp_client_for_entry(hass, entry)
     if not udp_client:
         raise InvalidDeviceAutomationConfig(
             translation_domain=DOMAIN,

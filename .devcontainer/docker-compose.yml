@@ -90,6 +90,21 @@ services:
         ipv4_address: 172.28.0.24
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "149", "--ble-mac", "02deadbeef05", "--wifi-mac", "02cafebabe05", "--soc", "65", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
 
+  # Mock device 6 - Venus C, default UDP port 30000
+  # Firmware 153 (issue #60): SYS + UPS; no PV. Same-port-reply firmware on the
+  # default Open API port, sharing 30000 with the Venus E mocks.
+  mock-marstek-6:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-6
+    environment:
+      - MOCK_IP=172.28.0.26
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.26
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.26", "--device", "VenusC", "--ver", "153", "--ble-mac", "02deadbeef06", "--wifi-mac", "02cafebabe06", "--soc", "48"]
+
 networks:
   marstek_net:
     driver: bridge

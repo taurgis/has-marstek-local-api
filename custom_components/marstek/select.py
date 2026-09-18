@@ -16,7 +16,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import MarstekConfigEntry
 from .const import (
     CMD_ES_SET_MODE,
-    DATA_UDP_CLIENT,
     DEFAULT_UDP_PORT,
     DOMAIN,
     MODE_MANUAL,
@@ -44,10 +43,9 @@ async def async_setup_entry(
     """Set up Marstek select entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
-    # Get shared UDP client from hass.data
-    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
-    if not udp_client:
-        _LOGGER.error("Shared UDP client not found for select entity setup")
+    udp_client = coordinator.udp_client
+    if udp_client is None:
+        _LOGGER.error("UDP client not found for select entity setup")
         return
 
     async_add_entities(

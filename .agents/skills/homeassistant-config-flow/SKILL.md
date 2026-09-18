@@ -24,6 +24,7 @@ Use this skill when adding or adjusting setup flows, discovery handlers, options
 - `async_step_user`: show form when `user_input is None`; on submit, validate connectivity; return errors with keys (`cannot_connect`, `invalid_auth`, `already_configured`).
 - `async_step_dhcp` / `async_step_zeroconf` / `async_step_integration_discovery`: deduplicate via MAC/unique ID; if existing entry with new host, update data and abort with `already_configured`.
 - `async_step_confirm`: for discovery flows, prefill known values and ask user to confirm.
+- Unicast `Marstek.GetDevice` (manual IP/port, Confirm device, repairs) must call `get_device_info(..., udp_client=get_udp_client(hass, bind_port_for_host(host, port)))`. Do not bind a second socket and do not pause for that probe. Pause pooled listeners only around **broadcast** `discover_devices()`. Pausing does not unbind; Linux `SO_REUSEPORT` still delivers the reply to the coordinator.
 
 ## Reauth Flow Pattern
 
@@ -55,7 +56,9 @@ async def async_step_reauth_confirm(
     if user_input is not None:
         host = user_input.get(CONF_HOST)
         try:
-            device_info = await get_device_info(host=host, port=port)
+            device_info = await get_device_info(
+                host=host, port=port, udp_client=udp_client
+            )
             if device_info:
                 # Validate unique ID unchanged
                 await self.async_set_unique_id(device_info["ble_mac"])

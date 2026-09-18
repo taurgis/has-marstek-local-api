@@ -15,7 +15,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
 
 from custom_components.marstek import MarstekRuntimeData
-from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
 from custom_components.marstek.scanner import MarstekScanner, _build_discovery_flow_data
 
 
@@ -162,6 +162,67 @@ async def test_scanner_scan_impl_no_devices(hass: HomeAssistant):
 
         mock_discover.assert_called_once()
         assert "ports" in mock_discover.call_args.kwargs
+
+
+async def test_scanner_pauses_shared_receiver_during_scan(hass: HomeAssistant) -> None:
+    """Test scanner pauses the shared UDP listener while it binds the Open API port."""
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client}}
+    scanner = MarstekScanner(hass)
+
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(return_value=[]),
+    ):
+        await scanner._async_scan_impl()
+
+    client.async_pause_receiver.assert_awaited_once()
+    client.async_resume_receiver.assert_awaited_once()
+
+
+async def test_scanner_pauses_all_port_clients_during_scan(hass: HomeAssistant) -> None:
+    """Test scanner pauses every pooled UDP listener, not only the first port."""
+    client_a = MagicMock()
+    client_a.async_pause_receiver = AsyncMock()
+    client_a.async_resume_receiver = AsyncMock()
+    client_b = MagicMock()
+    client_b.async_pause_receiver = AsyncMock()
+    client_b.async_resume_receiver = AsyncMock()
+    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client_a, 30003: client_b}}
+    scanner = MarstekScanner(hass)
+
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(return_value=[]),
+    ):
+        await scanner._async_scan_impl()
+
+    client_a.async_pause_receiver.assert_awaited_once()
+    client_b.async_pause_receiver.assert_awaited_once()
+    client_a.async_resume_receiver.assert_awaited_once()
+    client_b.async_resume_receiver.assert_awaited_once()
+
+
+async def test_scanner_resumes_shared_receiver_after_scan_error(
+    hass: HomeAssistant,
+) -> None:
+    """Test scanner resumes the shared UDP listener even when discovery fails."""
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client}}
+    scanner = MarstekScanner(hass)
+
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(side_effect=OSError("bind failed")),
+    ):
+        await scanner._async_scan_impl()
+
+    client.async_pause_receiver.assert_awaited_once()
+    client.async_resume_receiver.assert_awaited_once()
 
 
 async def test_scanner_scan_impl_discovers_devices_no_ip_change(
@@ -752,6 +813,27 @@ async def test_scanner_get_configured_macs_ignores_invalid(hass: HomeAssistant) 
 
     configured = scanner._get_configured_macs()
     assert "aa:bb:cc:dd:ee:ff" in configured
+
+
+async def test_scanner_get_configured_macs_includes_ignore_unique_id(
+    hass: HomeAssistant,
+) -> None:
+    """Ignored entries store the BLE MAC as unique_id, not entry.data ble_mac."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="02:DE:AD:BE:EF:03",
+        source="ignore",
+        data={"unique_id": "02:DE:AD:BE:EF:03", "title": "Marstek VenusA"},
+    )
+    entry.add_to_hass(hass)
+
+    scanner = MarstekScanner(hass)
+    configured = scanner._get_configured_macs()
+    assert "02:de:ad:be:ef:03" in configured
+
+    scanner._unconfigured_seen = {"02:de:ad:be:ef:03": datetime.now()}
+    scanner._prune_unconfigured_cache(configured)
+    assert "02:de:ad:be:ef:03" not in scanner._unconfigured_seen
 
 
 async def test_scanner_prune_unconfigured_cache(hass: HomeAssistant) -> None:

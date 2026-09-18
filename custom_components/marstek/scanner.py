@@ -21,6 +21,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
 from .firmware_profile import resolve_firmware_profile_from_metadata
+from .helpers.udp_clients import async_paused_udp_receivers
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -183,7 +184,8 @@ class MarstekScanner:
             # Use local discovery module (workaround for pymarstek echo issues)
             _LOGGER.debug("Scanner: Starting device discovery (broadcast)")
             scan_ports = self._build_scan_ports()
-            devices = await discover_devices(ports=scan_ports)
+            async with async_paused_udp_receivers(self._hass):
+                devices = await discover_devices(ports=scan_ports)
 
             _LOGGER.debug(
                 "Scanner: Discovered %d device(s)", len(devices) if devices else 0
@@ -437,9 +439,11 @@ class MarstekScanner:
         """Collect all configured MACs for this integration."""
         configured: set[str] = set()
         for entry in self._hass.config_entries.async_entries(DOMAIN):
+            candidates: list[Any] = [entry.unique_id]
             for key in ("ble_mac", "mac", "wifi_mac"):
-                value = entry.data.get(key)
-                if not value:
+                candidates.append(entry.data.get(key))
+            for value in candidates:
+                if not isinstance(value, str) or not value:
                     continue
                 try:
                     configured.add(format_mac(value))

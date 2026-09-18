@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
-from .const import DATA_UDP_CLIENT, DOMAIN
+from .const import DOMAIN
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
 from .helpers.number_descriptions import (
@@ -82,9 +82,9 @@ async def async_setup_entry(
     """Set up Marstek number entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
-    udp_client = hass.data.get(DOMAIN, {}).get(DATA_UDP_CLIENT)
-    if not udp_client:
-        _LOGGER.error("Shared UDP client not found for number entity setup")
+    udp_client = coordinator.udp_client
+    if udp_client is None:
+        _LOGGER.error("UDP client not found for number entity setup")
         return
 
     profile = coordinator.profile

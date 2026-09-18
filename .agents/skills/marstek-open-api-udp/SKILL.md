@@ -17,6 +17,7 @@ In code, this is encapsulated by the `py-marstek` library (`pymarstek`).
 ## Transport & Message Shape
 
 - Transport is UDP to the device (default port **30000**).
+- Bind the local socket to the **same port the device listens on**. Several firmware builds reply to that listen port instead of the client’s ephemeral source port. The Open API port is **user-configurable**, so the integration keeps **one socket per unique listen port** (devices that share a port share a socket). `SO_REUSEPORT` is set so a second bind can share a port, but Linux then load-balances replies across every still-bound socket. **Pause does not unbind.** Broadcast discovery must pause pooled listeners and bind its own sockets. Unicast `Marstek.GetDevice` (manual add, Confirm device, repairs) must reuse the pooled `MarstekUDPClient.send_request(...)` for that port. A second bind after pause produces `cannot_connect` / `No valid response from device` while the coordinator `Recv`s the GetDevice reply.
 - Messages are JSON objects with a `method` and `params`, e.g.:
   - Discovery: `Marstek.GetDevice`
   - Status: `ES.GetStatus`, `ES.GetMode`, `Bat.GetStatus`, `PV.GetStatus`, `EM.GetStatus`

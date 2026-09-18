@@ -11,19 +11,27 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import socket
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
 from .firmware_profile import extract_discovery_version
-from .pymarstek.network import get_broadcast_addresses
+from .pymarstek import ValidationError, discover
+from .pymarstek.network import create_udp_socket, get_broadcast_addresses, is_loopback_host
 
 _LOGGER = logging.getLogger(__name__)
 
 # Discovery settings
 DISCOVERY_TIMEOUT = 10.0  # Total discovery timeout in seconds
 DISCOVERY_METHOD = "Marstek.GetDevice"
+
+# Open API `src` is typically "{model}-{ble_mac}", e.g. "VenusC-AABBCCDDEEFF".
+_SRC_MAC_SEPARATED = re.compile(
+    r"(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}"
+)
+_SRC_MAC_COMPACT = re.compile(r"[0-9A-Fa-f]{12}")
 
 
 def _normalize_ip(ip: str) -> str:
@@ -48,9 +56,47 @@ def _build_discovery_message() -> bytes:
     return json.dumps(request).encode("utf-8")
 
 
-def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int) -> dict[str, Any]:
+def _non_empty_str(value: Any) -> str:
+    """Return a stripped string, or empty when the value is missing."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _mac_from_src(src: Any) -> str:
+    """Extract a MAC address from a GetDevice ``src`` field.
+
+    Some firmware builds (observed on Venus C ``ver`` 153) omit ``ble_mac`` /
+    ``wifi_mac`` from ``result`` while still embedding the BLE MAC in ``src``.
+    """
+    if not isinstance(src, str) or not src:
+        return ""
+    separated = _SRC_MAC_SEPARATED.search(src)
+    raw = separated.group(0) if separated else ""
+    if not raw:
+        compact = _SRC_MAC_COMPACT.search(src)
+        raw = compact.group(0) if compact else ""
+    if not raw:
+        return ""
+    hex_only = re.sub(r"[:\-]", "", raw)
+    if len(hex_only) != 12:
+        return ""
+    return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
+
+
+def _build_device_info(
+    result: dict[str, Any],
+    device_ip: str,
+    device_port: int,
+    *,
+    src: str = "",
+) -> dict[str, Any]:
     """Build device info dict from discovery response result."""
     version = extract_discovery_version(result)
+    ble_mac = _non_empty_str(result.get("ble_mac"))
+    wifi_mac = _non_empty_str(result.get("wifi_mac"))
+    if not ble_mac and not wifi_mac:
+        ble_mac = _mac_from_src(src)
     return {
         "id": result.get("id", 0),
         "device_type": result.get("device", "Unknown"),
@@ -58,9 +104,9 @@ def _build_device_info(result: dict[str, Any], device_ip: str, device_port: int)
         "wifi_name": result.get("wifi_name", ""),
         "ip": device_ip,
         "port": device_port,
-        "wifi_mac": result.get("wifi_mac", ""),
-        "ble_mac": result.get("ble_mac", ""),
-        "mac": result.get("wifi_mac") or result.get("ble_mac", ""),
+        "wifi_mac": wifi_mac,
+        "ble_mac": ble_mac,
+        "mac": wifi_mac or ble_mac,
         "model": result.get("device", "Unknown"),
         "firmware": "" if version is None else str(version),
     }
@@ -76,6 +122,47 @@ def _is_echo_response(response: dict[str, Any]) -> bool:
 def _get_broadcast_addresses() -> list[str]:
     """Get broadcast addresses for all network interfaces."""
     return get_broadcast_addresses(logger=_LOGGER)
+
+
+class DeviceInfoUDPClient(Protocol):
+    """UDP client that can send a unicast Open API request."""
+
+    async def send_request(
+        self,
+        message: str,
+        target_ip: str,
+        target_port: int,
+        timeout: float = 5.0,
+        *,
+        quiet_on_timeout: bool = False,
+        bypass_rate_limit: bool = False,
+    ) -> dict[str, Any]:
+        """Send a request and wait for the matching response."""
+        ...
+
+
+def _device_info_from_response(
+    response: dict[str, Any],
+    host: str,
+    port: int,
+) -> dict[str, Any] | None:
+    """Parse a GetDevice payload into device info, or None if invalid."""
+    if _is_echo_response(response):
+        _LOGGER.debug("Filtered echo from %s", host)
+        return None
+    if not _is_valid_device_response(response):
+        _LOGGER.debug("Invalid device response from %s: %s", host, response)
+        return None
+
+    result = response["result"]
+    if not isinstance(result, dict):
+        return None
+    return _build_device_info(
+        result,
+        _normalize_ip(result.get("ip", host)),
+        port,
+        src=_non_empty_str(response.get("src")),
+    )
 
 
 def _is_valid_device_response(response: dict[str, Any]) -> bool:
@@ -138,22 +225,29 @@ async def discover_devices(
         scan_ports,
     )
 
-    # Create UDP socket with broadcast support
-    # Bind to an ephemeral port to avoid conflicts with the shared UDP client
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if hasattr(socket, "SO_REUSEPORT"):
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    sock.setblocking(False)
+    # Bind one socket per scan port. Firmware replies to the device listen
+    # port, so a probe sent from 30000 will miss a device configured on 30003.
+    # Official protocol: https://static-eu.marstekenergy.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf
+    sockets: list[tuple[int, socket.socket]] = []
+    bind_error: OSError | None = None
+    for scan_port in scan_ports:
+        try:
+            sock = create_udp_socket(
+                bind_port=scan_port,
+                broadcast=True,
+                fallback_ephemeral=True,
+                logger=_LOGGER,
+            )
+        except OSError as err:
+            bind_error = err
+            _LOGGER.error("Failed to bind UDP socket on port %s: %s", scan_port, err)
+            continue
+        sockets.append((scan_port, sock))
 
-    try:
-        sock.bind(("0.0.0.0", 0))
-        _LOGGER.debug("Socket bound to %s:%d", *sock.getsockname())
-    except OSError as err:
-        _LOGGER.error("Failed to bind UDP socket: %s", err)
-        sock.close()
-        raise
+    if not sockets:
+        if bind_error is not None:
+            raise bind_error
+        raise OSError("Failed to bind UDP socket")
 
     loop = asyncio.get_running_loop()
 
@@ -164,82 +258,83 @@ async def discover_devices(
     broadcast_addrs = _get_broadcast_addresses()
     _LOGGER.debug("Broadcast addresses: %s", broadcast_addrs)
 
-    # Send discovery broadcasts
-    for addr in broadcast_addrs:
-        for target_port in scan_ports:
+    for scan_port, sock in sockets:
+        for addr in broadcast_addrs:
             try:
-                await loop.sock_sendto(sock, message, (addr, target_port))
-                _LOGGER.debug("Sent discovery to %s:%d", addr, target_port)
+                await loop.sock_sendto(sock, message, (addr, scan_port))
+                _LOGGER.debug("Sent discovery to %s:%d", addr, scan_port)
             except OSError as err:
-                _LOGGER.warning("Failed to send to %s:%d: %s", addr, target_port, err)
+                _LOGGER.warning("Failed to send to %s:%d: %s", addr, scan_port, err)
 
-    # Collect responses
     devices: list[dict[str, Any]] = []
     seen_ips: set[str] = set()
     echoes_filtered = 0
     start_time = loop.time()
 
-    while (loop.time() - start_time) < timeout:
-        try:
-            data, addr = await asyncio.wait_for(
-                loop.sock_recvfrom(sock, 4096),
-                timeout=0.5,
-            )
+    try:
+        recv_failed = False
+        while (loop.time() - start_time) < timeout:
+            remaining = timeout - (loop.time() - start_time)
+            if remaining <= 0:
+                break
+            per_wait = min(0.5, remaining)
+            for _scan_port, sock in sockets:
+                try:
+                    data, addr = await asyncio.wait_for(
+                        loop.sock_recvfrom(sock, 4096),
+                        timeout=per_wait,
+                    )
+                except TimeoutError:
+                    continue
+                except OSError as err:
+                    _LOGGER.error("Socket error during discovery: %s", err)
+                    recv_failed = True
+                    break
 
-            # addr is tuple[str, int] for IPv4
-            sender_ip: str = addr[0]
-            sender_port = int(addr[1])
+                sender_ip: str = addr[0]
+                sender_port = int(addr[1])
 
-            try:
-                response = json.loads(data.decode("utf-8"))
-            except json.JSONDecodeError:
-                _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
-                continue
+                try:
+                    response = json.loads(data.decode("utf-8"))
+                except json.JSONDecodeError:
+                    _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
+                    continue
 
-            # Filter echoed requests
-            if _is_echo_response(response):
-                echoes_filtered += 1
-                _LOGGER.debug("Filtered echo from %s:%d", sender_ip, sender_port)
-                continue
+                if _is_echo_response(response):
+                    echoes_filtered += 1
+                    _LOGGER.debug("Filtered echo from %s:%d", sender_ip, sender_port)
+                    continue
 
-            # Validate device response
-            if not _is_valid_device_response(response):
-                _LOGGER.debug(
-                    "Invalid device response from %s:%d: %s",
-                    sender_ip,
-                    sender_port,
-                    response,
+                if not _is_valid_device_response(response):
+                    _LOGGER.debug(
+                        "Invalid device response from %s:%d: %s",
+                        sender_ip,
+                        sender_port,
+                        response,
+                    )
+                    continue
+
+                result = response["result"]
+                device_ip = _normalize_ip(result.get("ip", sender_ip))
+                if device_ip in seen_ips:
+                    _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
+                    continue
+
+                seen_ips.add(device_ip)
+                src = _non_empty_str(response.get("src"))
+                device = _build_device_info(result, device_ip, sender_port, src=src)
+                devices.append(device)
+                _LOGGER.info(
+                    "Discovered device: %s at %s (BLE MAC: %s)",
+                    device["device_type"],
+                    device["ip"],
+                    device["ble_mac"],
                 )
-                continue
-
-            result = response["result"]
-            device_ip = _normalize_ip(result.get("ip", sender_ip))
-
-            # Skip duplicates
-            if device_ip in seen_ips:
-                _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
-                continue
-
-            seen_ips.add(device_ip)
-
-            # Build device info dict (compatible with pymarstek format)
-            device = _build_device_info(result, device_ip, sender_port)
-            devices.append(device)
-            _LOGGER.info(
-                "Discovered device: %s at %s (BLE MAC: %s)",
-                device["device_type"],
-                device["ip"],
-                device["ble_mac"],
-            )
-
-        except TimeoutError:
-            # No response in this interval, continue waiting
-            continue
-        except OSError as err:
-            _LOGGER.error("Socket error during discovery: %s", err)
-            break
-
-    sock.close()
+            if recv_failed:
+                break
+    finally:
+        for _, sock in sockets:
+            sock.close()
 
     _LOGGER.debug(
         "Discovery complete: found %d device(s), filtered %d echo(es)",
@@ -250,31 +345,95 @@ async def discover_devices(
     return devices
 
 
+async def _get_device_info_via_client(
+    udp_client: DeviceInfoUDPClient,
+    host: str,
+    port: int,
+    timeout: float,
+) -> dict[str, Any] | None:
+    """Query GetDevice on an already-bound UDP client.
+
+    Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind never
+    sees that reply: Linux hashes it onto the socket that already owns the
+    port, even if that listener is paused. Reuse the pooled client instead.
+    """
+    _LOGGER.debug(
+        "Querying device info from %s:%d via pooled UDP client", host, port
+    )
+    try:
+        response = await udp_client.send_request(
+            discover(),
+            host,
+            port,
+            timeout=timeout,
+            quiet_on_timeout=True,
+            bypass_rate_limit=True,
+        )
+    except TimeoutError:
+        _LOGGER.warning("No valid response from device at %s:%d", host, port)
+        return None
+    except (OSError, ValueError, ValidationError) as err:
+        _LOGGER.error("Socket error querying %s:%d: %s", host, port, err)
+        return None
+
+    if not isinstance(response, dict):
+        _LOGGER.warning("No valid response from device at %s:%d", host, port)
+        return None
+
+    device = _device_info_from_response(response, host, port)
+    if device is None:
+        _LOGGER.warning("No valid response from device at %s:%d", host, port)
+        return None
+
+    _LOGGER.info(
+        "Got device info: %s at %s (BLE MAC: %s)",
+        device["device_type"],
+        device["ip"],
+        device["ble_mac"],
+    )
+    return device
+
+
 async def get_device_info(
     host: str,
     port: int = DEFAULT_UDP_PORT,
     timeout: float = 5.0,
+    *,
+    udp_client: DeviceInfoUDPClient | None = None,
 ) -> dict[str, Any] | None:
     """Query a specific Marstek device for its info.
 
     Sends Marstek.GetDevice directly to the specified IP and returns device info.
+    When *udp_client* is provided, the request is sent on that client so a
+    second same-port bind cannot steal the reply.
 
     Args:
         host: Device IP address
         port: UDP port (default 30000)
         timeout: Response timeout in seconds
+        udp_client: Existing client bound to this listen port, if any
 
     Returns:
         Device info dict or None if no response/invalid response
     """
+    if udp_client is not None:
+        return await _get_device_info_via_client(udp_client, host, port, timeout)
+
     _LOGGER.debug("Querying device info from %s:%d", host, port)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setblocking(False)
-
-    # Bind to an ephemeral port to avoid conflicts with the shared UDP client
-    sock.bind(("0.0.0.0", 0))
+    # Same-host (loopback) devices already occupy the Open API port, so send
+    # from an ephemeral port. Remote devices must be reached from that port.
+    bind_port = 0 if is_loopback_host(host) else port
+    try:
+        sock = create_udp_socket(
+            bind_port=bind_port,
+            broadcast=True,
+            fallback_ephemeral=True,
+            logger=_LOGGER,
+        )
+    except OSError as err:
+        _LOGGER.error("Failed to bind UDP socket for %s:%d: %s", host, port, err)
+        return None
 
     # Build request
     message = _build_discovery_message()
@@ -303,25 +462,9 @@ async def get_device_info(
                     _LOGGER.debug("Invalid JSON from %s", sender_ip)
                     continue
 
-                # Skip echoes
-                if _is_echo_response(response):
-                    _LOGGER.debug("Filtered echo from %s", sender_ip)
+                device = _device_info_from_response(response, host, port)
+                if device is None:
                     continue
-
-                # Validate response
-                if not _is_valid_device_response(response):
-                    _LOGGER.debug("Invalid device response from %s: %s", sender_ip, response)
-                    continue
-
-                result = response["result"]
-
-                # Build device info dict — use the target port we sent to,
-                # not the response sender port, for reliable port recording.
-                device = _build_device_info(
-                    result,
-                    _normalize_ip(result.get("ip", host)),
-                    port,
-                )
 
                 _LOGGER.info(
                     "Got device info: %s at %s (BLE MAC: %s)",

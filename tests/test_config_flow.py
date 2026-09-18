@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
@@ -24,6 +24,7 @@ from custom_components.marstek.const import (
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
     CONF_SOCKET_LIMIT,
+    DATA_UDP_CLIENTS,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
     DEFAULT_FAILURE_THRESHOLD,
@@ -1459,3 +1460,119 @@ async def test_user_flow_connection_error_redirects_to_manual(
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
     assert result["errors"] == {"base": "cannot_connect"}
+
+
+def _pooled_udp_client(hass: HomeAssistant) -> MagicMock:
+    """Install a pooled UDP client so config-flow pause/resume is observable."""
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENTS] = {30000: client}
+    return client
+
+
+async def test_manual_add_reuses_pooled_udp_client(hass: HomeAssistant) -> None:
+    """Manual IP/port entry must send GetDevice on the pooled client, not pause."""
+    client = _pooled_udp_client(hass)
+    device_info = {
+        "ip": "172.28.0.20",
+        "ble_mac": "AA:BB:CC:DD:EE:01",
+        "mac": "AA:BB:CC:DD:EE:01",
+        "device_type": "VenusE 3.0",
+        "version": "145",
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+        "model": "VenusE 3.0",
+        "firmware": "145",
+    }
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["step_id"] == "manual"
+
+    client.async_pause_receiver.reset_mock()
+    client.async_resume_receiver.reset_mock()
+
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new_callable=AsyncMock,
+        return_value=device_info,
+    ) as mock_get_device_info:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "172.28.0.20", "port": 30000},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    mock_get_device_info.assert_awaited_once()
+    assert mock_get_device_info.await_args is not None
+    assert mock_get_device_info.await_args.kwargs["udp_client"] is client
+    client.async_pause_receiver.assert_not_called()
+    client.async_resume_receiver.assert_not_called()
+
+
+async def test_confirm_device_changed_endpoint_reuses_pooled_udp_client(
+    hass: HomeAssistant,
+) -> None:
+    """Confirm device must reuse the pooled client when IP/port change."""
+    client = _pooled_udp_client(hass)
+    discovery_info = {
+        "ip": "172.28.0.23",
+        "ble_mac": "AA:BB:CC:DD:EE:04",
+        "mac": "AA:BB:CC:DD:EE:04",
+        "device_type": "VenusD",
+        "version": 145,
+        "port": 30002,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+    assert result["step_id"] == "confirm"
+
+    device_info = {
+        "ip": "172.28.0.20",
+        "ble_mac": "AA:BB:CC:DD:EE:04",
+        "mac": "AA:BB:CC:DD:EE:04",
+        "device_type": "VenusD",
+        "version": "145",
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+        "model": "VenusD",
+        "firmware": "145",
+    }
+
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new_callable=AsyncMock,
+        return_value=device_info,
+    ) as mock_get_device_info:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "172.28.0.20", "port": 30000},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["host"] == "172.28.0.20"
+    assert result["data"]["port"] == 30000
+    mock_get_device_info.assert_awaited_once()
+    assert mock_get_device_info.await_args is not None
+    assert mock_get_device_info.await_args.kwargs["udp_client"] is client
+    client.async_pause_receiver.assert_not_called()
+    client.async_resume_receiver.assert_not_called()
+
+
+async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
+    """Add Integration discovery must pause pooled listeners on each scan port."""
+    client = _pooled_udp_client(hass)
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+
+    assert result["step_id"] == "manual"
+    client.async_pause_receiver.assert_awaited()
+    client.async_resume_receiver.assert_awaited()

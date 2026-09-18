@@ -12,10 +12,11 @@ from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek import _async_update_listener
-from custom_components.marstek.const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENT, DOMAIN
+from custom_components.marstek.const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENTS, DOMAIN
 
 from tests.conftest import (
     create_mock_client,
+    create_mock_scanner,
     patch_manual_connection,
     patch_marstek_integration,
 )
@@ -95,6 +96,106 @@ async def test_setup_with_custom_port(
         coordinator = entry.runtime_data.coordinator
         assert coordinator.device_port == 30003
 
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
+async def test_setup_binds_shared_udp_client_to_entry_port(
+    hass: HomeAssistant,
+) -> None:
+    """Test the shared UDP client binds to the config entry Open API port."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "port": 30003,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={
+            "device_mode": "SelfUse",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
+    scanner = create_mock_scanner()
+
+    with (
+        patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
+        patch(
+            "custom_components.marstek.MarstekUDPClient", return_value=client
+        ) as mock_udp,
+        patch(
+            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
+        ),
+        patch(
+            "custom_components.marstek.scanner.MarstekScanner.async_get",
+            return_value=scanner,
+        ),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        mock_udp.assert_called_once_with(port=30003, bind_port=30003)
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
+async def test_setup_loopback_uses_ephemeral_bind_port(
+    hass: HomeAssistant,
+) -> None:
+    """Test loopback devices bind an ephemeral port so they do not collide locally."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "127.0.0.1",
+            "port": 30000,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={
+            "device_mode": "SelfUse",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
+    scanner = create_mock_scanner()
+
+    with (
+        patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
+        patch(
+            "custom_components.marstek.MarstekUDPClient", return_value=client
+        ) as mock_udp,
+        patch(
+            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
+        ),
+        patch(
+            "custom_components.marstek.scanner.MarstekScanner.async_get",
+            return_value=scanner,
+        ),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        mock_udp.assert_called_once_with(port=30000, bind_port=0)
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -499,10 +600,10 @@ async def test_multiple_entries_share_udp_client(
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
         assert DOMAIN in hass.data
-        assert DATA_UDP_CLIENT in hass.data[DOMAIN]
+        assert DATA_UDP_CLIENTS in hass.data[DOMAIN]
 
         # Store reference to the shared client
-        shared_client = hass.data[DOMAIN][DATA_UDP_CLIENT]
+        shared_client = hass.data[DOMAIN][DATA_UDP_CLIENTS][30000]
 
         # Create and add second entry AFTER first is setup
         second_entry = MockConfigEntry(
@@ -524,7 +625,7 @@ async def test_multiple_entries_share_udp_client(
 
         assert second_entry.state == ConfigEntryState.LOADED
         # Verify both entries use the SAME UDP client instance
-        assert hass.data[DOMAIN][DATA_UDP_CLIENT] is shared_client
+        assert hass.data[DOMAIN][DATA_UDP_CLIENTS][30000] is shared_client
 
         # Cleanup
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
@@ -548,7 +649,7 @@ async def test_partial_unload_preserves_shared_client(
         await hass.async_block_till_done()
 
         # Store reference to verify it persists
-        shared_client = hass.data[DOMAIN][DATA_UDP_CLIENT]
+        shared_client = hass.data[DOMAIN][DATA_UDP_CLIENTS][30000]
 
         # Create and add second entry AFTER first is setup
         second_entry = MockConfigEntry(
@@ -580,8 +681,8 @@ async def test_partial_unload_preserves_shared_client(
 
         # Shared client should still exist for the remaining entry
         assert DOMAIN in hass.data
-        assert DATA_UDP_CLIENT in hass.data[DOMAIN]
-        assert hass.data[DOMAIN][DATA_UDP_CLIENT] is shared_client
+        assert DATA_UDP_CLIENTS in hass.data[DOMAIN]
+        assert hass.data[DOMAIN][DATA_UDP_CLIENTS][30000] is shared_client
 
         # Services should still be registered (other entry still loaded)
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
@@ -630,7 +731,7 @@ async def test_last_entry_unload_cleans_up_shared_client(
 
         # Client should still exist
         assert DOMAIN in hass.data
-        assert DATA_UDP_CLIENT in hass.data[DOMAIN]
+        assert DATA_UDP_CLIENTS in hass.data[DOMAIN]
 
         # Unload last entry
         await hass.config_entries.async_unload(second_entry.entry_id)
@@ -639,9 +740,89 @@ async def test_last_entry_unload_cleans_up_shared_client(
         # UDP client should be cleaned up (either key removed or no client in it)
         marstek_data = hass.data.get(DOMAIN)
         if marstek_data is not None:
-            assert DATA_UDP_CLIENT not in marstek_data
+            assert DATA_UDP_CLIENTS not in marstek_data
         # Services remain registered for the integration lifetime
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
+
+
+async def test_entries_on_different_ports_use_separate_udp_clients(
+    hass: HomeAssistant,
+) -> None:
+    """Test that devices on distinct Open API ports get distinct UDP sockets."""
+    first_entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "port": 30000,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    second_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Custom Port Device",
+        unique_id="bb:cc:dd:ee:ff:00",
+        data={
+            "host": "5.6.7.8",
+            "port": 30003,
+            "ble_mac": "BB:CC:DD:EE:FF:00",
+            "device_type": "Venus v3",
+            "version": 145,
+        },
+    )
+    first_entry.add_to_hass(hass)
+
+    def _make_client(*_args: object, **_kwargs: object) -> object:
+        return create_mock_client(
+            status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+        )
+
+    scanner = create_mock_scanner()
+    with (
+        patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
+        patch(
+            "custom_components.marstek.MarstekUDPClient", side_effect=_make_client
+        ) as mock_udp,
+        patch(
+            "custom_components.marstek.pymarstek.MarstekUDPClient",
+            side_effect=_make_client,
+        ),
+        patch(
+            "custom_components.marstek.scanner.MarstekScanner.async_get",
+            return_value=scanner,
+        ),
+    ):
+        await hass.config_entries.async_setup(first_entry.entry_id)
+        await hass.async_block_till_done()
+
+        second_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(second_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert first_entry.state == ConfigEntryState.LOADED
+        assert second_entry.state == ConfigEntryState.LOADED
+        pool = hass.data[DOMAIN][DATA_UDP_CLIENTS]
+        assert set(pool) == {30000, 30003}
+        first_client = pool[30000]
+        second_client = pool[30003]
+        assert first_client is not second_client
+        mock_udp.assert_any_call(port=30000, bind_port=30000)
+        mock_udp.assert_any_call(port=30003, bind_port=30003)
+
+        await hass.config_entries.async_unload(second_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert 30003 not in hass.data[DOMAIN][DATA_UDP_CLIENTS]
+        assert hass.data[DOMAIN][DATA_UDP_CLIENTS][30000] is first_client
+        second_client.async_cleanup.assert_awaited()
+
+        await hass.config_entries.async_unload(first_entry.entry_id)
+        await hass.async_block_till_done()
 
 
 async def test_repair_issue_created_on_failure(

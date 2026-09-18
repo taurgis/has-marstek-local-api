@@ -57,6 +57,8 @@ Use this skill to design and implement tests/CI for a custom integration targeti
 - Pin test deps in `requirements_test.txt` to avoid drift.
 - Optional: upload coverage (e.g., Codecov) for PR diffs.
 
+Live Home Assistant in Docker is **not** a substitute for pytest. For delete/re-add, discovery vs manual add, live coordinator updates, device actions, and automations against `.devcontainer/docker-compose.yml`, use skill `homeassistant-chrome-ui-testing` (`ha_cdp.py`, CDP only).
+
 ## Verification After Changes (MANDATORY)
 
 **After every code modification**, you MUST run verification:

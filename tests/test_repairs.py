@@ -1,12 +1,12 @@
 """Tests for the Marstek repairs module."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
 from custom_components.marstek.repairs import (
     CannotConnectRepairFlow,
     async_create_fix_flow,
@@ -192,3 +192,44 @@ async def test_repair_flow_unique_id_mismatch(
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "unique_id_mismatch"
+
+
+async def test_repair_flow_reuses_pooled_udp_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Repair GetDevice must reuse the pooled client instead of pausing."""
+    mock_config_entry.add_to_hass(hass)
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENTS] = {30000: client}
+
+    flow = CannotConnectRepairFlow()
+    flow.hass = hass
+    flow.issue_id = f"cannot_connect_{mock_config_entry.entry_id}"
+    flow.data = {"entry_id": mock_config_entry.entry_id}
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus",
+    }
+
+    with (
+        patch(
+            "custom_components.marstek.repairs.get_device_info",
+            new_callable=AsyncMock,
+            return_value=device_info,
+        ) as mock_get_device_info,
+        patch.object(
+            hass.config_entries, "async_reload", new_callable=AsyncMock
+        ),
+    ):
+        result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
+
+    assert result["type"] == "create_entry"
+    mock_get_device_info.assert_awaited_once()
+    assert mock_get_device_info.await_args is not None
+    assert mock_get_device_info.await_args.kwargs["udp_client"] is client
+    client.async_pause_receiver.assert_not_called()
+    client.async_resume_receiver.assert_not_called()

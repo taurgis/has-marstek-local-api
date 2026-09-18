@@ -9,7 +9,7 @@ This skill covers creating, configuring, and maintaining mock Marstek devices fo
 
 ## Overview
 
-Mock devices simulate real Marstek batteries (Venus A/D/E 3.0) using UDP on port 30000. They implement the same Open API protocol as real devices, enabling full integration testing.
+Mock devices simulate real Marstek batteries (Venus A/C/D/E 3.0) using UDP (default port 30000, user-configurable). They implement the same Open API protocol as real devices, enabling full integration testing.
 
 ## Package Structure
 
@@ -58,6 +58,9 @@ mock-marstek-3:
 
 mock-marstek-5:
   command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "149", "--ble-mac", "02deadbeef05"]
+
+mock-marstek-6:
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.26", "--device", "VenusC", "--ver", "153", "--ble-mac", "02deadbeef06"]
 ```
 
 Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. PV1 stays deciwatts through 150.9; that is separate from the #35 solar-energy scale.

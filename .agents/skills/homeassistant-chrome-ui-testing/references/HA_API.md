@@ -1,0 +1,88 @@
+# Home Assistant REST / WebSocket used by `ha_cdp.py`
+
+These go through the logged-in page (`hass.callApi` / `hass.callWS`), not a long-lived token file.
+
+Official REST reference: [developers.home-assistant.io/docs/api/rest](https://developers.home-assistant.io/docs/api/rest)
+
+| Command | HA API | Notes |
+|---------|--------|--------|
+| `ha_cdp.py api GET config/config_entries/entry` | GET `/api/config/config_entries/entry` | List entries. This HA version omits `unique_id` / `data` on the list payload. Config-entry HTTP routes are implemented in core (`config/config_entries.py`) and are **not** listed on the REST reference page. |
+| `ha_cdp.py delete-entry ENTRY_ID` | DELETE `/api/config/config_entries/entry/{entry_id}` | Only delete mechanism ([config entries](https://developers.home-assistant.io/docs/config_entries_index)). No WebSocket delete. Keep the HTTP call open until it returns ([core issue #178092](https://github.com/home-assistant/core/issues/178092)). |
+| `ha_cdp.py reload-entry ENTRY_ID` | POST `/api/config/config_entries/entry/{id}/reload` | Unload + setup without wiping the entity registry. Same “don’t cancel the HTTP call” caveat. |
+| `ha_cdp.py flows` | WS `config_entries/flow/progress` | Discovery flows waiting for the user. Does **not** list user-initiated flows. |
+| `ha_cdp.py wait-flow --unique-id MAC` | polls `flow/progress` | After delete, wait for scanner rediscovery (up to 10 min). |
+| `ha_cdp.py abort-flow FLOW_ID` | DELETE `/api/config/config_entries/flow/{flow_id}` | Abort an in-progress confirm/manual flow. |
+| `ha_cdp.py service …` | POST `/api/services/<domain>/<service>` | Same path the UI uses. Blocks until the service finishes. |
+| `ha_cdp.py fire-event TYPE` | POST `/api/events/{event_type}` | Official fire-event path. |
+| `ha_cdp.py states --entity ID` | `hass.states` | Live entity object. |
+| `ha_cdp.py devices` | WS `config/device_registry/list` | MAC is `identifiers[0][1]` (`marstek`, BLE-MAC). HA 2026.8 adds `config_entry_id`; `config_entries` is a compatibility shim ([blog](https://developers.home-assistant.io/blog/2026/07/21/device-registry-single-config-entry/)). Child devices (2026.9 `parent_device_id`) are skipped. |
+| `ha_cdp.py entities` | WS `config/entity_registry/list` | `unique_id` stays BLE-MAC based after delete/re-add. |
+| `ha_cdp.py entries` | entries + devices joined | Adds `device_id` / `mac` / `model`. |
+| `ha_cdp.py device-actions DEVICE_ID` | WS `device_automation/action/list` | Charge / discharge / stop plus generic entity actions. |
+| `ha_cdp.py run-script JSON` | WS `execute_script` | No dedicated “fire device action” command. Marstek charge/discharge/stop **block** until verification finishes (up to 8 × ~60s). |
+| `ha_cdp.py start-reconfigure ENTRY_ID` | POST `/api/config/config_entries/flow` with `entry_id` | Starts `async_step_reconfigure`. Not a documented public WS command. |
+| `ha_cdp.py start-options ENTRY_ID` | POST `/api/config/config_entries/options/flow` | Options flow ([options flow](https://developers.home-assistant.io/docs/config_entries_options_flow_handler)). |
+| `ha_cdp.py diagnostics ENTRY_ID` | GET `/api/diagnostics/config_entry/{id}` | Frontend download path; **not** on the official REST page ([diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics)). |
+| `ha_cdp.py device-triggers DEVICE_ID` | WS `device_automation/trigger/list` | Generic entity triggers. Not on the public WS reference; frontend uses it. Marstek has no `device_trigger.py`. |
+| `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Returns `{entity_entry, reload_delay}`. Wait `reload_delay` (30s) before `wait-state`. Enable CT (EM) or `wifi_rssi` (`Wifi.GetStatus`). Do **not** enable `Bat.GetStatus` entities. |
+| `ha_cdp.py disable-entity ID` | WS `config/entity_registry/update` `disabled_by: user` | Entity leaves the state machine. Re-enable with `enable-entity`. |
+| `ha_cdp.py disable-entry ENTRY_ID` | WS `config_entries/disable` `disabled_by: "user"` | Unloads the entry. `disabled_by` is only `"user"` or `null` ([core config_entries WS](https://github.com/home-assistant/core/blob/dev/homeassistant/components/config/config_entries.py)). Response may include `require_restart`. |
+| `ha_cdp.py enable-entry ENTRY_ID` | WS `config_entries/disable` `disabled_by: null` | Sets up the same `entry_id` again. |
+| `ha_cdp.py disable-device DEVICE_ID` | WS `config/device_registry/update` `disabled_by: user` | Entry stays loaded. Entities inherit `disabled_by: device` ([device registry](https://developers.home-assistant.io/docs/device_registry_index)). |
+| `ha_cdp.py enable-device DEVICE_ID` | WS `config/device_registry/update` `disabled_by: null` | Invalid if the owning config entry is still disabled (HA 2026.8). |
+| `ha_cdp.py issues` | WS `repairs/list_issues` | Active repair issues. Marstek connection-loss ids are `cannot_connect_{entry_id}`. |
+| `ha_cdp.py wait-issue --issue-id ID` | polls `repairs/list_issues` | `--gone` waits until the issue is cleared (auto-recovery or successful Fix). |
+| `ha_cdp.py start-repair ISSUE_ID` | POST `/api/repairs/issues/fix` | Starts `CannotConnectRepairFlow` ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
+| `ha_cdp.py repair-next FLOW_ID JSON` | POST `/api/repairs/issues/fix/{flow_id}` | Submit host/port. Errors: `cannot_connect`, `unique_id_mismatch`. |
+| `ha_cdp.py abort-repair FLOW_ID` | DELETE `/api/repairs/issues/fix/{flow_id}` | Drop an in-progress Fix dialog. |
+| `ha_cdp.py get-entry ENTRY_ID` | WS `config_entries/get_single` | Prefs, state, `supported_subentry_types`. HTTP list omits some of these. |
+| `ha_cdp.py update-entry ENTRY_ID --disable-polling true` | WS `config_entries/update` | `pref_disable_new_entities` / `pref_disable_polling` / `title`. Reloads when polling pref changes ([async_update_entry](https://developers.home-assistant.io/blog/2024/02/12/async_update_entry/)). |
+| `ha_cdp.py wait-entry ENTRY_ID --state setup_retry` | polls `get_single` | `ConfigEntryNotReady` → `setup_retry` ([setup failures](https://developers.home-assistant.io/docs/integration_setup_failures)). |
+| `ha_cdp.py ignore-flow FLOW_ID` | WS `config_entries/ignore_flow` | Requires unique_id. Creates a `SOURCE_IGNORE` entry ([config flow](https://developers.home-assistant.io/docs/config_entries_config_flow_handler)). |
+| `ha_cdp.py ignore-issue ISSUE_ID [--unignore]` | WS `repairs/ignore_issue` | Ignored issues stay in `list_issues` with `ignored: true` until deleted and recreated ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
+| `ha_cdp.py rename-device DEVICE_ID NAME` | WS `config/device_registry/update` `name_by_user` | `--clear` restores the integration name ([device registry](https://developers.home-assistant.io/docs/device_registry_index)). |
+| `ha_cdp.py set-device-area DEVICE_ID AREA_ID` | same WS `area_id` | `-` / `none` clears. |
+| `ha_cdp.py create-area NAME` / `areas` | WS `config/area_registry/create` / `list` | [area registry](https://developers.home-assistant.io/docs/area_registry_index) |
+| `ha_cdp.py create-label NAME` / `set-device-labels` | WS `config/label_registry/create` + device `labels` | User-only; integrations cannot pre-assign labels. |
+| `ha_cdp.py hide-entity ID` / `unhide-entity` | WS `config/entity_registry/update` `hidden_by: user` | Hidden entities stay in the state machine ([hidden_by](https://developers.home-assistant.io/docs/entity_registry_disabled_by)). |
+| `ha_cdp.py expose-entity ID` / `exposed` | WS `homeassistant/expose_entity` / `…/list` | Assistants: `conversation` ([websocket](https://developers.home-assistant.io/docs/api/websocket/)). |
+| `ha_cdp.py history ENTITY` / `logbook` | GET `/api/history/period/{ts}` / `/api/logbook/{ts}` | Official REST ([REST](https://developers.home-assistant.io/docs/api/rest/)). |
+| `ha_cdp.py debug-logging --level debug` | WS `logger/integration_log_level` | UI **Enable debug logging**. Levels are uppercase (`DEBUG`). Persistence: `none` / `once` / `permanent`. |
+| `ha_cdp.py energy-prefs` / `energy-validate` | WS `energy/get_prefs` / `energy/validate` | ENERGY + TOTAL_INCREASING sensors ([energy](https://www.home-assistant.io/docs/energy/)). |
+| `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
+| `ha_cdp.py notifications` | WS `persistent_notification/get` | HA 2026 **does not** expose persistent notifications as `persistent_notification.*` entity states. Gap tests must use this WS type (or automation `last_triggered`). |
+
+## Entity services ([select](https://www.home-assistant.io/integrations/select), [number](https://www.home-assistant.io/integrations/number), [switch](https://www.home-assistant.io/integrations/switch))
+
+```bash
+python3 scripts/ha_cdp.py service select select_option \
+  --data '{"entity_id":"select.venus_c_operating_mode","option":"ai"}'
+python3 scripts/ha_cdp.py service number set_value \
+  --data '{"entity_id":"number.venus_c_depth_of_discharge","value":80}'
+python3 scripts/ha_cdp.py service switch turn_on \
+  --data '{"entity_id":"switch.venus_e_3_0_panel_led"}'
+python3 scripts/ha_cdp.py service marstek request_data_sync \
+  --data '{"device_id":"<device_registry_id>"}'
+python3 scripts/ha_cdp.py service marstek set_passive_mode \
+  --data '{"device_id":"<device_registry_id>","power":-500,"duration":60}'
+```
+
+Official action pages: [select.select_option](https://www.home-assistant.io/actions/select.select_option/), [number.set_value](https://www.home-assistant.io/actions/number.set_value/).
+
+Marstek **select** accepts `auto` / `ai` / `ups` (profile-gated). `manual` and `passive` raise from the select entity; use services or device actions for those.
+
+## Device actions
+
+[Device automation actions](https://developers.home-assistant.io/docs/device_automation_action): Charge battery / Discharge battery / Stop charging/discharging (`charge` / `discharge` / `stop`). Official note: new device automations are not accepted for new integrations; this repo already has them.
+
+```bash
+python3 scripts/ha_cdp.py device-actions '<device_id>'
+python3 scripts/ha_cdp.py run-script \
+  '{"domain":"marstek","type":"discharge","device_id":"<device_id>","metadata":{}}'
+```
+
+Build them in the automation editor (Then do → Device) at **`/config/automation/dashboard`** (singular). `POST /api/config/automation/config/{id}` is **not** in the official REST docs.
+
+## Unique IDs after delete / re-add
+
+[Entity registry unique_id](https://developers.home-assistant.io/docs/entity_registry_index#unique-id-requirements): BLE-MAC based IDs stay stable. Re-adding the same device restores `sensor.venus_d_*` instead of creating a second set. From HA 2026.8 a device belongs to one config entry; deleting the entry removes the device ([blog](https://developers.home-assistant.io/blog/2026/07/21/device-registry-single-config-entry/)).

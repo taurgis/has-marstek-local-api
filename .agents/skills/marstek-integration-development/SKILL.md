@@ -79,6 +79,7 @@ if self.consecutive_failures >= failure_threshold:
 - Use the VS Code task “Start Home Assistant” to run a dev instance.
 - Watch logs for the `marstek` logger.
 - Run pytest with `pytest-homeassistant-custom-component`; keep manifests hassfest/HACS-clean and requirements pinned.
+- Live Docker + Chrome (delete/re-add, discovery vs manual add, coordinator updates, device actions, automations): skill `homeassistant-chrome-ui-testing` and `scripts/ha_cdp.py`. Drive the UI with CDP, not screenshot pixels.
 ## Verification After Changes (MANDATORY)
 
 **After every code modification**, run both checks:

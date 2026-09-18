@@ -271,6 +271,38 @@ class TestDiscoverDevices:
         mock_socket.close.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_discovery_binds_to_open_api_port(self) -> None:
+        """Test discovery binds the local socket to the Open API listen port."""
+        from custom_components.marstek.discovery import discover_devices
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 30000)
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def advancing_time() -> float:
+            time_calls[0] += 1.0
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = advancing_time
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+                with patch(
+                    "custom_components.marstek.discovery._get_broadcast_addresses",
+                    return_value=["255.255.255.255"],
+                ):
+                    await discover_devices(timeout=0.5)
+
+        mock_socket.bind.assert_called_with(("0.0.0.0", 30000))
+
+    @pytest.mark.asyncio
     async def test_discovery_timeout(self) -> None:
         """Test discovery completes after timeout with no devices."""
         from custom_components.marstek.discovery import discover_devices
@@ -441,6 +473,9 @@ class TestDiscoverDevices:
 
         loop.sock_sendto.assert_any_await(mock_socket, ANY, ("255.255.255.255", 30000))
         loop.sock_sendto.assert_any_await(mock_socket, ANY, ("255.255.255.255", 30003))
+        bind_ports = [call.args[0][1] for call in mock_socket.bind.call_args_list]
+        assert 30000 in bind_ports
+        assert 30003 in bind_ports
 
     @pytest.mark.asyncio
     async def test_discovery_filters_echo(self) -> None:
@@ -681,6 +716,140 @@ class TestGetDeviceInfo:
         assert result is not None
         assert result["ip"] == "192.168.1.100"
         assert result["device_type"] == "Venus"
+
+    @pytest.mark.asyncio
+    async def test_binds_to_target_port(self) -> None:
+        """Test unicast GetDevice sends from the device Open API port."""
+        from custom_components.marstek.discovery import get_device_info
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 30003)
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.2
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+                await get_device_info("192.168.1.100", port=30003, timeout=1.0)
+
+        mock_socket.bind.assert_called_with(("0.0.0.0", 30003))
+
+    @pytest.mark.asyncio
+    async def test_loopback_uses_ephemeral_bind(self) -> None:
+        """Test localhost queries bind an ephemeral port to avoid colliding with the device."""
+        from custom_components.marstek.discovery import get_device_info
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 54321)
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.2
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+                await get_device_info("127.0.0.1", port=30000, timeout=1.0)
+
+        mock_socket.bind.assert_called_with(("0.0.0.0", 0))
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_ephemeral_when_port_busy(self) -> None:
+        """Test GetDevice still probes if the Open API port cannot be bound."""
+        from custom_components.marstek.discovery import get_device_info
+
+        mock_socket = MagicMock()
+        mock_socket.bind.side_effect = [OSError("Address already in use"), None]
+        mock_socket.getsockname.return_value = ("0.0.0.0", 54321)
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.2
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+                result = await get_device_info("192.168.1.100", timeout=1.0)
+
+        assert result is None
+        assert mock_socket.bind.call_args_list[0].args[0] == ("0.0.0.0", 30000)
+        assert mock_socket.bind.call_args_list[1].args[0] == ("0.0.0.0", 0)
+
+    @pytest.mark.asyncio
+    async def test_venus_c_153_src_mac_without_result_mac(self) -> None:
+        """Test firmware 153 GetDevice that only includes the MAC in src."""
+        from custom_components.marstek.discovery import get_device_info
+
+        device_response = {
+            "id": 0,
+            "src": "VenusC-AABBCCDDEEFF",
+            "result": {
+                "device": "VenusC",
+                "ver": 153,
+                "ip": "192.168.2.37",
+            },
+        }
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 30000)
+
+        call_count = 0
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (json.dumps(device_response).encode(), ("192.168.2.37", 30000))
+            raise TimeoutError()
+
+        time_calls = [0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+                result = await get_device_info("192.168.2.37", timeout=0.5)
+
+        assert result is not None
+        assert result["device_type"] == "VenusC"
+        assert result["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+        assert result["ip"] == "192.168.2.37"
 
     @pytest.mark.asyncio
     async def test_normalizes_leading_zero_ip_from_device(self) -> None:
@@ -990,6 +1159,86 @@ class TestGetDeviceInfo:
         assert result is None
         mock_socket.close.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_uses_provided_udp_client_instead_of_binding(self) -> None:
+        """Pooled-client GetDevice must not open a second SO_REUSEPORT socket."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(
+            return_value={
+                "id": 7,
+                "src": "VenusC-AABBCCDDEEFF",
+                "result": {
+                    "device": "VenusC",
+                    "ver": 153,
+                    "ip": "172.28.0.26",
+                },
+            }
+        )
+
+        with patch("socket.socket") as mock_socket:
+            result = await get_device_info(
+                "172.28.0.26",
+                port=30000,
+                timeout=5.0,
+                udp_client=client,
+            )
+
+        mock_socket.assert_not_called()
+        client.send_request.assert_awaited_once()
+        assert client.send_request.await_args is not None
+        sent_args = client.send_request.await_args.args
+        sent_kwargs = client.send_request.await_args.kwargs
+        assert sent_args[1] == "172.28.0.26"
+        assert sent_args[2] == 30000
+        payload = json.loads(sent_args[0])
+        assert payload["method"] == "Marstek.GetDevice"
+        assert sent_kwargs["bypass_rate_limit"] is True
+        assert result is not None
+        assert result["device_type"] == "VenusC"
+        assert result["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+        assert result["ip"] == "172.28.0.26"
+        assert result["port"] == 30000
+
+    @pytest.mark.asyncio
+    async def test_udp_client_timeout_returns_none(self) -> None:
+        """Timeout on the pooled client is cannot_connect, not a crash."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(side_effect=TimeoutError("timeout"))
+
+        result = await get_device_info("172.28.0.20", udp_client=client)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_udp_client_invalid_response_returns_none(self) -> None:
+        """Invalid GetDevice payloads from the pooled client are ignored."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(
+            return_value={"id": 1, "result": {"unknown": "value"}}
+        )
+
+        result = await get_device_info("172.28.0.20", udp_client=client)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_udp_client_oserror_returns_none(self) -> None:
+        """Socket errors on the pooled client return None."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(side_effect=OSError("network down"))
+
+        result = await get_device_info("172.28.0.20", udp_client=client)
+
+        assert result is None
+
 
 class TestDiscoverDevicesEdgeCases:
     """Additional edge case tests for discover_devices."""
@@ -1157,3 +1406,67 @@ def test_discovery_omitted_ver_stays_unknown() -> None:
     profile = resolve_firmware_profile(info["device_type"], info["version"])
     assert profile.firmware_known is False
     assert profile.supports_sys_dod is False
+
+
+def test_is_loopback_host() -> None:
+    """Loopback IPs and localhost skip same-port UDP bind."""
+    from custom_components.marstek.pymarstek.network import is_loopback_host
+
+    assert is_loopback_host("127.0.0.1") is True
+    assert is_loopback_host("localhost") is True
+    assert is_loopback_host("::1") is True
+    assert is_loopback_host("192.168.2.37") is False
+    assert is_loopback_host("not-an-ip") is False
+
+
+def test_mac_from_src_compact() -> None:
+    """Test compact hex MAC embedded in GetDevice src."""
+    from custom_components.marstek.discovery import _mac_from_src
+
+    assert _mac_from_src("VenusC-AABBCCDDEEFF") == "AA:BB:CC:DD:EE:FF"
+
+
+def test_mac_from_src_separated() -> None:
+    """Test colon-separated MAC embedded in GetDevice src."""
+    from custom_components.marstek.discovery import _mac_from_src
+
+    assert _mac_from_src("VenusC-AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
+
+
+def test_mac_from_src_missing() -> None:
+    """Test src without a MAC returns empty."""
+    from custom_components.marstek.discovery import _mac_from_src
+
+    assert _mac_from_src("VenusC") == ""
+    assert _mac_from_src(None) == ""
+
+
+def test_build_device_info_uses_src_mac_when_result_omits_mac() -> None:
+    """Venus C firmware 153 may omit ble_mac while still putting it in src."""
+    from custom_components.marstek.discovery import _build_device_info
+
+    info = _build_device_info(
+        {"device": "VenusC", "ver": 153, "ip": "192.168.2.37"},
+        "192.168.2.37",
+        30000,
+        src="VenusC-AABBCCDDEEFF",
+    )
+
+    assert info["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+    assert info["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert info["device_type"] == "VenusC"
+    assert info["version"] == 153
+
+
+def test_build_device_info_prefers_result_ble_mac() -> None:
+    """Result ble_mac wins over a MAC parsed from src."""
+    from custom_components.marstek.discovery import _build_device_info
+
+    info = _build_device_info(
+        {"device": "VenusC", "ble_mac": "11:22:33:44:55:66"},
+        "192.168.1.1",
+        30000,
+        src="VenusC-AABBCCDDEEFF",
+    )
+
+    assert info["ble_mac"] == "11:22:33:44:55:66"

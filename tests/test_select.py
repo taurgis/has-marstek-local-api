@@ -133,8 +133,10 @@ async def test_select_setup_missing_udp_client(
         **mock_config_entry.data,
         "ip": mock_config_entry.data["host"],
     }
+    coordinator = MagicMock()
+    coordinator.udp_client = None
     mock_config_entry.runtime_data = SimpleNamespace(
-        coordinator=MagicMock(),
+        coordinator=coordinator,
         device_info=device_info,
     )
 
@@ -143,7 +145,7 @@ async def test_select_setup_missing_udp_client(
     caplog.set_level(logging.ERROR)
     await async_setup_entry(hass, mock_config_entry, async_add_entities)
 
-    assert "Shared UDP client not found for select entity setup" in caplog.text
+    assert "UDP client not found for select entity setup" in caplog.text
     async_add_entities.assert_not_called()
 
 
