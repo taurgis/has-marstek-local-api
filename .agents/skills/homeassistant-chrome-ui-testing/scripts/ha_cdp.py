@@ -157,8 +157,11 @@ HELPER_JS = r"""
       tag === "ha-md-list-item" ||
       tag === "mwc-list-item" ||
       tag === "md-list-item" ||
+      tag === "ha-md-menu-item" ||
+      tag === "md-menu-item" ||
       tag.includes("radio-option") ||
-      tag.includes("option")
+      tag.includes("option") ||
+      tag.includes("menu-item")
     ) {
       return true;
     }
@@ -416,13 +419,62 @@ HELPER_JS = r"""
     visibleText() {
       return deepText(document.body || document.documentElement).slice(0, 8000);
     },
+    hass() {
+      const ha = document.querySelector("home-assistant");
+      if (!ha || !ha.hass) throw new Error("Home Assistant is not ready on this tab");
+      return ha.hass;
+    },
     accessToken() {
       try {
-        const ha = document.querySelector("home-assistant");
-        return ha.hass.auth.data.access_token || "";
+        return this.hass().auth.data.access_token || "";
       } catch (e) {
         return "";
       }
+    },
+    async api(method, path, body) {
+      const hass = this.hass();
+      if (body === undefined || body === null || body === "") {
+        return await hass.callApi(method, path);
+      }
+      return await hass.callApi(method, path, body);
+    },
+    async ws(message) {
+      return await this.hass().callWS(message);
+    },
+    state(entityId) {
+      const s = this.hass().states[entityId];
+      if (!s) return null;
+      return {
+        entity_id: s.entity_id,
+        state: s.state,
+        last_changed: s.last_changed,
+        last_updated: s.last_updated,
+        attributes: {
+          friendly_name: s.attributes.friendly_name,
+          device_class: s.attributes.device_class,
+          options: s.attributes.options,
+          icon: s.attributes.icon,
+        },
+      };
+    },
+    states(prefix) {
+      const p = (prefix || "").toLowerCase();
+      return Object.values(this.hass().states)
+        .filter((s) => {
+          const eid = s.entity_id || "";
+          const name = (s.attributes && s.attributes.friendly_name) || "";
+          if (!p) {
+            return eid.includes("venus") || eid.includes("marstek");
+          }
+          return eid.toLowerCase().includes(p) || name.toLowerCase().includes(p);
+        })
+        .map((s) => ({
+          entity_id: s.entity_id,
+          state: s.state,
+          last_updated: s.last_updated,
+          friendly_name: s.attributes.friendly_name,
+          options: s.attributes.options,
+        }));
     },
   };
   return true;
@@ -801,6 +853,142 @@ async def cmd_token(cdp: Cdp, _page: dict[str, Any]) -> dict[str, Any]:
     return {"ok": bool(token), "token": token, "path": "/tmp/ha_access_token.txt"}
 
 
+async def cmd_api(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    method: str,
+    path: str,
+    body: Any | None,
+) -> Any:
+    await cdp.inject()
+    method_js = json.dumps(method.upper())
+    path_js = json.dumps(path.lstrip("/"))
+    body_js = "undefined" if body is None else json.dumps(body)
+    return await cdp.evaluate(
+        f"window.__haCdp.api({method_js}, {path_js}, {body_js})"
+    )
+
+
+async def cmd_ws(
+    cdp: Cdp, _page: dict[str, Any], message: dict[str, Any]
+) -> Any:
+    await cdp.inject()
+    return await cdp.evaluate(f"window.__haCdp.ws({json.dumps(message)})")
+
+
+async def cmd_states(
+    cdp: Cdp, _page: dict[str, Any], prefix: str | None, entity: str | None
+) -> Any:
+    await cdp.inject()
+    if entity:
+        return await cdp.evaluate(f"window.__haCdp.state({json.dumps(entity)})")
+    return await cdp.evaluate(f"window.__haCdp.states({json.dumps(prefix or '')})")
+
+
+async def cmd_wait_state(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    entity: str,
+    timeout: float,
+    equals: str | None,
+    changed: bool,
+) -> dict[str, Any]:
+    await cdp.inject()
+    first = await cdp.evaluate(f"window.__haCdp.state({json.dumps(entity)})")
+    if first is None:
+        return {"ok": False, "error": "unknown entity", "entity_id": entity}
+    deadline = time.time() + timeout
+    last = first
+    while time.time() < deadline:
+        last = await cdp.evaluate(f"window.__haCdp.state({json.dumps(entity)})")
+        if last is None:
+            return {"ok": False, "error": "entity disappeared", "entity_id": entity}
+        if equals is not None and str(last.get("state")) == equals:
+            return {"ok": True, "entity_id": entity, "state": last, "from": first}
+        if changed and (
+            last.get("state") != first.get("state")
+            or last.get("last_updated") != first.get("last_updated")
+        ):
+            return {"ok": True, "entity_id": entity, "from": first, "to": last}
+        await asyncio.sleep(1)
+        await cdp.inject()
+    return {
+        "ok": False,
+        "error": "timeout",
+        "entity_id": entity,
+        "from": first,
+        "last": last,
+    }
+
+
+async def cmd_service(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    domain: str,
+    service: str,
+    data: dict[str, Any] | None,
+) -> Any:
+    path = f"services/{domain}/{service}"
+    return await cmd_api(cdp, _page, "POST", path, data or {})
+
+
+async def cmd_entries(cdp: Cdp, _page: dict[str, Any], domain: str) -> Any:
+    entries = await cmd_api(cdp, _page, "GET", "config/config_entries/entry", None)
+    if domain:
+        entries = [e for e in entries if e.get("domain") == domain]
+    devices = await cmd_devices(cdp, _page, domain or "marstek")
+    by_entry: dict[str, dict[str, Any]] = {}
+    for dev in devices:
+        for eid in dev.get("config_entries") or []:
+            by_entry[str(eid)] = dev
+    slim = []
+    for entry in entries:
+        entry_id = str(entry.get("entry_id") or "")
+        dev = by_entry.get(entry_id) or {}
+        macs = [
+            ident[1]
+            for ident in (dev.get("identifiers") or [])
+            if ident and len(ident) > 1
+        ]
+        slim.append(
+            {
+                "entry_id": entry_id,
+                "domain": entry.get("domain"),
+                "title": entry.get("title"),
+                "state": entry.get("state"),
+                "source": entry.get("source"),
+                "device_id": dev.get("id"),
+                "device_name": dev.get("name"),
+                "model": dev.get("model"),
+                "sw_version": dev.get("sw_version"),
+                "mac": macs[0] if macs else None,
+            }
+        )
+    return slim
+
+
+async def cmd_devices(cdp: Cdp, _page: dict[str, Any], integration: str) -> Any:
+    devices = await cmd_ws(cdp, _page, {"type": "config/device_registry/list"})
+    out = []
+    for dev in devices:
+        idents = dev.get("identifiers") or []
+        if integration and not any(
+            ident and ident[0] == integration for ident in idents
+        ):
+            continue
+        out.append(
+            {
+                "id": dev.get("id"),
+                "name": dev.get("name_by_user") or dev.get("name"),
+                "identifiers": idents,
+                "config_entries": list(dev.get("config_entries") or []),
+                "model": dev.get("model"),
+                "sw_version": dev.get("sw_version"),
+            }
+        )
+    return out
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Control Home Assistant Chrome via CDP (no pixel clicks)."
@@ -835,6 +1023,30 @@ def build_parser() -> argparse.ArgumentParser:
     wait.add_argument("text")
     wait.add_argument("--timeout", type=float, default=15)
     sub.add_parser("token", help="Read HA access token from the logged-in page")
+    api = sub.add_parser("api", help="hass.callApi METHOD path [json-body]")
+    api.add_argument("method")
+    api.add_argument("path")
+    api.add_argument("body", nargs="?", default=None)
+    wsc = sub.add_parser("ws", help="hass.callWS JSON message")
+    wsc.add_argument("message")
+    entries = sub.add_parser("entries", help="Config entries (default domain=marstek)")
+    entries.add_argument("--domain", default="marstek")
+    devices = sub.add_parser("devices", help="Device registry (default integration=marstek)")
+    devices.add_argument("--integration", default="marstek")
+    states = sub.add_parser("states", help="Entity states")
+    states.add_argument("--prefix", default="")
+    states.add_argument("--entity", default=None)
+    wstate = sub.add_parser("wait-state", help="Wait for an entity state change")
+    wstate.add_argument("entity")
+    wstate.add_argument("--timeout", type=float, default=90)
+    wstate.add_argument("--equals", default=None)
+    wstate.add_argument("--changed", action="store_true")
+    svc = sub.add_parser("service", help="POST /api/services/<domain>/<service>")
+    svc.add_argument("domain")
+    svc.add_argument("service")
+    svc.add_argument("--data", default="{}")
+    delete = sub.add_parser("delete-entry", help="DELETE a config entry by entry_id")
+    delete.add_argument("entry_id")
     return parser
 
 
@@ -868,10 +1080,54 @@ async def async_main(args: argparse.Namespace) -> int:
             return await cmd_wait(cdp, page, args.text, args.timeout)
         if args.cmd == "token":
             return await cmd_token(cdp, page)
+        if args.cmd == "api":
+            body = None if args.body is None else json.loads(args.body)
+            return await cmd_api(cdp, page, args.method, args.path, body)
+        if args.cmd == "ws":
+            return await cmd_ws(cdp, page, json.loads(args.message))
+        if args.cmd == "entries":
+            return await cmd_entries(cdp, page, args.domain)
+        if args.cmd == "devices":
+            return await cmd_devices(cdp, page, args.integration)
+        if args.cmd == "states":
+            return await cmd_states(cdp, page, args.prefix, args.entity)
+        if args.cmd == "wait-state":
+            if not args.changed and args.equals is None:
+                args.changed = True
+            return await cmd_wait_state(
+                cdp, page, args.entity, args.timeout, args.equals, args.changed
+            )
+        if args.cmd == "service":
+            return await cmd_service(cdp, page, args.domain, args.service, json.loads(args.data))
+        if args.cmd == "delete-entry":
+            return await cmd_api(
+                cdp,
+                page,
+                "DELETE",
+                f"config/config_entries/entry/{args.entry_id}",
+                None,
+            )
         raise RuntimeError(args.cmd)
 
     data = await with_page(args.page, run)
-    _print(data, as_json or args.cmd in {"dump", "eval", "token"})
+    _print(
+        data,
+        as_json
+        or args.cmd
+        in {
+            "dump",
+            "eval",
+            "token",
+            "api",
+            "ws",
+            "entries",
+            "devices",
+            "states",
+            "wait-state",
+            "service",
+            "delete-entry",
+        },
+    )
     return _fail_if_needed(data)
 
 

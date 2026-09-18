@@ -55,6 +55,12 @@ python3 …/scripts/ha_cdp.py press Escape
 python3 …/scripts/ha_cdp.py navigate 'http://127.0.0.1:8123/config/integrations/dashboard'
 python3 …/scripts/ha_cdp.py screenshot /tmp/ha.png
 python3 …/scripts/ha_cdp.py token
+python3 …/scripts/ha_cdp.py entries
+python3 …/scripts/ha_cdp.py devices
+python3 …/scripts/ha_cdp.py states --prefix venus_c
+python3 …/scripts/ha_cdp.py wait-state sensor.venus_c_battery_power --changed --timeout 90
+python3 …/scripts/ha_cdp.py service marstek request_data_sync --data '{"device_id":"<id>"}'
+python3 …/scripts/ha_cdp.py delete-entry '<entry_id>'
 ```
 
 Rules:
@@ -112,7 +118,8 @@ Base: `http://127.0.0.1:8123`
 | `/config/devices/dashboard` | Device tiles (SoC/mode live check) |
 | `/config/entities?domain=marstek` | Entity states |
 | `/config/logs` | UI log (also `sudo docker logs marstek-ha-dev`) |
-| `/developer-tools/yaml` | Prefer `docker restart marstek-ha-dev` after Python edits |
+| `/config/automations/dashboard` | Create/run automations (device actions live here) |
+| `/config/devices/device/<id>` | Device page: mode select, SoC, power, SYS number/switch |
 
 ## Mock devices
 
@@ -178,6 +185,42 @@ Wrong path (second bind after pause) live signature:
 Right path: `get_device_info(..., udp_client=pooled_client)`. Log: `Querying device info from HOST:PORT via pooled UDP client`, with **no** second `UDP socket bound` line.
 
 Use this when Venus C (`172.28.0.26:30000`) is already configured and you add Venus E (`172.28.0.20:30000`) via manual or Confirm device.
+
+## Delete, re-add, live updates, actions
+
+Use `entries` / `devices` / `states` before mutating anything. Join key is BLE-MAC on `devices[].identifiers`.
+
+### Delete
+
+UI: `/config/integrations/integration/marstek` → overflow **Menu** `--near '<title>'` → **Delete** → confirm. REST (official): `delete-entry ENTRY_ID` → `DELETE /api/config/config_entries/entry/{id}` ([config entries](https://developers.home-assistant.io/docs/config_entries_index)). No WebSocket delete. Hold the call until it returns.
+
+After delete, the scanner should rediscover the MAC. Wait for a Discovered **Add** `--near '<mac>'`.
+
+### Re-add
+
+1. Discovery Confirm (`async_step_confirm`) — same as path 1 above. Proves pooled GetDevice.
+2. Manual IP/port — path 2. Use this after delete when you want to type host/port again.
+
+Entity IDs must come back the same (`sensor.venus_d_battery_level`, not `_2`) because unique IDs are BLE-MAC. See [references/HA_API.md](references/HA_API.md).
+
+### Live updates
+
+Mock power/SoC move every coordinator cycle (fast tier default 30s). Do **not** add per-entity polling.
+
+```bash
+python3 …/scripts/ha_cdp.py service marstek request_data_sync --data '{"device_id":"<device_id>"}'
+python3 …/scripts/ha_cdp.py wait-state sensor.venus_c_battery_power --changed --timeout 90
+```
+
+`last_updated` changing counts as a change even if the watt value is identical.
+
+### Device page + services
+
+On `/config/devices/device/<id>`: Battery SoC, power, status, operating mode. Venus C / Rev 3.1 Venus E also have Depth of discharge, Bluetooth, Panel LED.
+
+Select entity options: `auto`, `ai`, `ups` (profile-gated). **Do not** pick `manual`/`passive` on the select — those need `marstek.set_passive_mode` or device actions.
+
+Device actions (Then do → Device): **Charge battery**, **Discharge battery**, **Stop charging/discharging**. Automation UI: `/config/automations/dashboard`. Details: [references/HA_API.md](references/HA_API.md).
 
 ## Recording
 
