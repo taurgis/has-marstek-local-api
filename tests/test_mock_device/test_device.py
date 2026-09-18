@@ -369,8 +369,8 @@ class TestDeviceDiscovery:
         assert status["pv2_power"] == 300
         assert status["total_pv_energy"] == 257420
 
-    def test_rev31_profile_round_trips_physical_watts_and_wh(self) -> None:
-        """Rev 3.1 mock wire JSON decodes through production into SI units."""
+    def test_firmware_150_round_trips_scaled_energy_and_deciwatt_pv(self) -> None:
+        """Firmware 150 keeps PV1 deciwatts (#57 / 150.9) and scales solar energy (#35)."""
         device = MockMarstekDevice(
             port=30005,
             simulate=False,
@@ -398,7 +398,7 @@ class TestDeviceDiscovery:
             em_input_energy=308632,
             em_output_energy=448751,
         )
-        profile = resolve_firmware_profile("VenusA", 150)
+        profile = resolve_firmware_profile("VenusA", "150.9")
 
         pv_response = device.build_response(2, "PV.GetStatus", {})
         es_response = device.build_response(3, "ES.GetStatus", {})
@@ -407,7 +407,8 @@ class TestDeviceDiscovery:
         assert pv_response is not None
         assert es_response is not None
         assert em_response is not None
-        assert pv_response["result"]["pv1_power"] == 320
+        assert profile.firmware_version == 150
+        assert pv_response["result"]["pv1_power"] == 3200
         assert pv_response["result"]["pv2_power"] == 280
         assert es_response["result"]["total_pv_energy"] == 25742
         assert em_response["result"]["input_energy"] == 3086320

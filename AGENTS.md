@@ -418,6 +418,7 @@ python -m mock_device --soc 30
 # Start Venus A 148 (solar Wh, PV1 deciwatts) or 149 (solar 0.01 kWh, PV1 still deciwatts)
 python -m mock_device --device VenusA --ver 148
 python -m mock_device --device VenusA --ver 149
+python -m mock_device --device VenusA --ver 150
 ```
 
 **In devcontainer:** Six mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). `172.28.0.26` is Venus C firmware **153** (SYS/UPS, no PV). `172.28.0.22` is Venus A firmware **148** (solar Wh, channel-1 deciwatts; 148 or older). `172.28.0.24` is Venus A firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). Venus D @ 145 remains the other PV family on legacy encoding. Custom ports 30001/30002/30003 exercise the per-port UDP pool. See `tools/mock_device/README.md`.

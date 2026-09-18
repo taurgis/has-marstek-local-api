@@ -181,7 +181,8 @@ def handle_pv_get_status(
     def _to_deciwatts(value: Any, *, channel: int | None = None) -> Any:
         """Encode PV power for the wire using the profile scale.
 
-        Legacy channel 1 is deciwatts; Rev 3.1 and other channels are watts.
+        Channel 1 is deciwatts on observed firmware (including 150.9).
+        Other channels are watts.
         """
         if value is None:
             return None
