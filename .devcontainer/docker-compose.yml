@@ -1,6 +1,8 @@
 services:
   homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:stable
+    # Current stable Core as of 2026-09-18. Recreate after bumping:
+    #   docker compose pull homeassistant && docker compose up -d homeassistant
+    image: ghcr.io/home-assistant/home-assistant:2026.9.3
     container_name: marstek-ha-dev
     privileged: true
     environment:
