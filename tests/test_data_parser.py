@@ -1322,7 +1322,6 @@ class TestFirmwareProfileDecoding:
                 "result": {
                     "pv1_power": 3200,
                     "pv2_power": 280,
-                    "pv_power": 3200,
                 },
             },
             profile,
