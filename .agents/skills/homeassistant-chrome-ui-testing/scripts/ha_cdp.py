@@ -1131,6 +1131,102 @@ async def cmd_entities(
     return out
 
 
+async def cmd_device_triggers(cdp: Cdp, _page: dict[str, Any], device_id: str) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {"type": "device_automation/trigger/list", "device_id": device_id},
+    )
+
+
+async def cmd_device_conditions(cdp: Cdp, _page: dict[str, Any], device_id: str) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {"type": "device_automation/condition/list", "device_id": device_id},
+    )
+
+
+async def cmd_diagnostics(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
+    return await cmd_api(
+        cdp, _page, "GET", f"diagnostics/config_entry/{entry_id}", None
+    )
+
+
+async def cmd_start_reconfigure(
+    cdp: Cdp, _page: dict[str, Any], entry_id: str
+) -> Any:
+    return await cmd_api(
+        cdp,
+        _page,
+        "POST",
+        "config/config_entries/flow",
+        {"handler": "marstek", "show_advanced_options": False, "entry_id": entry_id},
+    )
+
+
+async def cmd_start_options(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
+    return await cmd_api(
+        cdp,
+        _page,
+        "POST",
+        "config/config_entries/options/flow",
+        {"handler": entry_id},
+    )
+
+
+async def cmd_flow_next(
+    cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]
+) -> Any:
+    return await cmd_api(
+        cdp, _page, "POST", f"config/config_entries/flow/{flow_id}", data
+    )
+
+
+async def cmd_options_next(
+    cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]
+) -> Any:
+    return await cmd_api(
+        cdp, _page, "POST", f"config/config_entries/options/flow/{flow_id}", data
+    )
+
+
+async def cmd_upsert_automation(
+    cdp: Cdp, _page: dict[str, Any], automation_id: str, config: dict[str, Any]
+) -> Any:
+    payload = {"id": automation_id, **config}
+    payload["id"] = automation_id
+    return await cmd_api(
+        cdp,
+        _page,
+        "POST",
+        f"config/automation/config/{automation_id}",
+        payload,
+    )
+
+
+async def cmd_upsert_script(
+    cdp: Cdp, _page: dict[str, Any], script_id: str, config: dict[str, Any]
+) -> Any:
+    payload = {"id": script_id, **config}
+    payload["alias"] = config.get("alias") or script_id
+    return await cmd_api(
+        cdp, _page, "POST", f"config/script/config/{script_id}", payload
+    )
+
+
+async def cmd_enable_entity(cdp: Cdp, _page: dict[str, Any], entity_id: str) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/entity_registry/update",
+            "entity_id": entity_id,
+            "disabled_by": None,
+        },
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Control Home Assistant Chrome via CDP (no pixel clicks)."
@@ -1209,6 +1305,32 @@ def build_parser() -> argparse.ArgumentParser:
     ents = sub.add_parser("entities", help="Entity registry rows")
     ents.add_argument("--device-id", default=None)
     ents.add_argument("--prefix", default="")
+    dtrig = sub.add_parser("device-triggers", help="WS device_automation/trigger/list")
+    dtrig.add_argument("device_id")
+    dcond = sub.add_parser(
+        "device-conditions", help="WS device_automation/condition/list"
+    )
+    dcond.add_argument("device_id")
+    diag = sub.add_parser("diagnostics", help="GET diagnostics for a config entry")
+    diag.add_argument("entry_id")
+    recfg = sub.add_parser("start-reconfigure", help="Start reconfigure flow")
+    recfg.add_argument("entry_id")
+    opts = sub.add_parser("start-options", help="Start options flow")
+    opts.add_argument("entry_id")
+    fnext = sub.add_parser("flow-next", help="POST the next config-flow step")
+    fnext.add_argument("flow_id")
+    fnext.add_argument("data", nargs="?", default="{}")
+    onext = sub.add_parser("options-next", help="POST the next options-flow step")
+    onext.add_argument("flow_id")
+    onext.add_argument("data", nargs="?", default="{}")
+    auto = sub.add_parser("upsert-automation", help="Create/update automations.yaml")
+    auto.add_argument("automation_id")
+    auto.add_argument("config", help="JSON automation body")
+    scriptp = sub.add_parser("upsert-script", help="Create/update scripts.yaml")
+    scriptp.add_argument("script_id")
+    scriptp.add_argument("config", help="JSON script body")
+    een = sub.add_parser("enable-entity", help="Clear entity_registry disabled_by")
+    een.add_argument("entity_id")
     return parser
 
 
@@ -1287,6 +1409,30 @@ async def async_main(args: argparse.Namespace) -> int:
             return await cmd_fire_event(cdp, page, args.event_type, json.loads(args.data))
         if args.cmd == "entities":
             return await cmd_entities(cdp, page, args.device_id, args.prefix or None)
+        if args.cmd == "device-triggers":
+            return await cmd_device_triggers(cdp, page, args.device_id)
+        if args.cmd == "device-conditions":
+            return await cmd_device_conditions(cdp, page, args.device_id)
+        if args.cmd == "diagnostics":
+            return await cmd_diagnostics(cdp, page, args.entry_id)
+        if args.cmd == "start-reconfigure":
+            return await cmd_start_reconfigure(cdp, page, args.entry_id)
+        if args.cmd == "start-options":
+            return await cmd_start_options(cdp, page, args.entry_id)
+        if args.cmd == "flow-next":
+            return await cmd_flow_next(cdp, page, args.flow_id, json.loads(args.data))
+        if args.cmd == "options-next":
+            return await cmd_options_next(cdp, page, args.flow_id, json.loads(args.data))
+        if args.cmd == "upsert-automation":
+            return await cmd_upsert_automation(
+                cdp, page, args.automation_id, json.loads(args.config)
+            )
+        if args.cmd == "upsert-script":
+            return await cmd_upsert_script(
+                cdp, page, args.script_id, json.loads(args.config)
+            )
+        if args.cmd == "enable-entity":
+            return await cmd_enable_entity(cdp, page, args.entity_id)
         raise RuntimeError(args.cmd)
 
     data = await with_page(args.page, run)
@@ -1314,6 +1460,16 @@ async def async_main(args: argparse.Namespace) -> int:
             "run-script",
             "fire-event",
             "entities",
+            "device-triggers",
+            "device-conditions",
+            "diagnostics",
+            "start-reconfigure",
+            "start-options",
+            "flow-next",
+            "options-next",
+            "upsert-automation",
+            "upsert-script",
+            "enable-entity",
         },
     )
     return _fail_if_needed(data)

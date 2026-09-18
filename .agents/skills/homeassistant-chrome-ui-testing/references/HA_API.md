@@ -19,7 +19,12 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py entities` | WS `config/entity_registry/list` | `unique_id` stays BLE-MAC based after delete/re-add. |
 | `ha_cdp.py entries` | entries + devices joined | Adds `device_id` / `mac` / `model`. |
 | `ha_cdp.py device-actions DEVICE_ID` | WS `device_automation/action/list` | Charge / discharge / stop plus generic entity actions. |
-| `ha_cdp.py run-script JSON` | WS `execute_script` | There is no “fire device action” command; pass the action dict from `device-actions`. Marstek charge/discharge/stop **block** until verification finishes (up to 8 × ~60s). Do not wait on that in a recording. |
+| `ha_cdp.py run-script JSON` | WS `execute_script` | No dedicated “fire device action” command. Marstek charge/discharge/stop **block** until verification finishes (up to 8 × ~60s). |
+| `ha_cdp.py start-reconfigure ENTRY_ID` | POST `/api/config/config_entries/flow` with `entry_id` | Starts `async_step_reconfigure`. Not a documented public WS command. |
+| `ha_cdp.py start-options ENTRY_ID` | POST `/api/config/config_entries/options/flow` | Options flow ([options flow](https://developers.home-assistant.io/docs/config_entries_options_flow_handler)). |
+| `ha_cdp.py diagnostics ENTRY_ID` | GET `/api/diagnostics/config_entry/{id}` | Frontend download path; **not** on the official REST page ([diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics)). |
+| `ha_cdp.py device-triggers DEVICE_ID` | WS `device_automation/trigger/list` | Generic entity triggers. Not on the public WS reference; frontend uses it. Marstek has no `device_trigger.py`. |
+| `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Enable CT (EM tier). Do not enable `Bat.GetStatus` entities. |
 
 ## Entity services ([select](https://www.home-assistant.io/integrations/select), [number](https://www.home-assistant.io/integrations/number), [switch](https://www.home-assistant.io/integrations/switch))
 

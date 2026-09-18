@@ -73,6 +73,13 @@ python3 $H click 'Overflow menu' --near 'Marstek CDP discharge test' --nth 0
 python3 $H click 'Run actions'
 python3 $H fire-event marstek_cdp_test
 python3 $H entities --prefix venus_d
+python3 $H device-triggers '<device_id>'
+python3 $H diagnostics '<entry_id>'
+python3 $H start-reconfigure '<entry_id>'
+python3 $H flow-next '<flow_id>' '{"host":"172.28.0.22","port":30001}'
+python3 $H start-options '<entry_id>'
+python3 $H enable-entity binary_sensor.venus_d_ct_connection
+python3 $H upsert-automation marstek_gap_state '{"alias":"...","triggers":[...],"actions":[...]}'
 ```
 
 Rules:
@@ -283,6 +290,31 @@ python3 $H wait-state sensor.venus_c_device_mode --equals manual --timeout 90
 ```
 
 `POST /api/events/{event_type}` is the official fire-event path.
+
+Marstek does **not** ship `device_trigger.py` / `device_condition.py`. HA still lists generic device triggers/conditions from entities (`select.selection_changed`, `battery.level_changed`, `power.changed`). `device-triggers` / `device-conditions` return those. Official note: new device automations are not accepted ([device automation index](https://developers.home-assistant.io/docs/device_automation_index/)).
+
+## Remaining surfaces (gap campaign)
+
+Already covered: discovery Confirm, manual IP/port, delete/re-add, same-port pooled GetDevice, live power, select ai/auto, discharge action, `set_passive_mode`, event automation + Run actions.
+
+Still exercise these (use a **different device** than one with an in-flight `execute_script` verification):
+
+| Surface | How |
+|---------|-----|
+| Charge / stop device actions | `upsert-automation` with `type: charge` then `fire-event`; wait-state `device_mode=manual`. Do not await `run-script`. Stop: `select.select_option auto` is faster than `type: stop`. |
+| UPS | `select.select_option` `ups` on Venus C / Rev 3.1 Venus E |
+| SYS BLE + DOD + LED | `switch.turn_on` / `number.set_value` on firmware that supports SYS |
+| Manual schedules | `marstek.set_manual_schedule`, `set_manual_schedules`, `clear_manual_schedules` (3 retries, seconds not minutes) |
+| CT binary sensor | Disabled by default (`entity_registry_enabled_default=False`). `enable-entity binary_sensor.venus_d_ct_connection` then wait `on`. Do **not** enable `bat_*` flags (issue #14 / `Bat.GetStatus`). |
+| PV | Venus A/D `sensor.venus_d_pv1_power` `wait-state --changed` |
+| Reconfigure | `start-reconfigure ENTRY` then `flow-next` same host/port. POST `/api/config/config_entries/flow` with `entry_id` opens reconfigure (host/port). |
+| Options | `start-options ENTRY`; submit `polling_settings` / `network_settings` / `power_settings` sections. Reloads the entry. |
+| Reload / diagnostics | `reload-entry`; `diagnostics ENTRY` (`GET /api/diagnostics/config_entry/{id}`, not on the official REST page). |
+| already_configured | Add integration picker while the MAC is loaded. |
+| State / numeric_state automations | State: `select` → `ai`. Numeric: SoC `below` (mocks sit ~5–10%, so `below: 15` fires). |
+| Script | `upsert-script` + `script.turn_on` calling `marstek.request_data_sync`. |
+
+`upsert-automation` / `upsert-script` hit `POST /api/config/automation/config/{id}` and `/api/config/script/config/{id}` — **not** in official REST docs. Prefer the UI when recording.
 
 ## Extensive live campaign
 
