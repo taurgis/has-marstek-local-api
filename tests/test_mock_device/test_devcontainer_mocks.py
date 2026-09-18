@@ -15,4 +15,6 @@ def test_devcontainer_runs_venus_a_148_and_149_mocks() -> None:
     assert '"--device", "VenusA", "--ver", "149"' in compose
     assert '"--device", "VenusD", "--ver", "145"' in compose
     assert '"--device", "VenusE 3.0", "--ver", "150"' in compose
+    assert '"--device", "VenusC", "--ver", "153"' in compose
+    assert "172.28.0.26" in compose
     assert '"--device", "VenusA", "--ver", "150"' not in compose

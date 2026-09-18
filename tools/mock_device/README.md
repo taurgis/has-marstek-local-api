@@ -91,6 +91,9 @@ python -m mock_device --device VenusA --ver 148
 # Venus A firmware 149: scaled solar energy, still deciwatt PV, no SYS/UPS
 python -m mock_device --device VenusA --ver 149
 
+# Venus C firmware 153: SYS/UPS, no PV (issue #60 wire shape)
+python -m mock_device --device VenusC --ver 153
+
 # Rev 3.1 Venus A: watt PV, SYS, UPS, EM energy
 python -m mock_device --device VenusA --ver 150 --soc 75
 
@@ -100,7 +103,7 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs **exactly these five** mock devices. There is no optional sixth mock.
+The devcontainer runs **these six** mock devices.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
@@ -109,6 +112,7 @@ The devcontainer runs **exactly these five** mock devices. There is no optional 
 | mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 148 | 148 or older | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)) |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
 | mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 149 | Venus A 149 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; no SYS, no UPS ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
+| mock-marstek-6 | 172.28.0.26 | 30000 | VenusC | 153 | Rev 3.1 | n/a (no PV) | SYS + UPS; no PV ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)) |
 
 Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair. Both still encode channel-1 PV as deciwatts (the 1.1.0 watt-PV change is **150+** only). Venus D @ 145 remains the other PV family on legacy encoding. Rev 3.1 watt-PV (`ver >= 150`) is covered by unit tests and `python -m mock_device --device VenusA --ver 150`.
 
@@ -123,6 +127,7 @@ To add devices in Home Assistant:
     - `172.28.0.22:30001`
     - `172.28.0.23:30002`
     - `172.28.0.24:30003`
+    - `172.28.0.26:30000`
 
 ## Simulation Behavior
 

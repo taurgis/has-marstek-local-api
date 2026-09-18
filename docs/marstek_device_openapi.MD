@@ -521,7 +521,7 @@ Firmware profile this integration applies: family **Venus E**, no PV, SYS DOD/BL
 
 `ES.GetStatus` still reports `pv_power` / `total_pv_energy` as zero on this non-PV family; those keys are not treated as a PV array.
 
-The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile. Venus A energy encodings are the Docker pair `mock-marstek-3` (`172.28.0.22`, `--device VenusA --ver 148`, solar Wh, PV1 deciwatts) and `mock-marstek-5` (`172.28.0.24`, `--device VenusA --ver 149`, solar 0.01 kWh with channel-1 still deciwatts).
+The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile. `mock-marstek-6` (`172.28.0.26`, `--device VenusC --ver 153`) covers Venus C Rev 3.1 (SYS/UPS, no PV). Venus A energy encodings are the Docker pair `mock-marstek-3` (`172.28.0.22`, `--device VenusA --ver 148`, solar Wh, PV1 deciwatts) and `mock-marstek-5` (`172.28.0.24`, `--device VenusA --ver 149`, solar 0.01 kWh with channel-1 still deciwatts).
 
 ---
 
