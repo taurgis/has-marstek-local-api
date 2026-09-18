@@ -23,7 +23,9 @@ sudo iptables-legacy -I FORWARD -i br-+ -j ACCEPT
 sudo iptables-legacy -I FORWARD -o br-+ -j ACCEPT
 ```
 
-Mock image must COPY `custom_components/marstek/pymarstek/const.py` or every mock exits on import.
+Mock image must COPY `custom_components/marstek/firmware_profile.py` and `custom_components/marstek/pymarstek/const.py` or every mock exits on import.
+
+The integration is bind-mounted at `/config/custom_components`. Restart `marstek-ha-dev` after Python edits so HA reimports it.
 
 ## Login (once)
 
@@ -37,7 +39,7 @@ Fresh `marstek-ha-config` volume needs onboarding. After that, Chrome login:
 
 Dismiss the browser “save password” bubble immediately. Skip area assignment on new devices.
 
-Onboard via REST when the UI wizard would waste recording time (`POST /api/onboarding/users`, `core_config`, `analytics`, then `integration` with `redirect_uri`).
+Onboard via REST when the UI wizard would waste recording time (`POST /api/onboarding/users`, `core_config`, `analytics`, then `integration` with `redirect_uri`). A refresh token from a prior login still works; reuse it instead of typing the password.
 
 ## Fast routes (paste these)
 
@@ -51,8 +53,6 @@ Base: `http://127.0.0.1:8123`
 | `/config/entities?domain=marstek` | Entity states |
 | `/config/logs` | UI log (also `sudo docker logs marstek-ha-dev`) |
 | `/developer-tools/yaml` | Reload only if you must; prefer `docker restart marstek-ha-dev` after Python edits |
-
-The integration is bind-mounted at `/config/custom_components`. Restart the `marstek-ha-dev` container after code changes so HA reimports it.
 
 ## Mock devices
 
@@ -86,20 +86,36 @@ PY
 3. Add opens **Confirm device** with editable **IP address** and **Port**.
 4. Submit as-is, **or change IP/port** then Submit.
 
-This is `async_step_confirm` from `SOURCE_INTEGRATION_DISCOVERY`. It always unicast-probes with `get_device_info`. Pooled UDP listeners must be paused for that probe or a device already using that listen port steals the reply (`cannot_connect`, log `No valid response from device at HOST:PORT`).
+This is `async_step_confirm` from `SOURCE_INTEGRATION_DISCOVERY`. It always unicast-probes with `get_device_info`. That probe must reuse the pooled UDP client for the target port. Pausing the coordinator listener is **not** enough (see Same-port GetDevice below).
 
 ### 2) Manual add, no auto-detect
 
 1. `+ Add integration` → search `Marstek`.
 2. Wait for the picker (broadcast can take ~10s, retry ~3s).
 3. Choose **Enter IP/port manually** (or land here when discovery is empty).
-4. IP + Port → Submit.
+4. Click the **IP address** field so it has focus, type the IP, then Port → Submit with **Enter**.
 
 Same unicast probe as Confirm device. Do not assume “discovery found it, so manual will work” — manual does not reuse the cached broadcast result.
 
 ### 3) `+ Add integration` picker
 
-Selecting a listed device creates the entry from discovery data (no extra GetDevice). Fastest happy path when the IP/port in the label is already correct.
+Selecting a listed device creates the entry from discovery data (no extra GetDevice). Fastest happy path when the IP/port in the label is already correct. Broadcast discovery **does** pause pooled listeners, because it binds its own sockets.
+
+## Same-port GetDevice (do not “fix” with pause)
+
+Firmware replies to the device listen port, not the ephemeral source. Per-port sockets are correct for mixed 30000/30001/… installs. Linux `SO_REUSEPORT` load-balances datagrams across every socket still **bound** to that port. Pause stops the listener task; it does **not** unbind.
+
+Wrong path (second bind after pause) live signature:
+
+- `Querying device info from 172.28.0.20:30000`
+- `UDP socket bound to 0.0.0.0:30000`
+- `Invalid device response from 172.28.0.26` carrying `EM.GetStatus` (probe ate coordinator traffic)
+- `No valid response from device at 172.28.0.20:30000`
+- Coordinator `Recv` of `Marstek.GetDevice` a few ms later
+
+Right path: `get_device_info(..., udp_client=pooled_client)` so the existing listener matches a unique request id. Log should say `Querying device info from HOST:PORT via pooled UDP client`, with **no** second `UDP socket bound` line.
+
+Use this when Venus C (`172.28.0.26:30000`) is already configured and you add Venus E (`172.28.0.20:30000`) via manual or Confirm device.
 
 ## computerUse / recording
 
@@ -107,6 +123,13 @@ Selecting a listed device creates the entry from discovery data (no extra GetDev
 2. Record only the add/confirm/entity proof. Do not record compose pull, onboarding, or password-save clicks.
 3. After Submit, wait for the device page: Battery SoC, mode, and (Venus A/D) PV must not stay `unavailable`.
 4. If Confirm device or manual fails, **discard** the recording, grab `docker logs`, fix, then re-record a passing run.
+5. computerUse auto-resume hits a **100-image cap**. For long sessions, drive Chrome with `xdotool` and record with `ffmpeg` (or `RecordScreen`) instead of relying on screenshot loops.
+
+Dialog input:
+
+- Click the IP/port field, then type. Missed focus leaves host empty → `cannot_connect`.
+- Prefer **Enter/Return** to submit HA dialogs. Clicks on the **Submit** button often miss.
+- The search box in “Add integration” is a separate field from the manual IP form.
 
 Enable debug for a failing run:
 
@@ -117,7 +140,7 @@ curl -sS -X POST http://127.0.0.1:8123/api/services/logger/set_level \
   -d '{"custom_components.marstek":"debug"}'
 ```
 
-Look for `Request timeout: …:30000`, `No valid response from device`, and `cannot_connect`.
+Look for `UDP socket bound to 0.0.0.0:30000` during manual/confirm (second bind — bug), `via pooled UDP client` (expected), `No valid response from device`, and `cannot_connect`.
 
 ## When NOT to use
 
