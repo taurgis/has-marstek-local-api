@@ -815,6 +815,27 @@ async def test_scanner_get_configured_macs_ignores_invalid(hass: HomeAssistant) 
     assert "aa:bb:cc:dd:ee:ff" in configured
 
 
+async def test_scanner_get_configured_macs_includes_ignore_unique_id(
+    hass: HomeAssistant,
+) -> None:
+    """Ignored entries store the BLE MAC as unique_id, not entry.data ble_mac."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="02:DE:AD:BE:EF:03",
+        source="ignore",
+        data={"unique_id": "02:DE:AD:BE:EF:03", "title": "Marstek VenusA"},
+    )
+    entry.add_to_hass(hass)
+
+    scanner = MarstekScanner(hass)
+    configured = scanner._get_configured_macs()
+    assert "02:de:ad:be:ef:03" in configured
+
+    scanner._unconfigured_seen = {"02:de:ad:be:ef:03": datetime.now()}
+    scanner._prune_unconfigured_cache(configured)
+    assert "02:de:ad:be:ef:03" not in scanner._unconfigured_seen
+
+
 async def test_scanner_prune_unconfigured_cache(hass: HomeAssistant) -> None:
     """Test pruning unconfigured cache when devices become configured."""
     scanner = MarstekScanner(hass)

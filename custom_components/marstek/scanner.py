@@ -439,9 +439,11 @@ class MarstekScanner:
         """Collect all configured MACs for this integration."""
         configured: set[str] = set()
         for entry in self._hass.config_entries.async_entries(DOMAIN):
+            candidates: list[Any] = [entry.unique_id]
             for key in ("ble_mac", "mac", "wifi_mac"):
-                value = entry.data.get(key)
-                if not value:
+                candidates.append(entry.data.get(key))
+            for value in candidates:
+                if not isinstance(value, str) or not value:
                     continue
                 try:
                     configured.add(format_mac(value))

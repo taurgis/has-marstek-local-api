@@ -425,7 +425,7 @@ Official HA exposes more than config-flow / polling / automations. These work **
 
 | Surface | How to live-test | Skip / note |
 |---------|------------------|-------------|
-| Ignore discovered card | Delete a unique-port entry, `wait-flow`, `ignore-flow`, confirm `source=ignore`. Unignore = `delete-entry` on that ignore entry, then Confirm re-add. UI: Discovered → **Ignore**. | Needs unique_id (BLE-MAC). |
+| Ignore discovered card | Delete a unique-port entry, `wait-flow`, `ignore-flow`, confirm `source=ignore`. Unignore = `delete-entry` on that ignore entry, then Confirm re-add. UI: Discovered → **Ignore**. | Needs unique_id (BLE-MAC). After Ignore, the scanner must treat `entry.unique_id` as configured so `_unconfigured_seen` is pruned; otherwise Unignore waits the 1-hour unconfigured debounce. Manual IP/port re-add works immediately. |
 | System options `pref_disable_polling` | `update-entry --disable-polling true` (reloads). Background `last_updated` must freeze. Restore `false`. | User-initiated `request_data_sync` may still refresh. |
 | System options `pref_disable_new_entities` | `update-entry --disable-new-entities true` then `get-entry`. | New entities only appear after a firmware/profile change. |
 | Ignore / unignore repair | Stop unique-port mock → `wait-issue` → `ignore-issue` (`ignored: true`) → `--unignore` → start mock → `--gone`. | Ignored issues stay in `list_issues` with `ignored: true` while active. |
