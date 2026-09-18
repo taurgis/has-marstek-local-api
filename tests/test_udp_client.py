@@ -301,6 +301,31 @@ class TestAsyncSetup:
         client._socket = None
         await client.async_resume_receiver()
 
+    async def test_nested_pause_keeps_listener_stopped(self) -> None:
+        """A second pause must not resume until the matching resume."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+
+        async def never_ending() -> None:
+            await asyncio.sleep(3600)
+
+        client._listen_task = client._loop.create_task(never_ending())
+        await client.async_pause_receiver()
+        await client.async_pause_receiver()
+        assert client._listen_task is None
+
+        with patch.object(client, "_ensure_listener") as mock_ensure:
+            await client.async_resume_receiver()
+            mock_ensure.assert_not_called()
+            await client.async_resume_receiver()
+            mock_ensure.assert_called_once()
+
+        client._receiver_pause_count = 1
+        client._listen_task = None
+        client._ensure_listener()
+        assert client._listen_task is None
+
 
 class TestSendRequest:
     """Tests for send_request method."""

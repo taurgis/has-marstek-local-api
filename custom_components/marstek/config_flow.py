@@ -53,6 +53,7 @@ from .helpers.flow_schemas import (
     build_polling_schema,
     build_power_schema,
 )
+from .helpers.udp_clients import async_paused_udp_receivers
 
 
 class DhcpServiceInfoLike(Protocol):
@@ -188,7 +189,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 # Validate connection by attempting to get device info
-                device_info = await get_device_info(host=host, port=port)
+                device_info = await self._async_get_device_info(host, port)
 
                 if not device_info:
                     return self.async_show_form(
@@ -247,7 +248,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.info("Device discovery, attempt %d", attempt)
                     await asyncio.sleep(retry_delay)
 
-                devices = await discover_devices(ports=scan_ports)
+                devices = await self._async_discover_devices(scan_ports)
 
                 if devices:
                     if attempt > 1:
@@ -281,6 +282,25 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ports.add(configured_port)
 
         return sorted(ports)
+
+    async def _async_get_device_info(
+        self, host: str, port: int
+    ) -> dict[str, Any] | None:
+        """Unicast GetDevice while pooled listeners are paused.
+
+        Confirm device and manual IP/port entry bind the Open API port. If an
+        existing coordinator socket stays listening, ``SO_REUSEPORT`` can
+        steal the reply and the UI shows cannot_connect.
+        """
+        async with async_paused_udp_receivers(self.hass):
+            return await get_device_info(host=host, port=port)
+
+    async def _async_discover_devices(
+        self, scan_ports: list[int]
+    ) -> list[dict[str, Any]]:
+        """Broadcast discovery while pooled listeners are paused."""
+        async with async_paused_udp_receivers(self.hass):
+            return await discover_devices(ports=scan_ports)
 
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfoLike
@@ -348,7 +368,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             form_port = port
 
             try:
-                device_info = await get_device_info(host=host, port=port)
+                device_info = await self._async_get_device_info(host, port)
 
                 if not device_info:
                     errors["base"] = "cannot_connect"
@@ -543,7 +563,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return None, "cannot_connect"
 
         try:
-            device_info = await get_device_info(host=host, port=port)
+            device_info = await self._async_get_device_info(host, port)
             if not device_info:
                 return None, "cannot_connect"
 

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.const import DOMAIN
 from custom_components.marstek.helpers.udp_clients import (
+    async_paused_udp_receivers,
     bind_port_for_host,
     configured_device_port,
     entry_bind_port,
@@ -102,3 +104,20 @@ async def test_get_udp_client_for_entry_falls_back_to_pool(
     )
 
     assert get_udp_client_for_entry(hass, entry) is pooled_client
+
+
+async def test_paused_udp_receivers_context_resumes_after_error(
+    hass: HomeAssistant,
+) -> None:
+    """Manual/confirm probes must resume listeners even when GetDevice fails."""
+    client = MagicMock()
+    client.async_pause_receiver = AsyncMock()
+    client.async_resume_receiver = AsyncMock()
+    store_udp_client(hass, 30000, client)
+
+    with pytest.raises(RuntimeError, match="probe failed"):
+        async with async_paused_udp_receivers(hass):
+            raise RuntimeError("probe failed")
+
+    client.async_pause_receiver.assert_awaited_once()
+    client.async_resume_receiver.assert_awaited_once()

@@ -107,6 +107,7 @@ class MarstekUDPClient:
         self._response_cache: dict[int, dict[str, Any]] = {}
         self._listen_task: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._receiver_pause_count: int = 0
 
         self._discovery_cache: list[dict[str, Any]] | None = None
         self._cache_timestamp: float = 0
@@ -209,24 +210,39 @@ class MarstekUDPClient:
     async def async_pause_receiver(self) -> None:
         """Stop the background UDP listener without closing the socket.
 
-        Discovery probes bind the Open API port. Pausing this listener
-        avoids two sockets competing for the same replies.
+        Discovery and unicast ``Marstek.GetDevice`` bind the Open API port.
+        Pausing this listener avoids two sockets competing for the same
+        replies. Nested pauses are ref-counted so a config-flow probe that
+        overlaps the scanner does not resume too early.
         """
+        self._receiver_pause_count += 1
+        if self._receiver_pause_count > 1:
+            return
+        await self._stop_listener()
+
+    async def async_resume_receiver(self) -> None:
+        """Restart the background UDP listener if the socket is open."""
+        if self._receiver_pause_count <= 0:
+            return
+        self._receiver_pause_count -= 1
+        if self._receiver_pause_count > 0:
+            return
+        if self._socket is None:
+            return
+        self._ensure_listener()
+
+    async def _stop_listener(self) -> None:
+        """Cancel the background UDP listener if it is running."""
         if self._listen_task and not self._listen_task.done():
             self._listen_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._listen_task
         self._listen_task = None
 
-    async def async_resume_receiver(self) -> None:
-        """Restart the background UDP listener if the socket is open."""
-        if self._socket is None:
-            return
-        self._ensure_listener()
-
     async def async_cleanup(self) -> None:
         """Close the UDP socket and clear all caches."""
-        await self.async_pause_receiver()
+        self._receiver_pause_count = 0
+        await self._stop_listener()
         if self._socket:
             self._socket.close()
             self._socket = None
@@ -251,6 +267,8 @@ class MarstekUDPClient:
 
     def _ensure_listener(self) -> None:
         """Ensure the response listener task is running."""
+        if self._receiver_pause_count > 0:
+            return
         if not self._listen_task or self._listen_task.done():
             loop = self._loop or asyncio.get_running_loop()
             self._listen_task = loop.create_task(self._listen_for_responses())

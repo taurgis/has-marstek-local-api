@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -177,3 +179,21 @@ async def async_resume_udp_receivers(clients: tuple[MarstekUDPClient, ...]) -> N
             result = resume()
             if asyncio.iscoroutine(result):
                 await result
+
+
+@asynccontextmanager
+async def async_paused_udp_receivers(
+    hass: HomeAssistant,
+) -> AsyncIterator[tuple[MarstekUDPClient, ...]]:
+    """Pause pooled Open API listeners for the duration of a UDP probe.
+
+    Linux ``SO_REUSEPORT`` load-balances datagrams across sockets bound to
+    the same port. Manual add, Confirm device, and broadcast discovery all
+    bind the device listen port, so the existing coordinator listener must
+    be paused or the probe never sees the reply.
+    """
+    paused = await async_pause_udp_receivers(hass)
+    try:
+        yield paused
+    finally:
+        await async_resume_udp_receivers(paused)
