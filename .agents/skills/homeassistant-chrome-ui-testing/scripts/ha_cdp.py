@@ -990,6 +990,8 @@ async def cmd_entries(cdp: Cdp, _page: dict[str, Any], domain: str) -> Any:
                 "title": entry.get("title"),
                 "state": entry.get("state"),
                 "source": entry.get("source"),
+                "disabled_by": entry.get("disabled_by"),
+                "reason": entry.get("reason"),
                 "device_id": dev.get("id"),
                 "device_name": dev.get("name"),
                 "model": dev.get("model"),
@@ -1024,6 +1026,7 @@ async def cmd_devices(cdp: Cdp, _page: dict[str, Any], integration: str) -> Any:
                 "config_entry_id": entry_id,
                 "model": dev.get("model"),
                 "sw_version": dev.get("sw_version"),
+                "disabled_by": dev.get("disabled_by"),
             }
         )
     return out
@@ -1251,6 +1254,134 @@ async def cmd_enable_entity(cdp: Cdp, _page: dict[str, Any], entity_id: str) -> 
     )
 
 
+async def cmd_disable_entity(cdp: Cdp, _page: dict[str, Any], entity_id: str) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/entity_registry/update",
+            "entity_id": entity_id,
+            "disabled_by": "user",
+        },
+    )
+
+
+async def cmd_set_entry_disabled(
+    cdp: Cdp, _page: dict[str, Any], entry_id: str, disabled: bool
+) -> Any:
+    """WS config_entries/disable. disabled_by is only ``user`` or null."""
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config_entries/disable",
+            "entry_id": entry_id,
+            "disabled_by": "user" if disabled else None,
+        },
+    )
+
+
+async def cmd_set_device_disabled(
+    cdp: Cdp, _page: dict[str, Any], device_id: str, disabled: bool
+) -> Any:
+    return await cmd_ws(
+        cdp,
+        _page,
+        {
+            "type": "config/device_registry/update",
+            "device_id": device_id,
+            "disabled_by": "user" if disabled else None,
+        },
+    )
+
+
+def _issues_from_ws(result: Any) -> list[dict[str, Any]]:
+    if isinstance(result, dict):
+        issues = result.get("issues")
+        if isinstance(issues, list):
+            return [i for i in issues if isinstance(i, dict)]
+    if isinstance(result, list):
+        return [i for i in result if isinstance(i, dict)]
+    return []
+
+
+async def cmd_issues(
+    cdp: Cdp, _page: dict[str, Any], domain: str | None
+) -> list[dict[str, Any]]:
+    result = await cmd_ws(cdp, _page, {"type": "repairs/list_issues"})
+    issues = _issues_from_ws(result)
+    if domain:
+        needle = domain.lower()
+        issues = [
+            issue
+            for issue in issues
+            if needle in str(issue.get("domain") or "").lower()
+            or needle in str(issue.get("issue_domain") or "").lower()
+        ]
+    return issues
+
+
+async def cmd_wait_issue(
+    cdp: Cdp,
+    _page: dict[str, Any],
+    issue_id: str | None,
+    domain: str | None,
+    timeout: float,
+    gone: bool,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    last: list[dict[str, Any]] = []
+    needle = (issue_id or "").lower()
+    while time.time() < deadline:
+        last = await cmd_issues(cdp, _page, domain)
+        matches = last
+        if needle:
+            matches = [
+                issue
+                for issue in last
+                if needle in str(issue.get("issue_id") or "").lower()
+            ]
+        present = bool(matches)
+        if gone and not present:
+            return {"ok": True, "gone": True, "issues": last}
+        if not gone and present:
+            return {"ok": True, "issues": matches}
+        await asyncio.sleep(2)
+    return {
+        "ok": False,
+        "error": "timeout",
+        "gone": gone,
+        "issue_id": issue_id,
+        "last": last,
+    }
+
+
+async def cmd_start_repair(
+    cdp: Cdp, _page: dict[str, Any], issue_id: str, handler: str
+) -> Any:
+    return await cmd_api(
+        cdp,
+        _page,
+        "POST",
+        "repairs/issues/fix",
+        {"handler": handler, "issue_id": issue_id},
+    )
+
+
+async def cmd_repair_next(
+    cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]
+) -> Any:
+    return await cmd_api(
+        cdp, _page, "POST", f"repairs/issues/fix/{flow_id}", data
+    )
+
+
+async def cmd_abort_repair(cdp: Cdp, _page: dict[str, Any], flow_id: str) -> Any:
+    return await cmd_api(
+        cdp, _page, "DELETE", f"repairs/issues/fix/{flow_id}", None
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Control Home Assistant Chrome via CDP (no pixel clicks)."
@@ -1355,6 +1486,43 @@ def build_parser() -> argparse.ArgumentParser:
     scriptp.add_argument("config", help="JSON script body")
     een = sub.add_parser("enable-entity", help="Clear entity_registry disabled_by")
     een.add_argument("entity_id")
+    den = sub.add_parser("disable-entity", help="Set entity_registry disabled_by=user")
+    den.add_argument("entity_id")
+    dent = sub.add_parser(
+        "disable-entry", help="WS config_entries/disable disabled_by=user"
+    )
+    dent.add_argument("entry_id")
+    eent = sub.add_parser(
+        "enable-entry", help="WS config_entries/disable disabled_by=null"
+    )
+    eent.add_argument("entry_id")
+    ddev = sub.add_parser(
+        "disable-device", help="WS device_registry/update disabled_by=user"
+    )
+    ddev.add_argument("device_id")
+    edev = sub.add_parser(
+        "enable-device", help="WS device_registry/update disabled_by=null"
+    )
+    edev.add_argument("device_id")
+    issues = sub.add_parser("issues", help="WS repairs/list_issues")
+    issues.add_argument("--domain", default="marstek")
+    wait_issue = sub.add_parser("wait-issue", help="Poll repairs until present or gone")
+    wait_issue.add_argument("--issue-id", default=None)
+    wait_issue.add_argument("--domain", default="marstek")
+    wait_issue.add_argument("--timeout", type=float, default=180)
+    wait_issue.add_argument(
+        "--gone",
+        action="store_true",
+        help="Wait until matching issues disappear",
+    )
+    srep = sub.add_parser("start-repair", help="POST /api/repairs/issues/fix")
+    srep.add_argument("issue_id")
+    srep.add_argument("--handler", default="marstek")
+    rnext = sub.add_parser("repair-next", help="POST the next repairs flow step")
+    rnext.add_argument("flow_id")
+    rnext.add_argument("data", nargs="?", default="{}")
+    arep = sub.add_parser("abort-repair", help="DELETE an in-progress repairs flow")
+    arep.add_argument("flow_id")
     sub.add_parser(
         "notifications",
         help="WS persistent_notification/get (HA 2026: not entity states)",
@@ -1461,6 +1629,35 @@ async def async_main(args: argparse.Namespace) -> int:
             )
         if args.cmd == "enable-entity":
             return await cmd_enable_entity(cdp, page, args.entity_id)
+        if args.cmd == "disable-entity":
+            return await cmd_disable_entity(cdp, page, args.entity_id)
+        if args.cmd == "disable-entry":
+            return await cmd_set_entry_disabled(cdp, page, args.entry_id, True)
+        if args.cmd == "enable-entry":
+            return await cmd_set_entry_disabled(cdp, page, args.entry_id, False)
+        if args.cmd == "disable-device":
+            return await cmd_set_device_disabled(cdp, page, args.device_id, True)
+        if args.cmd == "enable-device":
+            return await cmd_set_device_disabled(cdp, page, args.device_id, False)
+        if args.cmd == "issues":
+            return await cmd_issues(cdp, page, args.domain or None)
+        if args.cmd == "wait-issue":
+            return await cmd_wait_issue(
+                cdp,
+                page,
+                args.issue_id,
+                args.domain or None,
+                args.timeout,
+                args.gone,
+            )
+        if args.cmd == "start-repair":
+            return await cmd_start_repair(cdp, page, args.issue_id, args.handler)
+        if args.cmd == "repair-next":
+            return await cmd_repair_next(
+                cdp, page, args.flow_id, json.loads(args.data)
+            )
+        if args.cmd == "abort-repair":
+            return await cmd_abort_repair(cdp, page, args.flow_id)
         if args.cmd == "notifications":
             return await cmd_notifications(cdp, page)
         raise RuntimeError(args.cmd)
@@ -1500,6 +1697,16 @@ async def async_main(args: argparse.Namespace) -> int:
             "upsert-automation",
             "upsert-script",
             "enable-entity",
+            "disable-entity",
+            "disable-entry",
+            "enable-entry",
+            "disable-device",
+            "enable-device",
+            "issues",
+            "wait-issue",
+            "start-repair",
+            "repair-next",
+            "abort-repair",
             "notifications",
         },
     )

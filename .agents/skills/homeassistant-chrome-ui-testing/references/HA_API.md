@@ -25,6 +25,16 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py diagnostics ENTRY_ID` | GET `/api/diagnostics/config_entry/{id}` | Frontend download path; **not** on the official REST page ([diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics)). |
 | `ha_cdp.py device-triggers DEVICE_ID` | WS `device_automation/trigger/list` | Generic entity triggers. Not on the public WS reference; frontend uses it. Marstek has no `device_trigger.py`. |
 | `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Returns `{entity_entry, reload_delay}`. Wait `reload_delay` (30s) before `wait-state`. Enable CT (EM) or `wifi_rssi` (`Wifi.GetStatus`). Do **not** enable `Bat.GetStatus` entities. |
+| `ha_cdp.py disable-entity ID` | WS `config/entity_registry/update` `disabled_by: user` | Entity leaves the state machine. Re-enable with `enable-entity`. |
+| `ha_cdp.py disable-entry ENTRY_ID` | WS `config_entries/disable` `disabled_by: "user"` | Unloads the entry. `disabled_by` is only `"user"` or `null` ([core config_entries WS](https://github.com/home-assistant/core/blob/dev/homeassistant/components/config/config_entries.py)). Response may include `require_restart`. |
+| `ha_cdp.py enable-entry ENTRY_ID` | WS `config_entries/disable` `disabled_by: null` | Sets up the same `entry_id` again. |
+| `ha_cdp.py disable-device DEVICE_ID` | WS `config/device_registry/update` `disabled_by: user` | Entry stays loaded. Entities inherit `disabled_by: device` ([device registry](https://developers.home-assistant.io/docs/device_registry_index)). |
+| `ha_cdp.py enable-device DEVICE_ID` | WS `config/device_registry/update` `disabled_by: null` | Invalid if the owning config entry is still disabled (HA 2026.8). |
+| `ha_cdp.py issues` | WS `repairs/list_issues` | Active repair issues. Marstek connection-loss ids are `cannot_connect_{entry_id}`. |
+| `ha_cdp.py wait-issue --issue-id ID` | polls `repairs/list_issues` | `--gone` waits until the issue is cleared (auto-recovery or successful Fix). |
+| `ha_cdp.py start-repair ISSUE_ID` | POST `/api/repairs/issues/fix` | Starts `CannotConnectRepairFlow` ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
+| `ha_cdp.py repair-next FLOW_ID JSON` | POST `/api/repairs/issues/fix/{flow_id}` | Submit host/port. Errors: `cannot_connect`, `unique_id_mismatch`. |
+| `ha_cdp.py abort-repair FLOW_ID` | DELETE `/api/repairs/issues/fix/{flow_id}` | Drop an in-progress Fix dialog. |
 | `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
 | `ha_cdp.py notifications` | WS `persistent_notification/get` | HA 2026 **does not** expose persistent notifications as `persistent_notification.*` entity states. Gap tests must use this WS type (or automation `last_triggered`). |
 

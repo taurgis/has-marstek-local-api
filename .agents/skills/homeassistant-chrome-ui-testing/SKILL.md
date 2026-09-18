@@ -1,6 +1,6 @@
 ---
 name: homeassistant-chrome-ui-testing
-description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, actions, automations) and walkthroughs.
+description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, disable, connection-loss repairs, actions, automations) and walkthroughs.
 ---
 
 # Home Assistant Chrome UI testing
@@ -81,6 +81,16 @@ python3 $H start-options '<entry_id>'
 python3 $H enable-entity binary_sensor.venus_d_ct_connection
 python3 $H upsert-automation marstek_gap_state '{"alias":"...","triggers":[...],"actions":[...]}'
 python3 $H notifications
+python3 $H disable-entry '<entry_id>'
+python3 $H enable-entry '<entry_id>'
+python3 $H disable-device '<device_id>'
+python3 $H enable-device '<device_id>'
+python3 $H disable-entity sensor.venus_d_wifi_signal_strength
+python3 $H issues
+python3 $H wait-issue --issue-id 'cannot_connect_<entry_id>' --timeout 180
+python3 $H start-repair 'cannot_connect_<entry_id>'
+python3 $H repair-next '<flow_id>' '{"host":"172.28.0.23","port":30002}'
+python3 $H wait-issue --issue-id 'cannot_connect_<entry_id>' --gone --timeout 180
 ```
 
 Rules:
@@ -142,6 +152,7 @@ Base: `http://127.0.0.1:8123`
 | `/config/logs` | UI log (also `sudo docker logs marstek-ha-dev`) |
 | `/config/automation/dashboard` | Automations (singular `automation`, not `automations`) |
 | `/config/devices/device/<id>` | Device page: mode select, SoC, power, SYS number/switch |
+| `/config/repairs` | Connection-loss repair issues (`cannot_connect_{entry_id}`) |
 
 ## Mock devices
 
@@ -232,6 +243,60 @@ python3 $H wait-flow --unique-id '<ble-mac>' --timeout 700
 
 Then `click Add --near '<mac>'` on the dashboard. Do not assume 60s.
 
+## Disable, connection loss, and repairs
+
+Marstek does **not** raise `ConfigEntryAuthFailed` on UDP timeout. Connection loss after setup creates a **fixable repair issue** (`cannot_connect_{entry_id}`) once consecutive failures hit `failure_threshold` (default 3). Setup-time failure raises `ConfigEntryNotReady` (core retries with backoff) **and** creates the same issue. Reauth exists in `config_flow.py` and is unit-tested; live UDP loss uses repairs, not a reauth banner. Official notes: [repairs](https://developers.home-assistant.io/docs/core/platform/repairs/), [setup failures](https://developers.home-assistant.io/docs/integration_setup_failures), [UpdateFailed vs ConfigEntryNotReady](https://developers.home-assistant.io/docs/integration_fetching_data).
+
+### Disable config entry
+
+WS `config_entries/disable` (`disabled_by` is only `"user"` or `null`). Unloads `async_unload_entry` (releases the per-port UDP client when no other loaded entry shares it). Entities leave the state machine. Re-enable sets up the same `entry_id` and BLE-MAC unique IDs.
+
+```bash
+python3 $H disable-entry '<entry_id>'
+python3 $H states --entity sensor.venus_d_battery_level   # unknown / gone
+python3 $H enable-entry '<entry_id>'
+```
+
+UI recipe: `/config/integrations/integration/marstek` → overflow **Menu** `--near 'Venus D 1 device' --nth 0` → **Disable** → confirm. Same menu → **Enable**.
+
+### Disable device (keep the config entry)
+
+WS `config/device_registry/update` `disabled_by: user`. The entry stays `loaded` and the coordinator still polls. Entities get `disabled_by: device` and disappear from the state machine until the device is re-enabled.
+
+Do not set `disabled_by=None` on a device whose config entry is disabled ([HA 2026.8 device registry](https://developers.home-assistant.io/blog/2026/07/21/device-registry-single-config-entry/)).
+
+### Connection loss (auto-recovery)
+
+Use a **unique-port** mock (Venus D `:30002` / Venus A `:30001`) so stopping it does not affect the 30000 pool.
+
+1. Lower `failure_threshold` to 1 via options (submit **all** `polling_settings` / `network_settings` / `power_settings` sections; a partial submit wipes the rest).
+2. `sudo docker stop marstek-mock-device-4`.
+3. `service marstek request_data_sync` (UDP timeouts; do not treat a long wait as a hang).
+4. `wait-issue --issue-id cannot_connect_<entry_id>`. Entities become `unavailable`. Settings sidebar can show a repairs badge. Page: `/config/repairs`.
+5. `sudo docker start marstek-mock-device-4`.
+6. Coordinator polling clears the issue (`_clear_connection_issue` on a good poll). `wait-issue --gone` and `wait-state sensor.venus_d_battery_level` until the SoC is numeric again.
+
+The scanner also `async_request_scan()` at the failure threshold (debounced 30s). If the same BLE-MAC later answers from a new IP, integration discovery updates `entry.data[host]` and reloads — no user Fix required.
+
+### Repair flow (user Fix)
+
+While the issue exists:
+
+```bash
+python3 $H start-repair 'cannot_connect_<entry_id>'
+python3 $H repair-next '<flow_id>' '{"host":"172.28.0.99","port":30002}'   # cannot_connect
+python3 $H repair-next '<flow_id>' '{"host":"172.28.0.22","port":30001}'   # unique_id_mismatch (Venus A)
+python3 $H repair-next '<flow_id>' '{"host":"172.28.0.23","port":30002}'   # create_entry after mock is up
+```
+
+Repair GetDevice must log `via pooled UDP client` when another device still owns that port. Unique-port Venus D after disable/unload has no pooled client.
+
+UI: `/config/repairs` → **Fix** on “Marstek device not reachable” → IP/port form → Submit.
+
+DHCP `async_step_dhcp` is the same unique-id updater as the scanner; live DHCP is not exercised in Docker (no DHCP packets). Use scanner rediscovery instead.
+
+Do not enable `Bat.GetStatus` entities while forcing connection-loss (issue #14).
+
 ### Re-add
 
 1. Discovery Confirm (`async_step_confirm`) — same as path 1 above. Proves pooled GetDevice when another device still owns that UDP port.
@@ -313,6 +378,11 @@ Still exercise these (use a **different device** than one with an in-flight `exe
 | Surface | How |
 |---------|-----|
 | Charge / stop device actions | `upsert-automation` with `type: charge` then `fire-event`; wait-state `device_mode=manual`. Do not await `run-script`. Stop: `select.select_option auto` is faster than `type: stop`. |
+| Disable config entry | `disable-entry` then `enable-entry`. UI overflow **Disable**. Entry `not_loaded`; entities gone; same `entry_id` after enable. |
+| Disable device | `disable-device` while the entry stays `loaded`. Entities `disabled_by: device`. |
+| Connection loss + auto-clear | Stop unique-port mock; `wait-issue cannot_connect_*`; entities `unavailable`; start mock; `wait-issue --gone`. |
+| Repair Fix flow | `/config/repairs` or `start-repair` / `repair-next`. Prove `cannot_connect`, `unique_id_mismatch`, then success. |
+| Scanner IP recovery | Same BLE-MAC on a new IP after failure-threshold scan. Discovery updates host without user confirm. |
 | UPS | `select.select_option` `ups` on Venus C / Rev 3.1 Venus E |
 | SYS BLE + DOD + LED | `switch.turn_on` / `number.set_value` on firmware that supports SYS |
 | Manual schedules | `marstek.set_manual_schedule`, `set_manual_schedules`, `clear_manual_schedules` (3 retries, seconds not minutes) |
@@ -341,10 +411,12 @@ Run this against Docker mocks after a UDP/config-flow change. Keep compose up.
 3. Delete one configured device (`delete-entry` or UI Menu). `wait-flow --unique-id '<mac>' --timeout 700`. Confirm re-add. Entity IDs must not grow `_2`.
 4. Delete a **same-port** device while another still uses 30000. Manual re-add IP/port. Must log pooled GetDevice.
 5. Delete a **unique-port** device (Venus A `:30001` / Venus D `:30002`). Manual re-add is allowed immediately; discovery Confirm may wait for the 10 min scanner. GetDevice without `via pooled` is expected if no other client remains on that port.
-6. `request_data_sync` + `wait-state --changed` on battery power for each re-added device.
-7. Device page / services: select `ai` then `auto`; `set_passive_mode`; SYS number/switch if the profile allows it.
-8. `device-actions` to confirm charge/discharge/stop exist. Use `set_passive_mode` or `select.select_option` for a fast mode change. If you `run-script` a device action, do not wait for `execute_script` to return (verification can take many minutes).
-9. Open `/config/automation/dashboard`, overflow **Run actions** on a Marstek discharge automation, and/or `fire-event`. Last triggered must update.
+6. Disable the unique-port entry (`disable-entry` or UI Disable). Entities must leave the state machine. `enable-entry` restores the same `entry_id` and entity ids. Disable a **device** without unloading the entry, then re-enable.
+7. Stop that unique-port mock. Wait for `cannot_connect_{entry_id}` on `/config/repairs` and `unavailable` entities. Start the mock; the issue must auto-clear. Optionally run Fix with a bad IP, a different device’s IP, then the correct IP.
+8. `request_data_sync` + `wait-state --changed` on battery power for each re-added device.
+9. Device page / services: select `ai` then `auto`; `set_passive_mode`; SYS number/switch if the profile allows it.
+10. `device-actions` to confirm charge/discharge/stop exist. Use `set_passive_mode` or `select.select_option` for a fast mode change. If you `run-script` a device action, do not wait for `execute_script` to return (verification can take many minutes).
+11. Open `/config/automation/dashboard`, overflow **Run actions** on a Marstek discharge automation, and/or `fire-event`. Last triggered must update.
 
 Do not cite 0-byte `mp4` files. Discard failed recordings.
 
