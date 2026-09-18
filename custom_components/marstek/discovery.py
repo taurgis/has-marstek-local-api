@@ -17,7 +17,7 @@ from typing import Any
 
 from .const import DEFAULT_UDP_PORT
 from .firmware_profile import extract_discovery_version
-from .pymarstek.network import create_udp_socket, get_broadcast_addresses
+from .pymarstek.network import create_udp_socket, get_broadcast_addresses, is_loopback_host
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -320,9 +320,12 @@ async def get_device_info(
     """
     _LOGGER.debug("Querying device info from %s:%d", host, port)
 
+    # Same-host (loopback) devices already occupy the Open API port, so send
+    # from an ephemeral port. Remote devices must be reached from that port.
+    bind_port = 0 if is_loopback_host(host) else port
     try:
         sock = create_udp_socket(
-            bind_port=port,
+            bind_port=bind_port,
             broadcast=True,
             fallback_ephemeral=True,
             logger=_LOGGER,

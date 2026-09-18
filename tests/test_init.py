@@ -150,6 +150,56 @@ async def test_setup_binds_shared_udp_client_to_entry_port(
         await hass.async_block_till_done()
 
 
+async def test_setup_loopback_uses_ephemeral_bind_port(
+    hass: HomeAssistant,
+) -> None:
+    """Test loopback devices bind an ephemeral port so they do not collide locally."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "127.0.0.1",
+            "port": 30000,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus",
+            "version": 3,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={
+            "device_mode": "SelfUse",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
+    scanner = create_mock_scanner()
+
+    with (
+        patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
+        patch(
+            "custom_components.marstek.MarstekUDPClient", return_value=client
+        ) as mock_udp,
+        patch(
+            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
+        ),
+        patch(
+            "custom_components.marstek.scanner.MarstekScanner.async_get",
+            return_value=scanner,
+        ),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        mock_udp.assert_called_once_with(port=30000, bind_port=0)
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
 async def test_update_listener_suppresses_reload(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

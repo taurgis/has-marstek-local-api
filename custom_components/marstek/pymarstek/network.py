@@ -12,6 +12,16 @@ from typing import Protocol
 _LOGGER = logging.getLogger(__name__)
 
 
+def is_loopback_host(host: str) -> bool:
+    """Return True when *host* is a loopback address or localhost name."""
+    if host in {"localhost", "::1"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def create_udp_socket(
     *,
     bind_port: int,

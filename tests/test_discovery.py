@@ -743,6 +743,34 @@ class TestGetDeviceInfo:
         mock_socket.bind.assert_called_with(("0.0.0.0", 30003))
 
     @pytest.mark.asyncio
+    async def test_loopback_uses_ephemeral_bind(self) -> None:
+        """Test localhost queries bind an ephemeral port to avoid colliding with the device."""
+        from custom_components.marstek.discovery import get_device_info
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 54321)
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.2
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+                await get_device_info("127.0.0.1", port=30000, timeout=1.0)
+
+        mock_socket.bind.assert_called_with(("0.0.0.0", 0))
+
+    @pytest.mark.asyncio
     async def test_falls_back_to_ephemeral_when_port_busy(self) -> None:
         """Test GetDevice still probes if the Open API port cannot be bound."""
         from custom_components.marstek.discovery import get_device_info
@@ -1295,6 +1323,17 @@ def test_discovery_omitted_ver_stays_unknown() -> None:
     profile = resolve_firmware_profile(info["device_type"], info["version"])
     assert profile.firmware_known is False
     assert profile.supports_sys_dod is False
+
+
+def test_is_loopback_host() -> None:
+    """Loopback IPs and localhost skip same-port UDP bind."""
+    from custom_components.marstek.pymarstek.network import is_loopback_host
+
+    assert is_loopback_host("127.0.0.1") is True
+    assert is_loopback_host("localhost") is True
+    assert is_loopback_host("::1") is True
+    assert is_loopback_host("192.168.2.37") is False
+    assert is_loopback_host("not-an-ip") is False
 
 
 def test_mac_from_src_compact() -> None:

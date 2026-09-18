@@ -24,6 +24,7 @@ from .helpers.device_lookup import iter_device_config_entry_ids
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
 from .pymarstek import MarstekUDPClient, get_es_mode
+from .pymarstek.network import is_loopback_host
 from .scanner import MarstekScanner
 from .services import async_setup_services
 
@@ -129,7 +130,7 @@ async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
 
 
 async def _get_or_create_shared_udp_client(
-    hass: HomeAssistant, *, bind_port: int
+    hass: HomeAssistant, *, bind_port: int, host: str
 ) -> MarstekUDPClient:
     """Get existing shared UDP client or create a new one.
 
@@ -142,23 +143,30 @@ async def _get_or_create_shared_udp_client(
         hass.data[DOMAIN] = {}
 
     if DATA_UDP_CLIENT not in hass.data[DOMAIN]:
+        # Binding the client to the device listen port on loopback collides
+        # with a local mock/device socket on the same host+port.
+        effective_bind_port = 0 if is_loopback_host(host) else bind_port
         _LOGGER.debug(
             "Creating shared UDP client for Marstek integration (bind_port=%s)",
-            bind_port,
+            effective_bind_port,
         )
-        udp_client = MarstekUDPClient(port=bind_port, bind_port=bind_port)
+        udp_client = MarstekUDPClient(port=bind_port, bind_port=effective_bind_port)
         await udp_client.async_setup()
         hass.data[DOMAIN][DATA_UDP_CLIENT] = udp_client
 
     client: MarstekUDPClient = hass.data[DOMAIN][DATA_UDP_CLIENT]
     existing_bind_port = getattr(client, "_bind_port", None)
-    if isinstance(existing_bind_port, int) and existing_bind_port != bind_port:
+    requested_bind_port = 0 if is_loopback_host(host) else bind_port
+    if (
+        isinstance(existing_bind_port, int)
+        and existing_bind_port != requested_bind_port
+    ):
         _LOGGER.warning(
             "Shared UDP client already bound to port %s; entry requested %s. "
             "Marstek devices reply to their Open API listen port, so a second "
             "device on a different port may not receive responses.",
             existing_bind_port,
-            bind_port,
+            requested_bind_port,
         )
     return client
 
@@ -281,7 +289,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     stored_ip = entry.data[CONF_HOST]
     stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
     # Use shared UDP client to avoid port conflicts between multiple devices
-    udp_client = await _get_or_create_shared_udp_client(hass, bind_port=stored_port)
+    udp_client = await _get_or_create_shared_udp_client(
+        hass, bind_port=stored_port, host=stored_ip
+    )
 
     # Only use BLE-MAC for device identification (user feedback)
     stored_ble_mac = entry.data.get("ble_mac")
