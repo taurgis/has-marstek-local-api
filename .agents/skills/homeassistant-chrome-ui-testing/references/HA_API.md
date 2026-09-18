@@ -26,7 +26,7 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py device-triggers DEVICE_ID` | WS `device_automation/trigger/list` | Generic entity triggers. Not on the public WS reference; frontend uses it. Marstek has no `device_trigger.py`. |
 | `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Returns `{entity_entry, reload_delay}`. Wait `reload_delay` (30s) before `wait-state`. Enable CT (EM) or `wifi_rssi` (`Wifi.GetStatus`). Do **not** enable `Bat.GetStatus` entities. |
 | `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
-| `ha_cdp.py upsert-script ID JSON` | POST `/api/config/script/config/{id}` | **Not** on the official REST page. Do **not** put `id` in the body — HA 2026.9 returns `400 Message malformed: not a valid option at 'id'`. The id is the URL slug only. |
+| `ha_cdp.py notifications` | WS `persistent_notification/get` | HA 2026 **does not** expose persistent notifications as `persistent_notification.*` entity states. Gap tests must use this WS type (or automation `last_triggered`). |
 
 ## Entity services ([select](https://www.home-assistant.io/integrations/select), [number](https://www.home-assistant.io/integrations/number), [switch](https://www.home-assistant.io/integrations/switch))
 

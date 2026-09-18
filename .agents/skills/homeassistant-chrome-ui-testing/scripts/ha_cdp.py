@@ -484,6 +484,8 @@ HELPER_JS = r"""
           device_class: s.attributes.device_class,
           options: s.attributes.options,
           icon: s.attributes.icon,
+          last_triggered: s.attributes.last_triggered,
+          message: s.attributes.message,
         },
       };
     },
@@ -502,6 +504,7 @@ HELPER_JS = r"""
           entity_id: s.entity_id,
           state: s.state,
           last_updated: s.last_updated,
+          last_triggered: s.attributes.last_triggered,
           friendly_name: s.attributes.friendly_name,
           options: s.attributes.options,
         }));
@@ -1231,6 +1234,11 @@ async def cmd_upsert_script(
     )
 
 
+async def cmd_notifications(cdp: Cdp, _page: dict[str, Any]) -> Any:
+    """HA 2026 persistent notifications are not entity states."""
+    return await cmd_ws(cdp, _page, {"type": "persistent_notification/get"})
+
+
 async def cmd_enable_entity(cdp: Cdp, _page: dict[str, Any], entity_id: str) -> Any:
     return await cmd_ws(
         cdp,
@@ -1347,6 +1355,10 @@ def build_parser() -> argparse.ArgumentParser:
     scriptp.add_argument("config", help="JSON script body")
     een = sub.add_parser("enable-entity", help="Clear entity_registry disabled_by")
     een.add_argument("entity_id")
+    sub.add_parser(
+        "notifications",
+        help="WS persistent_notification/get (HA 2026: not entity states)",
+    )
     return parser
 
 
@@ -1449,6 +1461,8 @@ async def async_main(args: argparse.Namespace) -> int:
             )
         if args.cmd == "enable-entity":
             return await cmd_enable_entity(cdp, page, args.entity_id)
+        if args.cmd == "notifications":
+            return await cmd_notifications(cdp, page)
         raise RuntimeError(args.cmd)
 
     data = await with_page(args.page, run)
@@ -1486,6 +1500,7 @@ async def async_main(args: argparse.Namespace) -> int:
             "upsert-automation",
             "upsert-script",
             "enable-entity",
+            "notifications",
         },
     )
     return _fail_if_needed(data)

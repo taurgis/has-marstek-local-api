@@ -80,6 +80,7 @@ python3 $H flow-next '<flow_id>' '{"host":"172.28.0.22","port":30001}'
 python3 $H start-options '<entry_id>'
 python3 $H enable-entity binary_sensor.venus_d_ct_connection
 python3 $H upsert-automation marstek_gap_state '{"alias":"...","triggers":[...],"actions":[...]}'
+python3 $H notifications
 ```
 
 Rules:
@@ -296,6 +297,8 @@ Marstek does **not** ship `device_trigger.py` / `device_condition.py`. HA still 
 Official automation triggers: [state](https://www.home-assistant.io/docs/automation/trigger/), [numeric_state](https://www.home-assistant.io/triggers/numeric_state/), [event](https://www.home-assistant.io/triggers/event/), template, time, time_pattern, webhook, device, persistent_notification. Skip sun/MQTT/zone/calendar/sentence unless the install has those integrations.
 
 `numeric_state` **only fires when the value crosses the threshold**. Mocks already sit at SoC ~5–10%, so `below: 15` on battery level will **not** fire until SoC rises above 15 then drops. Use a writable number (`number.*_depth_of_discharge`) for a live crossing, and put SoC `below: 15` on a **condition** instead.
+
+HA 2026 persistent notifications are **not** `hass.states` entities. `states --entity persistent_notification.x` returns null even when the notification exists. Use `ha_cdp.py notifications` (`WS persistent_notification/get`) or `last_triggered` on the automation (include that attribute in `state()`).
 
 `enable-entity` returns `{entity_entry: {entity_id, disabled_by}, reload_delay: 30}`. Wait 30s; the coordinator reloads that entry. `Wifi.GetStatus` entities (`sensor.*_wifi_signal_strength`) are safe to enable. Do **not** enable `bat_*` (issue #14).
 
