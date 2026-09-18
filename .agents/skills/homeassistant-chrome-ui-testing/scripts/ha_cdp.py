@@ -450,10 +450,23 @@ HELPER_JS = r"""
     },
     async api(method, path, body) {
       const hass = this.hass();
-      if (body === undefined || body === null || body === "") {
-        return await hass.callApi(method, path);
+      try {
+        if (body === undefined || body === null || body === "") {
+          return await hass.callApi(method, path);
+        }
+        return await hass.callApi(method, path, body);
+      } catch (e) {
+        const out = { ok: false, error: "api_error" };
+        if (e && typeof e === "object") {
+          out.status_code = e.status_code;
+          out.body = e.body;
+          out.message =
+            (e.body && e.body.message) || e.message || String(e);
+        } else {
+          out.message = String(e);
+        }
+        return out;
       }
-      return await hass.callApi(method, path, body);
     },
     async ws(message) {
       return await this.hass().callWS(message);
@@ -1208,7 +1221,10 @@ async def cmd_upsert_automation(
 async def cmd_upsert_script(
     cdp: Cdp, _page: dict[str, Any], script_id: str, config: dict[str, Any]
 ) -> Any:
-    payload = {"id": script_id, **config}
+    # HA rejects ``id`` inside the script body ("not a valid option at 'id'").
+    # The script id lives in the URL only. Automations still accept ``id``.
+    payload = dict(config)
+    payload.pop("id", None)
     payload["alias"] = config.get("alias") or script_id
     return await cmd_api(
         cdp, _page, "POST", f"config/script/config/{script_id}", payload

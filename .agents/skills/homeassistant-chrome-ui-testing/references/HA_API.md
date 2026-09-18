@@ -24,7 +24,9 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py start-options ENTRY_ID` | POST `/api/config/config_entries/options/flow` | Options flow ([options flow](https://developers.home-assistant.io/docs/config_entries_options_flow_handler)). |
 | `ha_cdp.py diagnostics ENTRY_ID` | GET `/api/diagnostics/config_entry/{id}` | Frontend download path; **not** on the official REST page ([diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics)). |
 | `ha_cdp.py device-triggers DEVICE_ID` | WS `device_automation/trigger/list` | Generic entity triggers. Not on the public WS reference; frontend uses it. Marstek has no `device_trigger.py`. |
-| `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Enable CT (EM tier). Do not enable `Bat.GetStatus` entities. |
+| `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Returns `{entity_entry, reload_delay}`. Wait `reload_delay` (30s) before `wait-state`. Enable CT (EM) or `wifi_rssi` (`Wifi.GetStatus`). Do **not** enable `Bat.GetStatus` entities. |
+| `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
+| `ha_cdp.py upsert-script ID JSON` | POST `/api/config/script/config/{id}` | **Not** on the official REST page. Do **not** put `id` in the body — HA 2026.9 returns `400 Message malformed: not a valid option at 'id'`. The id is the URL slug only. |
 
 ## Entity services ([select](https://www.home-assistant.io/integrations/select), [number](https://www.home-assistant.io/integrations/number), [switch](https://www.home-assistant.io/integrations/switch))
 

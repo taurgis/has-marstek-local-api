@@ -291,7 +291,15 @@ python3 $H wait-state sensor.venus_c_device_mode --equals manual --timeout 90
 
 `POST /api/events/{event_type}` is the official fire-event path.
 
-Marstek does **not** ship `device_trigger.py` / `device_condition.py`. HA still lists generic device triggers/conditions from entities (`select.selection_changed`, `battery.level_changed`, `power.changed`). `device-triggers` / `device-conditions` return those. Official note: new device automations are not accepted ([device automation index](https://developers.home-assistant.io/docs/device_automation_index/)).
+Marstek does **not** ship `device_trigger.py` / `device_condition.py`. HA still lists generic device triggers/conditions from entities (`current_option_changed`, `battery_level`, `power`). `device-triggers` / `device-conditions` return those. Official note: new device automations are not accepted ([device automation index](https://developers.home-assistant.io/docs/device_automation_index/)).
+
+Official automation triggers: [state](https://www.home-assistant.io/docs/automation/trigger/), [numeric_state](https://www.home-assistant.io/triggers/numeric_state/), [event](https://www.home-assistant.io/triggers/event/), template, time, time_pattern, webhook, device, persistent_notification. Skip sun/MQTT/zone/calendar/sentence unless the install has those integrations.
+
+`numeric_state` **only fires when the value crosses the threshold**. Mocks already sit at SoC ~5–10%, so `below: 15` on battery level will **not** fire until SoC rises above 15 then drops. Use a writable number (`number.*_depth_of_discharge`) for a live crossing, and put SoC `below: 15` on a **condition** instead.
+
+`enable-entity` returns `{entity_entry: {entity_id, disabled_by}, reload_delay: 30}`. Wait 30s; the coordinator reloads that entry. `Wifi.GetStatus` entities (`sensor.*_wifi_signal_strength`) are safe to enable. Do **not** enable `bat_*` (issue #14).
+
+`upsert-script` body must **omit** `id` (HA 2026.9: `Message malformed: not a valid option at 'id'`). Automations may include `id`.
 
 ## Remaining surfaces (gap campaign)
 
@@ -305,14 +313,19 @@ Still exercise these (use a **different device** than one with an in-flight `exe
 | UPS | `select.select_option` `ups` on Venus C / Rev 3.1 Venus E |
 | SYS BLE + DOD + LED | `switch.turn_on` / `number.set_value` on firmware that supports SYS |
 | Manual schedules | `marstek.set_manual_schedule`, `set_manual_schedules`, `clear_manual_schedules` (3 retries, seconds not minutes) |
-| CT binary sensor | Disabled by default (`entity_registry_enabled_default=False`). `enable-entity binary_sensor.venus_d_ct_connection` then wait `on`. Do **not** enable `bat_*` flags (issue #14 / `Bat.GetStatus`). |
+| CT binary sensor | Disabled by default. `enable-entity binary_sensor.venus_d_ct_connection` then wait 30s + `on`. Do **not** enable `bat_*`. |
+| WiFi RSSI | `enable-entity sensor.venus_d_wifi_signal_strength` (Wifi.GetStatus). Expect a negative dBm after reload. |
 | PV | Venus A/D `sensor.venus_d_pv1_power` `wait-state --changed` |
-| Reconfigure | `start-reconfigure ENTRY` then `flow-next` same host/port. POST `/api/config/config_entries/flow` with `entry_id` opens reconfigure (host/port). |
+| Reconfigure | `start-reconfigure ENTRY` then `flow-next`. Prove `cannot_connect` (bad IP), `unique_id_mismatch` (another mock's IP), then same host/port `reconfigure_successful`. |
 | Options | `start-options ENTRY`; submit `polling_settings` / `network_settings` / `power_settings` sections. Reloads the entry. |
-| Reload / diagnostics | `reload-entry`; `diagnostics ENTRY` (`GET /api/diagnostics/config_entry/{id}`, not on the official REST page). |
-| already_configured | Add integration picker while the MAC is loaded. |
-| State / numeric_state automations | State: `select` → `ai`. Numeric: SoC `below` (mocks sit ~5–10%, so `below: 15` fires). |
-| Script | `upsert-script` + `script.turn_on` calling `marstek.request_data_sync`. |
+| Reload / diagnostics | `reload-entry`; `diagnostics ENTRY` (`GET /api/diagnostics/config_entry/{id}`). |
+| already_configured | User flow while all MACs are loaded, then manual `host` of an existing device → abort `already_configured`. |
+| State / numeric_state | State: `select` → `ai`. Numeric: DOD `below` after `number.set_value`. SoC `below: 15` as a **condition** on an event automation. |
+| Template / webhook / time_pattern | Template on select `ai`; POST `/api/webhook/<id>`; `seconds: "/15"`. |
+| Device trigger | Generic `current_option_changed` from `device-triggers`. |
+| Persistent notification trigger | Create `notification_id` then listen for `update_type: added`. |
+| Conditions + choose | Event + numeric_state/state conditions; `choose` on `battery_status`. |
+| Script | `upsert-script` (no `id` in body) + `script.turn_on` calling `marstek.request_data_sync`. |
 
 `upsert-automation` / `upsert-script` hit `POST /api/config/automation/config/{id}` and `/api/config/script/config/{id}` — **not** in official REST docs. Prefer the UI when recording.
 
