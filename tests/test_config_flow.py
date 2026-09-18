@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -43,6 +44,13 @@ from tests.conftest import (
     patch_manual_connection,
     patch_marstek_integration,
 )
+
+
+@pytest.fixture(autouse=True)
+async def _drain_config_entry_tasks(hass: HomeAssistant) -> AsyncIterator[None]:
+    """Finish create/reload tasks before HA 2026.9 lingering-timer checks."""
+    yield
+    await hass.async_block_till_done()
 
 
 def _get_schema_field_default(result: dict[str, Any], field_name: str) -> Any:
@@ -805,6 +813,7 @@ async def test_reauth_flow_success(
 
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
+    await hass.async_block_till_done()
     assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == "192.168.1.200"
 
 
