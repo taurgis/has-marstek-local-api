@@ -95,15 +95,24 @@ def _normalize_family(device_type: str | None) -> DeviceFamily:
 
 
 def _normalize_version(version: Any) -> int | None:
-    """Normalize a non-negative integer firmware version."""
+    """Normalize a non-negative Open API firmware integer.
+
+    Discovery `ver` is an integer. App labels such as ``148.3`` share that
+    integer as a dotted prefix; only the leading number selects the profile.
+    """
     if isinstance(version, bool):
         return None
     if isinstance(version, int):
         return version if version >= 0 else None
     if isinstance(version, str):
         stripped = version.strip()
-        if stripped and stripped.isascii() and stripped.isdecimal():
+        if not stripped or not stripped.isascii():
+            return None
+        if stripped.isdecimal():
             return int(stripped, 10)
+        dotted = re.fullmatch(r"([0-9]+)\.[0-9]+(?:\.[0-9]+)*", stripped)
+        if dotted:
+            return int(dotted.group(1), 10)
     return None
 
 
@@ -134,6 +143,11 @@ def resolve_firmware_profile(
     supports_sys = (regular_family and firmware_150) or (
         family is DeviceFamily.VENUS_E_MINI and firmware_known
     )
+    # Encodings are per firmware, not a blanket Rev 3.1 conversion.
+    # 148 or older (incl. app label 148.3): solar Wh, PV1 deciwatts — same as
+    # 1.0.0. Integration 1.1.0 must not skip the PV1 ÷10 here (#57).
+    # Venus A 149: solar 0.01 kWh → Wh (#35); PV1 still deciwatts.
+    # 150+: solar 0.01 kWh on known families; PV1 watts on PV families.
     scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )

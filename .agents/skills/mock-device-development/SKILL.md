@@ -54,8 +54,13 @@ mock-marstek-2:
   command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--ver", "150", "--ble-mac", "02deadbeef02"]
 
 mock-marstek-3:
-  command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--port", "30001", "--ver", "145", "--ble-mac", "02deadbeef03"]
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.22", "--port", "30001", "--device", "VenusA", "--ver", "148", "--ble-mac", "02deadbeef03"]
+
+mock-marstek-5:
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "149", "--ble-mac", "02deadbeef05"]
 ```
+
+Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. Watt PV starts at firmware 150 only.
 
 ### Adding a New Mock Device
 

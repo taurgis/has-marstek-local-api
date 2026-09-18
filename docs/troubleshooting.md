@@ -73,6 +73,25 @@ If the Energy Dashboard shows a one-time production spike at the upgrade, use
 **Settings → Tools → Statistics** to locate and correct the transition:
 https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
 
+Firmware **148** (including app labels such as `148.3`) keeps solar energy in
+Wh and still reports PV channel 1 in deciwatts. Integration **1.1.0** introduced
+firmware-gated scaling; it must not skip the PV1 ÷10 on 148 or older
+([#57](https://github.com/taurgis/has-marstek-local-api/issues/57) reported that
+regression after upgrading to 1.1.0). Only Venus A **149** starts the
+0.01 kWh solar encoding, and watt PV encoding starts at firmware **150**.
+
+## PV1 power looks 10× too high
+
+PV channel 1 is deciwatts on firmware below 150, including Venus A 148 and 149.
+The integration divides that channel by 10, matching 1.0.0. Firmware 150+
+reports watts and is not divided.
+
+If PV1 jumped about 10× after upgrading to 1.1.0, the firmware profile may be
+treating the device as `ver >= 150`. Download diagnostics and check
+`firmware_profile.firmware_version` and `pv_channel_1_power_scale` (legacy is
+`0.1`, watt PV is `1.0`). App labels such as `148.3` map to Open API integer
+`148`.
+
 ## Venus A solar or load energy stays at 0 Wh
 
 Some Venus A firmware versions report `total_pv_energy` as `0` even while PV

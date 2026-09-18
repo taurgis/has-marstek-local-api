@@ -128,6 +128,21 @@ def test_profile_exposes_legacy_encoding_contract() -> None:
     assert profile.supports_em_energy is False
 
 
+@pytest.mark.parametrize("version", [145, 148, "148", "148.3"])
+def test_venus_a_148_or_older_keeps_legacy_energy_and_deciwatt_pv(
+    version: int | str,
+) -> None:
+    """Firmware 148 or older must keep 1.0.0 solar Wh and PV1 ÷10 (#57)."""
+    profile = resolve_firmware_profile("VenusA", version)
+
+    assert profile.firmware_version in {145, 148}
+    assert profile.firmware_known is True
+    assert profile.pv_energy_scale == 1.0
+    assert profile.pv_channel_1_power_scale == 0.1
+    assert profile.supports_ups is False
+    assert profile.supports_sys_dod is False
+
+
 def test_venus_a_149_uses_rev31_solar_energy_units() -> None:
     """Venus A firmware 149 already encodes solar energy as 0.01 kWh."""
     profile = resolve_firmware_profile("VenusA", 149)
@@ -136,6 +151,8 @@ def test_venus_a_149_uses_rev31_solar_energy_units() -> None:
     assert profile.pv_channel_1_power_scale == 0.1
     assert profile.em_energy_scale == 1.0
     assert profile.supports_em_energy is False
+    assert profile.supports_ups is False
+    assert profile.supports_sys_dod is False
 
 
 def test_firmware_150_known_family_uses_rev31_energy_and_watts() -> None:
@@ -146,6 +163,27 @@ def test_firmware_150_known_family_uses_rev31_energy_and_watts() -> None:
     assert profile.pv_channel_1_power_scale == 1.0
     assert profile.em_energy_scale == 0.1
     assert profile.supports_em_energy is True
+
+
+@pytest.mark.parametrize(
+    ("version", "firmware_version", "pv_energy_scale", "pv_channel_1_power_scale"),
+    [
+        ("149.1", 149, 10.0, 0.1),
+        ("150.2", 150, 10.0, 1.0),
+    ],
+)
+def test_dotted_app_firmware_labels_use_leading_open_api_integer(
+    version: str,
+    firmware_version: int,
+    pv_energy_scale: float,
+    pv_channel_1_power_scale: float,
+) -> None:
+    """Dotted app labels must not skip the integer firmware gates."""
+    profile = resolve_firmware_profile("VenusA", version)
+
+    assert profile.firmware_version == firmware_version
+    assert profile.pv_energy_scale == pv_energy_scale
+    assert profile.pv_channel_1_power_scale == pv_channel_1_power_scale
 
 
 def test_legacy_venus_d_keeps_deciwatt_pv_and_wh_solar() -> None:

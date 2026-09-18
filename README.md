@@ -129,7 +129,7 @@ Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseabl
 
 | Device | Status | Notes |
 |--------|--------|-------|
-| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware 149; SYS/UPS from 150; PV channel 1 is deciwatts below 150 and watts at 150+ |
+| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149**; firmware **148 or older** stays Wh. PV channel 1 is deciwatts below 150 (including 148 and 149) and watts at 150+. SYS/UPS from 150 |
 | Venus D 3.0 | Supported (PV) | SYS/UPS and watt PV encoding from firmware 150 |
 | Venus C / Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
 | Venus E mini | Supported (no PV) | SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |
@@ -284,7 +284,8 @@ A mock device is available for testing without physical hardware. Pass `--device
 ```bash
 cd tools
 python -m mock_device --ver 145
-python -m mock_device --device VenusA --ver 150
+python -m mock_device --device VenusA --ver 148
+python -m mock_device --device VenusA --ver 149
 ```
 
 ## Troubleshooting
