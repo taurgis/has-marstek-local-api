@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2
+
+### Patch Changes
+
+- 12265ed: Add Venus A firmware 148 and 149 Docker mocks so 1.1.0 keeps 148 on the 1.0.0 encodings and 149 on the scaled solar unit.
+- ecda43c: Treat dotted firmware labels such as 148.3 as the Open API integer prefix so Venus A 148 keeps legacy energy and PV scales.
+
 ## 1.1.1
 
 ### Patch Changes
