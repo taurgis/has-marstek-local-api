@@ -3,9 +3,11 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Build from the repository root so the mock consumes the integration's
-# canonical firmware profile rather than carrying a duplicate capability table.
+# canonical firmware profile and Open API command names rather than
+# carrying duplicate tables.
 COPY tools/mock_device /app/mock_device/
 COPY custom_components/marstek/firmware_profile.py /app/custom_components/marstek/firmware_profile.py
+COPY custom_components/marstek/pymarstek/const.py /app/custom_components/marstek/pymarstek/const.py
 
 # Run the mock device as a module
 CMD ["python", "-m", "mock_device"]

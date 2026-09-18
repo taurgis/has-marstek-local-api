@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_MOCK_DEVICE_ROOT = _REPO_ROOT / "tools" / "mock_device"
 
 
 def test_devcontainer_runs_venus_a_148_and_149_mocks() -> None:
     """Compose must expose both Venus A solar encodings: 148-or-older and 149."""
-    compose = (
-        Path(__file__).resolve().parents[2] / ".devcontainer" / "docker-compose.yml"
-    ).read_text(encoding="utf-8")
+    compose = (_REPO_ROOT / ".devcontainer" / "docker-compose.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert '"--device", "VenusA", "--ver", "148"' in compose
     assert '"--device", "VenusA", "--ver", "149"' in compose
@@ -18,3 +22,33 @@ def test_devcontainer_runs_venus_a_148_and_149_mocks() -> None:
     assert '"--device", "VenusC", "--ver", "153"' in compose
     assert "172.28.0.26" in compose
     assert '"--device", "VenusA", "--ver", "150"' not in compose
+
+
+def _mock_custom_component_modules() -> set[str]:
+    """Return absolute custom_components modules imported by the mock package."""
+    modules: set[str] = set()
+    for path in _MOCK_DEVICE_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if node.module.startswith("custom_components."):
+                    modules.add(node.module)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("custom_components."):
+                        modules.add(alias.name)
+    return modules
+
+
+def test_dockerfile_copies_custom_component_modules_the_mock_imports() -> None:
+    """Docker mocks must ship every custom_components module the simulator imports."""
+    dockerfile = (_MOCK_DEVICE_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    modules = _mock_custom_component_modules()
+    assert modules, "mock_device is expected to import canonical custom_components modules"
+
+    for module in sorted(modules):
+        relative_py = module.replace(".", "/") + ".py"
+        assert relative_py in dockerfile, (
+            f"tools/mock_device/Dockerfile must COPY {relative_py} "
+            f"(imported by the mock as {module})"
+        )
