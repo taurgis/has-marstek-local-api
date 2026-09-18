@@ -16,10 +16,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.const import DOMAIN
 from custom_components.marstek.helpers.device_lookup import (
+    _as_main_device_entry,
     _unique_device,
     async_find_marstek_device,
     async_get_loaded_marstek_entry,
     async_get_marstek_entry,
+    async_lookup_device_by_identifier,
     async_resolve_marstek_device,
     iter_device_config_entry_ids,
     require_loaded_marstek_entry,
@@ -64,6 +66,106 @@ def test_iter_device_config_entry_ids_composite_uses_all_entries() -> None:
     }
 
 
+def test_as_main_device_entry_skips_child_devices() -> None:
+    """HA 2026.9 child devices are not Marstek battery devices."""
+    assert _as_main_device_entry(None) is None
+    child = SimpleNamespace(id="child-id", parent_device_id="parent-id")
+    assert _as_main_device_entry(child) is None
+    main = SimpleNamespace(id="main-id", parent_device_id=None)
+    assert _as_main_device_entry(main) is main
+    legacy = SimpleNamespace(id="legacy-id")
+    assert _as_main_device_entry(legacy) is legacy
+
+
+def test_lookup_device_by_identifier_falls_back_to_legacy_api() -> None:
+    """HA 2025.10 DeviceRegistry only exposes async_get_device."""
+    registry = MagicMock()
+    expected = object()
+    registry.async_get_device.return_value = expected
+    found = async_lookup_device_by_identifier(registry, (DOMAIN, "aa:bb:cc:dd:ee:ff"))
+    assert found is expected
+    registry.async_get_device.assert_called_once_with(
+        identifiers={(DOMAIN, "aa:bb:cc:dd:ee:ff")}
+    )
+    registry.async_get_devices.assert_not_called()
+
+
+def test_lookup_device_by_identifier_uses_async_get_devices() -> None:
+    """HA 2026.9 DeviceRegistry.async_get_devices is preferred."""
+
+    class Registry20269:
+        def __init__(self) -> None:
+            self.async_get_devices_calls: list[tuple[object, object]] = []
+            self.async_get_device = MagicMock()
+
+        def async_get_devices(
+            self,
+            identifiers: set[tuple[str, str]] | None = None,
+            *,
+            config_entry_id: str | None = None,
+        ) -> list[SimpleNamespace]:
+            self.async_get_devices_calls.append((identifiers, config_entry_id))
+            return [SimpleNamespace(id="dev-1", parent_device_id=None)]
+
+    registry = Registry20269()
+    found = async_lookup_device_by_identifier(
+        registry,  # type: ignore[arg-type]
+        (DOMAIN, "aa:bb:cc:dd:ee:ff"),
+        config_entry_id="entry-1",
+    )
+    assert found is not None
+    assert found.id == "dev-1"
+    assert registry.async_get_devices_calls == [
+        ({(DOMAIN, "aa:bb:cc:dd:ee:ff")}, "entry-1")
+    ]
+    registry.async_get_device.assert_not_called()
+
+
+def test_lookup_device_by_identifier_skips_child_devices() -> None:
+    """ChildDeviceEntry rows from HA 2026.9 are not Marstek batteries."""
+
+    class Registry20269:
+        def async_get_devices(
+            self,
+            identifiers: set[tuple[str, str]] | None = None,
+            *,
+            config_entry_id: str | None = None,
+        ) -> list[SimpleNamespace]:
+            return [SimpleNamespace(id="child", parent_device_id="parent")]
+
+    found = async_lookup_device_by_identifier(
+        Registry20269(),  # type: ignore[arg-type]
+        (DOMAIN, "aa:bb:cc:dd:ee:ff"),
+    )
+    assert found is None
+
+
+def test_lookup_device_by_identifier_uses_by_identifier_when_no_get_devices() -> None:
+    """HA 2026.8 exposes async_get_device_by_identifier without async_get_devices."""
+
+    class Registry20268:
+        def __init__(self) -> None:
+            self.calls: list[tuple[tuple[str, str], str]] = []
+            self.async_get_device = MagicMock()
+
+        def async_get_device_by_identifier(
+            self, identifier: tuple[str, str], config_entry_id: str
+        ) -> SimpleNamespace:
+            self.calls.append((identifier, config_entry_id))
+            return SimpleNamespace(id="dev-2", parent_device_id=None)
+
+    registry = Registry20268()
+    found = async_lookup_device_by_identifier(
+        registry,  # type: ignore[arg-type]
+        (DOMAIN, "aa:bb:cc:dd:ee:ff"),
+        config_entry_id="entry-1",
+    )
+    assert found is not None
+    assert found.id == "dev-2"
+    assert registry.calls == [((DOMAIN, "aa:bb:cc:dd:ee:ff"), "entry-1")]
+    registry.async_get_device.assert_not_called()
+
+
 def test_iter_device_config_entry_ids_legacy_config_entries() -> None:
     """HA 2024.x/2025.x DeviceEntry only has config_entries."""
     device = SimpleNamespace(
@@ -101,8 +203,8 @@ async def test_resolve_truncated_registry_id(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        device = async_lookup_device_by_identifier(
+            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
         )
         assert device is not None
         truncated = device.id[:-1]
@@ -123,8 +225,8 @@ async def test_resolve_mac_and_config_entry_id(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        device = async_lookup_device_by_identifier(
+            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
         )
         assert device is not None
 
@@ -147,8 +249,8 @@ async def test_resolve_entity_id(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        device = async_lookup_device_by_identifier(
+            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
         )
         assert device is not None
         resolved = async_resolve_marstek_device(hass, "sensor.venus_battery_level")

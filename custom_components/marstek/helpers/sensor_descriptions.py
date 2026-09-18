@@ -24,7 +24,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import StateType
 
-from ..const import OPERATING_MODES
+from ..const import OPERATING_MODES, ha_operating_mode
 from ..coordinator import MarstekDataUpdateCoordinator
 from ..pymarstek.const import (
     CMD_BATTERY_STATUS,
@@ -71,6 +71,15 @@ def _value_from_data(key: str, data: dict[str, Any]) -> StateType:
     if isinstance(value, (int, float, str)):
         return cast(StateType, value)
     return None
+
+
+def _device_mode_value(
+    coordinator: MarstekDataUpdateCoordinator,
+    _info: dict[str, Any],
+    _entry: ConfigEntry | None,
+) -> StateType:
+    """Map Open API mode names onto HA enum options (required since 2026.9)."""
+    return ha_operating_mode(_value_from_data("device_mode", coordinator.data or {}))
 
 
 def _exists_key_with_value(key: str, data: dict[str, Any]) -> bool:
@@ -196,9 +205,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="device_mode",
         device_class=SensorDeviceClass.ENUM,
         options=OPERATING_MODES,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("device_mode", coordinator.data or {})
-        ),
+        value_fn=_device_mode_value,
     ),
     MarstekSensorEntityDescription(
         key="battery_status",

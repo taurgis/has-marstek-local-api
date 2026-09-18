@@ -21,6 +21,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
 from .firmware_profile import resolve_firmware_profile_from_metadata
+from .helpers.device_lookup import async_lookup_device_by_identifier
 from .helpers.udp_clients import async_paused_udp_receivers
 
 _LOGGER = logging.getLogger(__name__)
@@ -400,8 +401,10 @@ class MarstekScanner:
             return
 
         device_registry = dr.async_get(self._hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, device_identifier)}
+        device = async_lookup_device_by_identifier(
+            device_registry,
+            (DOMAIN, device_identifier),
+            config_entry_id=entry.entry_id,
         )
         if not device:
             return

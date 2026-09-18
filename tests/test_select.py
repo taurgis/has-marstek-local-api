@@ -421,6 +421,15 @@ def _make_select_entity(
     return entity, client
 
 
+def test_select_current_option_normalizes_open_api_auto() -> None:
+    """Wire casing like Auto must stay inside HA 2026.9 select options."""
+    entity, _client = _make_select_entity(device_type="VenusE 3.0", version=145)
+    entity.coordinator.data = {"device_mode": "Auto"}
+    assert entity.current_option == MODE_AUTO
+    entity.coordinator.data = {"device_mode": "SelfUse"}
+    assert entity.current_option is None
+
+
 @pytest.mark.parametrize(
     ("device_type", "version", "expect_ups"),
     [

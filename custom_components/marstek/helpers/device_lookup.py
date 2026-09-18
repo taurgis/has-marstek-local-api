@@ -11,7 +11,7 @@ or a truncated registry ID.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -30,6 +30,22 @@ _HA_DEVICE_ID_LEN = 32
 def normalize_device_id(value: Any) -> str:
     """Return a stripped device identifier string."""
     return str(value).strip()
+
+
+def _as_main_device_entry(device: Any) -> DeviceEntry | None:
+    """Return a main DeviceEntry, skipping HA 2026.9 child devices.
+
+    ``DeviceRegistry.async_get`` may return ``ChildDeviceEntry`` when
+    ``include_child_devices`` defaults to True (HA 2026.9+). Marstek only
+    registers main devices. ``parent_device_id`` is absent or None on
+    ``DeviceEntry`` in 2025.10-2026.8, so older Core still works.
+    """
+    if device is None:
+        return None
+    parent_id = getattr(device, "parent_device_id", None)
+    if isinstance(parent_id, str) and parent_id:
+        return None
+    return cast(DeviceEntry, device)
 
 
 def iter_device_config_entry_ids(device: DeviceEntry) -> list[str]:
@@ -85,7 +101,7 @@ def async_find_marstek_device(
     if not target:
         return None
 
-    device = registry.async_get(target)
+    device = _as_main_device_entry(registry.async_get(target))
     if device is not None:
         return device
 
@@ -179,7 +195,7 @@ def _resolve_from_entity_id(
     entity = er.async_get(hass).async_get(target)
     if entity is None or entity.platform != DOMAIN or entity.device_id is None:
         return None
-    return registry.async_get(entity.device_id)
+    return _as_main_device_entry(registry.async_get(entity.device_id))
 
 
 def _as_mac(value: str) -> str | None:
@@ -230,6 +246,38 @@ def _resolve_from_truncated_id(
         if device.id.startswith(prefix)
     ]
     return _unique_device(matches)
+
+
+def async_lookup_device_by_identifier(
+    registry: dr.DeviceRegistry,
+    identifier: tuple[str, str],
+    *,
+    config_entry_id: str | None = None,
+) -> DeviceEntry | None:
+    """Return the main device for ``identifier`` on HA 2025.10 through 2026.9+.
+
+    HA 2026.9 deprecates ``DeviceRegistry.async_get_device`` because identifiers
+    are unique per config entry, not globally. Prefer ``async_get_devices`` /
+    ``async_get_device_by_identifier`` when the registry class provides them.
+    """
+    registry_type = type(registry)
+    if hasattr(registry_type, "async_get_devices"):
+        matches = registry.async_get_devices(
+            identifiers={identifier},
+            config_entry_id=config_entry_id,
+        )
+        for match in matches:
+            main = _as_main_device_entry(match)
+            if main is not None:
+                return main
+        return None
+    if config_entry_id is not None and hasattr(
+        registry_type, "async_get_device_by_identifier"
+    ):
+        return _as_main_device_entry(
+            registry.async_get_device_by_identifier(identifier, config_entry_id)
+        )
+    return _as_main_device_entry(registry.async_get_device(identifiers={identifier}))
 
 
 def require_loaded_marstek_entry(

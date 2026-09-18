@@ -913,6 +913,7 @@ async def test_reconfigure_flow_success(
 
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
     updated_entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert updated_entry.data["host"] == "192.168.1.201"
     assert updated_entry.data["port"] == 30000

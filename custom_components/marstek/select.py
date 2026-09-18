@@ -97,7 +97,10 @@ class MarstekOperatingModeSelect(
         """Return the current operating mode."""
         if not self.coordinator.data:
             return None
-        return self.entity_description.value_fn(self.coordinator.data)
+        option = self.entity_description.value_fn(self.coordinator.data)
+        if option is not None and option in self.options:
+            return option
+        return None
 
     async def async_select_option(self, option: str) -> None:
         """Change the operating mode."""

@@ -2,8 +2,8 @@
 
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
+import pytest
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_HOST, CONF_TYPE
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
@@ -23,6 +23,7 @@ from custom_components.marstek.device_action import (
     async_get_actions,
     async_validate_action_config,
 )
+from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 
 DEVICE_IDENTIFIER = format_mac("AA:BB:CC:DD:EE:FF")
 
@@ -75,7 +76,7 @@ async def test_async_get_actions(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         actions = await async_get_actions(hass, device.id)
@@ -111,7 +112,7 @@ async def test_device_actions_pause_and_resume(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -169,7 +170,7 @@ async def test_device_action_power_out_of_range_socket_limit_default(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -203,7 +204,7 @@ async def test_device_action_power_out_of_range_model_limit(hass, mock_config_en
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -239,7 +240,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_default(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -276,7 +277,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_explicit_true
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -313,7 +314,7 @@ async def test_device_action_charge_allows_high_power_without_socket_limit(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -366,7 +367,7 @@ async def test_device_action_polling_active_during_verification_delay(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -433,7 +434,7 @@ async def test_device_action_entry_not_found(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         # Unload the entry to simulate entry not loaded
@@ -476,7 +477,7 @@ async def test_device_action_retry_on_send_failure(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -509,7 +510,7 @@ async def test_validate_action_config_power_out_of_range(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -536,7 +537,7 @@ async def test_validate_action_config_stop_allows_unloaded_entry(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
@@ -565,7 +566,7 @@ async def test_device_action_retry_exhausted(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -602,7 +603,7 @@ async def test_device_action_verification_mode_not_manual(hass, mock_config_entr
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -638,7 +639,7 @@ async def test_device_action_verification_battery_power_not_number(hass, mock_co
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -662,7 +663,7 @@ async def test_device_action_stop_verification(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -687,7 +688,7 @@ async def test_device_action_discharge_verification(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {
@@ -769,7 +770,7 @@ async def test_device_action_verification_exception(hass, mock_config_entry):
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, DEVICE_IDENTIFIER)})
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device
 
         config = {

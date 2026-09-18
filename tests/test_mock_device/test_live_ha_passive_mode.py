@@ -29,6 +29,7 @@ from custom_components.marstek.const import (
     DOMAIN,
     MODE_PASSIVE,
 )
+from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 from custom_components.marstek.services import (
     ATTR_DEVICE_ID,
     ATTR_DURATION,
@@ -153,9 +154,7 @@ async def test_set_passive_mode_live_venus_e_150_truncated_device_id(
         assert entry.state == ConfigEntryState.LOADED
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, format_mac(_BLE_MAC))}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, format_mac(_BLE_MAC)))
         assert device is not None
         assert len(device.id) == 32
 

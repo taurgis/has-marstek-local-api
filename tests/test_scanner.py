@@ -16,6 +16,7 @@ from homeassistant.helpers.device_registry import format_mac
 
 from custom_components.marstek import MarstekRuntimeData
 from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 from custom_components.marstek.scanner import MarstekScanner, _build_discovery_flow_data
 
 
@@ -420,9 +421,7 @@ async def test_scanner_updates_device_metadata_and_registry(
     assert mock_config_entry.runtime_data.device_info["wifi_name"] == "AirPort-38"
     coordinator.async_set_updated_data.assert_called_once_with(coordinator.data)
 
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, format_mac("AA:BB:CC:DD:EE:FF"))}
-    )
+    device = async_lookup_device_by_identifier(device_registry, (DOMAIN, format_mac("AA:BB:CC:DD:EE:FF")))
     assert device is not None
     assert device.sw_version == "147"
     assert device.model == "VenusE 3.0"

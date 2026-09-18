@@ -2,25 +2,53 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generator
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_socket
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
 from syrupy.assertion import SnapshotAssertion
 
 from custom_components.marstek.const import DOMAIN
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
 
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable custom components in HA test harness."""
     yield
+
+
+_REAL_UDP_PATH_MARKERS = (
+    "/tests/test_udp_client.py",
+    "/tests/test_discovery.py",
+    "/tests/test_scanner.py",
+    "/tests/test_mock_device/",
+)
+
+
+@pytest.fixture(autouse=True)
+def _guard_ha_test_sockets(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Keep HA 2026.9 pytest-socket happy without disabling UDP unit tests.
+
+    Core's harness blocks INET sockets. Config-entry setup would otherwise
+    bind a real UDP client. Mock-device tests and UDP/discovery/scanner
+    tests still exercise sockets (or their own mocks).
+    """
+    path = Path(str(getattr(request, "path", request.fspath))).as_posix()
+    if "/tests/test_mock_device/" in path:
+        pytest_socket.enable_socket()
+        yield
+        return
+    if any(marker in path for marker in _REAL_UDP_PATH_MARKERS):
+        yield
+        return
+    with patch_marstek_integration():
+        yield
 
 
 @pytest.fixture
@@ -92,7 +120,7 @@ def create_mock_client(
         default_status = {
             "battery_soc": 55,
             "pv1_power": 100,
-            "device_mode": "Auto",
+            "device_mode": "auto",
             "battery_power": -250,
             "battery_status": "discharging",
             "ongrid_power": -150,

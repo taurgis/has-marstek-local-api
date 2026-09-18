@@ -20,7 +20,10 @@ from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier
 from .firmware_profile import FirmwareProfile
-from .helpers.device_lookup import iter_device_config_entry_ids
+from .helpers.device_lookup import (
+    async_lookup_device_by_identifier,
+    iter_device_config_entry_ids,
+)
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
 from .helpers.udp_clients import (
@@ -371,8 +374,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     device_identifier = format_mac(device_identifier_raw)
 
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, device_identifier)}
+    device = async_lookup_device_by_identifier(
+        device_registry,
+        (DOMAIN, device_identifier),
+        config_entry_id=entry.entry_id,
     )
     if not device:
         return
