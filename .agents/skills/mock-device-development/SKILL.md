@@ -60,7 +60,7 @@ mock-marstek-5:
   command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "149", "--ble-mac", "02deadbeef05"]
 ```
 
-Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. Watt PV starts at firmware 150 only.
+Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. PV1 stays deciwatts through 150.9; that is separate from the #35 solar-energy scale.
 
 ### Adding a New Mock Device
 

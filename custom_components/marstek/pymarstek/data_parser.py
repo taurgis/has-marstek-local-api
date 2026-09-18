@@ -238,8 +238,8 @@ def parse_pv_status_response(
     def _scale_pv_power(raw_value: Any, *, channel: int | None = None) -> Any:
         """Scale PV power to watts using the profile's channel-1 factor.
 
-        Legacy firmware reports channel 1 in deciwatts; Rev 3.1 reports watts.
-        Other channels are already watts.
+        Observed firmware reports channel 1 in deciwatts, including 148.3
+        and 150.9 (#57). Other channels are already watts.
         """
         if raw_value is None:
             return None

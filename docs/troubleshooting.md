@@ -74,23 +74,25 @@ If the Energy Dashboard shows a one-time production spike at the upgrade, use
 https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
 
 Firmware **148** (including app labels such as `148.3`) keeps solar energy in
-Wh and still reports PV channel 1 in deciwatts. Integration **1.1.0** introduced
-firmware-gated scaling; it must not skip the PV1 ÷10 on 148 or older
-([#57](https://github.com/taurgis/has-marstek-local-api/issues/57) reported that
-regression after upgrading to 1.1.0). Only Venus A **149** starts the
-0.01 kWh solar encoding, and watt PV encoding starts at firmware **150**.
+Wh. Integration **1.1.0** introduced firmware-gated **solar energy** scaling:
+only Venus A **149** (and known families at **150+**) starts the 0.01 kWh
+encoding ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
+That energy fix is separate from PV1 power.
 
 ## PV1 power looks 10× too high
 
-PV channel 1 is deciwatts on firmware below 150, including Venus A 148 and 149.
-The integration divides that channel by 10, matching 1.0.0. Firmware 150+
-reports watts and is not divided.
+PV1 (`PV.GetStatus` channel 1) is a different field from total solar energy.
+Issue [#57](https://github.com/taurgis/has-marstek-local-api/issues/57) is PV1
+about 10× too high after integration **1.1.0**, first on firmware **148.3** and
+also on **150.9**. Channel 1 is still deciwatts on those builds; the
+integration divides it by 10, matching 1.0.0. The Rev 3.1 PDF labels PV as
+watts, but skipping ÷10 at `ver >= 150` is what made PV1 jump.
 
-If PV1 jumped about 10× after upgrading to 1.1.0, the firmware profile may be
-treating the device as `ver >= 150`. Download diagnostics and check
-`firmware_profile.firmware_version` and `pv_channel_1_power_scale` (legacy is
-`0.1`, watt PV is `1.0`). App labels such as `148.3` map to Open API integer
-`148`.
+If PV1 is still about 10× higher than the Marstek app, enable debug logging and
+capture `Send:` / `Recv:` for `PV.GetStatus` (`pv1_power`) plus
+`Marstek.GetDevice` (`ver`). App labels such as `148.3` and `150.9` map to
+Open API integers `148` and `150`. Diagnostics should show
+`pv_channel_1_power_scale` of `0.1`.
 
 ## Venus A solar or load energy stays at 0 Wh
 
