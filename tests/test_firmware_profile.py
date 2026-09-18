@@ -155,21 +155,23 @@ def test_venus_a_149_uses_rev31_solar_energy_units() -> None:
     assert profile.supports_sys_dod is False
 
 
-def test_firmware_150_known_family_uses_rev31_energy_and_watts() -> None:
-    """Firmware 150+ on a known family enables Rev 3.1 energy and PV watts."""
+def test_firmware_150_known_family_uses_rev31_energy_not_watt_pv() -> None:
+    """Firmware 150+ scales solar/EM energy but keeps PV1 deciwatts (#57 / 150.9)."""
     profile = resolve_firmware_profile("VenusA", 150)
 
     assert profile.pv_energy_scale == 10.0
-    assert profile.pv_channel_1_power_scale == 1.0
+    assert profile.pv_channel_1_power_scale == 0.1
     assert profile.em_energy_scale == 0.1
     assert profile.supports_em_energy is True
+    assert profile.supports_sys_dod is True
+    assert profile.supports_ups is True
 
 
 @pytest.mark.parametrize(
     ("version", "firmware_version", "pv_energy_scale", "pv_channel_1_power_scale"),
     [
         ("149.1", 149, 10.0, 0.1),
-        ("150.2", 150, 10.0, 1.0),
+        ("150.9", 150, 10.0, 0.1),
     ],
 )
 def test_dotted_app_firmware_labels_use_leading_open_api_integer(
@@ -178,7 +180,7 @@ def test_dotted_app_firmware_labels_use_leading_open_api_integer(
     pv_energy_scale: float,
     pv_channel_1_power_scale: float,
 ) -> None:
-    """Dotted app labels must not skip the integer firmware gates."""
+    """Dotted app labels use the leading integer; 150.9 keeps PV1 ÷10 (#57)."""
     profile = resolve_firmware_profile("VenusA", version)
 
     assert profile.firmware_version == firmware_version

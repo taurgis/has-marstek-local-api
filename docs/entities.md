@@ -37,10 +37,10 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 ### PV channel sensors (PV1–PV4)
 
 Created when the device reports those values (typically Venus A/D with PV channels).
-Values are stored in watts. Firmware below 150, including Venus A **148** and **149**,
-reports channel 1 in deciwatts; the parser divides by 10 (same as 1.0.0).
-Watt encoding starts at firmware **150**. Integration **1.1.0** must not skip that
-÷10 on 148 or older ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
+Values are stored in watts. Channel 1 is deciwatts on observed firmware
+(including 148.3, 149, and 150.9); the parser divides by 10, matching 1.0.0.
+That PV1 scale is independent of the solar-energy ×10 used for [#35](https://github.com/taurgis/has-marstek-local-api/issues/35).
+Do not skip the ÷10 ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
 
 | Entity name | Key | Unit | Category | Default |
 |---|---|---|---|---|

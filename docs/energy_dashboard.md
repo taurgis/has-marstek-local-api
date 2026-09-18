@@ -47,9 +47,10 @@ omitted when the fields are absent.
 ## Solar energy unit correction
 
 On Venus A firmware 149, `ES.GetStatus.total_pv_energy` is encoded as **0.01 kWh**
-on the wire (same unit the Rev 3.1 PDF lists, but 149 is not full Rev 3.1: PV1
-is still deciwatts and SYS/UPS stay off). Known families at firmware 150+ use
-that solar unit too. Firmware **148 or older** keeps the value in Wh.
+on the wire (issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
+That is the solar *energy* counter, not PV1 *power* ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
+Known families at firmware 150+ use that solar unit too. Firmware **148 or older**
+keeps the value in Wh. PV1 stays deciwatts through 150.9 and is not used here.
 
 The integration converts the 0.01 kWh wire unit to **Wh** (`raw × 10`) so a
 device value of `25742` becomes `257420 Wh` (`257.42 kWh`). Grid and load

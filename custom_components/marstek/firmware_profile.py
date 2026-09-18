@@ -143,15 +143,16 @@ def resolve_firmware_profile(
     supports_sys = (regular_family and firmware_150) or (
         family is DeviceFamily.VENUS_E_MINI and firmware_known
     )
-    # Encodings are per firmware, not a blanket Rev 3.1 conversion.
-    # 148 or older (incl. app label 148.3): solar Wh, PV1 deciwatts — same as
-    # 1.0.0. Integration 1.1.0 must not skip the PV1 ÷10 here (#57).
+    # Solar energy (#35) and PV1 power (#57) are independent encodings.
+    # The Rev 3.1 PDF labels PV as watts; observed firmware does not.
+    # 148 or older (incl. 148.3): solar Wh, PV1 deciwatts — same as 1.0.0.
     # Venus A 149: solar 0.01 kWh → Wh (#35); PV1 still deciwatts.
-    # 150+: solar 0.01 kWh on known families; PV1 watts on PV families.
+    # 150+ (incl. app label 150.9): solar 0.01 kWh on known families;
+    # SYS/UPS/EM as gated below. PV1 stays deciwatts — 1.1.0 skipped ÷10
+    # at ver>=150 and #57 reports 10× high PV1 on 148.3 and 150.9.
     scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )
-    watt_pv_channels = family in _PV_FAMILIES and firmware_150
     supports_em_energy = known_family and firmware_150
 
     return FirmwareProfile(
@@ -167,7 +168,7 @@ def resolve_firmware_profile(
         if family is DeviceFamily.VENUS_E_MINI
         else 9,
         pv_energy_scale=10.0 if scaled_pv_energy else 1.0,
-        pv_channel_1_power_scale=1.0 if watt_pv_channels else 0.1,
+        pv_channel_1_power_scale=0.1,
         em_energy_scale=0.1 if supports_em_energy else 1.0,
         supports_em_energy=supports_em_energy,
     )

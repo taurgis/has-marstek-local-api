@@ -1285,25 +1285,54 @@ class TestFirmwareProfileDecoding:
         assert result["pv1_power"] == 320
         assert result["pv2_power"] == 280
 
-    def test_rev31_pv_channel_power_is_watts_on_every_channel(self) -> None:
-        """Rev 3.1 channel 1 320 stays 320 W."""
+    def test_venus_a_150_dot_9_keeps_channel_1_deciwatts(self) -> None:
+        """App firmware 150.9 must keep PV1 ÷10 (#57); solar energy stays scaled (#35)."""
+        profile = resolve_firmware_profile("VenusA", "150.9")
+        pv_result = parse_pv_status_response(
+            {
+                "id": 1,
+                "result": {
+                    "pv1_power": 3200,
+                    "pv2_power": 280,
+                },
+            },
+            profile,
+        )
+        es_result = parse_es_status_response(
+            {
+                "id": 1,
+                "result": {"total_pv_energy": 25742},
+            },
+            profile,
+        )
+
+        assert profile.firmware_version == 150
+        assert profile.pv_channel_1_power_scale == 0.1
+        assert profile.pv_energy_scale == 10.0
+        assert pv_result["pv1_power"] == 320
+        assert pv_result["pv2_power"] == 280
+        assert es_result["total_pv_energy"] == 257420
+
+    def test_firmware_150_pv_channel_1_stays_deciwatts(self) -> None:
+        """Integer ver 150 still divides channel 1; other channels stay watts."""
         profile = resolve_firmware_profile("VenusA", 150)
         result = parse_pv_status_response(
             {
                 "id": 1,
                 "result": {
-                    "pv1_power": 320,
+                    "pv1_power": 3200,
                     "pv2_power": 280,
-                    "pv_power": 320,
+                    "pv_power": 3200,
                 },
             },
             profile,
         )
 
         assert result["pv1_power"] == 320
+        assert result["pv2_power"] == 280
 
         single = parse_pv_status_response(
-            {"id": 1, "result": {"pv_power": 320}},
+            {"id": 1, "result": {"pv_power": 3200}},
             profile,
         )
         assert single["pv1_power"] == 320
