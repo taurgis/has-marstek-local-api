@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.3
+
+### Patch Changes
+
+- a8b1188: Document Chrome DevTools restore (Chrome 136+ non-default profile) and CDP-first Home Assistant UI testing. Extend `ha_cdp.py` for config-entry delete/re-add, discovery flow wait, live entity updates, device actions (`execute_script`), automations, reconfigure/options/diagnostics, and script upsert (HA rejects `id` in the script body).
+- 387cbac: Teach the HA Chrome CDP helper to disable and re-enable config entries, devices, and entities, list repair issues, and drive the cannot-connect Fix flow used when a device drops off the network.
+- c894f06: Fix PV1 showing 10× too high on firmware 150.9 by keeping channel-1 deciwatt scaling, independent of the solar-energy fix.
+- f402adb: Fix setup and polling by sending UDP from each device's configured Open API port so firmware that replies there can answer, including mixed custom ports. Reuse the existing UDP client for same-port GetDevice during manual add and Confirm device instead of binding a second socket.
+- c10d660: Teach the HA Chrome CDP helper to cover Home Assistant surfaces the integration already participates in but had not been live-tested: Ignore discovery, system options, repair ignore, setup_retry, device rename/area/labels, hide entity, Assist expose, history, debug logging, and energy validation.
+- 5bccdae: Count ignored config entries when deciding which BLE MACs are already configured so Ignore then Unignore can rediscover the device on the next scan.
+
 ## 1.1.2
 
 ### Patch Changes
