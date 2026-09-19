@@ -30,6 +30,12 @@ from .const import (
     MODE_PASSIVE,
     MODE_UPS,
 )
+from .firmware_quirks import (
+    pv_method_not_found_extra_data,
+    reports_es_bat_power,
+    supports_set_ver_and_factory_reset,
+    supports_wifi_set_config,
+)
 from .handlers import (
     get_static_state,
     handle_bat_get_status,
@@ -39,10 +45,12 @@ from .handlers import (
     handle_es_get_status,
     handle_es_set_mode,
     handle_get_device,
+    handle_invalid_params,
     handle_method_not_found,
     handle_pv_get_status,
     handle_sys_write,
     handle_wifi_get_status,
+    handle_wifi_set_config,
 )
 from .simulators import BatterySimulator
 from .utils import (
@@ -416,7 +424,8 @@ class MockMarstekDevice:
                 state_with_capacity,
                 self.config.get("device", ""),
                 profile=self.profile,
-                include_bat_power=self.include_bat_power,
+                include_bat_power=self.include_bat_power
+                or reports_es_bat_power(self.profile),
             )
 
         elif method == "ES.GetMode":
@@ -426,14 +435,10 @@ class MockMarstekDevice:
 
         elif method == "PV.GetStatus":
             if not self.profile.supports_pv:
-                extra_data = (
-                    424
-                    if self.profile.firmware_version is not None
-                    and self.profile.firmware_version >= 150
-                    else None
-                )
                 return handle_method_not_found(
-                    request_id, src, extra_data=extra_data
+                    request_id,
+                    src,
+                    extra_data=pv_method_not_found_extra_data(self.profile),
                 )
             pv_channels = self.config.get("pv_channels")
             if isinstance(pv_channels, list) and pv_channels:
@@ -481,14 +486,7 @@ class MockMarstekDevice:
                     or schedule_slot < 0
                     or schedule_slot > self.profile.max_manual_schedule_slot
                 ):
-                    return {
-                        "id": request_id,
-                        "src": src,
-                        "error": {
-                            "code": -32602,
-                            "message": "Invalid params",
-                        },
-                    }
+                    return handle_invalid_params(request_id, src)
 
             if self.simulate:
                 if mode == MODE_PASSIVE:
@@ -504,6 +502,18 @@ class MockMarstekDevice:
 
             print(f"   Mode changed to: {mode}")
             return handle_es_set_mode(request_id, src)
+
+        elif method == "Wifi.SetConfig":
+            if not supports_wifi_set_config(self.profile):
+                return handle_method_not_found(request_id, src)
+            return handle_wifi_set_config(request_id, src, params, self.config)
+
+        elif method in {"Set.Ver", "Reset.Factory"}:
+            if not supports_set_ver_and_factory_reset(self.profile):
+                return handle_method_not_found(request_id, src)
+            if method == "Reset.Factory" and params.get("type") == 1:
+                self.set_energy_totals()
+            return handle_sys_write(request_id, src)
 
         sys_supported = {
             CMD_DOD_SET: self.profile.supports_sys_dod,

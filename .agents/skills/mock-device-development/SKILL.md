@@ -113,6 +113,9 @@ def handle_es_get_status(request_id, src, state):
 ```
 
 This keeps response logic separate from device/networking code.
+Recv-list and field-table quirks from archived Control images live in
+`firmware_quirks.py` (HMG-50 `Wifi.SetConfig`, 153 `bat_power`, `Set.Ver`
+from 1487/149+). Do not copy those into Home Assistant entities.
 
 ## CLI Reference
 

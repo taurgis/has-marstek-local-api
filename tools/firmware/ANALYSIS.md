@@ -122,6 +122,10 @@ calls stay disabled on generation &lt; 150 and remain optional on 150+.
   (HMG-50 / Venus C uses 156 for that single-reply gate)
 - JSON-RPC `-32601 Method not found` for unknown methods
 - HMG-50 / Venus C 153: no `EM.GetStatus` server method; 155+ serves it
+- HMG-50 153 `ES.GetStatus` includes `bat_power`; 155/156 omit it
+- HMG-50 `Wifi.SetConfig`; VNSE3-0 `PV.GetStatus` `-32601` with `data: 424` on generation ≥150
+- HMG-50 153 `ES.GetStatus` includes `bat_power`; 155/156 omit it
+- HMG-50 `Wifi.SetConfig`; VNSE3-0 `PV.GetStatus` `-32601` with `data: 424` on generation ≥150
 
 ## Related vendor notes (other SKUs)
 
@@ -194,7 +198,13 @@ Rev 3.1 PDF plus issue #15 keep the generation ≥ 150 gate.
 - duplicate UDP replies on reset-prone firmware (VNSE3-0 &lt; 150, HMG-50 &lt; 156)
 - JSON-RPC `-32601` for unknown methods (Control `unknow method` path)
 - HMG-50 153: no `EM.GetStatus` server method; 155+ serves it
+- HMG-50 153 `ES.GetStatus` includes `bat_power`; 155/156 omit it
+- HMG-50 `Wifi.SetConfig` (ssid required); VNSE3-0 / VNSA-0 / VNSD-0 `-32601`
+- `Set.Ver` / `Reset.Factory` acknowledged from VNSA-0 1487 and generation 149+
+  (not HMG-50). Home Assistant still does not expose those writes.
 - Venus C GetDevice omits result MACs (issue #60)
+- Venus E 3.0 generation ≥150 `PV.GetStatus` `-32601` with `data: 424`;
+  `ver=1476` (app 147.6) does not copy that 150-only payload
 
 Venus A/D reports on issue #15 used the same Local API stack symptoms. This
 integration treats every **known family** below Control generation 150 as
