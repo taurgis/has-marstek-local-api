@@ -237,6 +237,52 @@ class TestDeviceDiscovery:
         assert response["result"]["ver"] == 150
         assert isinstance(response["result"]["ver"], int)
 
+    def test_venus_c_153_getdevice_omits_result_macs(self) -> None:
+        """Issue #60: Venus C 153 puts the BLE MAC in src, not result."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusC",
+                "ver": 153,
+                "ble_mac": "aabbccddeeff",
+                "wifi_mac": "112233445566",
+            },
+        )
+
+        response = device.build_response(1, "Marstek.GetDevice", {})
+
+        assert response is not None
+        assert response["src"] == "VenusC-aabbccddeeff"
+        assert response["result"]["device"] == "VenusC"
+        assert response["result"]["ver"] == 153
+        assert "ble_mac" not in response["result"]
+        assert "wifi_mac" not in response["result"]
+        assert "wifi_name" not in response["result"]
+        assert "ip" in response["result"]
+
+    def test_venus_a_147_getmode_includes_zero_ct_keys(self) -> None:
+        """Issue #11: Venus A 147 GetMode includes CT/energy keys as zeros."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={"device": "VenusA", "ver": 147},
+        )
+
+        mode = device.build_response(1, "ES.GetMode", {"id": 0})
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+        status = device.build_response(3, "ES.GetStatus", {"id": 0})
+
+        assert mode is not None
+        assert em is not None
+        assert status is not None
+        assert mode["result"]["ct_state"] == 0
+        assert mode["result"]["input_energy"] == 0
+        assert em["result"]["ct_state"] == 1
+        assert em["result"]["input_energy"] == 0
+        assert status["result"]["pv_power"] == 0
+        assert "bat_power" not in status["result"]
+
     def test_legacy_profile_round_trips_physical_watts_and_wh(self) -> None:
         """Legacy mock wire JSON decodes through production into SI units."""
         device = MockMarstekDevice(
@@ -425,8 +471,8 @@ class TestDeviceDiscovery:
         assert status["em_input_energy"] == 308632
         assert status["em_output_energy"] == 448751
 
-    def test_legacy_em_status_omits_energy_fields(self) -> None:
-        """Legacy mocks omit EM energy fields rather than sending null placeholders."""
+    def test_legacy_em_status_includes_unscaled_energy_keys(self) -> None:
+        """Legacy firmware still reports EM energy keys (issues #11 and #21)."""
         device = MockMarstekDevice(
             port=30005,
             simulate=False,
@@ -436,8 +482,8 @@ class TestDeviceDiscovery:
         response = device.build_response(1, "EM.GetStatus", {})
 
         assert response is not None
-        assert "input_energy" not in response["result"]
-        assert "output_energy" not in response["result"]
+        assert response["result"]["input_energy"] == 0
+        assert response["result"]["output_energy"] == 0
 
     def test_wifi_get_status(self) -> None:
         """Test Wifi.GetStatus returns WiFi info."""

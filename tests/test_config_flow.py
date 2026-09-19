@@ -141,7 +141,14 @@ async def test_user_flow_discovery_probes_multiple_ports(hass: HomeAssistant) ->
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
     assert mock_discover.call_args is not None
-    assert mock_discover.call_args.kwargs["ports"] == [30000, 30001, 30002, 30003, 30030]
+    assert mock_discover.call_args.kwargs["ports"] == [
+        30000,
+        30001,
+        30002,
+        30003,
+        30004,
+        30030,
+    ]
 
 
 async def test_user_flow_uses_discovered_custom_port(hass: HomeAssistant) -> None:

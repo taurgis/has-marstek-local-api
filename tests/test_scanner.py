@@ -151,6 +151,13 @@ async def test_scanner_build_scan_ports_includes_30030(hass: HomeAssistant) -> N
     assert 30030 in scanner._build_scan_ports()
 
 
+async def test_scanner_build_scan_ports_includes_30004(hass: HomeAssistant) -> None:
+    """Test scanner probes port 30004 used by the Venus A 150 Docker mock."""
+    scanner = MarstekScanner(hass)
+
+    assert 30004 in scanner._build_scan_ports()
+
+
 async def test_scanner_scan_impl_no_devices(hass: HomeAssistant):
     """Test _async_scan_impl when no devices are discovered."""
     scanner = MarstekScanner(hass)

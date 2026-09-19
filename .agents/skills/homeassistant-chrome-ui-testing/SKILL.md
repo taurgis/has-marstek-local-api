@@ -180,7 +180,9 @@ Base: `http://127.0.0.1:8123`
 | `172.28.0.22` | 30001 | Venus A 148 | Custom port + PV |
 | `172.28.0.23` | 30002 | Venus D 145 | Custom port + PV |
 | `172.28.0.24` | 30003 | Venus A 149 | Custom port + scaled solar |
-| `172.28.0.26` | 30000 | Venus C 153 | Issue #60 same-port reply |
+| `172.28.0.26` | 30000 | Venus C 153 | Issue #60 same-port reply; GetDevice omits result MACs |
+| `172.28.0.27` | 30004 | Venus A 150 | SYS/UPS + PV; firmware 150.9 encodings (#57) |
+| `172.28.0.28` | 30000 | Venus E mini 145 | SYS without 150 gate; slots 0–5; same-port |
 
 Unicast check from the HA container (not the VM host):
 

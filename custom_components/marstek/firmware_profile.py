@@ -145,11 +145,19 @@ def resolve_firmware_profile(
     )
     # Solar energy (#35) and PV1 power (#57) are independent encodings.
     # The Rev 3.1 PDF labels PV as watts; observed firmware does not.
-    # 148 or older (incl. 148.3): solar Wh, PV1 deciwatts — same as 1.0.0.
-    # Venus A 149: solar 0.01 kWh → Wh (#35); PV1 still deciwatts.
-    # 150+ (incl. app label 150.9): solar 0.01 kWh on known families;
-    # SYS/UPS/EM as gated below. PV1 stays deciwatts -- 1.1.0 skipped /10
-    # at ver>=150 and #57 reports 10x high PV1 on 148.3 and 150.9.
+    # GitHub issue wire samples (Open API integer `ver`, app labels mapped
+    # to the leading integer: 147.7 → 147, 148.3 → 148, 150.9 → 150):
+    #   Venus A 147 (#11, #20): solar Wh (often 0), PV1 deciwatts, GetMode CT
+    #   keys present as zeros, EM energy keys present as 0, no bat_power.
+    #   Venus A 148 / 148.3 (#28, #57): same as 147 for energy/PV1.
+    #   Venus A 149 (#35): solar 0.01 kWh → Wh; PV1 still deciwatts; no SYS.
+    #   Venus A 150.9 (#57): solar 0.01 kWh; PV1 still deciwatts; SYS/UPS.
+    #   Venus E 144 (#21): GetMode without CT keys; grid energy in Wh;
+    #   EM energy keys present as 0; no bat_power.
+    #   Venus E 147/148 (#9, #14, #15, #25): legacy — no SYS/UPS (LED at 148
+    #   is app-only until Open API ver >= 150).
+    #   Venus E 150 (LAN capture / #34): SYS/UPS; GetMode CT keys zeros.
+    #   Venus C 153 (#60): SYS/UPS, no PV; GetDevice may omit result MACs.
     scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )
