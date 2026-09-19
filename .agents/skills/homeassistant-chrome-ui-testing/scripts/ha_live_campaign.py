@@ -651,6 +651,16 @@ def resolve_entry_host(
     return None
 
 
+def diagnostics_has_profile(diag: Any) -> bool:
+    """Return whether a diagnostics download includes firmware_profile."""
+    if not isinstance(diag, dict) or diag.get("ok") is False:
+        return False
+    if "firmware_profile" in diag:
+        return True
+    data = diag.get("data")
+    return isinstance(data, dict) and "firmware_profile" in data
+
+
 def is_numeric_state(state: Any) -> bool:
     """Return whether an HA state string is a finite number."""
     if not isinstance(state, dict):
@@ -966,12 +976,13 @@ class Campaign:
                 sorted(types),
             )
             diag = await ha_cdp.cmd_diagnostics(self.cdp, self.page, str(row["entry_id"]))
+            profile_ok = diagnostics_has_profile(diag)
             self.record(
                 f"diagnostics:{mock.host}",
-                isinstance(diag, dict)
-                and "firmware_profile" in diag
-                and diag.get("ok") is not False,
-                None if isinstance(diag, dict) else diag,
+                profile_ok,
+                None
+                if profile_ok
+                else (list(diag)[:8] if isinstance(diag, dict) else diag),
             )
             sys_ent = entity_by_key(entities, "depth_of_discharge")
             self.record(

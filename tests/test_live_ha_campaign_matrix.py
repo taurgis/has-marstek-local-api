@@ -118,6 +118,13 @@ def test_resolve_entry_host_uses_ble_mac_when_get_single_omits_data() -> None:
     assert wrapped["entry_id"] == "abc"
     assert campaign.campaign_mac("02deadbeef02") == "02:de:ad:be:ef:02"
     assert campaign.campaign_mac("not-a-mac") is None
+    wrapped = {
+        "home_assistant": {},
+        "data": {"firmware_profile": {"family": "Venus E"}},
+    }
+    assert campaign.diagnostics_has_profile(wrapped) is True
+    assert campaign.diagnostics_has_profile({"firmware_profile": {}}) is True
+    assert campaign.diagnostics_has_profile({"ok": False}) is False
 
 
 def test_analyze_ha_logs_counts_methods_and_pooled_getdevice() -> None:
