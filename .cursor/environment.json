@@ -1,4 +1,11 @@
 {
   "name": "Marstek HA Integration",
-  "install": "python3 -m pip install --user -r requirements_test.txt && npm ci"
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "ports": [
+    {
+      "name": "Home Assistant",
+      "port": 8123
+    }
+  ]
 }
