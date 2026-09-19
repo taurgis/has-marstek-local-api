@@ -838,9 +838,15 @@ async def cmd_eval(cdp: Cdp, _page: dict[str, Any], expression: str) -> Any:
 
 async def cmd_navigate(cdp: Cdp, _page: dict[str, Any], url: str) -> dict[str, Any]:
     result = await cdp.call("Page.navigate", {"url": url})
-    with contextlib.suppress(TimeoutError):
+    await asyncio.sleep(0.4)
+    with contextlib.suppress(TimeoutError, RuntimeError):
         await asyncio.wait_for(wait_load(cdp), timeout=15)
-    await cdp.inject()
+    for _ in range(8):
+        try:
+            await cdp.inject()
+            break
+        except RuntimeError:
+            await asyncio.sleep(0.4)
     return {"ok": True, "url": url, "frameId": result.get("frameId")}
 
 
@@ -848,7 +854,11 @@ async def wait_load(cdp: Cdp) -> None:
     await cdp.call("Page.enable")
     deadline = time.time() + 15
     while time.time() < deadline:
-        ready = await cdp.evaluate("document.readyState")
+        try:
+            ready = await cdp.evaluate("document.readyState")
+        except RuntimeError:
+            await asyncio.sleep(0.3)
+            continue
         if ready == "complete":
             return
         await asyncio.sleep(0.2)
@@ -1019,6 +1029,7 @@ async def cmd_entries(cdp: Cdp, _page: dict[str, Any], domain: str) -> Any:
                 "model": dev.get("model"),
                 "sw_version": dev.get("sw_version"),
                 "mac": macs[0] if macs else None,
+                "unique_id": macs[0] if macs else None,
             }
         )
     return slim

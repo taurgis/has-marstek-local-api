@@ -509,6 +509,8 @@ python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_live_campaign.
 
 `campaign` brings compose up, onboard/logs in, then for **every** mock in `.devcontainer/docker-compose.yml`: reject HMG-50 `VenusE`, add supported (and unknown VenusE Pro), smoke SoC/mode/SYS/PV/diagnostics/device-actions, automations + services, disable/repairs/reconfigure/options on representatives, delete + manual re-add (stable unique IDs). Flags: `--skip-compose`, `--skip-remove`, `--skip-lifecycle`, `--only 172.28.0.20`. JSON report: `/opt/cursor/artifacts/ha_live_campaign.json`.
 
+HA 2026 `config_entries/get_single` wraps `{config_entry: {...}}` and omits `data.host`. The campaign binds loaded entries to compose mocks by BLE-MAC (device registry identifiers / unique_id) and by the host recorded at add time. Do not look for `data.host` on the HTTP list or `get_single`. Login uses REST `/auth/login_flow` + `localStorage.hassTokens`, not `ha_cdp fill` on the authorize form.
+
 Manual CDP leftovers (when recording, not when running `campaign`):
 
 1. `entries` / `flows` / `states --prefix venus` — inventory.

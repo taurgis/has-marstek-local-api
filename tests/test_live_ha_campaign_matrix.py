@@ -53,6 +53,9 @@ def test_compose_mocks_cover_supported_and_rejected_devices() -> None:
     assert by_host["172.28.0.28"].max_manual_schedule_slot == 5
     assert by_host["172.28.0.22"].unique_port is True
     assert by_host["172.28.0.20"].unique_port is False
+    assert by_host["172.28.0.20"].ble_mac == campaign.DEFAULT_MOCK_BLE_MAC
+    assert campaign.campaign_mac(by_host["172.28.0.20"].ble_mac) == "00:9b:08:a5:aa:39"
+    assert campaign.campaign_mac(by_host["172.28.0.25"].ble_mac) == "02:de:ad:be:ef:02"
 
 
 def test_setup_expectation_matches_firmware_profile() -> None:
@@ -82,3 +85,36 @@ def test_entity_by_key_matches_mac_unique_id_suffix() -> None:
     assert soc is not None and soc["entity_id"] == "sensor.one"
     assert mode is not None and mode["entity_id"] == "select.one"
     assert missing is None
+
+
+def test_resolve_entry_host_uses_ble_mac_when_get_single_omits_data() -> None:
+    """HA 2026 get_single wraps config_entry and omits data.host."""
+    campaign = _load_campaign()
+    mocks = campaign.load_compose_mocks()
+    by_host = {mock.host: mock for mock in mocks}
+    venus_e = by_host["172.28.0.25"]
+    by_mac = campaign.mocks_by_mac(mocks)
+    host = campaign.resolve_entry_host(
+        row={
+            "entry_id": "01TESTENTRY",
+            "mac": "02:de:ad:be:ef:02",
+            "unique_id": "02:de:ad:be:ef:02",
+        },
+        entry={"entry_id": "01TESTENTRY", "state": "loaded", "title": "Venus E"},
+        mocks=by_mac,
+        remembered={},
+    )
+    assert host == venus_e.host
+    remembered = campaign.resolve_entry_host(
+        row={"entry_id": "01TESTENTRY"},
+        entry={},
+        mocks=by_mac,
+        remembered={"01TESTENTRY": "172.28.0.22"},
+    )
+    assert remembered == "172.28.0.22"
+    wrapped = campaign.unwrap_config_entry(
+        {"config_entry": {"entry_id": "abc", "state": "loaded"}}
+    )
+    assert wrapped["entry_id"] == "abc"
+    assert campaign.campaign_mac("02deadbeef02") == "02:de:ad:be:ef:02"
+    assert campaign.campaign_mac("not-a-mac") is None

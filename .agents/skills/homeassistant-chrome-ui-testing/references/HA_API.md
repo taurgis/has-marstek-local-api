@@ -35,7 +35,7 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py start-repair ISSUE_ID` | POST `/api/repairs/issues/fix` | Starts `CannotConnectRepairFlow` ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
 | `ha_cdp.py repair-next FLOW_ID JSON` | POST `/api/repairs/issues/fix/{flow_id}` | Submit host/port. Errors: `cannot_connect`, `unique_id_mismatch`. |
 | `ha_cdp.py abort-repair FLOW_ID` | DELETE `/api/repairs/issues/fix/{flow_id}` | Drop an in-progress Fix dialog. |
-| `ha_cdp.py get-entry ENTRY_ID` | WS `config_entries/get_single` | Prefs, state, `supported_subentry_types`. HTTP list omits some of these. |
+| `ha_cdp.py get-entry ENTRY_ID` | WS `config_entries/get_single` | Prefs, state, `supported_subentry_types`. HA 2026 wraps `{config_entry: {...}}` and **omits `data` / `data.host`**. HTTP list also omits `unique_id` / `data`. Bind entries to mocks via device-registry BLE-MAC (`ha_cdp.py entries` `mac` / `unique_id`) or the host recorded at add time. |
 | `ha_cdp.py update-entry ENTRY_ID --disable-polling true` | WS `config_entries/update` | `pref_disable_new_entities` / `pref_disable_polling` / `title`. Reloads when polling pref changes ([async_update_entry](https://developers.home-assistant.io/blog/2024/02/12/async_update_entry/)). |
 | `ha_cdp.py wait-entry ENTRY_ID --state setup_retry` | polls `get_single` | `ConfigEntryNotReady` → `setup_retry` ([setup failures](https://developers.home-assistant.io/docs/integration_setup_failures)). |
 | `ha_cdp.py ignore-flow FLOW_ID` | WS `config_entries/ignore_flow` | Requires unique_id. Creates a `SOURCE_IGNORE` entry ([config flow](https://developers.home-assistant.io/docs/config_entries_config_flow_handler)). |

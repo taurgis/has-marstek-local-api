@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -38,6 +38,8 @@ CLIENT_ID = f"{HA_URL.rstrip('/')}/"
 COMPOSE_FILE = "docker-compose.yml"
 MANUAL_DEVICE_OPTION = "__manual__"
 DEFAULT_UDP_PORT = 30000
+# argparse default in tools/mock_device/__main__.py when compose omits --ble-mac.
+DEFAULT_MOCK_BLE_MAC = "009b08a5aa39"
 BAT_ENTITY_KEYS = frozenset(
     {
         "bat_temp",
@@ -73,7 +75,7 @@ from custom_components.marstek.firmware_profile import (  # noqa: E402
 
 
 def _log(message: str) -> None:
-    stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    stamp = datetime.now(UTC).strftime("%H:%M:%S")
     print(f"[campaign {stamp}] {message}", file=sys.stderr, flush=True)
 
 
@@ -159,6 +161,8 @@ def parse_compose_mocks(compose_text: str) -> list[ComposeMock]:
                 pending = "port"
             elif token == "--ble-mac":
                 pending = "ble-mac"
+        if ble_mac is None:
+            ble_mac = DEFAULT_MOCK_BLE_MAC
         profile = resolve_firmware_profile(device, ver)
         mocks.append(
             ComposeMock(
@@ -221,6 +225,48 @@ def _json_http(
         except json.JSONDecodeError:
             parsed = {"message": payload}
         return {"ok": False, "status_code": err.code, "body": parsed}
+
+
+def rest_login_tokens() -> dict[str, Any]:
+    """Obtain HA tokens via ``/auth/login_flow`` (official authorize API)."""
+    started = _json_http(
+        "POST",
+        f"{HA_URL}/auth/login_flow",
+        {
+            "client_id": CLIENT_ID,
+            "handler": ["homeassistant", None],
+            "redirect_uri": f"{HA_URL}/?auth_callback=1",
+        },
+    )
+    if not isinstance(started, dict) or not started.get("flow_id"):
+        return {"ok": False, "error": "login_flow_start", "detail": started}
+    finished = _json_http(
+        "POST",
+        f"{HA_URL}/auth/login_flow/{started['flow_id']}",
+        {
+            "client_id": CLIENT_ID,
+            "username": HA_USER,
+            "password": HA_PASSWORD,
+        },
+    )
+    if not isinstance(finished, dict) or finished.get("type") != "create_entry":
+        return {"ok": False, "error": "login_flow_finish", "detail": finished}
+    code = finished.get("result")
+    tokens = _json_http(
+        "POST",
+        f"{HA_URL}/auth/token",
+        form={
+            "grant_type": "authorization_code",
+            "code": str(code),
+            "client_id": CLIENT_ID,
+        },
+    )
+    if not isinstance(tokens, dict) or not tokens.get("access_token"):
+        return {"ok": False, "error": "login_token", "detail": tokens}
+    tokens["hassUrl"] = HA_URL.rstrip("/")
+    tokens["clientId"] = CLIENT_ID
+    tokens["expires"] = int(time.time() * 1000) + int(tokens.get("expires_in") or 1800) * 1000
+    return {"ok": True, "tokens": tokens}
 
 
 def onboard_home_assistant() -> dict[str, Any]:
@@ -404,6 +450,71 @@ def entity_by_key(entities: list[dict[str, Any]], key: str) -> dict[str, Any] | 
     return None
 
 
+def campaign_mac(value: str | None) -> str | None:
+    """Normalize a 6-octet MAC from compose, identifiers, or unique_id."""
+    if not value:
+        return None
+    hex_only = re.sub(r"[^0-9A-Fa-f]", "", str(value))
+    if len(hex_only) != 12:
+        return None
+    return ":".join(hex_only[i : i + 2].lower() for i in range(0, 12, 2))
+
+
+def unwrap_config_entry(payload: Any) -> dict[str, Any]:
+    """Return the config entry dict from HA 2026 ``get_single`` wrapping."""
+    if not isinstance(payload, dict):
+        return {}
+    inner = payload.get("config_entry")
+    if isinstance(inner, dict):
+        return inner
+    if payload.get("entry_id"):
+        return payload
+    return {}
+
+
+def mocks_by_mac(mocks: list[ComposeMock]) -> dict[str, ComposeMock]:
+    """Index compose mocks by formatted BLE MAC."""
+    mapping: dict[str, ComposeMock] = {}
+    for mock in mocks:
+        mac = campaign_mac(mock.ble_mac)
+        if mac:
+            mapping[mac] = mock
+    return mapping
+
+
+def resolve_entry_host(
+    *,
+    row: dict[str, Any],
+    entry: dict[str, Any],
+    mocks: dict[str, ComposeMock],
+    remembered: dict[str, str],
+) -> str | None:
+    """Map a loaded config entry to a compose mock host.
+
+    HA 2026 ``config_entries/get_single`` wraps ``{config_entry: {...}}`` and
+    omits ``data.host``. Bind via remembered add, then BLE-MAC unique_id /
+    device identifiers, then ``data.host`` when present.
+    """
+    entry_id = str(row.get("entry_id") or entry.get("entry_id") or "")
+    if entry_id and entry_id in remembered:
+        return remembered[entry_id]
+    data = entry.get("data")
+    if isinstance(data, dict) and data.get("host"):
+        return str(data["host"])
+    candidates = (
+        row.get("mac"),
+        row.get("unique_id"),
+        entry.get("unique_id"),
+        data.get("ble_mac") if isinstance(data, dict) else None,
+        data.get("mac") if isinstance(data, dict) else None,
+    )
+    for raw in candidates:
+        mac = campaign_mac(str(raw) if raw else None)
+        if mac and mac in mocks:
+            return mocks[mac].host
+    return None
+
+
 def is_numeric_state(state: Any) -> bool:
     """Return whether an HA state string is a finite number."""
     if not isinstance(state, dict):
@@ -437,6 +548,7 @@ class Campaign:
         self.skip_lifecycle = skip_lifecycle
         self.checks: list[Check] = []
         self.entry_by_host: dict[str, dict[str, Any]] = {}
+        self.remembered_hosts: dict[str, str] = {}
 
     def record(self, name: str, ok: bool, detail: Any = None) -> Check:
         check = Check(name=name, ok=ok, detail=detail)
@@ -502,18 +614,36 @@ class Campaign:
 
     async def refresh_entry_map(self) -> None:
         mapping: dict[str, dict[str, Any]] = {}
+        by_mac = mocks_by_mac(self.mocks)
         for row in await self.entries():
             entry_id = str(row.get("entry_id") or "")
             if not entry_id or row.get("source") == "ignore":
                 continue
             full = await self.get_entry(entry_id)
-            data = full.get("data") if isinstance(full, dict) else None
-            host = ""
-            if isinstance(data, dict):
-                host = str(data.get("host") or "")
-            if host:
-                mapping[host] = {**row, "data": data, "unique_id": full.get("unique_id")}
+            entry = unwrap_config_entry(full)
+            host = resolve_entry_host(
+                row=row,
+                entry=entry,
+                mocks=by_mac,
+                remembered=self.remembered_hosts,
+            )
+            if not host:
+                continue
+            unique = campaign_mac(str(row.get("mac") or "")) or campaign_mac(
+                str(entry.get("unique_id") or "")
+            )
+            mapping[host] = {
+                **row,
+                "host": host,
+                "data": entry.get("data") if isinstance(entry.get("data"), dict) else None,
+                "unique_id": unique or entry.get("unique_id") or row.get("mac"),
+            }
+            self.remembered_hosts[entry_id] = host
         self.entry_by_host = mapping
+
+    def remember_entry(self, host: str, entry_id: str) -> None:
+        """Record host → entry_id from a successful add before HA list refresh."""
+        self.remembered_hosts[entry_id] = host
 
     async def wait_numeric(self, entity_id: str, timeout: float) -> dict[str, Any]:
         deadline = time.time() + timeout
@@ -532,40 +662,44 @@ class Campaign:
             self.cdp, self.page, entity_id, timeout, expected, False
         )
 
+    async def _safe_navigate(self, url: str) -> None:
+        try:
+            await ha_cdp.cmd_navigate(self.cdp, self.page, url)
+        except RuntimeError:
+            await asyncio.sleep(1.5)
+            await ha_cdp.cmd_navigate(self.cdp, self.page, url)
+
     async def login_ui(self) -> dict[str, Any]:
-        await ha_cdp.cmd_navigate(
-            self.cdp,
-            self.page,
-            f"{HA_URL}/config/integrations/dashboard",
-        )
-        await asyncio.sleep(2)
-        token = await ha_cdp.cmd_token(self.cdp, self.page)
-        if token.get("ok"):
-            return token
-        dump = await ha_cdp.cmd_dump(self.cdp, self.page)
-        texts = json.dumps(dump).lower()
-        if "username" in texts or "password" in texts:
-            await ha_cdp.cmd_fill(
-                self.cdp, self.page, "Username", HA_USER, None, None
-            )
-            await ha_cdp.cmd_fill(
-                self.cdp, self.page, "Password", HA_PASSWORD, None, None
-            )
-            clicked = await ha_cdp.cmd_click(self.cdp, self.page, "Log in", None, None)
-            if not clicked.get("ok"):
-                clicked = await ha_cdp.cmd_click(
-                    self.cdp, self.page, "LOG IN", None, None
+        tokens = rest_login_tokens()
+        if not tokens.get("ok"):
+            return {"ok": False, "error": "rest_login", "detail": tokens.get("error")}
+        payload = json.dumps(tokens["tokens"])
+        stored = False
+        for _ in range(6):
+            try:
+                await self.cdp.evaluate(
+                    "window.localStorage.setItem('hassTokens', "
+                    + json.dumps(payload)
+                    + ")"
                 )
-            await ha_cdp.cmd_press(self.cdp, self.page, "Escape")
-            await asyncio.sleep(3)
-            await ha_cdp.cmd_navigate(
-                self.cdp,
-                self.page,
-                f"{HA_URL}/config/integrations/dashboard",
-            )
+                stored = True
+                break
+            except RuntimeError:
+                await asyncio.sleep(1)
+        if not stored:
+            return {"ok": False, "error": "token_store"}
+        await self._safe_navigate(f"{HA_URL}/config/integrations/dashboard")
+        deadline = time.time() + 45
+        last: dict[str, Any] = {"ok": False}
+        while time.time() < deadline:
+            try:
+                last = await ha_cdp.cmd_token(self.cdp, self.page)
+            except Exception as err:
+                last = {"ok": False, "error": str(err)}
+            if last.get("ok"):
+                return last
             await asyncio.sleep(2)
-            token = await ha_cdp.cmd_token(self.cdp, self.page)
-        return token
+        return last
 
     async def phase_reject(self) -> None:
         for mock in self.mocks:
@@ -630,6 +764,7 @@ class Campaign:
                 if entry_id is None:
                     await asyncio.sleep(2)
             if entry_id:
+                self.remember_entry(mock.host, entry_id)
                 loaded = await ha_cdp.cmd_wait_entry(
                     self.cdp, self.page, entry_id, "loaded", 90
                 )
@@ -661,7 +796,11 @@ class Campaign:
                 continue
             self.record(f"entities:{mock.host}", True, len(entities))
             numeric = await self.wait_numeric(str(soc["entity_id"]), 90)
-            self.record(f"soc:{mock.host}", bool(numeric.get("ok")), numeric.get("last") or numeric.get("state"))
+            self.record(
+                f"soc:{mock.host}",
+                bool(numeric.get("ok")),
+                numeric.get("last") or numeric.get("state"),
+            )
             sync = await self.service(
                 "marstek", "request_data_sync", {"device_id": device_id}
             )
@@ -671,7 +810,11 @@ class Campaign:
                 changed = await ha_cdp.cmd_wait_state(
                     self.cdp, self.page, str(power["entity_id"]), 90, None, True
                 )
-                self.record(f"power-updated:{mock.host}", bool(changed.get("ok")), changed.get("error"))
+                self.record(
+                    f"power-updated:{mock.host}",
+                    bool(changed.get("ok")),
+                    changed.get("error"),
+                )
             actions = await ha_cdp.cmd_device_actions(self.cdp, self.page, device_id)
             types = {
                 str(item.get("type"))
@@ -822,9 +965,9 @@ class Campaign:
             "triggers": [{"trigger": "event", "event_type": event_id}],
             "conditions": [
                 {
-                    "condition": "numeric_state",
-                    "entity_id": soc["entity_id"],
-                    "below": 15,
+                    "condition": "state",
+                    "entity_id": mode["entity_id"],
+                    "state": "auto",
                 }
             ],
             "actions": [
@@ -842,7 +985,11 @@ class Campaign:
             not (isinstance(upsert, dict) and upsert.get("ok") is False),
             upsert if isinstance(upsert, dict) and upsert.get("ok") is False else None,
         )
-        await self.service("select", "select_option", {"entity_id": mode["entity_id"], "option": "auto"})
+        await self.service(
+            "select",
+            "select_option",
+            {"entity_id": mode["entity_id"], "option": "auto"},
+        )
         await self.wait_equals(str(mode["entity_id"]), "auto", 60)
         fired = await ha_cdp.cmd_fire_event(self.cdp, self.page, event_id, {})
         self.record(
@@ -871,13 +1018,21 @@ class Campaign:
             not (isinstance(script, dict) and script.get("ok") is False),
             script if isinstance(script, dict) and script.get("ok") is False else None,
         )
-        turned = await self.service("script", "turn_on", {"entity_id": "script.marstek_campaign_sync"})
+        turned = await self.service(
+            "script",
+            "turn_on",
+            {"entity_id": "script.marstek_campaign_sync"},
+        )
         self.record(
             "script-run",
             not (isinstance(turned, dict) and turned.get("ok") is False),
             turned if isinstance(turned, dict) and turned.get("ok") is False else None,
         )
         if dod:
+            await self.service(
+                "select", "select_option", {"entity_id": mode["entity_id"], "option": "ai"}
+            )
+            await self.wait_equals(str(mode["entity_id"]), "ai", 60)
             await self.service(
                 "number", "set_value", {"entity_id": dod["entity_id"], "value": 90}
             )
@@ -1096,7 +1251,7 @@ class Campaign:
                 self.cdp, self.page, str(soc["entity_id"]), False
             )
             hist = await ha_cdp.cmd_history(self.cdp, self.page, str(soc["entity_id"]), 2)
-            self.record("history", isinstance(hist, list) or isinstance(hist, dict), None)
+            self.record("history", isinstance(hist, (list, dict)), None)
             await ha_cdp.cmd_expose_entity(
                 self.cdp, self.page, [str(soc["entity_id"])], ["conversation"], True
             )
@@ -1177,9 +1332,10 @@ class Campaign:
         await asyncio.sleep(2)
         if soc:
             gone = await self.state(str(soc["entity_id"]))
+            gone_state = gone.get("state") if isinstance(gone, dict) else None
             self.record(
                 "disable-entry-entities-gone",
-                gone is None or (isinstance(gone, dict) and gone.get("state") in {"unavailable", "unknown", None}),
+                gone is None or gone_state in {"unavailable", "unknown", None},
                 gone,
             )
         enabled = await ha_cdp.cmd_set_entry_disabled(
@@ -1411,7 +1567,11 @@ class Campaign:
 
     async def phase_already_configured(self) -> None:
         mock = next(
-            (m for m in self.mocks if m.expectation == "add_supported" and m.host in self.entry_by_host),
+            (
+                m
+                for m in self.mocks
+                if m.expectation == "add_supported" and m.host in self.entry_by_host
+            ),
             None,
         )
         if mock is None:
@@ -1528,7 +1688,7 @@ class Campaign:
         await self.phase_remove_readd()
         try:
             await self.screenshot("ha_live_campaign_integrations.png")
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             self.record("screenshot", False, str(err))
         return self.summary()
 
@@ -1658,7 +1818,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         result = asyncio.run(async_standalone(args))
-    except Exception as err:  # noqa: BLE001
+    except Exception as err:
         print(f"error: {err}", file=sys.stderr)
         sys.exit(1)
     report = _write_report(result, args.output)
