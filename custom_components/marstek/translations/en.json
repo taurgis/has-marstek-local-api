@@ -514,6 +514,9 @@
     },
     "sys_write_invalid": {
       "message": "Invalid setting: {error}"
+    },
+    "unsupported_device": {
+      "message": "Venus E2.0 is not supported by this integration"
     }
   },
   "issues": {

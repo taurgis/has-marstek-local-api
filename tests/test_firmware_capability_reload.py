@@ -460,4 +460,10 @@ async def test_scanner_reloads_when_reset_prone_clears_without_capability_change
 
         assert reload_ids == [entry.entry_id]
         assert entry.data["version"] == 150
+        assert (
+            issue_registry.async_get_issue(
+                DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+            )
+            is None
+        )
 

@@ -42,6 +42,8 @@ def _mock_client(status=None, mode_response=None):
     })
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.begin_poll_cycle = AsyncMock(return_value=True)
+    client.end_poll_cycle = AsyncMock(return_value=None)
     return client
 
 

@@ -85,7 +85,12 @@ async def send_request(
                 data, _addr = await asyncio.wait_for(
                     loop.sock_recvfrom(sock, 4096), timeout=0.5
                 )
-                response = json.loads(data.decode())
+                if not data:
+                    continue
+                try:
+                    response = json.loads(data.decode())
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
 
                 # Skip echoes (have method+params, no result)
                 if "result" in response:

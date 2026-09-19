@@ -15,7 +15,9 @@ from custom_components.marstek.const import (
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
+    DEFAULT_REQUEST_DELAY,
     DOMAIN,
+    INITIAL_SETUP_REQUEST_DELAY,
     WIFI_STATUS_KEYS,
 )
 from custom_components.marstek.coordinator import MarstekDataUpdateCoordinator
@@ -74,6 +76,56 @@ async def test_coordinator_init(hass: HomeAssistant, mock_config_entry, mock_udp
     assert coordinator.udp_client is mock_udp_client
     assert coordinator.config_entry is mock_config_entry
     assert coordinator.name == "Marstek 1.2.3.4"
+
+
+@pytest.mark.asyncio
+async def test_reset_prone_skips_initial_fast_request_delay(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """Older firmware keeps the configured request delay during first fetch."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 147,
+        },
+    )
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+        is_initial_setup=True,
+    )
+    assert coordinator._get_request_delay() == DEFAULT_REQUEST_DELAY
+    coordinator.finish_initial_setup()
+    assert coordinator._get_request_delay() == DEFAULT_REQUEST_DELAY
+
+
+@pytest.mark.asyncio
+async def test_capable_firmware_uses_initial_fast_request_delay(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """Firmware 150+ may use the shorter first-fetch delay."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+        is_initial_setup=True,
+    )
+    assert coordinator._get_request_delay() == INITIAL_SETUP_REQUEST_DELAY
 
 
 @pytest.mark.asyncio
@@ -338,7 +390,9 @@ async def test_coordinator_skips_bat_status_on_reset_prone_firmware(
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_bat"] is False
-    mock_udp_client.set_openapi_reset_prone.assert_called_with("1.2.3.4", True)
+    mock_udp_client.set_openapi_reset_prone.assert_called_with(
+        "1.2.3.4", True, owner=mock_config_entry.entry_id
+    )
 
 
 @pytest.mark.asyncio

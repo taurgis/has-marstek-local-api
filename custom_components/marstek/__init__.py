@@ -9,7 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -19,7 +19,11 @@ from homeassistant.helpers.typing import ConfigType
 from .const import BAT_STATUS_KEYS, DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier
-from .firmware_profile import FirmwareProfile, resolve_firmware_profile
+from .firmware_profile import (
+    FirmwareProfile,
+    is_unsupported_venus_e2,
+    resolve_firmware_profile,
+)
 from .helpers.device_lookup import (
     async_lookup_device_by_identifier,
     iter_device_config_entry_ids,
@@ -318,12 +322,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     """Set up Marstek from a config entry."""
     _LOGGER.info("Setting up Marstek config entry: %s", entry.title)
 
-    await async_setup_services(hass)
+    if is_unsupported_venus_e2(entry.data.get("device_type")):
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="unsupported_device",
+        )
 
-    # Initialize scanner (only once, regardless of number of config entries)
-    # Scanner will detect IP changes and update config entries via config flow
-    scanner = MarstekScanner.async_get(hass)
-    await scanner.async_setup()
+    await async_setup_services(hass)
 
     stored_ip = entry.data[CONF_HOST]
     stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
@@ -347,7 +352,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
         device_info_dict.get("version"),
     )
     _sync_openapi_reset_issue(hass, entry, profile)
-    udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone)
+    udp_client.set_openapi_reset_prone(
+        stored_ip, profile.openapi_reset_prone, owner=entry.entry_id
+    )
+
+    # Scanner starts after the pooled client exists so an immediate scan can
+    # pause this listener instead of racing a probe on a missing socket.
+    # It still starts before the first unicast probe (needed for IP recovery
+    # on ConfigEntryNotReady).
+    scanner = MarstekScanner.async_get(hass)
+    await scanner.async_setup()
 
     # Try to connect with stored IP (mik-laj feedback)
     # If we have an IP address in the configuration, we should always connect to that IP
@@ -413,7 +427,7 @@ def _clear_entry_reset_prone_flag(
     host = entry.data.get(CONF_HOST)
     udp_client = get_udp_client_for_entry(hass, entry)
     if isinstance(host, str) and udp_client is not None:
-        udp_client.clear_openapi_reset_prone(host)
+        udp_client.clear_openapi_reset_prone(host, owner=entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> bool:

@@ -59,6 +59,7 @@ from .helpers.udp_clients import (
     async_paused_udp_receivers,
     bind_port_for_host,
     get_udp_client,
+    transfer_reset_prone_mark_for_entry,
 )
 
 
@@ -82,6 +83,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     discovered_devices: list[dict[str, Any]]
     _discovered_ip: str | None = None
     _discovered_port: int | None = None
+    _discovered_metadata: dict[str, Any] | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -342,6 +344,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(mac)
         self._discovered_ip = discovery_info.ip
         self._discovered_port = None
+        self._discovered_metadata = {}
 
         # Use shared discovery handler to update existing entries or confirm new ones
         return await self._async_handle_discovery_with_unique_id()
@@ -356,9 +359,13 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not discovered_ble_mac or not discovered_ip:
             return self.async_abort(reason="invalid_discovery_info")
 
+        if is_unsupported_venus_e2(discovery_info.get("device_type")):
+            return self.async_abort(reason="unsupported_device")
+
         # Set unique_id using BLE-MAC
         await self.async_set_unique_id(format_mac(discovered_ble_mac))
         self._discovered_ip = discovered_ip
+        self._discovered_metadata = metadata_from_device_info(discovery_info)
         discovered_port = discovery_info.get("port")
         try:
             self._discovered_port = (
@@ -557,7 +564,17 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 updates[CONF_PORT] = discovered_port
 
+            for key, value in (self._discovered_metadata or {}).items():
+                if entry.data.get(key) != value:
+                    updates[key] = value
+
             if updates:
+                old_host = entry.data.get(CONF_HOST)
+                new_host = updates.get(CONF_HOST, old_host)
+                if isinstance(old_host, str) and isinstance(new_host, str):
+                    transfer_reset_prone_mark_for_entry(
+                        self.hass, entry, old_host, new_host
+                    )
                 self.hass.config_entries.async_update_entry(
                     entry,
                     data={**entry.data, **updates},
@@ -604,6 +621,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
             if update_port:
                 data_updates[CONF_PORT] = port
+
+            old_host = entry.data.get(CONF_HOST)
+            if isinstance(old_host, str):
+                transfer_reset_prone_mark_for_entry(
+                    self.hass, entry, old_host, host
+                )
 
             if reason is None:
                 return (

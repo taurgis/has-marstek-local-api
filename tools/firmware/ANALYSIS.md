@@ -100,10 +100,16 @@ calls stay disabled on generation &lt; 150 and remain optional on 150+.
    (known family, Control generation &lt; 150, including `ver=1476`; unknown
    model names with a Control-like generation 100–149). Unicast requests to
    those IPs are serialized on a per-IP lock. `pause_polling` waits for the
-   current coordinator cycle to finish. Discovery pauses the UDP listener
-   only after in-flight unicasts drain, and new unicasts wait until resume.
+   current coordinator cycle to finish and rolls back if the wait is
+   cancelled. Discovery pauses the UDP listener only after in-flight unicasts
+   drain; nested pauses wait until the listener is actually stopped.
+   Reset-prone IPs keep a 1s UDP floor even when a caller asks to bypass
+   rate limiting. Marks are owned by config-entry id so an IP change cannot
+   leave a stale lock on an address a later 150+ device reuses.
 6. A non-fixable Home Assistant warning is created from config-entry metadata
-   **before** the first UDP probe and points at issue #15.
+   **before** the first UDP probe and points at issue #15. The pooled client
+   is created and marked before the scanner starts so the first scan can
+   pause an existing listener; the scanner still starts before the probe.
 
 ## Mock device
 

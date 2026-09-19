@@ -268,7 +268,6 @@ class MarstekScanner:
                     new_ip,
                     new_port,
                 )
-                self._maybe_update_entry_metadata(entry, matched_device)
                 ip_changed = bool(new_ip and new_ip != stored_ip)
                 port_changed = bool(new_ip and new_port != stored_port)
                 if ip_changed or port_changed:
@@ -281,7 +280,8 @@ class MarstekScanner:
                         new_port,
                     )
                     # Trigger discovery flow to update config entry endpoint
-                    # This follows the pattern used in Yeelight integration
+                    # and metadata in one reload. Do not apply metadata first:
+                    # that would reload against the old IP.
                     discovery_flow.async_create_flow(
                         self._hass,
                         DOMAIN,
@@ -289,6 +289,7 @@ class MarstekScanner:
                         data=_build_discovery_flow_data(matched_device),
                     )
                 else:
+                    self._maybe_update_entry_metadata(entry, matched_device)
                     _LOGGER.debug(
                         "Scanner: Entry %s endpoint unchanged (%s:%s)",
                         entry.title,
@@ -424,20 +425,29 @@ class MarstekScanner:
         self, devices: list[dict[str, Any]], stored_ble_mac: str, entry_title: str
     ) -> dict[str, Any] | None:
         """Find device by BLE-MAC address."""
+        try:
+            stored_formatted = format_mac(stored_ble_mac)
+        except (TypeError, ValueError):
+            return None
         for device in devices:
             device_ble_mac = device.get("ble_mac")
-            if device_ble_mac:
+            if not device_ble_mac:
+                continue
+            try:
+                device_formatted = format_mac(device_ble_mac)
+            except (TypeError, ValueError):
+                continue
+            _LOGGER.debug(
+                "Scanner: Comparing stored BLE-MAC %s with device BLE-MAC %s",
+                stored_formatted,
+                device_formatted,
+            )
+            if device_formatted == stored_formatted:
                 _LOGGER.debug(
-                    "Scanner: Comparing stored BLE-MAC %s with device BLE-MAC %s",
-                    format_mac(stored_ble_mac),
-                    format_mac(device_ble_mac),
+                    "Scanner: BLE-MAC match found for entry %s",
+                    entry_title,
                 )
-                if format_mac(device_ble_mac) == format_mac(stored_ble_mac):
-                    _LOGGER.debug(
-                        "Scanner: BLE-MAC match found for entry %s",
-                        entry_title,
-                    )
-                    return device
+                return device
         return None
 
     def _get_configured_macs(self) -> set[str]:

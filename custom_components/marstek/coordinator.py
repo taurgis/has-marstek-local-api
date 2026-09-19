@@ -224,11 +224,14 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get delay between requests from options, or fast delay for initial setup."""
         if self._use_parallel_api_requests():
             return 0.0
-        if self._is_initial_setup:
-            return INITIAL_SETUP_REQUEST_DELAY
-        return float(self._entry.options.get(
+        configured = float(self._entry.options.get(
             CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
         ))
+        # Reset-prone Control builds stay at the configured spacing even during
+        # the first fetch; the 2s initial shortcut is for firmware 150+.
+        if self._is_initial_setup and not self.profile.openapi_reset_prone:
+            return INITIAL_SETUP_REQUEST_DELAY
+        return configured
 
     def _get_request_timeout(self) -> float:
         """Get timeout for API requests from options."""
@@ -286,8 +289,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         previous = self._marked_reset_prone_ip
         prone = self.profile.openapi_reset_prone
         if previous is not None and previous != current_ip:
-            self.udp_client.clear_openapi_reset_prone(previous)
-        self.udp_client.set_openapi_reset_prone(current_ip, prone)
+            self.udp_client.clear_openapi_reset_prone(
+                previous, owner=self._entry.entry_id
+            )
+        self.udp_client.set_openapi_reset_prone(
+            current_ip, prone, owner=self._entry.entry_id
+        )
         self._marked_reset_prone_ip = current_ip if prone else None
 
     @property
@@ -418,7 +425,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Drop this device's reset-prone UDP flag, including a stale previous IP."""
         previous = self._marked_reset_prone_ip
         if previous is not None:
-            self.udp_client.clear_openapi_reset_prone(previous)
+            self.udp_client.clear_openapi_reset_prone(
+                previous, owner=self._entry.entry_id
+            )
             self._marked_reset_prone_ip = None
 
     def _issue_id(self) -> str:

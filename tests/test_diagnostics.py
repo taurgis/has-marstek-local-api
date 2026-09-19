@@ -356,6 +356,24 @@ async def test_diagnostics_redacts_exception_message(
     assert "AA:BB:CC:DD:EE:FF" not in traceback_text
 
 
+async def test_diagnostics_redacts_ipv6_and_mdns(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Diagnostics also redact IPv6 and .local hostnames from exceptions."""
+    error = Exception("Polling failed for fe80::1 at battery.local")
+    mock_runtime_data.coordinator.last_exception = error
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    message = result["last_exception"]["message"]
+    assert "fe80::1" not in message
+    assert "battery.local" not in message
+    assert "**REDACTED**" in message
+
+
 async def test_diagnostics_with_empty_coordinator_data(
     hass: HomeAssistant,
     mock_config_entry: MagicMock,

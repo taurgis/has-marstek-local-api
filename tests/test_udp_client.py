@@ -12,7 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
-from custom_components.marstek.pymarstek.udp import MarstekUDPClient, MIN_REQUEST_INTERVAL
+from custom_components.marstek.pymarstek.udp import (
+    MIN_REQUEST_INTERVAL,
+    MIN_RESET_PRONE_REQUEST_INTERVAL,
+    MarstekUDPClient,
+)
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
     parse_bat_status_response,
@@ -730,6 +734,23 @@ class TestPollCycleLease:
         await udp_client.pause_polling(device_ip)
         assert await udp_client.begin_poll_cycle(device_ip) is False
 
+    async def test_pause_polling_cancellation_does_not_stick(
+        self, udp_client: MarstekUDPClient
+    ) -> None:
+        """Cancelling pause_polling must not leave polling permanently paused."""
+        device_ip = "192.168.1.100"
+        assert await udp_client.begin_poll_cycle(device_ip) is True
+        pause_task = asyncio.create_task(udp_client.pause_polling(device_ip))
+        await asyncio.sleep(0)
+        assert not pause_task.done()
+        pause_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pause_task
+        assert not udp_client.is_polling_paused(device_ip)
+        await udp_client.end_poll_cycle(device_ip)
+        assert await udp_client.begin_poll_cycle(device_ip) is True
+        await udp_client.end_poll_cycle(device_ip)
+
 
 
 class TestRateLimiting:
@@ -1401,7 +1422,7 @@ class TestListenForResponses:
         assert recv_calls == 2
         assert future.done()
         assert future.result() == response
-        assert client._response_cache[0]["response"] == response
+        assert client._response_cache[("192.168.1.100", 0)]["response"] == response
 
     async def test_ignores_empty_udp_datagram(self) -> None:
         """Empty datagrams must not be decoded; Control firmware freezes on them."""
@@ -1455,7 +1476,7 @@ class TestListenForResponses:
 
         assert future.done()
         assert future.result() == response
-        assert 1 in client._response_cache
+        assert ("192.168.1.100", 1) in client._response_cache
 
 
 class TestPsutilHandling:
@@ -1612,6 +1633,45 @@ class TestRateLimitCleanupEnforcement:
         )
 
         client._enforce_rate_limit.assert_not_called()
+
+    async def test_reset_prone_ignores_bypass_rate_limit(self) -> None:
+        """Reset-prone IPs keep the UDP floor even when bypass is requested."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+        client.set_openapi_reset_prone("192.168.1.100", True)
+        client._enforce_rate_limit = AsyncMock()
+
+        await client._send_udp_message(
+            '{"test": 1}',
+            "192.168.1.100",
+            30000,
+            bypass_rate_limit=True,
+        )
+
+        client._enforce_rate_limit.assert_awaited_once_with("192.168.1.100")
+
+    async def test_reset_prone_uses_longer_min_interval(self) -> None:
+        """Reset-prone firmware waits longer than the default 300ms floor."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        time_value = 0.0
+
+        def get_time() -> float:
+            return time_value
+
+        client._loop.time.side_effect = get_time
+        client.set_openapi_reset_prone("192.168.1.100", True)
+        await client._enforce_rate_limit("192.168.1.100")
+        time_value = 0.3
+        with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+            await client._enforce_rate_limit("192.168.1.100")
+            mock_sleep.assert_awaited()
+            assert mock_sleep.call_args.args[0] == pytest.approx(
+                MIN_RESET_PRONE_REQUEST_INTERVAL - 0.3
+            )
 
     async def test_rate_limit_skips_subnet_broadcast(self) -> None:
         """Test that rate limiting is skipped for subnet broadcasts."""
@@ -2406,8 +2466,7 @@ class TestResetProneRequestLock:
         client = MarstekUDPClient()
         client._socket = MagicMock()
         client._loop = asyncio.get_running_loop()
-        client._listen_task = MagicMock()
-        client._listen_task.done.return_value = False
+        client._listen_task = client._loop.create_task(asyncio.sleep(3600))
 
         entered = asyncio.Event()
         release_send = asyncio.Event()
@@ -2437,6 +2496,84 @@ class TestResetProneRequestLock:
             await request_task
             await pause_task
         assert client._listen_task is None
+
+    async def test_nested_pause_waits_until_listener_stopped(self) -> None:
+        """A second pause does not return until the first pause stopped the listener."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+        client._listen_task = client._loop.create_task(asyncio.sleep(3600))
+
+        entered = asyncio.Event()
+        release_send = asyncio.Event()
+
+        async def slow_send(*args: Any, **kwargs: Any) -> None:
+            entered.set()
+            await release_send.wait()
+            for future in list(client._pending_requests.values()):
+                if not future.done():
+                    future.set_result({"id": 1, "result": {}})
+
+        with patch.object(client, "_send_udp_message", side_effect=slow_send):
+            request_task = asyncio.create_task(
+                client.send_request(
+                    '{"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                )
+            )
+            await entered.wait()
+            first_pause = asyncio.create_task(client.async_pause_receiver())
+            await asyncio.sleep(0.02)
+            second_pause = asyncio.create_task(client.async_pause_receiver())
+            await asyncio.sleep(0.02)
+            assert not first_pause.done()
+            assert not second_pause.done()
+            release_send.set()
+            await request_task
+            await first_pause
+            await second_pause
+        assert client._listen_task is None
+        await client.async_resume_receiver()
+        await client.async_resume_receiver()
+
+    async def test_pause_receiver_cancellation_does_not_block_unicast(self) -> None:
+        """Cancelling a pause while draining must resume unicast traffic."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+        client._listen_task = client._loop.create_task(asyncio.sleep(3600))
+        entered = asyncio.Event()
+        release_send = asyncio.Event()
+
+        async def slow_send(*args: Any, **kwargs: Any) -> None:
+            entered.set()
+            await release_send.wait()
+            for future in list(client._pending_requests.values()):
+                if not future.done():
+                    future.set_result({"id": 1, "result": {}})
+
+        with patch.object(client, "_send_udp_message", side_effect=slow_send):
+            request_task = asyncio.create_task(
+                client.send_request(
+                    '{"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                )
+            )
+            await entered.wait()
+            pause_task = asyncio.create_task(client.async_pause_receiver())
+            await asyncio.sleep(0.02)
+            pause_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pause_task
+            release_send.set()
+            await request_task
+        assert client._receiver_pause_count == 0
 
     async def test_pending_requests_are_keyed_by_ip(self) -> None:
         """Two devices may share a JSON-RPC id on one socket."""
@@ -2542,4 +2679,30 @@ class TestResetProneRequestLock:
         sent = json.loads(mock_send.call_args.args[0])
         assert sent["id"] == (70000 & MAX_JSON_RPC_ID)
         assert sent["id"] != 0
+
+
+class TestResetProneOwners:
+    """Reset-prone marks are owned by config entry, not only by IP."""
+
+    def test_owner_refcount_and_transfer(self) -> None:
+        """Clearing one owner must not drop another device sharing the IP."""
+        client = MarstekUDPClient()
+        client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-a")
+        client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-b")
+        client.set_openapi_reset_prone("1.2.3.4", False, owner="entry-a")
+        assert "1.2.3.4" in client._reset_prone_ips
+
+        client.transfer_openapi_reset_prone("1.2.3.4", "5.6.7.8", owner="entry-b")
+        assert "1.2.3.4" not in client._reset_prone_ips
+        assert "5.6.7.8" in client._reset_prone_ips
+
+        client.clear_openapi_reset_prone("5.6.7.8", owner="entry-b")
+        assert "5.6.7.8" not in client._reset_prone_ips
+
+    def test_clear_without_owner_drops_all_marks(self) -> None:
+        """Unload of the last client may drop every owner for an IP."""
+        client = MarstekUDPClient()
+        client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-a")
+        client.clear_openapi_reset_prone("1.2.3.4")
+        assert "1.2.3.4" not in client._reset_prone_ips
 

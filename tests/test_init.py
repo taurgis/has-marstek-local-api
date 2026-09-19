@@ -991,7 +991,9 @@ async def test_openapi_reset_issue_created_when_connection_fails(
     )
     assert issue is not None
     assert issue.translation_key == "openapi_reset_prone"
-    client.set_openapi_reset_prone.assert_called_with("1.2.3.4", True)
+    client.set_openapi_reset_prone.assert_called_with(
+        "1.2.3.4", True, owner=entry.entry_id
+    )
 
 
 async def test_reset_prone_setup_removes_bat_status_entities(
@@ -1100,4 +1102,37 @@ async def test_failed_unload_keeps_reset_prone_protection(
         assert unloaded is False
         assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
         client.clear_openapi_reset_prone.assert_not_called()
+
+        unloaded = await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert unloaded is True
+
+
+async def test_existing_venus_e2_entry_fails_setup(
+    hass: HomeAssistant,
+) -> None:
+    """Migrated Venus E2.0 config entries must not start polling."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus E2.0",
+            "version": 150,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.SETUP_ERROR
+    client.send_request.assert_not_called()
 

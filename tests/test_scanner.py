@@ -382,6 +382,16 @@ async def test_scanner_updates_device_metadata_and_registry(
 ) -> None:
     """Test scanner updates metadata, runtime data, and device registry."""
     mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 145,
+            "model": "VenusE 3.0",
+            "firmware": "145",
+        },
+    )
     mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)
 
     coordinator = MagicMock()
@@ -397,8 +407,8 @@ async def test_scanner_updates_device_metadata_and_registry(
         config_entry_id=mock_config_entry.entry_id,
         identifiers={(DOMAIN, format_mac("AA:BB:CC:DD:EE:FF"))},
         manufacturer="Marstek",
-        model="Venus",
-        sw_version="3",
+        model="VenusE 3.0",
+        sw_version="145",
         name="Marstek Venus",
     )
 
@@ -1121,3 +1131,49 @@ async def test_scanner_async_scan_skips_if_previous_running(hass: HomeAssistant)
         await scanner._scan_task
     except asyncio.CancelledError:
         pass
+
+
+async def test_scanner_ignores_malformed_discovered_mac(
+    hass: HomeAssistant, mock_config_entry
+) -> None:
+    """One bad BLE MAC must not abort matching the rest of the scan."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 145,
+        },
+    )
+    mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)
+    mock_config_entry.runtime_data = MarstekRuntimeData(
+        coordinator=MagicMock(data={"battery_soc": 50}, async_set_updated_data=MagicMock()),
+        device_info=dict(mock_config_entry.data),
+    )
+
+    scanner = MarstekScanner(hass)
+    with patch(
+        "custom_components.marstek.scanner.discover_devices",
+        AsyncMock(
+            return_value=[
+                {
+                    "ip": "9.9.9.9",
+                    "ble_mac": "not-a-mac",
+                    "device_type": "VenusE 3.0",
+                    "version": 145,
+                },
+                {
+                    "ip": "1.2.3.4",
+                    "ble_mac": "AA:BB:CC:DD:EE:FF",
+                    "device_type": "VenusE 3.0",
+                    "version": 147,
+                    "wifi_name": "AirPort-38",
+                },
+            ]
+        ),
+    ):
+        await scanner._async_scan_impl()
+
+    assert mock_config_entry.data["version"] == 147
+    assert mock_config_entry.data["wifi_name"] == "AirPort-38"

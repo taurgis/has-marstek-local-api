@@ -108,6 +108,21 @@ def get_udp_client_for_entry(
     return get_udp_client(hass, entry_bind_port(entry))
 
 
+def transfer_reset_prone_mark_for_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    old_host: str,
+    new_host: str,
+) -> None:
+    """Move a config entry's reset-prone UDP mark when its IP changes."""
+    if old_host == new_host:
+        return
+    client = get_udp_client_for_entry(hass, entry)
+    if client is None:
+        return
+    client.transfer_openapi_reset_prone(old_host, new_host, owner=entry.entry_id)
+
+
 def store_udp_client(
     hass: HomeAssistant, bind_port: int, client: MarstekUDPClient
 ) -> None:

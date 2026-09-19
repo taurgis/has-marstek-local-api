@@ -50,6 +50,15 @@ psutil: PsutilModule | object | None = _PSUTIL_AUTO
 
 # Rate limiting - minimum interval between requests to same device
 MIN_REQUEST_INTERVAL: float = 0.3  # 300ms minimum between requests to same IP
+# Control firmware below 150 is heap-sensitive; keep a stricter floor even when
+# a caller asks to bypass the normal 300ms throttle (GetDevice, retries).
+MIN_RESET_PRONE_REQUEST_INTERVAL: float = 1.0
+_ANONYMOUS_RESET_PRONE_OWNER = "*"
+
+
+def _is_broadcast_address(target_ip: str) -> bool:
+    """Return True for limited-broadcast and x.x.x.255 subnet broadcasts."""
+    return target_ip in {"255.255.255.255"} or target_ip.endswith(".255")
 
 # ES.GetMode instance ids observed in the wild. This integration prefers 0
 # (Open API default) and falls back to 1 (vendor library default).
@@ -111,12 +120,13 @@ class MarstekUDPClient:
         self._pending_requests: dict[
             int | tuple[str, int], asyncio.Future[dict[str, Any]]
         ] = {}
-        self._response_cache: dict[int, dict[str, Any]] = {}
+        self._response_cache: dict[int | tuple[str, int], dict[str, Any]] = {}
         self._listen_task: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._receiver_pause_count: int = 0
         self._in_flight_exchanges: int = 0
         self._exchange_gate: asyncio.Condition = asyncio.Condition()
+        self._receiver_transition_lock: asyncio.Lock = asyncio.Lock()
 
         self._discovery_cache: list[dict[str, Any]] | None = None
         self._cache_timestamp: float = 0
@@ -129,6 +139,7 @@ class MarstekUDPClient:
         self._poll_cycle_idle: dict[str, asyncio.Event] = {}
         self._polling_lock: asyncio.Lock = asyncio.Lock()
         self._reset_prone_ips: set[str] = set()
+        self._reset_prone_owners: dict[str, set[str]] = {}
         self._device_io_locks: dict[str, asyncio.Lock] = {}
 
         # Rate limiting: track last request time per device IP
@@ -252,6 +263,21 @@ class MarstekUDPClient:
             return self._pending_requests.pop(matches[0], None)
         return None
 
+    def _pop_cached_responses_for_id(self, request_id: int) -> list[dict[str, Any]]:
+        """Take cached replies for a JSON-RPC id from every source IP."""
+        responses: list[dict[str, Any]] = []
+        for key in list(self._response_cache):
+            matches_id = key == request_id or (
+                isinstance(key, tuple) and len(key) == 2 and key[1] == request_id
+            )
+            if not matches_id:
+                continue
+            cached = self._response_cache.pop(key)
+            response = cached.get("response")
+            if isinstance(response, dict):
+                responses.append(response)
+        return responses
+
     async def _enter_unicast_exchange(self) -> None:
         """Wait until discovery listeners are running, then count this exchange."""
         async with self._exchange_gate:
@@ -297,27 +323,42 @@ class MarstekUDPClient:
         In-flight unicast exchanges finish before the listener stops, and new
         unicasts wait until resume, so discovery does not send into a socket
         with no receiver.
+
+        Nested pauses wait on a transition lock until the first pause has
+        actually stopped the listener. Cancellation rolls the refcount back
+        so a cancelled scan cannot leave unicasts blocked forever.
         """
-        async with self._exchange_gate:
+        async with self._receiver_transition_lock:
             self._receiver_pause_count += 1
             if self._receiver_pause_count > 1:
                 return
-            while self._in_flight_exchanges > 0:
-                await self._exchange_gate.wait()
-        await self._stop_listener()
+            try:
+                async with self._exchange_gate:
+                    while self._in_flight_exchanges > 0:
+                        await self._exchange_gate.wait()
+                await self._stop_listener()
+            except BaseException:
+                self._receiver_pause_count -= 1
+                if self._receiver_pause_count == 0:
+                    async with self._exchange_gate:
+                        self._exchange_gate.notify_all()
+                    if self._socket is not None:
+                        self._ensure_listener()
+                raise
 
     async def async_resume_receiver(self) -> None:
         """Restart the background UDP listener if the socket is open."""
-        async with self._exchange_gate:
+        async with self._receiver_transition_lock:
             if self._receiver_pause_count <= 0:
                 return
             self._receiver_pause_count -= 1
             if self._receiver_pause_count > 0:
                 return
-            self._exchange_gate.notify_all()
-        if self._socket is None:
-            return
-        self._ensure_listener()
+            async with self._exchange_gate:
+                self._exchange_gate.notify_all()
+            if self._socket is None:
+                return
+            self._ensure_listener()
 
     async def _stop_listener(self) -> None:
         """Cancel the background UDP listener if it is running."""
@@ -335,19 +376,29 @@ class MarstekUDPClient:
             self._socket.close()
             self._socket = None
 
-        # Clear caches to prevent memory retention after cleanup
+        pending = list(self._pending_requests.values())
         self._pending_requests.clear()
+        for future in pending:
+            if not future.done():
+                future.cancel()
+
+        # Clear caches to prevent memory retention after cleanup
         self._response_cache.clear()
         self._discovery_cache = None
         self._last_request_time.clear()
         self._rate_limit_locks.clear()
         self._device_io_locks.clear()
         self._reset_prone_ips.clear()
+        self._reset_prone_owners.clear()
         self._polling_paused.clear()
         self._polling_pause_counts.clear()
         self._poll_cycle_counts.clear()
+        for idle in self._poll_cycle_idle.values():
+            idle.set()
         self._poll_cycle_idle.clear()
-        self._in_flight_exchanges = 0
+        async with self._exchange_gate:
+            self._in_flight_exchanges = 0
+            self._exchange_gate.notify_all()
         self._command_stats.clear()
         self._command_stats_by_ip.clear()
         self._es_mode_device_ids.clear()
@@ -402,16 +453,58 @@ class MarstekUDPClient:
                 self._device_io_locks[target_ip] = asyncio.Lock()
             return self._device_io_locks[target_ip]
 
-    def set_openapi_reset_prone(self, device_ip: str, prone: bool) -> None:
-        """Enable or disable per-request serialization for a device IP."""
+    def set_openapi_reset_prone(
+        self, device_ip: str, prone: bool, *, owner: str | None = None
+    ) -> None:
+        """Enable or disable per-request serialization for a device IP.
+
+        Marks are reference-counted by *owner* (config entry id) so a
+        SETUP_RETRY IP change cannot leave a stale mark that later serializes
+        an unrelated 150+ device that reused the address.
+        """
+        owner_key = owner or _ANONYMOUS_RESET_PRONE_OWNER
+        owners = self._reset_prone_owners.setdefault(device_ip, set())
         if prone:
+            owners.add(owner_key)
             self._reset_prone_ips.add(device_ip)
             return
-        self._reset_prone_ips.discard(device_ip)
+        owners.discard(owner_key)
+        if not owners:
+            self._reset_prone_owners.pop(device_ip, None)
+            self._reset_prone_ips.discard(device_ip)
 
-    def clear_openapi_reset_prone(self, device_ip: str) -> None:
+    def clear_openapi_reset_prone(
+        self, device_ip: str, *, owner: str | None = None
+    ) -> None:
         """Stop serializing Open API traffic for a device IP."""
-        self._reset_prone_ips.discard(device_ip)
+        if owner is None:
+            self._reset_prone_owners.pop(device_ip, None)
+            self._reset_prone_ips.discard(device_ip)
+            return
+        self.set_openapi_reset_prone(device_ip, False, owner=owner)
+
+    def transfer_openapi_reset_prone(
+        self, old_ip: str, new_ip: str, *, owner: str
+    ) -> None:
+        """Move one owner's reset-prone mark when a device changes IP."""
+        if old_ip == new_ip:
+            return
+        owners = self._reset_prone_owners.get(old_ip, set())
+        marked = (
+            owner in owners
+            or _ANONYMOUS_RESET_PRONE_OWNER in owners
+            or (old_ip in self._reset_prone_ips and not owners)
+        )
+        if not marked:
+            return
+        self.set_openapi_reset_prone(old_ip, False, owner=owner)
+        if _ANONYMOUS_RESET_PRONE_OWNER in self._reset_prone_owners.get(old_ip, set()):
+            self.set_openapi_reset_prone(
+                old_ip, False, owner=_ANONYMOUS_RESET_PRONE_OWNER
+            )
+        elif old_ip in self._reset_prone_ips and old_ip not in self._reset_prone_owners:
+            self.clear_openapi_reset_prone(old_ip)
+        self.set_openapi_reset_prone(new_ip, True, owner=owner)
 
     async def _cleanup_rate_limit_tracking(self) -> None:
         """Remove stale entries from rate limit tracking to prevent memory leaks."""
@@ -491,9 +584,14 @@ class MarstekUDPClient:
             current_time = loop.time()
             last_time = self._last_request_time.get(target_ip, 0)
             elapsed = current_time - last_time
+            min_interval = (
+                MIN_RESET_PRONE_REQUEST_INTERVAL
+                if target_ip in self._reset_prone_ips
+                else MIN_REQUEST_INTERVAL
+            )
 
-            if elapsed < MIN_REQUEST_INTERVAL:
-                wait_time = MIN_REQUEST_INTERVAL - elapsed
+            if elapsed < min_interval:
+                wait_time = min_interval - elapsed
                 _LOGGER.debug(
                     "Rate limiting: waiting %.2fs before request to %s",
                     wait_time,
@@ -518,11 +616,10 @@ class MarstekUDPClient:
     ) -> None:
         sock = await self._ensure_socket()
 
-        # Enforce rate limiting for non-broadcast addresses
-        if (
-            not bypass_rate_limit
-            and target_ip not in ("255.255.255.255",)
-            and not target_ip.endswith(".255")
+        # Enforce rate limiting for non-broadcast addresses. Reset-prone IPs
+        # keep the floor even when a caller asks to bypass (GetDevice, retries).
+        if not _is_broadcast_address(target_ip) and (
+            target_ip in self._reset_prone_ips or not bypass_rate_limit
         ):
             await self._enforce_rate_limit(target_ip)
 
@@ -714,7 +811,7 @@ class MarstekUDPClient:
                 request_id = json_rpc_wire_id(raw_id)
                 _LOGGER.debug("Recv: %s:%d | %s", addr[0], addr[1], response)
                 if request_id is not None:
-                    self._response_cache[request_id] = {
+                    self._response_cache[(addr[0], request_id)] = {
                         "response": response,
                         "addr": addr,
                         "timestamp": loop.time(),
@@ -791,10 +888,7 @@ class MarstekUDPClient:
                 await self._send_udp_message(message, address, self._port)
 
             while (loop.time() - start_time) < timeout:
-                cached = self._response_cache.pop(request_id, None)
-                if cached:
-                    _LOGGER.debug("Received device response: %s", cached["response"])
-                    responses.append(cached["response"])
+                responses.extend(self._pop_cached_responses_for_id(request_id))
                 await asyncio.sleep(0.1)
         finally:
             self._pending_requests.pop(request_id, None)
@@ -882,7 +976,11 @@ class MarstekUDPClient:
             self._polling_pause_counts[device_ip] = count
             self._polling_paused[device_ip] = True
             idle = self._poll_cycle_idle_event(device_ip)
-        await idle.wait()
+        try:
+            await idle.wait()
+        except BaseException:
+            await self.resume_polling(device_ip)
+            raise
 
     async def resume_polling(self, device_ip: str) -> None:
         async with self._polling_lock:

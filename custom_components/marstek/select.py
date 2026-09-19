@@ -162,11 +162,10 @@ class MarstekOperatingModeSelect(
                         "error": last_error,
                     },
                 )
-
-            # Request coordinator refresh to update state
-            await self.coordinator.async_request_refresh()
-
         finally:
             await self._udp_client.resume_polling(host)
+
+        # Refresh after polling resumes so begin_poll_cycle is not skipped.
+        await self.coordinator.async_request_refresh()
 
 

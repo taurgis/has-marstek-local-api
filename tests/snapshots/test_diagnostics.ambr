@@ -62,6 +62,7 @@
       'firmware_known': True,
       'firmware_version': 1,
       'max_manual_schedule_slot': 9,
+      'control_generation': 1,
       'openapi_reset_prone': False,
       'parallel_requests_safe': True,
       'supports_pv': False,

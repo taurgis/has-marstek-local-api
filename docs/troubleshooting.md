@@ -66,6 +66,12 @@ generation below 150, or an unknown model with a Control-like `ver` 100–149):
 4. `Bat.GetStatus` is **not sent**. Battery-detail entities are omitted
    (issue #14).
 5. Prefer sequential polling and a wired LAN.
+6. Writes wait for the current poll cycle to finish, and discovery waits
+   for in-flight unicasts before binding the listen port. Changing IP and
+   firmware at the same time updates both in one reload.
+
+Venus E2.0 is not supported. Existing config entries for that model fail
+setup with an error instead of polling.
 
 Do not factory-reset from Home Assistant (`Reset.Factory` is not exposed).
 Firmware research notes: [tools/firmware/ANALYSIS.md](../tools/firmware/ANALYSIS.md).

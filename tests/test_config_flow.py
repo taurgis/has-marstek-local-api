@@ -461,6 +461,37 @@ async def test_integration_discovery_updates_ip(
     assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == "1.2.3.99"
 
 
+async def test_integration_discovery_updates_ip_and_metadata(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Host and firmware metadata land in one config-entry update."""
+    mock_config_entry.add_to_hass(hass)
+
+    discovery_info = {
+        "ip": "1.2.3.99",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusE 3.0",
+        "version": 147,
+        "wifi_name": "AirPort-38",
+        "wifi_mac": "11:22:33:44:55:66",
+        "model": "VenusE 3.0",
+        "firmware": "147",
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.data["host"] == "1.2.3.99"
+    assert updated.data["device_type"] == "VenusE 3.0"
+    assert updated.data["version"] == 147
+    assert updated.data["wifi_name"] == "AirPort-38"
+
+
 async def test_integration_discovery_without_port_keeps_current_port(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
