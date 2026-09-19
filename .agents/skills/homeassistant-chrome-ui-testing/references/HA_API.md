@@ -22,7 +22,7 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py run-script JSON` | WS `execute_script` | No dedicated “fire device action” command. Marstek charge/discharge/stop **block** until verification finishes (up to 8 × ~60s). |
 | `ha_cdp.py start-reconfigure ENTRY_ID` | POST `/api/config/config_entries/flow` with `entry_id` | Starts `async_step_reconfigure`. Not a documented public WS command. |
 | `ha_cdp.py start-options ENTRY_ID` | POST `/api/config/config_entries/options/flow` | Options flow ([options flow](https://developers.home-assistant.io/docs/config_entries_options_flow_handler)). |
-| `ha_cdp.py diagnostics ENTRY_ID` | GET `/api/diagnostics/config_entry/{id}` | Frontend download path; **not** on the official REST page ([diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics)). |
+| `ha_cdp.py diagnostics ENTRY_ID` | GET `/api/diagnostics/config_entry/{id}` | Frontend download path; **not** on the official REST page ([diagnostics](https://developers.home-assistant.io/docs/core/integration/diagnostics)). Payload wraps integration output at `data` (`data.firmware_profile`). |
 | `ha_cdp.py device-triggers DEVICE_ID` | WS `device_automation/trigger/list` | Generic entity triggers. Not on the public WS reference; frontend uses it. Marstek has no `device_trigger.py`. |
 | `ha_cdp.py enable-entity ID` | WS `config/entity_registry/update` `disabled_by: null` | Returns `{entity_entry, reload_delay}`. Wait `reload_delay` (30s) before `wait-state`. Enable CT (EM) or `wifi_rssi` (`Wifi.GetStatus`). Do **not** enable `Bat.GetStatus` entities. |
 | `ha_cdp.py disable-entity ID` | WS `config/entity_registry/update` `disabled_by: user` | Entity leaves the state machine. Re-enable with `enable-entity`. |
@@ -35,7 +35,7 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py start-repair ISSUE_ID` | POST `/api/repairs/issues/fix` | Starts `CannotConnectRepairFlow` ([repairs](https://developers.home-assistant.io/docs/core/platform/repairs/)). |
 | `ha_cdp.py repair-next FLOW_ID JSON` | POST `/api/repairs/issues/fix/{flow_id}` | Submit host/port. Errors: `cannot_connect`, `unique_id_mismatch`. |
 | `ha_cdp.py abort-repair FLOW_ID` | DELETE `/api/repairs/issues/fix/{flow_id}` | Drop an in-progress Fix dialog. |
-| `ha_cdp.py get-entry ENTRY_ID` | WS `config_entries/get_single` | Prefs, state, `supported_subentry_types`. HTTP list omits some of these. |
+| `ha_cdp.py get-entry ENTRY_ID` | WS `config_entries/get_single` | Prefs, state, `supported_subentry_types`. HA 2026 wraps `{config_entry: {...}}` and **omits `data` / `data.host`**. HTTP list also omits `unique_id` / `data`. Bind entries to mocks via device-registry BLE-MAC (`ha_cdp.py entries` `mac` / `unique_id`) or the host recorded at add time. |
 | `ha_cdp.py update-entry ENTRY_ID --disable-polling true` | WS `config_entries/update` | `pref_disable_new_entities` / `pref_disable_polling` / `title`. Reloads when polling pref changes ([async_update_entry](https://developers.home-assistant.io/blog/2024/02/12/async_update_entry/)). |
 | `ha_cdp.py wait-entry ENTRY_ID --state setup_retry` | polls `get_single` | `ConfigEntryNotReady` → `setup_retry` ([setup failures](https://developers.home-assistant.io/docs/integration_setup_failures)). |
 | `ha_cdp.py ignore-flow FLOW_ID` | WS `config_entries/ignore_flow` | Requires unique_id. Creates a `SOURCE_IGNORE` entry ([config flow](https://developers.home-assistant.io/docs/config_entries_config_flow_handler)). |
@@ -49,6 +49,9 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py history ENTITY` / `logbook` | GET `/api/history/period/{ts}` / `/api/logbook/{ts}` | Official REST ([REST](https://developers.home-assistant.io/docs/api/rest/)). |
 | `ha_cdp.py debug-logging --level debug` | WS `logger/integration_log_level` | UI **Enable debug logging**. Levels are uppercase (`DEBUG`). Persistence: `none` / `once` / `permanent`. |
 | `ha_cdp.py energy-prefs` / `energy-validate` | WS `energy/get_prefs` / `energy/validate` | ENERGY + TOTAL_INCREASING sensors ([energy](https://www.home-assistant.io/docs/energy/)). |
+| `ha_cdp.py start-user-flow` | POST `/api/config/config_entries/flow` `handler=marstek` | Starts `async_step_user` (broadcast picker or manual). |
+| `ha_cdp.py add-device HOST --port PORT` | user flow → `{device: __manual__}` → `{host, port}` | Manual add used by the live campaign. |
+| `ha_cdp.py campaign` | orchestrates add/edit/remove/modes/automations | See `ha_live_campaign.py`. JSON report under `/opt/cursor/artifacts`. |
 | `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
 | `ha_cdp.py notifications` | WS `persistent_notification/get` | HA 2026 **does not** expose persistent notifications as `persistent_notification.*` entity states. Gap tests must use this WS type (or automation `last_triggered`). |
 

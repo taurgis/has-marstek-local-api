@@ -108,6 +108,8 @@ python3 $H expose-entity sensor.venus_c_battery_level
 python3 $H history sensor.venus_c_battery_level --hours 2
 python3 $H debug-logging --level debug --persistence none
 python3 $H energy-validate
+python3 $H campaign
+python3 $H add-device 172.28.0.20 --port 30000
 ```
 
 Rules:
@@ -496,19 +498,26 @@ python3 $H wait-entry '<entry_id>' --state loaded --timeout 180
 
 ## Extensive live campaign
 
-Run this against Docker mocks after a UDP/config-flow change. Keep compose up.
+The numbered recipe below is implemented by the campaign runner (extend this, do not re-click it by hand):
+
+```bash
+python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py ensure
+python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py campaign
+# equivalent:
+python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_live_campaign.py
+```
+
+`campaign` brings compose up, onboard/logs in, then for **every** mock in `.devcontainer/docker-compose.yml`: reject HMG-50 `VenusE`, add supported (and unknown VenusE Pro), smoke SoC/mode/SYS/PV/diagnostics/device-actions, automations + services, disable/repairs/reconfigure/options on representatives, delete + manual re-add (stable unique IDs). Flags: `--skip-compose`, `--skip-remove`, `--skip-lifecycle`, `--only 172.28.0.20`. JSON report: `/opt/cursor/artifacts/ha_live_campaign.json`.
+
+HA 2026 `config_entries/get_single` wraps `{config_entry: {...}}` and omits `data.host`. The campaign binds loaded entries to compose mocks by BLE-MAC (device registry identifiers / unique_id) and by the host recorded at add time. Do not look for `data.host` on the HTTP list or `get_single`. Login uses REST `/auth/login_flow` + `localStorage.hassTokens`, not `ha_cdp fill` on the authorize form.
+
+The campaign enables Marstek **debug** logging (`logger/integration_log_level`) for the run, then writes `/opt/cursor/artifacts/ha_live_campaign_ha.log` and a method/host/timeout summary in the JSON (`ha_logs`). It flags `Invalid device response` plus a second `UDP socket bound` on 30000 (reuseport collision). Restore the log level to warning afterwards.
+
+Manual CDP leftovers (when recording, not when running `campaign`):
 
 1. `entries` / `flows` / `states --prefix venus` — inventory.
-2. Discovery Confirm: Add a leftover Discovered MAC (`click Add --near '<mac>'` → Submit). Watch logs for `via pooled UDP client` when the port is shared.
-3. Delete one configured device (`delete-entry` or UI Menu). `wait-flow --unique-id '<mac>' --timeout 700`. Confirm re-add. Entity IDs must not grow `_2`.
-4. Delete a **same-port** device while another still uses 30000. Manual re-add IP/port. Must log pooled GetDevice.
-5. Delete a **unique-port** device (Venus A `:30001` / Venus D `:30002`). Manual re-add is allowed immediately; discovery Confirm may wait for the 10 min scanner. GetDevice without `via pooled` is expected if no other client remains on that port.
-6. Disable the unique-port entry (`disable-entry` or UI Disable). Entities must leave the state machine. `enable-entry` restores the same `entry_id` and entity ids. Disable a **device** without unloading the entry, then re-enable.
-7. Stop that unique-port mock. Wait for `cannot_connect_{entry_id}` on `/config/repairs` and `unavailable` entities. Start the mock; the issue must auto-clear. Optionally run Fix with a bad IP, a different device’s IP, then the correct IP.
-8. `request_data_sync` + `wait-state --changed` on battery power for each re-added device.
-9. Device page / services: select `ai` then `auto`; `set_passive_mode`; SYS number/switch if the profile allows it.
-10. `device-actions` to confirm charge/discharge/stop exist. Use `set_passive_mode` or `select.select_option` for a fast mode change. If you `run-script` a device action, do not wait for `execute_script` to return (verification can take many minutes).
-11. Open `/config/automation/dashboard`, overflow **Run actions** on a Marstek discharge automation, and/or `fire-event`. Last triggered must update.
+2. Discovery Confirm on a leftover Discovered MAC (`click Add --near '<mac>'` → Submit). Watch logs for `via pooled UDP client` when the port is shared.
+3. Overflow **Run actions** on `/config/automation/dashboard` if you need a UI-visible last-triggered proof.
 
 Do not cite 0-byte `mp4` files. Discard failed recordings.
 
