@@ -28,7 +28,6 @@ from .const import (
     MODE_PASSIVE,
     MODE_UPS,
 )
-
 from .handlers import (
     get_static_state,
     handle_bat_get_status,
