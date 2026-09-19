@@ -1247,10 +1247,11 @@ class Campaign:
                 "select", "select_option", {"entity_id": mode["entity_id"], "option": "ai"}
             )
             await self.wait_equals(str(mode["entity_id"]), "ai", 60)
+            # DOD.SET range is 30-88; 90 is rejected by the number entity.
             await self.service(
-                "number", "set_value", {"entity_id": dod["entity_id"], "value": 90}
+                "number", "set_value", {"entity_id": dod["entity_id"], "value": 80}
             )
-            await self.wait_equals(str(dod["entity_id"]), "90", 60)
+            await self.wait_equals(str(dod["entity_id"]), "80", 60)
             num_auto = {
                 "alias": "Marstek campaign DOD",
                 "mode": "single",
@@ -1258,7 +1259,7 @@ class Campaign:
                     {
                         "trigger": "numeric_state",
                         "entity_id": dod["entity_id"],
-                        "below": 85,
+                        "below": 50,
                     }
                 ],
                 "actions": [
@@ -1271,8 +1272,9 @@ class Campaign:
             await ha_cdp.cmd_upsert_automation(
                 self.cdp, self.page, "marstek_campaign_dod", num_auto
             )
+            await asyncio.sleep(3)
             await self.service(
-                "number", "set_value", {"entity_id": dod["entity_id"], "value": 70}
+                "number", "set_value", {"entity_id": dod["entity_id"], "value": 35}
             )
             crossed = await self.wait_equals(str(mode["entity_id"]), "auto", 90)
             self.record("automation-numeric-dod", bool(crossed.get("ok")), crossed.get("error"))
