@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.4
+
+### Patch Changes
+
+- 3c8a162: Discover Marstek devices that listen on Open API port 30004 without a manual IP entry.
+- 8aa389e: Ignore impossible lifetime energy spikes so a bad grid, solar, load, or meter reading cannot freeze Home Assistant at a huge total.
+- 35e00e7: Warn about reset-prone firmware before the first poll, skip Bat.GetStatus on those builds, and serialize their UDP requests.
+- fc2caa5: Add Venus A 150 and Venus E mini Docker mocks that match GitHub-issue Open API wire shapes.
+- 104b768: Warn on Control firmware below 150 that can disable Local API, skip JSON-RPC id 0, and ignore parallel requests on those builds.
+- 88874e0: Keep older firmware safer during IP changes and discovery pauses, and skip polling Venus E2.0 entries that were added before that guard existed.
+- 2b3f74f: Harden older-firmware Open API traffic: wait out in-flight polls before writes, skip Venus E2.0, and keep reset protections if unload fails.
+- 1ea7966: Keep the integration compatible with Home Assistant 2026.9: use current device-registry identifier APIs, and map Open API mode names like Auto onto enum sensor and select options. Home Assistant 2025.10 remains supported.
+- fae8dd8: Match the Venus E 2.0 mock to HMG-50 Control 153: GetDevice identity VenusE, and no Open API EM.GetStatus until firmware 156.
+- 1ea048f: Reject Venus E 2.0 devices that report as HMG-50 or bare VenusE instead of treating them as Venus E 3.0.
+- 472f503: Match mock Open API replies to archived Control firmware: HMG-50 Wifi.SetConfig, 153 bat_power, and Set.Ver only where the recv list includes it.
+- 7f80923: Ship pymarstek.network in the mock Docker image so LAN reply-port behavior matches firmware.
+- 3467776: Release the Open API UDP socket when setup fails after the client is leased, without dropping sockets held for SETUP_RETRY.
+- 43650aa: Treat only real MAC addresses as device identity and abort duplicate setup when BLE and Wi-Fi identities overlap.
+- 8c20ffa: Keep the Open API UDP listener running after an unexpected decode error so polling does not stall.
+- eee2dc9: Match Open API replies to the sending device, keep stale sensors off when there is no cache, and reject Venus E 2.0 during connection repairs.
+- a982274: Match Venus C 153–156 to HMG-50 Control: no SYS/UPS, poll EM.GetStatus only from firmware 155, and treat Open API as reset-prone until 156.
+- 15ff778: Retransmit read-only Open API unicasts on known-safe firmware (Control 150+ / HMG-50 156+) after a silent 500 ms wait, staying inside the configured request timeout, so Wi-Fi timeouts recover without extra copies on writes, LAN, or unknown firmware.
+- 3f069fa: Fix Wi-Fi identity matching, serialize discovery traffic, and release UDP sockets when a retrying device is removed.
+
 ## 1.1.3
 
 ### Patch Changes
