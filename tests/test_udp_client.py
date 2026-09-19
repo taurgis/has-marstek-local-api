@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from itertools import product
 import json
 import socket
@@ -2536,6 +2537,7 @@ class TestResetProneRequestLock:
             await first_pause
             await second_pause
         assert client._listen_task is None
+        client._socket = None
         await client.async_resume_receiver()
         await client.async_resume_receiver()
 
@@ -2574,6 +2576,12 @@ class TestResetProneRequestLock:
             release_send.set()
             await request_task
         assert client._receiver_pause_count == 0
+        if client._listen_task is not None and not client._listen_task.done():
+            client._listen_task.cancel()
+            with suppress(asyncio.CancelledError, ValueError):
+                await client._listen_task
+        client._listen_task = None
+        client._socket = None
 
     async def test_pending_requests_are_keyed_by_ip(self) -> None:
         """Two devices may share a JSON-RPC id on one socket."""

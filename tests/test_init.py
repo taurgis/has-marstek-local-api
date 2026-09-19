@@ -1103,9 +1103,8 @@ async def test_failed_unload_keeps_reset_prone_protection(
         assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
         client.clear_openapi_reset_prone.assert_not_called()
 
-        unloaded = await hass.config_entries.async_unload(entry.entry_id)
-        await hass.async_block_till_done()
-        assert unloaded is True
+        # FAILED_UNLOAD cannot be unloaded again; stop the coordinator timer.
+        await entry.runtime_data.coordinator.async_shutdown()
 
 
 async def test_existing_venus_e2_entry_fails_setup(
