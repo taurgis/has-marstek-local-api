@@ -21,6 +21,7 @@ from .data_parser import (
 )
 from .udp import MarstekUDPClient
 from .validators import (
+    MAX_JSON_RPC_ID,
     MAX_PASSIVE_DURATION,
     MAX_POWER_VALUE,
     MAX_TIME_SLOTS,
@@ -28,10 +29,13 @@ from .validators import (
     ValidationError,
     enable_strict_mode,
     is_strict_mode,
+    json_rpc_wire_id,
+    normalize_json_rpc_wire_message,
     validate_json_message,
 )
 
 __all__ = [
+    "MAX_JSON_RPC_ID",
     "MAX_PASSIVE_DURATION",
     "MAX_POWER_VALUE",
     "MAX_TIME_SLOTS",
@@ -48,7 +52,9 @@ __all__ = [
     "get_pv_status",
     "get_wifi_status",
     "is_strict_mode",
+    "json_rpc_wire_id",
     "merge_device_status",
+    "normalize_json_rpc_wire_message",
     "parse_es_mode_response",
     "parse_es_status_response",
     "parse_pv_status_response",

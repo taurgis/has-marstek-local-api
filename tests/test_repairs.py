@@ -116,7 +116,9 @@ async def test_repair_flow_submit_updates_entry(
     device_info = {
         "ip": "192.168.1.100",
         "ble_mac": "AA:BB:CC:DD:EE:FF",
-        "device_type": "Venus",
+        "device_type": "VenusE 3.0",
+        "version": 150,
+        "firmware": "150",
     }
 
     with (
@@ -133,6 +135,8 @@ async def test_repair_flow_submit_updates_entry(
     # Verify entry was updated
     assert mock_config_entry.data["host"] == "192.168.1.100"
     assert mock_config_entry.data["port"] == 30000
+    assert mock_config_entry.data["version"] == 150
+    assert mock_config_entry.data["device_type"] == "VenusE 3.0"
     
     # Verify reload was called
     mock_reload.assert_called_once_with(mock_config_entry.entry_id)
@@ -177,10 +181,10 @@ async def test_repair_flow_unique_id_mismatch(
     flow.issue_id = f"cannot_connect_{mock_config_entry.entry_id}"
     flow.data = {"entry_id": mock_config_entry.entry_id}
 
-    # Return a device with different MAC
+    # Return a device with a MAC that is not this entry's BLE or Wi-Fi identity
     device_info = {
         "ip": "192.168.1.100",
-        "ble_mac": "11:22:33:44:55:66",  # Different MAC
+        "ble_mac": "22:22:33:44:55:66",
         "device_type": "Venus",
     }
 
@@ -192,6 +196,51 @@ async def test_repair_flow_unique_id_mismatch(
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "unique_id_mismatch"
+
+
+async def test_repair_flow_accepts_wifi_unique_id_when_ble_present(
+    hass: HomeAssistant,
+) -> None:
+    """Repair must match the stored Wi-Fi identity without rewriting unique_id."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="11:22:33:44:55:66",
+        data={
+            "host": "1.2.3.4",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    flow = CannotConnectRepairFlow()
+    flow.hass = hass
+    flow.issue_id = f"cannot_connect_{entry.entry_id}"
+    flow.data = {"entry_id": entry.entry_id}
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "wifi_mac": "11:22:33:44:55:66",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    with (
+        patch(
+            "custom_components.marstek.repairs.get_device_info",
+            return_value=device_info,
+        ),
+        patch.object(
+            hass.config_entries, "async_reload", new_callable=AsyncMock
+        ),
+    ):
+        result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
+
+    assert result["type"] == "create_entry"
+    assert entry.unique_id == "11:22:33:44:55:66"
+    assert entry.data["host"] == "192.168.1.100"
 
 
 async def test_repair_flow_reuses_pooled_udp_client(
@@ -233,3 +282,32 @@ async def test_repair_flow_reuses_pooled_udp_client(
     assert mock_get_device_info.await_args.kwargs["udp_client"] is client
     client.async_pause_receiver.assert_not_called()
     client.async_resume_receiver.assert_not_called()
+
+
+async def test_repair_flow_rejects_venus_e2(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Repair must not treat an HMG-50/VenusE Open API device as a success."""
+    mock_config_entry.add_to_hass(hass)
+
+    flow = CannotConnectRepairFlow()
+    flow.hass = hass
+    flow.issue_id = f"cannot_connect_{mock_config_entry.entry_id}"
+    flow.data = {"entry_id": mock_config_entry.entry_id}
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusE",
+        "version": 153,
+    }
+
+    with patch(
+        "custom_components.marstek.repairs.get_device_info",
+        return_value=device_info,
+    ):
+        result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "unsupported_device"
+    assert mock_config_entry.data["host"] == "1.2.3.4"

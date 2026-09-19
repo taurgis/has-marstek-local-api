@@ -15,6 +15,8 @@ def test_get_device_identifier_requires_mac() -> None:
     """Missing MAC data should raise a ValueError."""
     with pytest.raises(ValueError, match="identifier"):
         get_device_identifier({})
+    with pytest.raises(ValueError, match="identifier"):
+        get_device_identifier({"ble_mac": "test-no-ble-mac"})
 
 
 def test_binary_sensor_returns_none_when_no_data() -> None:

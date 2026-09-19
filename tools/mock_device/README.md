@@ -48,6 +48,17 @@ Issue [#57](https://github.com/taurgis/has-marstek-local-api/issues/57) is **PV1
 
 Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be configured as Venus E if you need the SYS-without-150 and slots 0–5 behavior.
 
+## Firmware UDP quirks
+
+The mock reproduces Control firmware behavior found in VNSE3-0 binaries
+(see [tools/firmware/ANALYSIS.md](../firmware/ANALYSIS.md)):
+
+- JSON-RPC `id` is stored as uint16 (`65536` replies as `0`)
+- Invalid JSON replies with parse error `id=0`, code `-32700`
+- A 0-byte UDP datagram freezes later Open API replies
+- Firmware below Control 150 duplicates each UDP reply (WiFi + Ethernet send
+  anomaly). Firmware **150+** sends a single reply.
+
 ## Usage
 
 ### As a Module (Recommended)
@@ -106,7 +117,7 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs **these eight** mock devices.
+The devcontainer runs **these nine** mock devices.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
@@ -118,6 +129,7 @@ The devcontainer runs **these eight** mock devices.
 | mock-marstek-6 | 172.28.0.26 | 30000 | VenusC | 153 | Rev 3.1 | n/a (no PV) | SYS + UPS; no PV; GetDevice omits result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)) |
 | mock-marstek-7 | 172.28.0.27 | 30004 | VenusA | 150 | Rev 3.1 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; SYS + UPS ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57) firmware **150.9**) |
 | mock-marstek-8 | 172.28.0.28 | 30000 | Venus E mini | 145 | E mini | n/a (no PV) | SYS without the 150 gate; no UPS; slots 0–5 |
+| mock-marstek-9 | 172.28.0.29 | 30000 | VenusE (HMG-50 / E2.0) | 153 | Unsupported E2 | n/a (no PV) | GetDevice `device=VenusE`, `src VenusE-%s`, result MACs present; no `EM.GetStatus` until Control 156; integration must reject, not add as Venus E 3.x |
 
 Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. Venus A @ 150 is the SYS/UPS PV device; do not replace the 148/149 pair with it.
 
@@ -135,6 +147,7 @@ To add devices in Home Assistant:
     - `172.28.0.26:30000`
     - `172.28.0.27:30004`
     - `172.28.0.28:30000`
+    - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
 
 ## Simulation Behavior
 

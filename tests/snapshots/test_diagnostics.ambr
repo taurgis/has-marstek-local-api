@@ -58,10 +58,13 @@
       'title': 'Test Marstek Device',
     }),
     'firmware_profile': dict({
+      'control_generation': 1,
       'family': 'Unknown',
       'firmware_known': True,
       'firmware_version': 1,
       'max_manual_schedule_slot': 9,
+      'openapi_reset_prone': False,
+      'parallel_requests_safe': True,
       'supports_pv': False,
       'supports_sys_ble_advertising': False,
       'supports_sys_dod': False,

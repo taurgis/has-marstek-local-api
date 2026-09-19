@@ -2,11 +2,58 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT
 from homeassistant.helpers.device_registry import format_mac
+
+_IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
+# Home Assistant ``format_mac`` lowercases; it does not validate. Only a
+# 6-octet hex MAC is a stable Marstek identity.
+_FORMATTED_MAC = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
+
+
+def formatted_mac_or_none(value: Any) -> str | None:
+    """Return a normalized MAC string, or None when *value* is not a MAC."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        formatted = format_mac(value.strip())
+    except (TypeError, ValueError):
+        return None
+    if _FORMATTED_MAC.fullmatch(formatted) is None:
+        return None
+    return formatted
+
+
+def identity_macs_from_mapping(
+    data: Mapping[str, Any],
+    *,
+    include_unique_id: str | None = None,
+) -> set[str]:
+    """Collect formatted BLE, Wi-Fi, and legacy MAC identities from a mapping."""
+    macs: set[str] = set()
+    for key in _IDENTITY_MAC_KEYS:
+        formatted = formatted_mac_or_none(data.get(key))
+        if formatted is not None:
+            macs.add(formatted)
+    formatted_unique = formatted_mac_or_none(include_unique_id)
+    if formatted_unique is not None:
+        macs.add(formatted_unique)
+    return macs
+
+
+def identity_macs_from_entry(entry: config_entries.ConfigEntry) -> set[str]:
+    """Collect every stable MAC stored on a config entry, including unique_id."""
+    return identity_macs_from_mapping(entry.data, include_unique_id=entry.unique_id)
+
+
+def identities_overlap(left: set[str], right: set[str]) -> bool:
+    """Return True when two identity sets share a MAC."""
+    return bool(left & right)
 
 
 def collect_configured_macs(
@@ -15,13 +62,7 @@ def collect_configured_macs(
     """Collect formatted MAC addresses from existing entries."""
     configured_macs: set[str] = set()
     for entry in entries:
-        entry_mac = (
-            entry.data.get("ble_mac")
-            or entry.data.get(CONF_MAC)
-            or entry.data.get("wifi_mac")
-        )
-        if entry_mac:
-            configured_macs.add(format_mac(entry_mac))
+        configured_macs.update(identity_macs_from_entry(entry))
     return configured_macs
 
 
@@ -44,8 +85,8 @@ def split_devices_by_configured(
     already_configured_names: list[str] = []
     for i, device in enumerate(devices):
         device_name = device_display_name(device)
-        device_mac = device.get("ble_mac") or device.get("mac") or device.get("wifi_mac")
-        is_configured = bool(device_mac and format_mac(device_mac) in configured_macs)
+        device_macs = identity_macs_from_mapping(device)
+        is_configured = identities_overlap(device_macs, configured_macs)
         if is_configured:
             already_configured_names.append(device_name)
         else:
@@ -61,19 +102,38 @@ def format_already_configured_text(names: list[str]) -> str:
     return "\n\nAlready configured devices:\n" + "\n".join(description_lines)
 
 
+_DEVICE_METADATA_KEYS: tuple[str, ...] = (
+    "device_type",
+    "version",
+    "wifi_name",
+    "wifi_mac",
+    "model",
+    "firmware",
+)
+
+
+def metadata_from_device_info(device_info: dict[str, Any]) -> dict[str, Any]:
+    """Return non-empty discovery fields that should be stored on the entry."""
+    updates: dict[str, Any] = {}
+    for key in _DEVICE_METADATA_KEYS:
+        if key not in device_info:
+            continue
+        value = device_info[key]
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        updates[key] = value
+    return updates
+
+
 def get_unique_id_from_device_info(device_info: dict[str, Any]) -> str | None:
     """Return formatted unique id from device info, if available."""
-    unique_id_mac = (
-        device_info.get("ble_mac")
-        or device_info.get("mac")
-        or device_info.get("wifi_mac")
-    )
-    if not unique_id_mac:
-        return None
-    try:
-        return format_mac(unique_id_mac)
-    except (TypeError, ValueError):
-        return None
+    for key in ("ble_mac", "mac", "wifi_mac"):
+        formatted = formatted_mac_or_none(device_info.get(key))
+        if formatted is not None:
+            return formatted
+    return None
 
 
 def build_entry_data(host: str, port: int, device_info: dict[str, Any]) -> dict[str, Any]:

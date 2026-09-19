@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import socket
 from collections.abc import Iterable
 from typing import Any, Protocol
@@ -19,19 +18,19 @@ from typing import Any, Protocol
 from .const import DEFAULT_UDP_PORT
 from .firmware_profile import extract_discovery_version
 from .pymarstek import ValidationError, discover
-from .pymarstek.network import create_udp_socket, get_broadcast_addresses, is_loopback_host
+from .pymarstek.network import (
+    create_udp_socket,
+    get_broadcast_addresses,
+    is_loopback_host,
+    mac_from_openapi_src,
+    udp_source_matches_host,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 # Discovery settings
 DISCOVERY_TIMEOUT = 10.0  # Total discovery timeout in seconds
 DISCOVERY_METHOD = "Marstek.GetDevice"
-
-# Open API `src` is typically "{model}-{ble_mac}", e.g. "VenusC-AABBCCDDEEFF".
-_SRC_MAC_SEPARATED = re.compile(
-    r"(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}"
-)
-_SRC_MAC_COMPACT = re.compile(r"[0-9A-Fa-f]{12}")
 
 
 def _normalize_ip(ip: str) -> str:
@@ -64,24 +63,8 @@ def _non_empty_str(value: Any) -> str:
 
 
 def _mac_from_src(src: Any) -> str:
-    """Extract a MAC address from a GetDevice ``src`` field.
-
-    Some firmware builds (observed on Venus C ``ver`` 153) omit ``ble_mac`` /
-    ``wifi_mac`` from ``result`` while still embedding the BLE MAC in ``src``.
-    """
-    if not isinstance(src, str) or not src:
-        return ""
-    separated = _SRC_MAC_SEPARATED.search(src)
-    raw = separated.group(0) if separated else ""
-    if not raw:
-        compact = _SRC_MAC_COMPACT.search(src)
-        raw = compact.group(0) if compact else ""
-    if not raw:
-        return ""
-    hex_only = re.sub(r"[:\-]", "", raw)
-    if len(hex_only) != 12:
-        return ""
-    return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
+    """Extract a MAC address from a GetDevice ``src`` field."""
+    return mac_from_openapi_src(src)
 
 
 def _build_device_info(
@@ -296,6 +279,11 @@ async def discover_devices(
 
                 try:
                     response = json.loads(data.decode("utf-8"))
+                except UnicodeDecodeError:
+                    _LOGGER.debug(
+                        "Invalid UTF-8 from %s:%d", sender_ip, sender_port
+                    )
+                    continue
                 except json.JSONDecodeError:
                     _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
                     continue
@@ -455,9 +443,19 @@ async def get_device_info(
                 )
 
                 sender_ip, _ = addr
+                if not udp_source_matches_host(str(sender_ip), host):
+                    _LOGGER.debug(
+                        "Ignoring GetDevice reply from %s while querying %s",
+                        sender_ip,
+                        host,
+                    )
+                    continue
 
                 try:
                     response = json.loads(data.decode("utf-8"))
+                except UnicodeDecodeError:
+                    _LOGGER.debug("Invalid UTF-8 from %s", sender_ip)
+                    continue
                 except json.JSONDecodeError:
                     _LOGGER.debug("Invalid JSON from %s", sender_ip)
                     continue

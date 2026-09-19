@@ -6,11 +6,14 @@ from typing import Final
 
 from homeassistant.const import Platform
 
-from .firmware_profile import FirmwareProfile, resolve_firmware_profile
+from .firmware_profile import DeviceFamily, FirmwareProfile, resolve_firmware_profile
 
 DOMAIN: Final = "marstek"
 DATA_UDP_CLIENTS: Final = "udp_clients"  # dict[int, MarstekUDPClient] keyed by bind port
 DATA_UDP_CLIENTS_LOCK: Final = "udp_clients_lock"
+DATA_DISCOVERY_LOCK: Final = "discovery_lock"
+DATA_UDP_CLIENT_OWNERS: Final = "udp_client_owners"  # bind_port -> entry ids
+DATA_ENTRY_BIND_PORTS: Final = "entry_bind_ports"  # entry id -> leased bind port
 DATA_SUPPRESS_RELOADS: Final = "suppress_reload_entry_ids"  # Set of entry_ids to skip reload
 
 PLATFORMS: Final[list[Platform]] = [
@@ -195,39 +198,32 @@ DEFAULT_SOCKET_LIMIT: Final = False
 
 INITIAL_SETUP_REQUEST_DELAY: Final = 2.0  # Faster delay during first data fetch
 
-# Device power limits (AC charge/discharge) in watts per model
+# Device power limits (AC charge/discharge) in watts per family.
 # Values are maximum absolute power in either direction unless socket limit is enabled.
-_DEVICE_POWER_LIMITS: Final[dict[str, int]] = {
-    "venusa": 1500,
-    "venusc": 2500,
-    "venusd": 2200,
-    "venuse": 2500,
-    # Vendor discovery SKUs (VNSA-0 / VNSD-0 / VNSE3-0) alongside Venus names.
-    "vnsa": 1500,
-    "vnsd": 2200,
-    "vnse3": 2500,
+# Use DeviceFamily so "VenusE" / "Venus E2.0" cannot inherit Venus E 3.x limits
+# via substring match (``venuse`` in ``venuse20``).
+_FAMILY_POWER_LIMITS: Final[dict[DeviceFamily, int]] = {
+    DeviceFamily.VENUS_A: 1500,
+    DeviceFamily.VENUS_C: 2500,
+    DeviceFamily.VENUS_D: 2200,
+    DeviceFamily.VENUS_E: 2500,
+    DeviceFamily.VENUS_E_MINI: 2500,
 }
 
-_DEVICE_SOCKET_LIMIT_DEFAULTS: Final[frozenset[str]] = frozenset({
-    "venusc",
-    "venusd",
-    "venuse",
-    "vnsd",
-    "vnse3",
-})
-
-
-def _normalize_device_type(device_type: str | None) -> str:
-    """Normalize device type for matching (lowercase, alnum only)."""
-    if not device_type:
-        return ""
-    return "".join(ch for ch in device_type if ch.isalnum()).lower()
+_FAMILY_SOCKET_LIMIT_DEFAULTS: Final[frozenset[DeviceFamily]] = frozenset(
+    {
+        DeviceFamily.VENUS_C,
+        DeviceFamily.VENUS_D,
+        DeviceFamily.VENUS_E,
+        DeviceFamily.VENUS_E_MINI,
+    }
+)
 
 
 def device_default_socket_limit(device_type: str | None) -> bool:
     """Get default socket limit setting for a device type."""
-    normalized = _normalize_device_type(device_type)
-    return any(token in normalized for token in _DEVICE_SOCKET_LIMIT_DEFAULTS)
+    family = resolve_firmware_profile(device_type, None).family
+    return family in _FAMILY_SOCKET_LIMIT_DEFAULTS
 
 
 def device_supports_pv(device_type: str | None) -> bool:
@@ -252,15 +248,8 @@ def get_device_power_limits(
     Returns:
         (min_charge_power, max_discharge_power)
     """
-    normalized = _normalize_device_type(device_type)
-    max_abs = None
-    for token, limit in _DEVICE_POWER_LIMITS.items():
-        if token and token in normalized:
-            max_abs = limit
-            break
-
-    if max_abs is None:
-        max_abs = MAX_DISCHARGE_POWER
+    family = resolve_firmware_profile(device_type, None).family
+    max_abs = _FAMILY_POWER_LIMITS.get(family, MAX_DISCHARGE_POWER)
 
     min_charge_power = -max_abs
     max_discharge_power = SOCKET_LIMIT_POWER if socket_limit else max_abs

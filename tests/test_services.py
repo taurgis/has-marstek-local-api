@@ -128,7 +128,7 @@ async def test_set_passive_mode_power_out_of_range_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
     )
 
@@ -164,7 +164,7 @@ async def test_set_passive_mode_power_allowed_when_socket_limit_disabled(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             "socket_limit": False,
@@ -204,7 +204,7 @@ async def test_set_passive_mode_charge_ignores_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
     )
 
@@ -241,7 +241,7 @@ async def test_set_passive_mode_charge_ignores_socket_limit_explicit_true(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             "socket_limit": True,
@@ -506,7 +506,6 @@ async def test_service_command_failure_retries(
     # Setup succeeds (first call), then 2 failures + 1 success for retries
     client.send_request = AsyncMock(
         side_effect=[
-            {"result": {}},  # Setup call succeeds
             TimeoutError("timeout"),  # First service attempt fails
             TimeoutError("timeout"),  # Second attempt fails
             {"result": {}},  # Third attempt succeeds
@@ -532,8 +531,8 @@ async def test_service_command_failure_retries(
             blocking=True,
         )
 
-        # Should have called: 1 setup + 3 retries = 4 total
-        assert client.send_request.call_count == 4
+        # Should have called 3 retries (setup uses fetch_es_mode)
+        assert client.send_request.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -550,8 +549,6 @@ async def test_service_command_all_retries_fail(
     async def send_request_side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        if call_count == 1:  # First call is during setup
-            return {"result": {}}
         raise TimeoutError("timeout")  # All service calls fail
 
     client.send_request = AsyncMock(side_effect=send_request_side_effect)

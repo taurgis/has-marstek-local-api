@@ -1,6 +1,7 @@
 """Tests for Marstek device actions."""
 
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,13 +29,35 @@ from custom_components.marstek.helpers.device_lookup import async_lookup_device_
 DEVICE_IDENTIFIER = format_mac("AA:BB:CC:DD:EE:FF")
 
 
+def _verify_status(*, charge: bool | None = None, mode: str = "Manual") -> dict[str, Any]:
+    """Build a Venus E-style ES.GetStatus payload for action verification.
+
+    Real Venus E replies omit ``bat_power``; the parser falls back to
+    ``pv_power - ongrid_power`` (API convention) then converts to HA signs.
+    """
+    if charge is True:
+        return {"result": {"mode": mode, "pv_power": 0, "ongrid_power": -500}}
+    if charge is False:
+        return {"result": {"mode": mode, "pv_power": 0, "ongrid_power": 500}}
+    return {
+        "result": {
+            "mode": mode,
+            "pv_power": 0,
+            "ongrid_power": 0,
+            "offgrid_power": 0,
+        }
+    }
+
+
 def _mock_client(status=None, mode_response=None):
     """Create a mock MarstekUDPClient."""
     client = MagicMock()
     client.async_setup = AsyncMock(return_value=None)
     client.async_cleanup = AsyncMock(return_value=None)
-    # Use bat_power for ES.GetStatus verification (not ongrid_power)
-    client.send_request = AsyncMock(return_value=mode_response or {"result": {"mode": "Manual", "bat_power": -500}})
+    client.send_request = AsyncMock(
+        return_value=mode_response or _verify_status(charge=True)
+    )
+    client.fetch_es_mode = AsyncMock(return_value={"device_mode": "manual"})
     client.get_device_status = AsyncMock(return_value=status or {
         "device_mode": "SelfUse",
         "battery_soc": 55,
@@ -42,6 +65,8 @@ def _mock_client(status=None, mode_response=None):
     })
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.begin_poll_cycle = AsyncMock(return_value=True)
+    client.end_poll_cycle = AsyncMock(return_value=None)
     return client
 
 
@@ -98,13 +123,13 @@ async def test_device_actions_pause_and_resume(
     """Test device actions pause polling during execution and resume after."""
     mock_config_entry.add_to_hass(hass)
 
-    # Mock response based on action type (using bat_power for ES.GetStatus verification)
+    # Mock response based on action type (Venus E omits bat_power)
     if expected_power_negative is True:
-        mode_response = {"result": {"mode": "Manual", "bat_power": -500}}
+        mode_response = _verify_status(charge=True)
     elif expected_power_negative is False:
-        mode_response = {"result": {"mode": "Manual", "bat_power": 500}}
+        mode_response = _verify_status(charge=False)
     else:
-        mode_response = {"result": {"mode": "Manual", "bat_power": 0}}
+        mode_response = _verify_status(charge=None)
 
     client = _mock_client(mode_response=mode_response)
     with _patch_all(client=client):
@@ -157,7 +182,7 @@ async def test_device_action_power_out_of_range_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_DISCHARGE_POWER: 2500,
@@ -227,7 +252,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_CHARGE_POWER: -2000,  # Above 800W socket limit
@@ -263,7 +288,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_explicit_true
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_CHARGE_POWER: -2000,  # Above 800W socket limit
@@ -300,7 +325,7 @@ async def test_device_action_charge_allows_high_power_without_socket_limit(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_CHARGE_POWER: -2000,  # Above 800W but allowed without socket limit
@@ -336,7 +361,7 @@ async def test_device_action_polling_active_during_verification_delay(
 
     call_order: list[str] = []
 
-    client = _mock_client(mode_response={"result": {"mode": "Manual", "bat_power": -500}})
+    client = _mock_client(mode_response=_verify_status(charge=True))
     
     # Track call order
     original_pause = client.pause_polling
@@ -468,7 +493,7 @@ async def test_device_action_retry_on_send_failure(hass, mock_config_entry):
         if send_call_count == 1 and "ES.SetMode" in msg:
             raise TimeoutError("Simulated timeout")
         # All ES.GetStatus (verification) calls succeed
-        return {"result": {"mode": "Manual", "bat_power": -500}}
+        return _verify_status(charge=True)
     
     client.send_request = AsyncMock(side_effect=mock_send_request)
     
@@ -500,7 +525,7 @@ async def test_validate_action_config_power_out_of_range(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
     )
 
@@ -559,7 +584,7 @@ async def test_device_action_retry_exhausted(hass, mock_config_entry):
 
     # Mock client that always returns wrong mode/power (verification fails)
     client = _mock_client()
-    client.send_request = AsyncMock(return_value={"result": {"mode": "Auto", "bat_power": 0}})
+    client.send_request = AsyncMock(return_value=_verify_status(charge=None, mode="Auto"))
     
     with _patch_all(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -591,9 +616,9 @@ async def test_device_action_verification_mode_not_manual(hass, mock_config_entr
         call_count += 1
         # First ~3 calls show wrong mode (sends + verifications)
         if call_count <= 3:
-            return {"result": {"mode": "AI", "bat_power": 0}}
+            return _verify_status(charge=None, mode="AI")
         # Then succeed
-        return {"result": {"mode": "Manual", "bat_power": -500}}
+        return _verify_status(charge=True)
     
     client = _mock_client()
     client.send_request = AsyncMock(side_effect=mock_send)
@@ -629,7 +654,7 @@ async def test_device_action_verification_battery_power_not_number(hass, mock_co
         # First few calls return non-numeric bat_power
         if call_count <= 2:
             return {"result": {"mode": "Manual", "bat_power": "unknown"}}
-        return {"result": {"mode": "Manual", "bat_power": -500}}
+        return _verify_status(charge=True)
     
     client = _mock_client()
     client.send_request = AsyncMock(side_effect=mock_send)
@@ -655,8 +680,8 @@ async def test_device_action_stop_verification(hass, mock_config_entry):
     """Test stop action verification checks for low power."""
     mock_config_entry.add_to_hass(hass)
 
-    # Mock client that returns bat_power=0 (stopped)
-    client = _mock_client(mode_response={"result": {"mode": "Manual", "bat_power": 0}})
+    # Mock client that returns idle power (stopped)
+    client = _mock_client(mode_response=_verify_status(charge=None))
     
     with _patch_all(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -680,8 +705,8 @@ async def test_device_action_discharge_verification(hass, mock_config_entry):
     """Test discharge action verification checks for positive power."""
     mock_config_entry.add_to_hass(hass)
 
-    # Mock client that returns positive bat_power (discharging)
-    client = _mock_client(mode_response={"result": {"mode": "Manual", "bat_power": 500}})
+    # Mock client that returns discharging power via the Venus E fallback
+    client = _mock_client(mode_response=_verify_status(charge=False))
     
     with _patch_all(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -760,7 +785,7 @@ async def test_device_action_verification_exception(hass, mock_config_entry):
         if call_count == 2:
             raise TimeoutError("Verification timeout")
         # Later calls succeed
-        return {"result": {"mode": "Manual", "bat_power": -500}}
+        return _verify_status(charge=True)
     
     client = _mock_client()
     client.send_request = AsyncMock(side_effect=mock_send)

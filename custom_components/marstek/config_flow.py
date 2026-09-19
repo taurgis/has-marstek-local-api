@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.data_entry_flow import section
+from homeassistant.data_entry_flow import AbortFlow, section
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 
@@ -40,11 +40,17 @@ from .const import (
 )
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
+from .firmware_profile import is_unsupported_venus_e2
 from .helpers.flow_helpers import (
     build_entry_data,
     collect_configured_macs,
     format_already_configured_text,
+    formatted_mac_or_none,
     get_unique_id_from_device_info,
+    identities_overlap,
+    identity_macs_from_entry,
+    identity_macs_from_mapping,
+    metadata_from_device_info,
     split_devices_by_configured,
 )
 from .helpers.flow_schemas import (
@@ -56,7 +62,9 @@ from .helpers.flow_schemas import (
 from .helpers.udp_clients import (
     async_paused_udp_receivers,
     bind_port_for_host,
+    discovery_lock,
     get_udp_client,
+    transfer_reset_prone_mark_for_entry,
 )
 
 
@@ -80,6 +88,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     discovered_devices: list[dict[str, Any]]
     _discovered_ip: str | None = None
     _discovered_port: int | None = None
+    _discovered_metadata: dict[str, Any] | None = None
+    _discovered_identity_macs: set[str] | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -102,8 +112,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors={"base": "invalid_discovery_info"}
                 )
 
+            if is_unsupported_venus_e2(device.get("device_type")):
+                return self.async_abort(reason="unsupported_device")
+
+            self._discovered_identity_macs = identity_macs_from_mapping(device)
             await self.async_set_unique_id(formatted_unique_id)
-            self._abort_if_unique_id_configured()
+            self._abort_if_identity_configured()
 
             return self.async_create_entry(
                 title=format_device_name(device),
@@ -121,6 +135,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Execute broadcast discovery with retry mechanism
             # Uses local discovery module (workaround for pymarstek echo issues)
             devices = await self._discover_devices_with_retry()
+            devices = [
+                device
+                for device in devices
+                if not is_unsupported_venus_e2(device.get("device_type"))
+            ]
 
             if not devices:
                 # No devices found, offer manual entry
@@ -211,8 +230,18 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors={"base": "invalid_discovery_info"},
                     )
 
+                if is_unsupported_venus_e2(device_info.get("device_type")):
+                    return self.async_show_form(
+                        step_id="manual",
+                        data_schema=manual_entry_schema,
+                        errors={"base": "unsupported_device"},
+                    )
+
+                self._discovered_identity_macs = identity_macs_from_mapping(
+                    device_info
+                )
                 await self.async_set_unique_id(formatted_unique_id)
-                self._abort_if_unique_id_configured()
+                self._abort_if_identity_configured()
 
                 return self.async_create_entry(
                     title=format_device_name(device_info),
@@ -295,10 +324,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
         never sees that reply — Linux hashes it onto the coordinator socket
         even if that listener is paused. Pause only for broadcast discovery,
-        which must bind its own sockets.
+        which must bind its own sockets. Hold the discovery lock so a
+        temporary unpooled socket cannot race a broadcast bind.
         """
-        udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
-        return await get_device_info(host=host, port=port, udp_client=udp_client)
+        async with discovery_lock(self.hass):
+            udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
+            return await get_device_info(host=host, port=port, udp_client=udp_client)
 
     async def _async_discover_devices(
         self, scan_ports: list[int]
@@ -325,6 +356,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(mac)
         self._discovered_ip = discovery_info.ip
         self._discovered_port = None
+        self._discovered_metadata = {}
+        self._discovered_identity_macs = {mac}
 
         # Use shared discovery handler to update existing entries or confirm new ones
         return await self._async_handle_discovery_with_unique_id()
@@ -334,14 +367,22 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Handle discovery from Scanner (integration discovery)."""
         discovered_ip = discovery_info.get("ip")
-        discovered_ble_mac = discovery_info.get("ble_mac")
+        identity_macs = identity_macs_from_mapping(discovery_info)
 
-        if not discovered_ble_mac or not discovered_ip:
+        if not identity_macs or not discovered_ip:
             return self.async_abort(reason="invalid_discovery_info")
 
-        # Set unique_id using BLE-MAC
-        await self.async_set_unique_id(format_mac(discovered_ble_mac))
+        if is_unsupported_venus_e2(discovery_info.get("device_type")):
+            return self.async_abort(reason="unsupported_device")
+
+        preferred_unique_id = get_unique_id_from_device_info(discovery_info)
+        if preferred_unique_id is None:
+            return self.async_abort(reason="invalid_discovery_info")
+
+        await self.async_set_unique_id(preferred_unique_id)
         self._discovered_ip = discovered_ip
+        self._discovered_metadata = metadata_from_device_info(discovery_info)
+        self._discovered_identity_macs = identity_macs
         discovered_port = discovery_info.get("port")
         try:
             self._discovered_port = (
@@ -381,12 +422,21 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     formatted_unique_id = get_unique_id_from_device_info(device_info)
                     if not formatted_unique_id:
                         errors["base"] = "invalid_discovery_info"
+                    elif is_unsupported_venus_e2(device_info.get("device_type")):
+                        errors["base"] = "unsupported_device"
                     else:
-                        if self.unique_id and self.unique_id != formatted_unique_id:
+                        device_macs = identity_macs_from_mapping(device_info)
+                        flow_mac = formatted_mac_or_none(self.unique_id)
+                        if (
+                            self.unique_id
+                            and formatted_unique_id != self.unique_id
+                            and (flow_mac is None or flow_mac not in device_macs)
+                        ):
                             errors["base"] = "unique_id_mismatch"
                         else:
+                            self._discovered_identity_macs = device_macs
                             await self.async_set_unique_id(formatted_unique_id)
-                            self._abort_if_unique_id_configured()
+                            self._abort_if_identity_configured()
 
                             return self.async_create_entry(
                                 title=f"Marstek {device_info.get('device_type', 'Device')}",
@@ -538,7 +588,22 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 updates[CONF_PORT] = discovered_port
 
+            for key, value in (self._discovered_metadata or {}).items():
+                if entry.data.get(key) != value:
+                    updates[key] = value
+
             if updates:
+                old_host = entry.data.get(CONF_HOST)
+                new_host = updates.get(CONF_HOST, old_host)
+                new_port = updates.get(CONF_PORT)
+                if isinstance(old_host, str) and isinstance(new_host, str):
+                    transfer_reset_prone_mark_for_entry(
+                        self.hass,
+                        entry,
+                        old_host,
+                        new_host,
+                        new_port=new_port if isinstance(new_port, int) else None,
+                    )
                 self.hass.config_entries.async_update_entry(
                     entry,
                     data={**entry.data, **updates},
@@ -576,12 +641,26 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not formatted_unique_id:
                 return None, "invalid_discovery_info"
 
-            await self.async_set_unique_id(formatted_unique_id)
-            self._abort_if_unique_id_mismatch()
+            device_macs = identity_macs_from_mapping(device_info)
+            if not identities_overlap(identity_macs_from_entry(entry), device_macs):
+                return None, "unique_id_mismatch"
 
-            data_updates: dict[str, Any] = {CONF_HOST: host}
+            data_updates: dict[str, Any] = {
+                CONF_HOST: host,
+                **metadata_from_device_info(device_info),
+            }
             if update_port:
                 data_updates[CONF_PORT] = port
+
+            old_host = entry.data.get(CONF_HOST)
+            if isinstance(old_host, str):
+                transfer_reset_prone_mark_for_entry(
+                    self.hass,
+                    entry,
+                    old_host,
+                    host,
+                    new_port=port if update_port else None,
+                )
 
             if reason is None:
                 return (
@@ -604,19 +683,26 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return None, "cannot_connect"
 
     def _entry_matches_unique_id(self, entry: config_entries.ConfigEntry) -> bool:
-        """Return True if entry matches current flow unique id."""
-        if entry.unique_id and entry.unique_id == self.unique_id:
-            return True
+        """Return True if entry shares any stable MAC with this flow."""
+        entry_macs = identity_macs_from_entry(entry)
+        discovered = set(self._discovered_identity_macs or ())
+        unique_id_mac = formatted_mac_or_none(self.unique_id)
+        if unique_id_mac is not None:
+            discovered.add(unique_id_mac)
+        if self._discovered_metadata:
+            discovered.update(identity_macs_from_mapping(self._discovered_metadata))
+        return identities_overlap(entry_macs, discovered)
 
-        if not self.unique_id:
-            return False
+    def _abort_if_identity_configured(self) -> None:
+        """Abort when this hardware is already configured.
 
-        entry_mac = (
-            entry.data.get("ble_mac")
-            or entry.data.get("mac")
-            or entry.data.get("wifi_mac")
-        )
-        return bool(entry_mac and format_mac(entry_mac) == self.unique_id)
+        Unique IDs stay as originally assigned. Match BLE, Wi-Fi, and stored
+        MAC identities so a later discovery view cannot create a second entry.
+        """
+        self._abort_if_unique_id_configured()
+        for entry in self._async_current_entries(include_ignore=False):
+            if self._entry_matches_unique_id(entry):
+                raise AbortFlow("already_configured")
 
     @staticmethod
     def async_get_options_flow(

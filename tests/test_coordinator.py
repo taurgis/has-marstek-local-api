@@ -15,7 +15,9 @@ from custom_components.marstek.const import (
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
+    DEFAULT_REQUEST_DELAY,
     DOMAIN,
+    INITIAL_SETUP_REQUEST_DELAY,
     WIFI_STATUS_KEYS,
 )
 from custom_components.marstek.coordinator import MarstekDataUpdateCoordinator
@@ -74,6 +76,56 @@ async def test_coordinator_init(hass: HomeAssistant, mock_config_entry, mock_udp
     assert coordinator.udp_client is mock_udp_client
     assert coordinator.config_entry is mock_config_entry
     assert coordinator.name == "Marstek 1.2.3.4"
+
+
+@pytest.mark.asyncio
+async def test_reset_prone_skips_initial_fast_request_delay(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """Older firmware keeps the configured request delay during first fetch."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 147,
+        },
+    )
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+        is_initial_setup=True,
+    )
+    assert coordinator._get_request_delay() == DEFAULT_REQUEST_DELAY
+    coordinator.finish_initial_setup()
+    assert coordinator._get_request_delay() == DEFAULT_REQUEST_DELAY
+
+
+@pytest.mark.asyncio
+async def test_capable_firmware_uses_initial_fast_request_delay(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """Firmware 150+ may use the shorter first-fetch delay."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+        is_initial_setup=True,
+    )
+    assert coordinator._get_request_delay() == INITIAL_SETUP_REQUEST_DELAY
 
 
 @pytest.mark.asyncio
@@ -176,6 +228,39 @@ async def test_coordinator_parallel_requests_option(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_ignores_parallel_on_reset_prone_firmware(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Firmware below Control 150 ignores the parallel-requests option."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 147,
+        },
+        options={
+            CONF_PARALLEL_API_REQUESTS: True,
+            CONF_REQUEST_DELAY: 5.0,
+        },
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["parallel_requests"] is False
+    assert kwargs["delay_between_requests"] == 5.0
+
+
+@pytest.mark.asyncio
 async def test_coordinator_skips_wifi_status_when_disabled(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):
@@ -268,6 +353,46 @@ async def test_coordinator_includes_bat_status_when_entity_enabled(
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_bat"] is True
+
+
+@pytest.mark.asyncio
+async def test_coordinator_skips_bat_status_on_reset_prone_firmware(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Reset-prone firmware never sends Bat.GetStatus, even if details are enabled."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 147,
+        },
+        options={CONF_POLL_INTERVAL_SLOW: 0},
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff_bat_temp",
+        config_entry=mock_config_entry,
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_bat"] is False
+    mock_udp_client.set_openapi_reset_prone.assert_called_with(
+        "1.2.3.4", True, owner=mock_config_entry.entry_id
+    )
 
 
 @pytest.mark.asyncio
@@ -568,7 +693,7 @@ async def test_coordinator_polling_paused_returns_cached_data(
 ):
     """Test that polling paused returns cached data."""
     mock_config_entry.add_to_hass(hass)
-    mock_udp_client.is_polling_paused = MagicMock(return_value=True)
+    mock_udp_client.begin_poll_cycle = AsyncMock(return_value=False)
 
     coordinator = MarstekDataUpdateCoordinator(
         hass,
@@ -592,7 +717,7 @@ async def test_coordinator_polling_paused_returns_empty_dict_when_no_cache(
 ):
     """Test that polling paused returns empty dict when no cached data."""
     mock_config_entry.add_to_hass(hass)
-    mock_udp_client.is_polling_paused = MagicMock(return_value=True)
+    mock_udp_client.begin_poll_cycle = AsyncMock(return_value=False)
 
     coordinator = MarstekDataUpdateCoordinator(
         hass,
@@ -742,6 +867,26 @@ async def test_coordinator_failure_threshold_keeps_entities_available(
     with pytest.raises(UpdateFailed, match="Polling failed"):
         await coordinator._async_update_data()
     assert coordinator.consecutive_failures == 3
+
+
+@pytest.mark.asyncio
+async def test_coordinator_failure_without_cache_raises(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """A polling failure with no previous data must not keep empty entities available."""
+    mock_config_entry.add_to_hass(hass)
+    mock_udp_client.get_device_status = AsyncMock(side_effect=TimeoutError("timeout"))
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    with pytest.raises(UpdateFailed, match="Polling failed"):
+        await coordinator._async_update_data()
+    assert coordinator.consecutive_failures == 1
 
 
 @pytest.mark.asyncio

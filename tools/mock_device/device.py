@@ -11,6 +11,7 @@ from typing import Any
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     FirmwareProfile,
+    is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
 from custom_components.marstek.pymarstek.const import (
@@ -18,6 +19,8 @@ from custom_components.marstek.pymarstek.const import (
     CMD_DOD_SET,
     CMD_LED_CTRL,
 )
+from custom_components.marstek.pymarstek.network import is_loopback_host
+from custom_components.marstek.pymarstek.validators import json_rpc_wire_id
 
 from .const import (
     DEFAULT_CONFIG,
@@ -116,6 +119,23 @@ class MockMarstekDevice:
             self._static_soc = int(persisted_state.get("soc", initial_soc))
             self._static_totals = self._totals_from_state(persisted_state)
 
+        # Control firmware freezes Open API after a 0-byte UDP datagram
+        # (VNSE3-0 json_data.c / CH395 recv path).
+        self._openapi_frozen = False
+
+    def _hmg50_lacks_em_status(self) -> bool:
+        """Return whether this HMG-50 Open API build has no EM.GetStatus.
+
+        Control 153 (``202505301136007a5b57023.bin``) lists GetDevice, ES.*,
+        BLE.GetStatus, PV.GetStatus, Wifi.*, and Bat.GetStatus. ``EM.GetStatus``
+        is only a meter *client* request on that image. Control 156 added the
+        Open API server method (``20251118172129117290445.bin``).
+        """
+        if not is_unsupported_venus_e2(self.config.get("device")):
+            return False
+        generation = self.profile.control_generation
+        return generation is None or generation < 156
+
     def start(self) -> None:
         """Start the mock device server."""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -199,32 +219,97 @@ class MockMarstekDevice:
 
     def _handle_request(self) -> None:
         """Handle incoming UDP request."""
+        assert self.sock is not None
         data, addr = self.sock.recvfrom(4096)
         sender_ip, sender_port = addr
 
-        try:
-            request = json.loads(data.decode("utf-8"))
-        except json.JSONDecodeError:
-            print(f"[{time.strftime('%H:%M:%S')}] Invalid JSON from {sender_ip}:{sender_port}")
+        if self._openapi_frozen:
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Open API frozen; "
+                f"ignoring {len(data)} bytes from {sender_ip}:{sender_port}"
+            )
             return
 
-        request_id = request.get("id", 0)
+        if not data:
+            self._openapi_frozen = True
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Empty UDP datagram from "
+                f"{sender_ip}:{sender_port}; freezing Open API "
+                "(Control firmware behavior)"
+            )
+            return
+
+        try:
+            request = json.loads(data.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Invalid JSON from "
+                f"{sender_ip}:{sender_port}"
+            )
+            self._send_openapi_datagram(
+                {
+                    "id": 0,
+                    "error": {"code": -32700, "message": "Parse error"},
+                },
+                addr,
+            )
+            return
+
+        if not isinstance(request, dict):
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Non-object JSON from "
+                f"{sender_ip}:{sender_port}"
+            )
+            return
+
+        raw_id = request.get("id", 0)
+        wire_id = json_rpc_wire_id(raw_id)
+        request_id = 0 if wire_id is None else wire_id
         method = request.get("method", "")
+        params = request.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
 
         print(f"[{time.strftime('%H:%M:%S')}] Request from {sender_ip}:{sender_port}")
         print(f"   Method: {method}")
-        print(f"   ID: {request_id}")
+        print(f"   ID: {raw_id} (wire {request_id})")
 
-        response = self.build_response(request_id, method, request.get("params", {}))
+        response = self.build_response(request_id, method, params)
 
         if response:
-            response_bytes = json.dumps(response).encode("utf-8")
-            self.sock.sendto(response_bytes, addr)
+            self._send_openapi_datagram(response, addr)
             print(f"   -> Sent response: {method}")
         else:
             print("   -> Unknown method, no response")
 
         print()
+
+    def _send_openapi_datagram(
+        self, response: dict[str, Any], addr: tuple[str, int]
+    ) -> None:
+        """Send a UDP reply, duplicating it on reset-prone Control firmware.
+
+        Pre-150 VNSE3-0 builds send Local API replies on both the FC41D WiFi
+        AT+QISEND path and the CH395 Ethernet socket (the v150 OTA note
+        "Optimized Local API send anomaly on Ethernet").
+        """
+        assert self.sock is not None
+        response_bytes = json.dumps(response).encode("utf-8")
+        self.sock.sendto(response_bytes, self._reply_addr(addr))
+        if self.profile.openapi_reset_prone:
+            self.sock.sendto(response_bytes, self._reply_addr(addr))
+
+    def _reply_addr(self, addr: tuple[str, int]) -> tuple[str, int]:
+        """Choose the UDP destination firmware would use for this sender.
+
+        Real devices reply to the Open API listen port, not an ephemeral
+        source port. Loopback unit tests still bind ephemeral, so those
+        replies keep using the request's source address.
+        """
+        sender_ip, _sender_port = addr
+        if is_loopback_host(sender_ip):
+            return addr
+        return (sender_ip, self.port)
 
     def _get_state(self) -> dict[str, Any]:
         """Get current device state."""
@@ -382,6 +467,8 @@ class MockMarstekDevice:
             return handle_wifi_get_status(request_id, src, self.config, self.ip, state)
 
         elif method == "EM.GetStatus":
+            if self._hmg50_lacks_em_status():
+                return handle_method_not_found(request_id, src)
             return handle_em_get_status(
                 request_id, src, state, profile=self.profile
             )

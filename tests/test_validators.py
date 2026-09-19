@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from custom_components.marstek.pymarstek.validators import (
     MAX_DEVICE_ID,
+    MAX_JSON_RPC_ID,
     MAX_PASSIVE_DURATION,
     MAX_POWER_VALUE,
     MAX_TIME_SLOTS,
@@ -15,6 +18,8 @@ from custom_components.marstek.pymarstek.validators import (
     ValidationError,
     enable_strict_mode,
     is_strict_mode,
+    json_rpc_wire_id,
+    normalize_json_rpc_wire_message,
     validate_command,
     validate_device_id,
     validate_es_set_mode_config,
@@ -427,6 +432,89 @@ class TestValidateCommand:
         with pytest.raises(ValidationError) as exc_info:
             validate_command(command)
         assert "non-negative integer" in exc_info.value.message
+
+    def test_bool_command_id_rejected(self) -> None:
+        """Test boolean command ids are rejected (bool is a subclass of int)."""
+        command = {
+            "id": True,
+            "method": "ES.GetStatus",
+            "params": {},
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            validate_command(command)
+        assert "non-negative integer" in exc_info.value.message
+
+    def test_command_id_above_uint16_rejected(self) -> None:
+        """Test JSON-RPC ids above the Control firmware uint16 width are rejected."""
+        command = {
+            "id": MAX_JSON_RPC_ID + 1,
+            "method": "ES.GetStatus",
+            "params": {},
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            validate_command(command)
+        assert "uint16" in exc_info.value.message
+        assert exc_info.value.field == "id"
+
+    def test_command_id_uint16_max_accepted(self) -> None:
+        """Test JSON-RPC id 65535 is accepted."""
+        validate_command(
+            {
+                "id": MAX_JSON_RPC_ID,
+                "method": "ES.GetStatus",
+                "params": {"id": 0},
+            }
+        )
+
+
+class TestJsonRpcWireId:
+    """Tests for firmware uint16 JSON-RPC id matching."""
+
+    def test_truncates_above_uint16(self) -> None:
+        """Values above 65535 wrap the way Control firmware stores them."""
+        assert json_rpc_wire_id(MAX_JSON_RPC_ID + 1) == 0
+        assert json_rpc_wire_id(65537) == 1
+
+    def test_rejects_bools_and_non_ints(self) -> None:
+        """Bools and non-integers are not JSON-RPC ids."""
+        assert json_rpc_wire_id(True) is None
+        assert json_rpc_wire_id("1") is None
+        assert json_rpc_wire_id(None) is None
+
+
+class TestNormalizeJsonRpcWireMessage:
+    """Tests for outbound JSON-RPC id rewriting."""
+
+    def test_rewrites_overflow_id_that_would_wrap_to_zero(self) -> None:
+        """65536 stores as 0 on the MCU; non-discovery methods must not send 0."""
+        message, wire_id, method = normalize_json_rpc_wire_message(
+            '{"id": 65536, "method": "ES.GetStatus", "params": {"id": 0}}'
+        )
+        assert wire_id == 1
+        assert method == "ES.GetStatus"
+        assert json.loads(message)["id"] == 1
+
+    def test_rewrites_truncated_nonzero_id(self) -> None:
+        """65537 stores as 1; rewrite the payload to match."""
+        message, wire_id, method = normalize_json_rpc_wire_message(
+            '{"id": 65537, "method": "ES.GetStatus", "params": {"id": 0}}'
+        )
+        assert wire_id == 1
+        assert method == "ES.GetStatus"
+        assert json.loads(message)["id"] == 1
+
+    def test_preserves_discovery_id_zero(self) -> None:
+        """Marstek.GetDevice may keep id 0 so devices can echo it."""
+        original = '{"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}'
+        message, wire_id, method = normalize_json_rpc_wire_message(original)
+        assert wire_id == 0
+        assert method == "Marstek.GetDevice"
+        assert message == original
+
+    def test_missing_id_raises(self) -> None:
+        """Messages without a usable id raise ValueError."""
+        with pytest.raises(ValueError, match="missing id"):
+            normalize_json_rpc_wire_message('{"method": "ES.GetStatus"}')
 
 
 class TestValidateJsonMessage:

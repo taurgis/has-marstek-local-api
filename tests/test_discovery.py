@@ -1078,7 +1078,7 @@ class TestGetDeviceInfo:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return (json.dumps(device_response).encode(), ("10.0.0.1", 30000))
+                return (json.dumps(device_response).encode(), ("192.168.1.100", 30000))
             raise TimeoutError()
         
         time_calls = [0]
@@ -1099,6 +1099,48 @@ class TestGetDeviceInfo:
         assert result is not None
         # Should use the host parameter, not sender IP
         assert result["ip"] == "192.168.1.100"
+
+    @pytest.mark.asyncio
+    async def test_ignores_getdevice_reply_from_other_host(self) -> None:
+        """Unicast GetDevice must not accept another device's reply."""
+        from custom_components.marstek.discovery import get_device_info
+
+        other_device = {
+            "id": 0,
+            "result": {
+                "device": "VenusE 3.0",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+                "ip": "10.0.0.1",
+            },
+        }
+
+        mock_socket = MagicMock()
+        call_count = 0
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (json.dumps(other_device).encode(), ("10.0.0.1", 30000))
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                result = await get_device_info("192.168.1.100", timeout=0.5)
+
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_handles_invalid_device_response(self) -> None:
@@ -1470,3 +1512,11 @@ def test_build_device_info_prefers_result_ble_mac() -> None:
     )
 
     assert info["ble_mac"] == "11:22:33:44:55:66"
+
+
+def test_udp_source_matches_numeric_host() -> None:
+    """Unicast GetDevice compares the UDP source to the queried host."""
+    from custom_components.marstek.pymarstek.network import udp_source_matches_host
+
+    assert udp_source_matches_host("192.168.1.10", "192.168.1.10") is True
+    assert udp_source_matches_host("192.168.1.11", "192.168.1.10") is False

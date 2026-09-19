@@ -29,7 +29,7 @@ from .const import (
     DEFAULT_REQUEST_DELAY,
     DEFAULT_REQUEST_TIMEOUT,
 )
-from .firmware_profile import resolve_firmware_profile_from_metadata
+from .firmware_profile import firmware_profile_diagnostics, resolve_firmware_profile_from_metadata
 from .helpers.udp_clients import get_udp_client_for_entry
 
 TO_REDACT = {
@@ -49,6 +49,9 @@ _REDACT_PATTERNS = (
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b"),
     re.compile(r"\b[0-9A-Fa-f]{12}\b"),
+    re.compile(r"\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){2,7}\b"),
+    re.compile(r"\b(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}\b"),
+    re.compile(r"\b(?:[A-Za-z0-9-]+\.)+local\b"),
 )
 
 
@@ -113,20 +116,26 @@ def _summarize_command_stats(stats: dict[str, Any]) -> dict[str, Any]:
     timeout_rate = (total_timeouts / total_attempts) if total_attempts else None
 
     summary = dict(stats)
+    last_error = summary.get("last_error")
+    if isinstance(last_error, str):
+        summary["last_error"] = _redact_text(last_error)
     summary["success_rate"] = success_rate
     summary["timeout_rate"] = timeout_rate
     summary["last_updated"] = _format_timestamp(stats.get("last_updated"))
     return summary
 
 
-def _build_polling_config(entry: MarstekConfigEntry) -> dict[str, Any]:
+def _build_polling_config(
+    entry: MarstekConfigEntry, *, parallel_requests_safe: bool
+) -> dict[str, Any]:
     """Build polling configuration from entry options."""
-    parallel_enabled = bool(
+    parallel_requested = bool(
         entry.options.get(
             CONF_PARALLEL_API_REQUESTS,
             DEFAULT_PARALLEL_API_REQUESTS,
         )
     )
+    parallel_enabled = parallel_requested and parallel_requests_safe
     configured_delay = float(
         entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY)
     )
@@ -183,8 +192,10 @@ async def async_get_config_entry_diagnostics(
     consecutive_failures = getattr(coordinator, "consecutive_failures", 0)
 
     # Get polling configuration (actual values being used)
-    polling_config = _build_polling_config(entry)
     profile = resolve_firmware_profile_from_metadata(entry.data)
+    polling_config = _build_polling_config(
+        entry, parallel_requests_safe=profile.parallel_requests_safe
+    )
 
     # Command diagnostics from this device's UDP client (if available)
     udp_client = get_udp_client_for_entry(hass, entry)
@@ -206,17 +217,7 @@ async def async_get_config_entry_diagnostics(
             "options": dict(entry.options),
         },
         "device_info": async_redact_data(device_info, TO_REDACT),
-        "firmware_profile": {
-            "family": profile.family.value,
-            "firmware_version": profile.firmware_version,
-            "firmware_known": profile.firmware_known,
-            "supports_pv": profile.supports_pv,
-            "supports_sys_dod": profile.supports_sys_dod,
-            "supports_sys_ble_advertising": profile.supports_sys_ble_advertising,
-            "supports_sys_led": profile.supports_sys_led,
-            "supports_ups": profile.supports_ups,
-            "max_manual_schedule_slot": profile.max_manual_schedule_slot,
-        },
+        "firmware_profile": firmware_profile_diagnostics(profile),
         "polling_config": polling_config,
         "coordinator": {
             "last_update_success": coordinator.last_update_success,

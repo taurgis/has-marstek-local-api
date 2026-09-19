@@ -5,6 +5,7 @@
 - `custom_components/marstek/` — integration
 - `custom_components/marstek/pymarstek/` — UDP client
 - `tools/mock_device/` — mock device for local testing
+- `tools/firmware/` — Control firmware hashes, OTA notes, and issue #15 analysis (blobs are not vendored)
 - `docs/marstek_device_openapi.MD` — protocol reference
 
 ## Running tests
@@ -83,7 +84,7 @@ Backwards-compatible shim (still works):
 python tools/mock_device/mock_marstek.py
 ```
 
-Devcontainer compose runs eight mocks with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
+Devcontainer compose runs nine mocks with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
 
 ## Protocol reference
 

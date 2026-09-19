@@ -78,7 +78,7 @@ def _sys_client() -> MagicMock:
 
 def _config_entry(
     *,
-    device_type: str = "VenusE",
+    device_type: str = "VenusE 3.0",
     version: Any = 150,
     ble_mac: str = BLE_MAC,
 ) -> MockConfigEntry:
@@ -153,12 +153,12 @@ def _command_after_setup(client: MagicMock, setup_calls: int) -> dict[str, Any]:
         ("VenusA", 150, True),
         ("VenusC", 150, True),
         ("VenusD", 200, True),
-        ("VenusE", 150, True),
+        ("VenusE 3.0", 150, True),
         ("VenusA", 149, False),
         ("VenusC", 145, False),
-        ("VenusE", 0, False),
+        ("VenusE 3.0", 0, False),
         ("VenusA", None, False),
-        ("VenusE", "not-a-version", False),
+        ("VenusE 3.0", "not-a-version", False),
         ("Venus E mini", 1, True),
         ("Venus E mini", 0, True),
         ("VenusE-mini 3.0", 12, True),
@@ -827,7 +827,7 @@ async def test_number_and_switch_setup_missing_udp_client(
     hass.data.pop(DOMAIN, None)
     entry = _config_entry()
     entry.add_to_hass(hass)
-    coordinator = MagicMock(profile=resolve_firmware_profile("VenusE", 150))
+    coordinator = MagicMock(profile=resolve_firmware_profile("VenusE 3.0", 150))
     coordinator.udp_client = None
     entry.runtime_data = SimpleNamespace(
         coordinator=coordinator,

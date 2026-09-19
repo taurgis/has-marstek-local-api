@@ -14,7 +14,7 @@ If they are missing:
 1. Check the device model on the device page (Venus E mini is not Venus E).
 2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** → `firmware_profile`).
 3. Unknown or unparseable `ver` stays legacy-safe: no SYS and no UPS.
-4. After a firmware update that crosses the gate, the scanner reloads the config entry; you do not need to delete and re-add the device.
+4. After a firmware update that crosses a capability or reset-safety gate, the scanner reloads the config entry; you do not need to delete and re-add the device.
 
 The Open API documents **no GET methods** for DOD, Bluetooth advertising, or LED. Home Assistant restores the last value it successfully wrote. Changes made in the Marstek app, after a device reboot, or by another controller are not detected.
 
@@ -45,8 +45,36 @@ This is expected behavior.
 - Reduce request rate (increase fast/medium intervals).
 - Ensure only one controller is talking to the device.
 - If **Parallel API requests** is enabled, try disabling it first (especially on Wi-Fi).
+- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API Ethernet send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)).
 - In diagnostics, check `polling_config.request_strategy` and
   `polling_config.request_delay_effective` to confirm actual request behavior.
+
+## Local API disables itself / settings reset to defaults
+
+That is Control firmware, not a Home Assistant entity bug. While Open API is
+polled, some builds disable Local API and wipe user settings (Wi-Fi often
+survives). Venus E 3.0 Control **150** is the published fix (“Optimized Local
+API send anomaly on Ethernet”); a user confirmed [#15](https://github.com/taurgis/has-marstek-local-api/issues/15) after updating in the Marstek app (Wi-Fi or Bluetooth if LAN OTA fails).
+
+On firmware the integration treats as reset-prone (known family, Control
+generation below 150, or an unknown model with a Control-like `ver` 100–149):
+
+1. A **warning** appears in Settings → Repairs (not a fixable flow) as soon
+   as the config entry is set up, even if the first UDP probe still fails.
+2. Parallel API requests stay off even if the option is enabled.
+3. Unicast Open API calls to that device are sent one at a time.
+4. `Bat.GetStatus` is **not sent**. Battery-detail entities are omitted
+   (issue #14).
+5. Prefer sequential polling and a wired LAN.
+6. Writes wait for the current poll cycle to finish, and discovery waits
+   for in-flight unicasts before binding the listen port. Changing IP and
+   firmware at the same time updates both in one reload.
+
+Venus E2.0 is not supported. Existing config entries for that model fail
+setup with an error instead of polling.
+
+Do not factory-reset from Home Assistant (`Reset.Factory` is not exposed).
+Firmware research notes: [tools/firmware/ANALYSIS.md](../tools/firmware/ANALYSIS.md).
 
 ## Grid energy totals look frozen
 
@@ -113,7 +141,10 @@ load or off-grid energy and its exact semantics vary by firmware.
 
 ## Venus E2.0
 
-Venus **E2.0 is not supported**.
+Venus **E2.0 is not supported** (HMG-50). Open API GetDevice reports
+`device: "VenusE"`, which is not Venus E 3.0 (`VenusE 3.0` / `VNSE3-0`).
+Existing config entries fail setup; discovery and manual add abort. Using
+the integration with this model may disconnect the device from CT003.
 
 ## Debug logging
 

@@ -12,6 +12,14 @@ If Home Assistant can’t connect to the device (for example, after a DHCP IP ch
 
 If the unique ID doesn’t match, the repair refuses the update to prevent accidentally pointing the entry at a different device.
 
+## Firmware can reset Open API
+
+On Control firmware below **150**, polling Local API can disable Open API and
+wipe settings ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)).
+The warning is created from stored firmware metadata before the first UDP
+probe, so it also appears while setup is retrying. See
+[Troubleshooting](troubleshooting.md).
+
 ## Other cases
 
 Repairs may also be used for other fixable issues over time, but the current primary flow is the connection repair above.
