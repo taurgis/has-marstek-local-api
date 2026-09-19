@@ -391,6 +391,9 @@ async def _async_setup_entry_with_client(
     udp_client.set_openapi_reset_prone(
         stored_ip, profile.openapi_reset_prone, owner=entry.entry_id
     )
+    udp_client.set_openapi_retransmit_safe(
+        stored_ip, profile.openapi_wifi_retransmit_safe
+    )
 
     # Scanner starts after the pooled client exists so an immediate scan can
     # pause this listener instead of racing a probe on a missing socket.
@@ -463,6 +466,7 @@ def _clear_entry_reset_prone_flag(
     udp_client = get_udp_client_for_entry(hass, entry)
     if isinstance(host, str) and udp_client is not None:
         udp_client.clear_openapi_reset_prone(host, owner=entry.entry_id)
+        udp_client.set_openapi_retransmit_safe(host, False)
     clear_reset_prone_owner_from_pool(hass, entry.entry_id)
 
 

@@ -26,7 +26,17 @@ from .command_builder import (
     get_pv_status,
     get_wifi_status,
 )
-from .const import CMD_BATTERY_STATUS, DEFAULT_UDP_PORT, DISCOVERY_TIMEOUT
+from .const import (
+    CMD_BATTERY_STATUS,
+    CMD_DISCOVER,
+    CMD_EM_STATUS,
+    CMD_ES_MODE,
+    CMD_ES_STATUS,
+    CMD_PV_GET_STATUS,
+    CMD_WIFI_STATUS,
+    DEFAULT_UDP_PORT,
+    DISCOVERY_TIMEOUT,
+)
 from .data_parser import (
     merge_device_status,
     parse_bat_status_response,
@@ -59,7 +69,38 @@ MIN_REQUEST_INTERVAL: float = 0.3  # 300ms minimum between requests to same IP
 # Control firmware below 150 is heap-sensitive; keep a stricter floor even when
 # a caller asks to bypass the normal 300ms throttle (GetDevice, retries).
 MIN_RESET_PRONE_REQUEST_INTERVAL: float = 1.0
+# FC41D Wi-Fi STA power-save and AP TIM buffering often drop or delay the
+# first downlink unicast. RFC 1122 leaves UDP retransmission to the
+# application. Wait this long for a reply before sending a second copy.
+# 500 ms beat 300 ms on a live Venus E 150 Wi-Fi sweep (2/40 vs 7/40
+# timeouts) without approaching the 1000 ms delay that stalled recovery.
+# Ethernet replies are typically well under 200 ms, so LAN and dual-homed
+# Ethernet IPs still get one datagram. Writes and unknown/reset-prone IPs
+# stay one-shot.
+UNICAST_RETRANSMIT_WAIT: float = 0.5
 _ANONYMOUS_RESET_PRONE_OWNER = "*"
+_READ_ONLY_UNICAST_METHODS: frozenset[str] = frozenset(
+    {
+        CMD_DISCOVER,
+        CMD_BATTERY_STATUS,
+        CMD_ES_STATUS,
+        CMD_ES_MODE,
+        CMD_PV_GET_STATUS,
+        CMD_WIFI_STATUS,
+        CMD_EM_STATUS,
+    }
+)
+
+
+class _UnicastTimeoutError(TimeoutError):
+    """Timeout for one unicast wait.
+
+    ``retried`` is True when a silent-wait copy was already sent.
+    """
+
+    def __init__(self, retried: bool) -> None:
+        super().__init__()
+        self.retried = retried
 
 
 def _is_broadcast_address(target_ip: str) -> bool:
@@ -78,6 +119,7 @@ def _new_command_stats() -> dict[str, Any]:
         "total_success": 0,
         "total_timeouts": 0,
         "total_failures": 0,
+        "total_retransmits": 0,
         "last_success": None,
         "last_latency": None,
         "last_timeout": None,
@@ -159,6 +201,7 @@ class MarstekUDPClient:
         self._polling_lock: asyncio.Lock = asyncio.Lock()
         self._reset_prone_ips: set[str] = set()
         self._reset_prone_owners: dict[str, set[str]] = {}
+        self._retransmit_safe_ips: set[str] = set()
         self._device_io_locks: dict[str, asyncio.Lock] = {}
 
         # Rate limiting: track last request time per device IP
@@ -207,6 +250,7 @@ class MarstekUDPClient:
         timeout: bool,
         latency: float | None,
         error: str | None,
+        retransmitted: bool = False,
     ) -> None:
         """Record command outcome for diagnostics."""
         for bucket in (
@@ -220,6 +264,8 @@ class MarstekUDPClient:
                 bucket["total_timeouts"] += 1
             else:
                 bucket["total_failures"] += 1
+            if retransmitted:
+                bucket["total_retransmits"] += 1
 
             bucket["last_success"] = success
             bucket["last_latency"] = latency
@@ -434,6 +480,7 @@ class MarstekUDPClient:
         self._device_io_locks.clear()
         self._reset_prone_ips.clear()
         self._reset_prone_owners.clear()
+        self._retransmit_safe_ips.clear()
         self._polling_paused.clear()
         self._polling_pause_counts.clear()
         self._poll_cycle_counts.clear()
@@ -511,11 +558,30 @@ class MarstekUDPClient:
         if prone:
             owners.add(owner_key)
             self._reset_prone_ips.add(device_ip)
+            self._retransmit_safe_ips.discard(device_ip)
             return
         owners.discard(owner_key)
         if not owners:
             self._reset_prone_owners.pop(device_ip, None)
             self._reset_prone_ips.discard(device_ip)
+
+    def set_openapi_retransmit_safe(self, device_ip: str, enabled: bool) -> None:
+        """Allow or deny Wi-Fi silent-wait retransmission for a device IP.
+
+        Opt-in only after ``FirmwareProfile.openapi_wifi_retransmit_safe``.
+        Reset-prone marks always win and drop this flag.
+        """
+        if enabled and device_ip not in self._reset_prone_ips:
+            self._retransmit_safe_ips.add(device_ip)
+            return
+        self._retransmit_safe_ips.discard(device_ip)
+
+    def is_openapi_retransmit_safe(self, device_ip: str) -> bool:
+        """Return True when *device_ip* may receive extra read-only unicasts."""
+        return (
+            device_ip in self._retransmit_safe_ips
+            and device_ip not in self._reset_prone_ips
+        )
 
     def clear_openapi_reset_prone(
         self, device_ip: str, *, owner: str | None = None
@@ -696,6 +762,112 @@ class MarstekUDPClient:
         sock.sendto(data, (target_ip, target_port))
         _LOGGER.debug("Send: %s:%d | %s", target_ip, target_port, message)
 
+    def _wifi_reliability_enabled(self, target_ip: str, method_name: str) -> bool:
+        """Return whether this unicast may use extra Wi-Fi copies.
+
+        Unknown firmware stays one-shot. Writes stay one-shot even on
+        known-safe firmware so ES.SetMode / SYS commands cannot double.
+        """
+        return (
+            self.is_openapi_retransmit_safe(target_ip)
+            and method_name in _READ_ONLY_UNICAST_METHODS
+        )
+
+    def _unicast_allows_retransmit(
+        self, target_ip: str, method_name: str, timeout: float
+    ) -> bool:
+        """Return whether a silent first wait may be followed by a second send.
+
+        Short unit-test timeouts skip the extra wait so they do not pay
+        500 ms. The remaining wait uses the caller's timeout budget.
+        """
+        return (
+            self._wifi_reliability_enabled(target_ip, method_name)
+            and timeout > UNICAST_RETRANSMIT_WAIT
+        )
+
+    async def _wait_for_pending_response(
+        self,
+        future: asyncio.Future[dict[str, Any]],
+        timeout: float,
+    ) -> dict[str, Any]:
+        """Wait for a pending reply without cancelling it on timeout.
+
+        ``asyncio.wait_for`` cancels the inner future. A late FC41D reply
+        after a Wi-Fi retransmission must still complete the same request.
+        ``asyncio.wait`` does not cancel; see Python asyncio-task docs.
+        """
+        await asyncio.wait(
+            {future},
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if future.done():
+            return future.result()
+        raise TimeoutError
+
+    async def _send_and_wait_unicast(
+        self,
+        message: str,
+        target_ip: str,
+        target_port: int,
+        timeout: float,
+        future: asyncio.Future[dict[str, Any]],
+        *,
+        bypass_rate_limit: bool,
+        allow_retransmit: bool,
+        method_name: str,
+    ) -> tuple[dict[str, Any], bool]:
+        """Send one unicast and wait, retransmitting only if the first wait is silent.
+
+        The silent-wait copy stays inside *timeout* so one logical request
+        cannot consume two full timeouts. Ethernet replies that arrive
+        before 500 ms never send the copy.
+        """
+        deadline = time.monotonic() + timeout
+        retried = False
+        await self._send_udp_message(
+            message,
+            target_ip,
+            target_port,
+            bypass_rate_limit=bypass_rate_limit,
+        )
+        if allow_retransmit:
+            try:
+                return (
+                    await self._wait_for_pending_response(
+                        future, UNICAST_RETRANSMIT_WAIT
+                    ),
+                    False,
+                )
+            except TimeoutError:
+                retried = True
+                _LOGGER.debug(
+                    "No UDP reply from %s:%d for %s within %.2fs; retransmitting",
+                    target_ip,
+                    target_port,
+                    method_name,
+                    UNICAST_RETRANSMIT_WAIT,
+                )
+                await self._send_udp_message(
+                    message,
+                    target_ip,
+                    target_port,
+                    bypass_rate_limit=True,
+                )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            if future.done():
+                return future.result(), retried
+            raise _UnicastTimeoutError(retried)
+        try:
+            return (
+                await self._wait_for_pending_response(future, remaining),
+                retried,
+            )
+        except TimeoutError as err:
+            raise _UnicastTimeoutError(retried) from err
+
     async def send_request(
         self,
         message: str,
@@ -713,7 +885,8 @@ class MarstekUDPClient:
             message: JSON command string to send
             target_ip: Target device IP address
             target_port: Target device port
-            timeout: Response timeout in seconds
+            timeout: Overall wait for a matching reply, including any
+                silent-wait copy
             quiet_on_timeout: If True, don't log warnings on timeout
             validate: If True, validate message before sending (default True).
                 Set to False only if message was already validated.
@@ -804,17 +977,56 @@ class MarstekUDPClient:
                 self._ensure_listener()
 
                 request_started = time.time()
-                await self._send_udp_message(
-                    message,
+                _LOGGER.debug(
+                    "Send request to %s:%d: %s",
                     target_ip,
                     target_port,
-                    bypass_rate_limit=bypass_rate_limit,
+                    message,
                 )
-                _LOGGER.debug(
-                    "Send request to %s:%d: %s", target_ip, target_port, message
-                )
-                response = await asyncio.wait_for(future, timeout=timeout)
+                retried = False
+                try:
+                    response, retried = await self._send_and_wait_unicast(
+                        message,
+                        target_ip,
+                        target_port,
+                        timeout,
+                        future,
+                        bypass_rate_limit=bypass_rate_limit,
+                        allow_retransmit=self._unicast_allows_retransmit(
+                            target_ip, method_name, timeout
+                        ),
+                        method_name=method_name,
+                    )
+                except TimeoutError as err:
+                    if not quiet_on_timeout:
+                        _LOGGER.warning(
+                            "Request timeout: %s:%d [%s]",
+                            target_ip,
+                            target_port,
+                            method_name,
+                        )
+                    self._record_command_result(
+                        method_name,
+                        device_ip=target_ip,
+                        success=False,
+                        timeout=True,
+                        latency=None,
+                        error="timeout",
+                        retransmitted=isinstance(err, _UnicastTimeoutError)
+                        and err.retried,
+                    )
+                    raise TimeoutError(
+                        f"Request timeout to {target_ip}:{target_port}"
+                    ) from err
                 latency = time.time() - request_started
+                if retried:
+                    _LOGGER.debug(
+                        "Got UDP reply from %s:%d for %s after retransmit (%.0f ms)",
+                        target_ip,
+                        target_port,
+                        method_name,
+                        latency * 1000,
+                    )
                 self._record_command_result(
                     method_name,
                     device_ip=target_ip,
@@ -822,22 +1034,12 @@ class MarstekUDPClient:
                     timeout=False,
                     latency=latency,
                     error=None,
+                    retransmitted=retried,
                 )
                 return response
-            except TimeoutError as err:
-                if not quiet_on_timeout:
-                    _LOGGER.warning("Request timeout: %s:%d", target_ip, target_port)
-                self._record_command_result(
-                    method_name,
-                    device_ip=target_ip,
-                    success=False,
-                    timeout=True,
-                    latency=None,
-                    error="timeout",
-                )
-                raise TimeoutError(
-                    f"Request timeout to {target_ip}:{target_port}"
-                ) from err
+
+            except TimeoutError:
+                raise
             except (OSError, ValueError) as err:
                 self._record_command_result(
                     method_name,

@@ -64,6 +64,7 @@
       'firmware_version': 1,
       'max_manual_schedule_slot': 9,
       'openapi_reset_prone': False,
+      'openapi_wifi_retransmit_safe': False,
       'parallel_requests_safe': True,
       'supports_em_status': False,
       'supports_pv': False,

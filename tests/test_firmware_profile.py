@@ -357,6 +357,7 @@ def test_resolve_firmware_profile_from_metadata_uses_device_type_and_version() -
     assert profile.supports_ups is True
     assert profile.openapi_reset_prone is False
     assert profile.parallel_requests_safe is True
+    assert profile.openapi_wifi_retransmit_safe is True
 
 
 def test_vnse3_1476_is_legacy_reset_prone() -> None:
@@ -369,6 +370,31 @@ def test_vnse3_1476_is_legacy_reset_prone() -> None:
     assert profile.supports_ups is False
     assert profile.openapi_reset_prone is True
     assert profile.parallel_requests_safe is False
+    assert profile.openapi_wifi_retransmit_safe is False
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "wifi_safe"),
+    [
+        ("VenusE 3.0", 147, False),
+        ("VenusE 3.0", 150, True),
+        ("VenusE 3.0", "not-a-version", False),
+        ("Marstek Energy Storage", 150, False),
+        ("Venus", 3, False),
+        ("VenusC", 155, False),
+        ("VenusC", 156, True),
+        ("Venus E mini", 150, True),
+    ],
+)
+def test_wifi_retransmit_requires_known_safe_profile(
+    device_type: str, version: int | str, wifi_safe: bool
+) -> None:
+    """Extra Wi-Fi UDP copies opt in only after a known-safe Control profile."""
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.openapi_wifi_retransmit_safe is wifi_safe
+    if wifi_safe:
+        assert profile.openapi_reset_prone is False
 
 
 @pytest.mark.parametrize(
@@ -411,6 +437,8 @@ def test_openapi_reset_prone_follows_control_generation(
 
     assert profile.openapi_reset_prone is reset_prone
     assert profile.parallel_requests_safe is not reset_prone
+    if reset_prone:
+        assert profile.openapi_wifi_retransmit_safe is False
 
 
 @pytest.mark.parametrize(

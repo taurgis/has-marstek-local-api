@@ -112,6 +112,8 @@ def create_mock_client(
     client.clear_openapi_reset_prone_owner = MagicMock()
     client.transfer_openapi_reset_prone = MagicMock()
     client.is_openapi_reset_prone = MagicMock(return_value=False)
+    client.set_openapi_retransmit_safe = MagicMock()
+    client.is_openapi_retransmit_safe = MagicMock(return_value=False)
     client.async_pause_receiver = AsyncMock(return_value=None)
     client.async_resume_receiver = AsyncMock(return_value=None)
 

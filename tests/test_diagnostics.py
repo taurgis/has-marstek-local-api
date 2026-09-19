@@ -103,6 +103,7 @@ async def test_async_get_config_entry_diagnostics(
         "control_generation": 1,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
+        "openapi_wifi_retransmit_safe": False,
     }
 
     # Verify polling_config has expected keys with defaults
@@ -151,6 +152,7 @@ async def test_diagnostics_reports_capable_firmware_profile(
         "control_generation": 150,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
+        "openapi_wifi_retransmit_safe": True,
     }
 
 
@@ -179,6 +181,7 @@ async def test_diagnostics_reports_unknown_e_mini_firmware(
     assert profile["control_generation"] is None
     assert profile["openapi_reset_prone"] is True
     assert profile["parallel_requests_safe"] is False
+    assert profile["openapi_wifi_retransmit_safe"] is False
 
 
 async def test_diagnostics_parallel_mode_effective_delay(

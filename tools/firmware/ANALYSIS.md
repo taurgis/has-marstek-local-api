@@ -82,6 +82,44 @@ Open API comes back disabled.
 150 does **not** prove the JSON heap is now burst-safe. Parallel Open API
 calls stay disabled on generation &lt; 150 and remain optional on 150+.
 
+## Wi-Fi Open API timeouts (FC41D, firmware 150 included)
+
+Control 150's published fix is **Ethernet only** (`CH395SendData` / "Local API
+send anomaly on Ethernet"). The Wi-Fi path is unchanged across 148/149/150:
+
+- Incoming Local API on Wi-Fi: `Extract_udp_data` plus Quectel
+  `AT+QIOPEN=…,"UDP SERVICE"` / `+QIURC: "recv"`
+- Outgoing replies on Wi-Fi: `AT+QISEND`
+- Incoming Local API on Ethernet: `Extract_udp_data_ch395` with
+  `[CH395] UDP data remote port: %d, api local port %d`
+
+The FC41D UART is shared with MQTT and HTTP. Ethernet CH395 is not subject
+to 802.11 station idle behavior. That matches "timeouts on Wi-Fi, fine on
+LAN" on 150. Limited live probes recovered more Wi-Fi reads with a silent
+wait plus one copy; the public Quectel manual does not establish a
+deterministic first-datagram drop after idle.
+
+Plugin-side mitigations for **known-safe** read-only unicasts
+(`FirmwareProfile.openapi_wifi_retransmit_safe`: known family, known
+Control generation, not reset-prone):
+
+1. Wait 500 ms for a reply. Retransmit only if that wait is silent
+   (RFC 1122: UDP retransmission is the application's job). Live Venus E
+   150 Wi-Fi succeeded more often at 500 ms than 300 ms; 1000 ms delayed
+   the copy too long during stalls. Ethernet replies that succeed do so
+   in well under 200 ms, so an awake LAN radio does not get a second
+   datagram.
+2. The remaining configured request timeout is then used for a matching
+   reply **without** a nested extra wait. Cap: two datagrams inside one
+   timeout. ``asyncio.wait`` does **not** cancel the pending future, so a
+   late first reply still counts.
+3. Writes, unknown models, missing ``ver``, and reset-prone IPs stay at
+   one datagram and one wait.
+
+These do not make a Wi-Fi-only Open API as reliable as a cable. Prefer
+Ethernet for polling. If the AP isolates STA clients or NATs Wi-Fi, unicast
+replies never arrive and retries cannot help.
+
 ## Plugin-side mitigations (cannot patch the MCU)
 
 1. JSON-RPC ids cycle `1..65535` and never emit `0` from the command
@@ -110,6 +148,10 @@ calls stay disabled on generation &lt; 150 and remain optional on 150+.
    **before** the first UDP probe and points at issue #15. The pooled client
    is created and marked before the scanner starts so the first scan can
    pause an existing listener; the scanner still starts before the probe.
+7. Known-safe read-only unicasts wait 500 ms, retransmit only on silence,
+   then finish the remaining request timeout (cap: two datagrams).
+   ``asyncio.wait`` keeps the pending future alive. Writes, unknown
+   firmware, and reset-prone IPs stay at one datagram.
 
 ## Mock device
 

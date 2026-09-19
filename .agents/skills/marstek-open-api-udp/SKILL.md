@@ -64,6 +64,20 @@ Control actions (`ES.SetMode`):
 - Pause polling for the target host while sending a command + verifying the result (see `custom_components/marstek/device_action.py`).
 - Use retries + backoff; UDP packets may be dropped.
 
+## Wi-Fi vs Ethernet
+
+Venus Control images speak Open API on two radios:
+
+- Ethernet: WCH CH395 (`Extract_udp_data_ch395` / `CH395SendData`). Firmware **150** is the vendor fix for Local API **send** failures on this path.
+- Wi-Fi: Quectel FC41D `AT+QIOPEN=…,"UDP SERVICE"` / `AT+QISEND`. That path is unchanged in 150. The module UART is shared with MQTT/HTTP. Wi-Fi unicasts after idle can time out even when Ethernet is stable; the public AT manual does not document a deterministic first-packet drop.
+
+For firmware the profile marks **`openapi_wifi_retransmit_safe`** (known family, known Control generation, not reset-prone — Venus 150+ / HMG-50 156+), **read-only** unicasts (`Marstek.GetDevice`, `ES.GetStatus`, `ES.GetMode`, `EM.GetStatus`, `PV.GetStatus`, `Wifi.GetStatus`, `Bat.GetStatus`) may:
+
+1. Send once, wait 500 ms. Retransmit only if that wait is silent (RFC 1122 UDP retransmission is the application's job). Ethernet replies typically land well before this, so LAN and dual-homed Ethernet IPs stay one datagram.
+2. Wait the **remaining** configured request timeout for a matching reply **without cancelling** the pending future (`asyncio.wait`, not `wait_for`). Cap is **two datagrams** inside one timeout.
+
+Writes (`ES.SetMode`, `DOD.SET`, `Ble.Adv`, `Led.Ctrl`), unknown models, missing `ver`, and reset-prone IPs stay at one datagram and one wait. Prefer Ethernet for polling; retries cannot repair AP client isolation or Wi-Fi NAT.
+
 ## Practical Debugging Steps
 
 - If discovery finds no devices:

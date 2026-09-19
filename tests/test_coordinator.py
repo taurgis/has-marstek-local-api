@@ -423,6 +423,75 @@ async def test_coordinator_skips_bat_status_on_reset_prone_firmware(
     mock_udp_client.set_openapi_reset_prone.assert_called_with(
         "1.2.3.4", True, owner=mock_config_entry.entry_id
     )
+    mock_udp_client.set_openapi_retransmit_safe.assert_called_with(
+        "1.2.3.4", False
+    )
+
+
+@pytest.mark.asyncio
+async def test_coordinator_opts_in_wifi_retransmit_on_firmware_150(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """Known-safe Control may receive extra read-only Wi-Fi copies."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    mock_udp_client.set_openapi_reset_prone.assert_called_with(
+        "1.2.3.4", False, owner=mock_config_entry.entry_id
+    )
+    mock_udp_client.set_openapi_retransmit_safe.assert_called_with(
+        "1.2.3.4", True
+    )
+
+
+@pytest.mark.asyncio
+async def test_coordinator_clears_retransmit_safe_on_ip_change(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """A later IP must not inherit Wi-Fi copies from the previous address."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+    await coordinator._async_update_data()
+    mock_udp_client.set_openapi_retransmit_safe.reset_mock()
+
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "host": "5.6.7.8"},
+    )
+    await coordinator._async_update_data()
+
+    mock_udp_client.set_openapi_retransmit_safe.assert_any_call("1.2.3.4", False)
+    mock_udp_client.set_openapi_retransmit_safe.assert_called_with("5.6.7.8", True)
 
 
 @pytest.mark.asyncio

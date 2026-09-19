@@ -13,6 +13,7 @@ Blobs stay local-only. Use `fetch_firmware.py` to download them.
 | File | Purpose |
 |------|---------|
 | `ANALYSIS.md` | What 144 / 1476 / 148 / 150 contain and what 150 changed |
+| `WIFI_UDP_RELIABILITY.md` | Why Wi-Fi Open API still times out on 150; RFC/Quectel/HA sources |
 | `catalog.json` | SHA-256, OTA URLs, build stamps, initial SP |
 | `fetch_firmware.py` | Download catalog images into `blobs/` and verify hashes |
 

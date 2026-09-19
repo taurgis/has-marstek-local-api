@@ -45,7 +45,7 @@ This is expected behavior.
 - Reduce request rate (increase fast/medium intervals).
 - Ensure only one controller is talking to the device.
 - If **Parallel API requests** is enabled, try disabling it first (especially on Wi-Fi).
-- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API Ethernet send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)).
+- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API **Ethernet** send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Wi-Fi Open API still uses the Quectel FC41D `AT+QISEND` path; the first UDP packet after Wi-Fi idle is sometimes delayed or dropped (limited local testing). On known-safe firmware (Control 150+ / HMG-50 156+) the integration waits 500 ms and retransmits **read-only** unicasts only if there is no reply, staying inside the configured request timeout (at most two datagrams). A wired LAN, or HA talking to the Ethernet IP of a dual-homed device, typically answers before 500 ms and never gets the extra copy. Writes, unknown firmware, and reset-prone builds stay one-shot.
 - In diagnostics, check `polling_config.request_strategy` and
   `polling_config.request_delay_effective` to confirm actual request behavior.
 

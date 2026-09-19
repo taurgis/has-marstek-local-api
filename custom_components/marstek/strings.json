@@ -107,7 +107,7 @@
             "data_description": {
               "parallel_api_requests": "Send all enabled status API requests at once with no delay. This can increase timeout/failure frequency on Wi-Fi connections. Wired LAN is recommended.",
               "request_delay": "Delay between consecutive API requests for device stability (ignored when parallel API requests is enabled)",
-              "request_timeout": "How long to wait for a response before timing out",
+              "request_timeout": "How long to wait for a matching reply before timing out. Extra Wi-Fi copies stay inside this budget.",
               "failure_threshold": "Number of consecutive failures before entities become unavailable"
             }
           },

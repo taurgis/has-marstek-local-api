@@ -139,6 +139,22 @@ class FirmwareProfile:
         """Return whether parallel Open API calls are safe on this firmware."""
         return not self.openapi_reset_prone
 
+    @property
+    def openapi_wifi_retransmit_safe(self) -> bool:
+        """Return whether extra Wi-Fi UDP copies are allowed.
+
+        Application retries are RFC 1122's job, but extra datagrams are
+        what reset-prone Control used to disable Local API. Opt in only
+        after a known family and Control generation that this profile
+        already treats as not reset-prone. Unknown models and missing
+        ``ver`` stay one-shot.
+        """
+        if self.openapi_reset_prone:
+            return False
+        if self.family not in _KNOWN_FAMILIES:
+            return False
+        return self.control_generation is not None
+
 
 _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
     (
@@ -329,4 +345,5 @@ def firmware_profile_diagnostics(profile: FirmwareProfile) -> dict[str, Any]:
         "control_generation": profile.control_generation,
         "openapi_reset_prone": profile.openapi_reset_prone,
         "parallel_requests_safe": profile.parallel_requests_safe,
+        "openapi_wifi_retransmit_safe": profile.openapi_wifi_retransmit_safe,
     }

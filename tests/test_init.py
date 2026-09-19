@@ -967,6 +967,10 @@ async def test_openapi_reset_issue_skipped_for_firmware_150(
         )
         is None
     )
+    client.set_openapi_reset_prone.assert_called_with(
+        "1.2.3.4", False, owner=entry.entry_id
+    )
+    client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", True)
 
 
 async def test_openapi_reset_issue_created_when_connection_fails(
@@ -1003,6 +1007,7 @@ async def test_openapi_reset_issue_created_when_connection_fails(
     client.set_openapi_reset_prone.assert_called_with(
         "1.2.3.4", True, owner=entry.entry_id
     )
+    client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", False)
 
 
 async def test_reset_prone_setup_removes_bat_status_entities(

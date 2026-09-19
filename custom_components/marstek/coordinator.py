@@ -90,6 +90,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_update_attempt_time: datetime | None = None
         self.consecutive_failures: int = 0
         self._marked_reset_prone_ip: str | None = None
+        self._marked_retransmit_safe_ip: str | None = None
 
         # Get configured fast polling interval
         fast_interval = config_entry.options.get(
@@ -287,15 +288,21 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Keep the UDP client's per-IP serialization flag aligned with this device."""
         current_ip = self.device_ip
         previous = self._marked_reset_prone_ip
+        previous_safe = self._marked_retransmit_safe_ip
         prone = self.profile.openapi_reset_prone
+        wifi_safe = self.profile.openapi_wifi_retransmit_safe
         if previous is not None and previous != current_ip:
             self.udp_client.clear_openapi_reset_prone(
                 previous, owner=self._entry.entry_id
             )
+        if previous_safe is not None and previous_safe != current_ip:
+            self.udp_client.set_openapi_retransmit_safe(previous_safe, False)
         self.udp_client.set_openapi_reset_prone(
             current_ip, prone, owner=self._entry.entry_id
         )
+        self.udp_client.set_openapi_retransmit_safe(current_ip, wifi_safe)
         self._marked_reset_prone_ip = current_ip if prone else None
+        self._marked_retransmit_safe_ip = current_ip if wifi_safe else None
 
     @property
     def profile(self) -> FirmwareProfile:
@@ -425,20 +432,23 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def clear_openapi_reset_mark(self) -> None:
         """Drop this device's reset-prone UDP flag, including stale IPs."""
         previous = self._marked_reset_prone_ip
+        previous_safe = self._marked_retransmit_safe_ip
         current = self.device_ip
         initial = self._initial_device_ip
-        ips = {previous, current, initial}
+        ips = {previous, previous_safe, current, initial}
         for ip in ips:
             if isinstance(ip, str) and ip:
                 self.udp_client.clear_openapi_reset_prone(
                     ip, owner=self._entry.entry_id
                 )
+                self.udp_client.set_openapi_retransmit_safe(ip, False)
         clear_owner = getattr(
             self.udp_client, "clear_openapi_reset_prone_owner", None
         )
         if callable(clear_owner):
             clear_owner(self._entry.entry_id)
         self._marked_reset_prone_ip = None
+        self._marked_retransmit_safe_ip = None
 
     def _issue_id(self) -> str:
         return f"cannot_connect_{self._entry.entry_id}"
