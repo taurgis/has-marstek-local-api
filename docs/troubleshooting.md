@@ -141,7 +141,10 @@ load or off-grid energy and its exact semantics vary by firmware.
 
 ## Venus E2.0
 
-Venus **E2.0 is not supported**.
+Venus **E2.0 is not supported** (HMG-50). Open API GetDevice reports
+`device: "VenusE"`, which is not Venus E 3.0 (`VenusE 3.0` / `VNSE3-0`).
+Existing config entries fail setup; discovery and manual add abort. Using
+the integration with this model may disconnect the device from CT003.
 
 ## Debug logging
 

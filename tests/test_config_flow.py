@@ -1497,6 +1497,28 @@ async def test_integration_discovery_missing_ble_mac(hass: HomeAssistant) -> Non
     assert result["reason"] == "invalid_discovery_info"
 
 
+@pytest.mark.parametrize("device_type", ["VenusE", "HMG-50", "Venus E2.0"])
+async def test_integration_discovery_aborts_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """Scanner discovery of HMG-50 / Venus E2 must abort, not confirm as Venus E."""
+    discovery_info = {
+        "ip": "172.28.0.29",
+        "ble_mac": "02:de:ad:be:ef:09",
+        "mac": "02:de:ad:be:ef:09",
+        "device_type": device_type,
+        "version": 153,
+        "port": 30000,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "unsupported_device"
+
+
 async def test_user_flow_connection_error_redirects_to_manual(
     hass: HomeAssistant,
 ) -> None:
@@ -1628,18 +1650,24 @@ async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
     client.async_resume_receiver.assert_awaited()
 
 
-async def test_manual_flow_rejects_venus_e2(hass: HomeAssistant) -> None:
-    """Venus E2.0 is not a supported Open API family."""
+@pytest.mark.parametrize(
+    "device_type",
+    ["Venus E2.0", "VenusE", "HMG-50"],
+)
+async def test_manual_flow_rejects_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """HMG-50 Open API names are not a supported family."""
     device_info = {
         "ip": "192.168.1.100",
         "ble_mac": "AA:BB:CC:DD:EE:FF",
         "mac": "AA:BB:CC:DD:EE:FF",
-        "device_type": "Venus E2.0",
-        "version": 150,
+        "device_type": device_type,
+        "version": 153,
         "wifi_name": "marstek",
         "wifi_mac": "11:22:33:44:55:66",
-        "model": "Venus E2.0",
-        "firmware": "150",
+        "model": device_type,
+        "firmware": "153",
     }
 
     with patch_discovery([]):
@@ -1658,19 +1686,22 @@ async def test_manual_flow_rejects_venus_e2(hass: HomeAssistant) -> None:
     assert result["errors"] == {"base": "unsupported_device"}
 
 
-async def test_user_flow_filters_unsupported_venus_e2(hass: HomeAssistant) -> None:
-    """Discovery lists omit Venus E2.0 so it cannot be added as Venus E."""
+@pytest.mark.parametrize("device_type", ["Venus E2.0", "VenusE", "HMG-50"])
+async def test_user_flow_filters_unsupported_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """Discovery lists omit HMG-50 / Venus E2 so it cannot be added as Venus E."""
     devices = [
         {
             "ip": "1.2.3.4",
             "ble_mac": "AA:BB:CC:DD:EE:FF",
             "mac": "AA:BB:CC:DD:EE:FF",
             "wifi_mac": "11:22:33:44:55:66",
-            "device_type": "Venus E2.0",
-            "version": 150,
+            "device_type": device_type,
+            "version": 153,
             "wifi_name": "marstek",
-            "model": "Venus E2.0",
-            "firmware": "150",
+            "model": device_type,
+            "firmware": "153",
         }
     ]
 

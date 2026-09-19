@@ -22,9 +22,11 @@ def test_devcontainer_runs_observed_firmware_mocks() -> None:
     assert '"--device", "VenusE 3.0", "--ver", "150"' in compose
     assert '"--device", "VenusC", "--ver", "153"' in compose
     assert '"--device", "Venus E mini", "--ver", "145"' in compose
+    assert '"--device", "VenusE", "--ver", "153"' in compose
     assert "172.28.0.26" in compose
     assert "172.28.0.27" in compose
     assert "172.28.0.28" in compose
+    assert "172.28.0.29" in compose
     assert '"--port", "30004"' in compose
 
 

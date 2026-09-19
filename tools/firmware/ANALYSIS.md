@@ -128,6 +128,21 @@ the same class of bug on other products:
 - HME-3 v122 / HME-4 v124: `udp协议v4 修复udp复位bug` (UDP protocol v4, fix UDP reset bug)
 - HMG-50 Control v156: `优化OpenApi接口稳定性` (optimized Open API interface stability)
 
+## Venus E 2.x / HMG-50 identity
+
+Venus E 2.0 is **HMG-50**, not VNSE3-0. Control **153** is the first archived
+image with `Marstek.GetDevice`. Strings in that binary (and 154–156):
+
+| Role | HMG-50 153+ | VNSE3-0 |
+|------|-------------|---------|
+| GetDevice `device` | `VenusE` | `VenusE 3.0` |
+| JSON-RPC `src` | `VenusE-%s` | `VenusE 3.0-%s` |
+| SKU | `HMG-50` / `HMG-25` / `HMG-1` | `VNSE3-0` |
+
+Matching only `Venus E2.0` / `VNSE2-0` would accept a real E2 as Venus E 3.x.
+The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as unsupported.
+Venus E 3.x requires `VenusE 3.0` / `VNSE3`.
+
 Venus A/D reports on issue #15 used the same Local API stack symptoms. This
 integration treats every **known family** below Control generation 150 as
 reset-prone. Venus E 3.0 **150** is the build with a published Local API

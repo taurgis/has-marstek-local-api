@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -1107,10 +1109,12 @@ async def test_failed_unload_keeps_reset_prone_protection(
         await entry.runtime_data.coordinator.async_shutdown()
 
 
+@pytest.mark.parametrize("device_type", ["Venus E2.0", "VenusE", "HMG-50"])
 async def test_existing_venus_e2_entry_fails_setup(
     hass: HomeAssistant,
+    device_type: str,
 ) -> None:
-    """Migrated Venus E2.0 config entries must not start polling."""
+    """Migrated HMG-50 / Venus E2 entries must not start polling."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="aa:bb:cc:dd:ee:ff",
@@ -1118,8 +1122,8 @@ async def test_existing_venus_e2_entry_fails_setup(
             "host": "1.2.3.4",
             "ble_mac": "AA:BB:CC:DD:EE:FF",
             "mac": "AA:BB:CC:DD:EE:FF",
-            "device_type": "Venus E2.0",
-            "version": 150,
+            "device_type": device_type,
+            "version": 153,
             "wifi_name": "marstek",
             "wifi_mac": "11:22:33:44:55:66",
         },

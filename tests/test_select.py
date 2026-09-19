@@ -437,8 +437,8 @@ def test_select_current_option_normalizes_open_api_auto() -> None:
 @pytest.mark.parametrize(
     ("device_type", "version", "expect_ups"),
     [
-        ("VenusE", 145, False),
-        ("VenusE", 150, True),
+        ("VenusE 3.0", 145, False),
+        ("VenusE 3.0", 150, True),
         ("Venus E mini", 150, True),
         ("Venus E mini", "not-a-version", False),
         ("Marstek Energy Storage", 150, False),
@@ -485,7 +485,7 @@ async def test_select_ups_sends_exact_payload_and_pauses_polling(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
@@ -525,7 +525,7 @@ async def test_select_ups_resumes_polling_after_failure(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     call_count = 0
@@ -559,7 +559,7 @@ async def test_select_ups_resumes_polling_after_failure(
 
 async def test_unsupported_direct_ups_selection_sends_no_request() -> None:
     """A profile without UPS cannot transmit UPS even if invoked directly."""
-    entity, client = _make_select_entity(device_type="VenusE", version=145)
+    entity, client = _make_select_entity(device_type="VenusE 3.0", version=145)
 
     with pytest.raises(HomeAssistantError, match="mode_not_supported"):
         await entity.async_select_option(MODE_UPS)
@@ -623,7 +623,7 @@ async def test_manual_and_passive_remain_blocked_on_ups_capable_profile(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
@@ -657,7 +657,7 @@ async def test_select_reports_ups_state(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": MODE_UPS})

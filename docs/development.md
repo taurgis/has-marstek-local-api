@@ -84,7 +84,7 @@ Backwards-compatible shim (still works):
 python tools/mock_device/mock_marstek.py
 ```
 
-Devcontainer compose runs eight mocks with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
+Devcontainer compose runs nine mocks with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
 
 ## Protocol reference
 

@@ -58,6 +58,30 @@
       "banner": "VNSE3-0 v150",
       "vectorTable": { "sp": "0x2001f5e0", "reset": "0x08004a71" },
       "remark": "Optimized Local API send anomaly on Ethernet; HTTP OTA on Ethernet; Peak-shaving; HTTP payload length; CT_TYPE meter."
+    },
+    {
+      "deviceType": "HMG-50",
+      "firmwareType": "Control",
+      "version": 153,
+      "controlGeneration": 153,
+      "filename": "202505301136007a5b57023.bin",
+      "size": 227328,
+      "sha256": "9fe4fcdfe0a8498f1f9332134b56ee57cf4914f9fac7e8ccd5acee9e65c1b2e7",
+      "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20250530/202505301136007a5b57023.bin",
+      "vectorTable": { "sp": "0x20016a98", "reset": "0x08002aad" },
+      "remark": "Venus E 2.x / HMG-50. First Control image with Marstek.GetDevice. GetDevice device string is VenusE (src VenusE-%s), not VenusE 3.0."
+    },
+    {
+      "deviceType": "HMG-50",
+      "firmwareType": "Control",
+      "version": 156,
+      "controlGeneration": 156,
+      "filename": "20251118172129117290445.bin",
+      "size": 241664,
+      "sha256": "17eb3a10bfadf3fd1808dd45e0563c39ed5e766ef72814375491b21192c05243",
+      "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20251118/20251118172129117290445.bin",
+      "vectorTable": { "sp": "0x20017180", "reset": "0x08002ab1" },
+      "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / HMG-50)."
     }
   ]
 }
