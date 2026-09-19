@@ -658,7 +658,7 @@ async def test_scanner_scan_impl_no_matching_device(
                 return_value=[
                     {
                         "ip": "5.6.7.8",
-                        "ble_mac": "XX:XX:XX:XX:XX:XX",  # Different BLE-MAC!
+                        "ble_mac": "02:02:02:02:02:02",  # Different BLE-MAC
                     }
                 ]
             ),
@@ -672,7 +672,7 @@ async def test_scanner_scan_impl_no_matching_device(
         mock_create_flow.assert_called_once()
         call_args = mock_create_flow.call_args
         assert call_args[1]["data"]["ip"] == "5.6.7.8"
-        assert call_args[1]["data"]["ble_mac"] == "XX:XX:XX:XX:XX:XX"
+        assert call_args[1]["data"]["ble_mac"] == "02:02:02:02:02:02"
 
 
 async def test_scanner_scan_impl_unconfigured_debounce(hass: HomeAssistant):
