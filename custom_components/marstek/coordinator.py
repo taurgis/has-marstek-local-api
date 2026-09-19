@@ -150,10 +150,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
         """Handle polling errors and return cached data or raise UpdateFailed."""
+        cached = self.data
         self.consecutive_failures += 1
         failure_threshold = self._get_failure_threshold()
 
-        if self.consecutive_failures >= failure_threshold:
+        if not cached or self.consecutive_failures >= failure_threshold:
             _LOGGER.warning(
                 "Device %s status request failed (attempt #%d, threshold: %d): %s. "
                 "Entities will become unavailable. "
@@ -173,7 +174,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"Polling failed for {current_ip} (attempt #{self.consecutive_failures}): {err}"
             ) from err
 
-        # Below threshold - log warning but return cached data to keep entities available
+        # Below threshold with a cache - keep entities available
         _LOGGER.warning(
             "Device %s status request failed (attempt #%d of %d): %s. "
             "Keeping entities available with cached data",
@@ -182,8 +183,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             failure_threshold,
             err,
         )
-        # Return cached data - entities stay available
-        return self.data or {}
+        return cached
 
     def _get_medium_interval(self) -> int:
         """Get medium polling interval from options."""

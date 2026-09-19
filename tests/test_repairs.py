@@ -282,3 +282,32 @@ async def test_repair_flow_reuses_pooled_udp_client(
     assert mock_get_device_info.await_args.kwargs["udp_client"] is client
     client.async_pause_receiver.assert_not_called()
     client.async_resume_receiver.assert_not_called()
+
+
+async def test_repair_flow_rejects_venus_e2(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Repair must not treat an HMG-50/VenusE Open API device as a success."""
+    mock_config_entry.add_to_hass(hass)
+
+    flow = CannotConnectRepairFlow()
+    flow.hass = hass
+    flow.issue_id = f"cannot_connect_{mock_config_entry.entry_id}"
+    flow.data = {"entry_id": mock_config_entry.entry_id}
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusE",
+        "version": 153,
+    }
+
+    with patch(
+        "custom_components.marstek.repairs.get_device_info",
+        return_value=device_info,
+    ):
+        result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "unsupported_device"
+    assert mock_config_entry.data["host"] == "1.2.3.4"

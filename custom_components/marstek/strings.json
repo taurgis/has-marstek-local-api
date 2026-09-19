@@ -540,7 +540,8 @@
         "error": {
           "cannot_connect": "Unable to connect to the device",
           "invalid_discovery_info": "Invalid discovery information received from the device",
-          "unique_id_mismatch": "The device at this address is a different device"
+          "unique_id_mismatch": "The device at this address is a different device",
+          "unsupported_device": "Venus E2.0 is not supported by this integration"
         },
         "abort": {
           "entry_not_found": "The configuration entry was not found.",

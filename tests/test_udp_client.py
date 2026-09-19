@@ -13,11 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
-from custom_components.marstek.pymarstek.udp import (
-    MIN_REQUEST_INTERVAL,
-    MIN_RESET_PRONE_REQUEST_INTERVAL,
-    MarstekUDPClient,
-)
+from custom_components.marstek.pymarstek.command_builder import get_battery_status
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
     parse_bat_status_response,
@@ -26,6 +22,11 @@ from custom_components.marstek.pymarstek.data_parser import (
     parse_es_status_response,
     parse_pv_status_response,
     parse_wifi_status_response,
+)
+from custom_components.marstek.pymarstek.udp import (
+    MIN_REQUEST_INTERVAL,
+    MIN_RESET_PRONE_REQUEST_INTERVAL,
+    MarstekUDPClient,
 )
 from custom_components.marstek.pymarstek.validators import MAX_JSON_RPC_ID, ValidationError
 
@@ -1358,6 +1359,63 @@ class TestGetDeviceStatus:
         assert result.get("battery_soc") == 75
         # No fresh data
         assert not result["has_fresh_data"]
+
+    async def test_jsonrpc_errors_are_not_fresh_data(self) -> None:
+        """JSON-RPC errors must not reset coordinator failure handling."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+        previous_status = {"battery_soc": 80, "device_mode": "Auto"}
+        error = {"id": 1, "error": {"code": -32601, "message": "Method not found"}}
+
+        async def mock_send_request(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return error
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()):
+                result = await client.get_device_status(
+                    "192.168.1.100",
+                    delay_between_requests=0,
+                    previous_status=previous_status,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                )
+
+        assert result["battery_soc"] == 80
+        assert result["device_mode"] == "Auto"
+        assert result["has_fresh_data"] is False
+
+    async def test_jsonrpc_error_still_applies_request_delay(self) -> None:
+        """A JSON-RPC error still counts as a transmitted request for spacing."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+        error = {"id": 1, "error": {"code": -32601, "message": "Method not found"}}
+
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            if json.loads(message).get("method") == "ES.GetMode":
+                return error
+            return {"id": 2, "result": {"bat_soc": 40, "bat_power": 0}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+                result = await client.get_device_status(
+                    "192.168.1.100",
+                    delay_between_requests=1.5,
+                    include_em=False,
+                    include_pv=False,
+                    include_wifi=False,
+                    include_bat=False,
+                )
+
+        assert mock_sleep.await_count >= 1
+        assert mock_sleep.await_args is not None
+        assert mock_sleep.await_args.args[0] == 1.5
+        assert result["has_fresh_data"] is True
+        assert result["battery_soc"] == 40
 
 
 class TestListenForResponses:
@@ -2711,6 +2769,68 @@ class TestResetProneRequestLock:
                     future.set_result({"id": 1, "result": {}})
             release.set()
             await asyncio.gather(first, second)
+
+    def test_duplicate_reply_does_not_steal_other_device_future(self) -> None:
+        """A duplicate reply from device A must not complete device B's request."""
+        client = MarstekUDPClient()
+        _, future_a = client._track_pending(0, device_ip="192.168.1.10")
+        _, future_b = client._track_pending(0, device_ip="192.168.1.20")
+
+        popped_a = client._pop_pending_future(0, source_ip="192.168.1.10")
+        assert popped_a is future_a
+        duplicate = client._pop_pending_future(0, source_ip="192.168.1.10")
+        assert duplicate is None
+        assert client._pending_requests[("192.168.1.20", 0)] is future_b
+
+    async def test_hostname_pending_key_uses_resolved_ip(self) -> None:
+        """Replies are sourced from the resolved IPv4, not the hostname."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def hold_send(*args: Any, **kwargs: Any) -> None:
+            started.set()
+            await release.wait()
+
+        client._resolve_unicast_ip = AsyncMock(return_value="192.168.1.50")
+        with patch.object(client, "_send_udp_message", side_effect=hold_send):
+            task = asyncio.create_task(
+                client.send_request(
+                    '{"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}',
+                    "device.local",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                )
+            )
+            await started.wait()
+            assert ("192.168.1.50", 1) in client._pending_requests
+            future = client._pending_requests[("192.168.1.50", 1)]
+            future.set_result({"id": 1, "result": {}})
+            release.set()
+            await task
+
+    async def test_reset_prone_blocks_bat_get_status(self) -> None:
+        """Bat.GetStatus must not reach reset-prone Control firmware."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+        client.set_openapi_reset_prone("192.168.1.100", True)
+        with patch.object(client, "_send_udp_message", AsyncMock()) as mock_send:
+            with pytest.raises(ValidationError, match="blocked on reset-prone"):
+                await client.send_request(
+                    get_battery_status(0),
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                )
+        mock_send.assert_not_called()
 
     async def test_duplicate_pending_id_for_same_ip_is_rejected(self) -> None:
         """A second overlapping request with the same id to one IP is rejected."""

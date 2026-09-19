@@ -7,6 +7,7 @@ from malformed requests. See validators.py for validation rules.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import socket
@@ -264,22 +265,18 @@ class MarstekUDPClient:
     def _pop_pending_future(
         self, request_id: int, *, source_ip: str | None = None
     ) -> asyncio.Future[dict[str, Any]] | None:
-        """Resolve a pending future for a unicast reply or broadcast cache."""
+        """Resolve a pending future for a unicast reply or broadcast cache.
+
+        A source-tagged datagram may only complete the matching ``(ip, id)``
+        unicast or a generic broadcast request. Duplicate replies must not
+        complete another device's pending request that happens to share the
+        same JSON-RPC id.
+        """
         if source_ip is not None:
             future = self._pending_requests.pop((source_ip, request_id), None)
             if future is not None:
                 return future
-        future = self._pending_requests.pop(request_id, None)
-        if future is not None:
-            return future
-        matches = [
-            key
-            for key in self._pending_requests
-            if isinstance(key, tuple) and key[1] == request_id
-        ]
-        if len(matches) == 1:
-            return self._pending_requests.pop(matches[0], None)
-        return None
+        return self._pending_requests.pop(request_id, None)
 
     def _pop_cached_responses_for_id(self, request_id: int) -> list[dict[str, Any]]:
         """Take cached replies for a JSON-RPC id from every source IP."""
@@ -295,6 +292,35 @@ class MarstekUDPClient:
             if isinstance(response, dict):
                 responses.append(response)
         return responses
+
+    def _event_loop(self) -> asyncio.AbstractEventLoop:
+        """Return the client loop when it is a real event loop."""
+        if isinstance(self._loop, asyncio.AbstractEventLoop):
+            return self._loop
+        return asyncio.get_running_loop()
+
+    async def _resolve_unicast_ip(self, host: str) -> str:
+        """Return the IPv4 address firmware will source replies from."""
+        try:
+            ipaddress.ip_address(host)
+            return host
+        except ValueError:
+            pass
+        try:
+            infos = await self._event_loop().getaddrinfo(
+                host,
+                None,
+                family=socket.AF_INET,
+                type=socket.SOCK_DGRAM,
+            )
+        except OSError:
+            return host
+        if not infos:
+            return host
+        sockaddr = infos[0][4]
+        if sockaddr:
+            return str(sockaddr[0])
+        return host
 
     async def _enter_unicast_exchange(self) -> None:
         """Wait until discovery listeners are running, then count this exchange."""
@@ -771,7 +797,8 @@ class MarstekUDPClient:
         """Send one normalized request and wait for its matching response."""
         await self._enter_unicast_exchange()
         try:
-            request_id, future = self._track_pending(request_id, device_ip=target_ip)
+            pending_ip = await self._resolve_unicast_ip(target_ip)
+            request_id, future = self._track_pending(request_id, device_ip=pending_ip)
 
             try:
                 self._ensure_listener()
@@ -822,7 +849,7 @@ class MarstekUDPClient:
                 )
                 raise
             finally:
-                self._pending_requests.pop((target_ip, request_id), None)
+                self._pending_requests.pop((pending_ip, request_id), None)
         finally:
             await self._exit_unicast_exchange()
 
@@ -872,6 +899,12 @@ class MarstekUDPClient:
                         future = self._pop_pending_future(raw_id, source_ip=addr[0])
                     if future and not future.done():
                         future.set_result(response)
+                    elif future is None:
+                        _LOGGER.debug(
+                            "Ignoring UDP response id=%s from %s; no matching pending request",
+                            request_id,
+                            addr[0],
+                        )
 
                 # Periodically cleanup response cache to prevent memory leaks
                 cleanup_counter += 1
@@ -1089,12 +1122,17 @@ class MarstekUDPClient:
 
     @staticmethod
     def _es_mode_response_usable(response: dict[str, Any]) -> bool:
-        """Return whether GetMode produced a JSON-RPC result object.
+        """Return whether a JSON-RPC payload has a result object.
 
         A result dict — even empty — is our historical success path. Retry the
         other instance id only on transport failure, a JSON-RPC error, or a
         missing/non-dict result (the vendor library's id=1 probe).
         """
+        return MarstekUDPClient._json_rpc_result_usable(response)
+
+    @staticmethod
+    def _json_rpc_result_usable(response: dict[str, Any]) -> bool:
+        """Return True when the payload is a JSON-RPC result, not an error."""
         if "error" in response:
             return False
         return isinstance(response.get("result"), dict)
@@ -1229,14 +1267,22 @@ class MarstekUDPClient:
                     timeout=timeout,
                     bypass_rate_limit=bypass_rate_limit,
                 )
-                parsed = parser(response)
+            except (TimeoutError, OSError, ValueError, ValidationError) as err:
                 made_request = True
-                has_fresh_data = True
-                success_log(parsed)
-                return parsed
-            except (TimeoutError, OSError, ValueError) as err:
                 _LOGGER.debug(failure_log, device_ip, err)
                 return None
+            made_request = True
+            if not self._json_rpc_result_usable(response):
+                _LOGGER.debug(
+                    failure_log,
+                    device_ip,
+                    response.get("error", "missing result"),
+                )
+                return None
+            parsed = parser(response)
+            has_fresh_data = True
+            success_log(parsed)
+            return parsed
 
         async def _request_es_mode(
             *,
@@ -1254,10 +1300,10 @@ class MarstekUDPClient:
                 profile=profile,
                 bypass_rate_limit=bypass_rate_limit,
             )
+            made_request = True
             if parsed is None:
                 _LOGGER.debug("ES.GetMode failed for %s: no usable result", device_ip)
                 return None
-            made_request = True
             has_fresh_data = True
             _log_es_mode(parsed)
             return parsed

@@ -870,6 +870,26 @@ async def test_coordinator_failure_threshold_keeps_entities_available(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_failure_without_cache_raises(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """A polling failure with no previous data must not keep empty entities available."""
+    mock_config_entry.add_to_hass(hass)
+    mock_udp_client.get_device_status = AsyncMock(side_effect=TimeoutError("timeout"))
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    with pytest.raises(UpdateFailed, match="Polling failed"):
+        await coordinator._async_update_data()
+    assert coordinator.consecutive_failures == 1
+
+
+@pytest.mark.asyncio
 async def test_coordinator_recovers_after_failure(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):

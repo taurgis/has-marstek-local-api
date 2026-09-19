@@ -128,6 +128,14 @@ class TestDiscoverCommand:
         parsed = json.loads(result)
         assert parsed["method"] == "Marstek.GetDevice"
         assert parsed["params"]["ble_mac"] == "0"
+        assert parsed["id"] == 0
+
+    def test_discover_does_not_advance_request_id_allocator(self) -> None:
+        """Pooled GetDevice must use id 0 without consuming 1..65535."""
+        reset_request_id()
+        parsed = json.loads(discover())
+        assert parsed["id"] == 0
+        assert get_next_request_id() == 1
 
 
 class TestStatusCommands:

@@ -132,19 +132,29 @@ def domain_has_udp_leases(hass: HomeAssistant) -> bool:
 
 def acquire_udp_client_lease(
     hass: HomeAssistant, entry_id: str, bind_port: int
-) -> None:
-    """Record that *entry_id* owns the pooled client bound to *bind_port*."""
+) -> MarstekUDPClient | None:
+    """Record that *entry_id* owns the pooled client bound to *bind_port*.
+
+    SETUP_RETRY never calls ``async_unload_entry``. A later setup that
+    binds a different port must drop the unused previous socket so
+    ``SO_REUSEPORT`` cannot steal replies. Returns that client for the
+    caller to close after releasing pool locks.
+    """
     leased = _entry_bind_ports(hass)
     owners = _udp_client_owners(hass)
     previous = leased.get(entry_id)
+    stale_client: MarstekUDPClient | None = None
     if previous is not None and previous != bind_port:
         previous_owners = owners.get(previous)
         if previous_owners is not None:
             previous_owners.discard(entry_id)
             if not previous_owners:
                 owners.pop(previous, None)
+        if not _bind_port_in_use(hass, previous, excluding_entry_id=entry_id):
+            stale_client = udp_client_pool(hass).pop(previous, None)
     leased[entry_id] = bind_port
     owners.setdefault(bind_port, set()).add(entry_id)
+    return stale_client
 
 
 def get_udp_client(hass: HomeAssistant, bind_port: int) -> MarstekUDPClient | None:

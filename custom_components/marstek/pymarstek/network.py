@@ -40,6 +40,30 @@ def mac_from_openapi_src(src: Any) -> str:
     return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
 
 
+def udp_source_matches_host(source_ip: str, host: str) -> bool:
+    """Return True when a UDP sender is the host we queried.
+
+    Unicast GetDevice must not accept another device's reply. Numeric IPs
+    compare directly; hostnames resolve to IPv4 addresses.
+    """
+    if source_ip == host:
+        return True
+    try:
+        return ipaddress.ip_address(source_ip) == ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(
+            host,
+            None,
+            family=socket.AF_INET,
+            type=socket.SOCK_DGRAM,
+        )
+    except OSError:
+        return False
+    return any(info[4][0] == source_ip for info in infos)
+
+
 def is_loopback_host(host: str) -> bool:
     """Return True when *host* is a loopback address or localhost name."""
     if host in {"localhost", "::1"}:

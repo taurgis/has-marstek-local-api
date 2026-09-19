@@ -84,8 +84,20 @@ def build_command(
 
 
 def discover() -> str:
-    """Create a discovery command."""
-    return build_command(CMD_DISCOVER, {"ble_mac": "0"})
+    """Create a GetDevice command with JSON-RPC id 0.
+
+    Control firmware echoes ``Marstek.GetDevice`` on id 0. Broadcast discovery
+    already sends that id; pooled unicast GetDevice (manual add, confirm,
+    reconfigure, repairs) must use the same wire id. Other methods still skip
+    0 so they cannot collide with parse-error replies.
+    """
+    command: dict[str, Any] = {
+        "id": 0,
+        "method": CMD_DISCOVER,
+        "params": {"ble_mac": "0"},
+    }
+    validate_command(command)
+    return json.dumps(command)
 
 
 def get_battery_status(device_id: int = 0) -> str:

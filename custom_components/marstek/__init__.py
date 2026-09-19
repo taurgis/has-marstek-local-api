@@ -43,7 +43,7 @@ from .helpers.udp_clients import (
     store_udp_client,
     udp_client_lock,
 )
-from .pymarstek import MarstekUDPClient, get_es_mode
+from .pymarstek import MarstekUDPClient
 from .scanner import MarstekScanner
 from .services import async_setup_services
 
@@ -203,21 +203,31 @@ async def _get_or_create_udp_client(
     from each other.
     """
     effective_bind_port = bind_port_for_host(host, port)
+    stale_client: MarstekUDPClient | None = None
     async with discovery_lock(hass), udp_client_lock(hass):
         existing = get_udp_client(hass, effective_bind_port)
         if existing is not None:
-            acquire_udp_client_lease(hass, owner, effective_bind_port)
-            return existing
-
+            stale_client = acquire_udp_client_lease(
+                hass, owner, effective_bind_port
+            )
+            udp_client = existing
+        else:
+            _LOGGER.debug(
+                "Creating UDP client for Marstek Open API port (bind_port=%s)",
+                effective_bind_port,
+            )
+            udp_client = MarstekUDPClient(port=port, bind_port=effective_bind_port)
+            await udp_client.async_setup()
+            store_udp_client(hass, effective_bind_port, udp_client)
+            stale_client = acquire_udp_client_lease(
+                hass, owner, effective_bind_port
+            )
+    if stale_client is not None:
         _LOGGER.debug(
-            "Creating UDP client for Marstek Open API port (bind_port=%s)",
-            effective_bind_port,
+            "Closing unused Open API UDP client after bind-port change"
         )
-        udp_client = MarstekUDPClient(port=port, bind_port=effective_bind_port)
-        await udp_client.async_setup()
-        store_udp_client(hass, effective_bind_port, udp_client)
-        acquire_udp_client_lease(hass, owner, effective_bind_port)
-        return udp_client
+        await stale_client.async_cleanup()
+    return udp_client
 
 
 async def _async_verify_device_connection(
@@ -230,12 +240,13 @@ async def _async_verify_device_connection(
     """Verify device connectivity using a lightweight API request."""
     try:
         _LOGGER.info("Attempting connection to %s:%s", host, port)
-        await udp_client.send_request(
-            get_es_mode(0),
+        parsed = await udp_client.fetch_es_mode(
             host,
             port,
-            timeout=5.0,  # Increased timeout for initial connection
+            timeout=5.0,
         )
+        if parsed is None:
+            raise TimeoutError("ES.GetMode returned no usable result")
         _LOGGER.info(
             "Connection successful to device at %s - using config_entry data",
             host,

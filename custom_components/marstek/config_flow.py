@@ -62,6 +62,7 @@ from .helpers.flow_schemas import (
 from .helpers.udp_clients import (
     async_paused_udp_receivers,
     bind_port_for_host,
+    discovery_lock,
     get_udp_client,
     transfer_reset_prone_mark_for_entry,
 )
@@ -323,10 +324,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
         never sees that reply — Linux hashes it onto the coordinator socket
         even if that listener is paused. Pause only for broadcast discovery,
-        which must bind its own sockets.
+        which must bind its own sockets. Hold the discovery lock so a
+        temporary unpooled socket cannot race a broadcast bind.
         """
-        udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
-        return await get_device_info(host=host, port=port, udp_client=udp_client)
+        async with discovery_lock(self.hass):
+            udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
+            return await get_device_info(host=host, port=port, udp_client=udp_client)
 
     async def _async_discover_devices(
         self, scan_ports: list[int]

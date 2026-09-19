@@ -280,3 +280,29 @@ async def test_release_keeps_shared_socket_while_retry_entry_holds_lease(
     client.async_cleanup.assert_not_called()
     assert domain_has_udp_leases(hass)
     assert udp_client_pool(hass)[30000] is client
+
+
+async def test_setup_retry_port_change_closes_unused_socket(
+    hass: HomeAssistant,
+) -> None:
+    """SETUP_RETRY host/port migration must close the unused previous socket."""
+    old_client = MagicMock()
+    old_client.async_cleanup = AsyncMock()
+    new_client = MagicMock()
+    store_udp_client(hass, 30000, old_client)
+    store_udp_client(hass, 30003, new_client)
+
+    retry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={"host": "192.168.1.51", "port": 30003},
+    )
+    retry.add_to_hass(hass)
+    retry.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    acquire_udp_client_lease(hass, retry.entry_id, 30000)
+
+    stale = acquire_udp_client_lease(hass, retry.entry_id, 30003)
+
+    assert stale is old_client
+    assert 30000 not in udp_client_pool(hass)
+    assert udp_client_pool(hass)[30003] is new_client

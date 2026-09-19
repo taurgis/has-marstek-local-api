@@ -38,7 +38,7 @@ from .helpers.device_lookup import (
 from .helpers.udp_clients import get_udp_client_for_entry
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
-from .pymarstek import MarstekUDPClient, build_command, get_es_status
+from .pymarstek import MarstekUDPClient, build_command, get_es_status, parse_es_status_response
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -471,9 +471,14 @@ async def _verify_es_mode_quick(
             await asyncio.sleep(1.0)
             continue
 
-        result = response.get("result", {}) if isinstance(response, dict) else {}
+        result = response.get("result") if isinstance(response, dict) else None
+        if not isinstance(result, dict) or "error" in response:
+            await asyncio.sleep(1.0)
+            continue
+
         mode = result.get("mode")
-        battery_power = result.get("bat_power")
+        parsed = parse_es_status_response(response)
+        battery_power = parsed.get("battery_power")
 
         if mode is not None and mode != "Manual":
             await asyncio.sleep(1.0)

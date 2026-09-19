@@ -23,6 +23,7 @@ from .pymarstek.network import (
     get_broadcast_addresses,
     is_loopback_host,
     mac_from_openapi_src,
+    udp_source_matches_host,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -442,6 +443,13 @@ async def get_device_info(
                 )
 
                 sender_ip, _ = addr
+                if not udp_source_matches_host(str(sender_ip), host):
+                    _LOGGER.debug(
+                        "Ignoring GetDevice reply from %s while querying %s",
+                        sender_ip,
+                        host,
+                    )
+                    continue
 
                 try:
                     response = json.loads(data.decode("utf-8"))
