@@ -343,13 +343,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
         hass, port=stored_port, host=stored_ip, owner=entry.entry_id
     )
 
-    # Only use BLE-MAC for device identification (user feedback)
+    try:
+        return await _async_setup_entry_with_client(
+            hass, entry, udp_client, stored_ip, stored_port
+        )
+    except ConfigEntryNotReady:
+        raise
+    except BaseException:
+        await async_release_udp_client_for_entry(hass, entry)
+        raise
+
+
+async def _async_setup_entry_with_client(
+    hass: HomeAssistant,
+    entry: MarstekConfigEntry,
+    udp_client: MarstekUDPClient,
+    stored_ip: str,
+    stored_port: int,
+) -> bool:
+    """Finish setup after the UDP client lease is held."""
     stored_ble_mac = entry.data.get("ble_mac")
+    stored_wifi_mac = entry.data.get("wifi_mac")
 
     _LOGGER.info(
         "Starting setup: attempting to connect to device at IP %s (BLE-MAC: %s)",
         stored_ip,
-        stored_ble_mac or "unknown",
+        stored_ble_mac or stored_wifi_mac or "unknown",
     )
 
     device_info_dict = _build_device_info_dict(entry, stored_ip, stored_port)

@@ -9,6 +9,7 @@ import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
@@ -18,7 +19,12 @@ from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek import _async_update_listener
-from custom_components.marstek.const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.const import (
+    DATA_ENTRY_BIND_PORTS,
+    DATA_SUPPRESS_RELOADS,
+    DATA_UDP_CLIENTS,
+    DOMAIN,
+)
 from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 
 from tests.conftest import (
@@ -1084,6 +1090,30 @@ async def test_remove_setup_retry_entry_releases_udp_client(
     assert DOMAIN not in hass.data or DATA_UDP_CLIENTS not in hass.data.get(
         DOMAIN, {}
     )
+
+
+async def test_setup_error_after_lease_releases_udp_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """SETUP_ERROR after the socket is leased must not keep the bind port."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+
+    with (
+        patch_marstek_integration(client=client),
+        patch(
+            "custom_components.marstek._async_verify_device_connection",
+            AsyncMock(side_effect=ConfigEntryError("broken")),
+        ),
+    ):
+        assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert mock_config_entry.state == ConfigEntryState.SETUP_ERROR
+    client.async_cleanup.assert_awaited()
+    domain_data = hass.data.get(DOMAIN, {})
+    assert not domain_data.get(DATA_UDP_CLIENTS)
+    assert not domain_data.get(DATA_ENTRY_BIND_PORTS)
 
 
 async def test_failed_unload_keeps_reset_prone_protection(
