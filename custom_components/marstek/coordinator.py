@@ -89,6 +89,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_update_success_time: datetime | None = None
         self.last_update_attempt_time: datetime | None = None
         self.consecutive_failures: int = 0
+        self._marked_reset_prone_ip: str | None = None
 
         # Get configured fast polling interval
         fast_interval = config_entry.options.get(
@@ -149,10 +150,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
         """Handle polling errors and return cached data or raise UpdateFailed."""
+        cached = self.data
         self.consecutive_failures += 1
         failure_threshold = self._get_failure_threshold()
 
-        if self.consecutive_failures >= failure_threshold:
+        if not cached or self.consecutive_failures >= failure_threshold:
             _LOGGER.warning(
                 "Device %s status request failed (attempt #%d, threshold: %d): %s. "
                 "Entities will become unavailable. "
@@ -172,7 +174,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"Polling failed for {current_ip} (attempt #{self.consecutive_failures}): {err}"
             ) from err
 
-        # Below threshold - log warning but return cached data to keep entities available
+        # Below threshold with a cache - keep entities available
         _LOGGER.warning(
             "Device %s status request failed (attempt #%d of %d): %s. "
             "Keeping entities available with cached data",
@@ -181,8 +183,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             failure_threshold,
             err,
         )
-        # Return cached data - entities stay available
-        return self.data or {}
+        return cached
 
     def _get_medium_interval(self) -> int:
         """Get medium polling interval from options."""
@@ -223,11 +224,14 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get delay between requests from options, or fast delay for initial setup."""
         if self._use_parallel_api_requests():
             return 0.0
-        if self._is_initial_setup:
-            return INITIAL_SETUP_REQUEST_DELAY
-        return float(self._entry.options.get(
+        configured = float(self._entry.options.get(
             CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
         ))
+        # Reset-prone Control builds stay at the configured spacing even during
+        # the first fetch; the 2s initial shortcut is for firmware 150+.
+        if self._is_initial_setup and not self.profile.openapi_reset_prone:
+            return INITIAL_SETUP_REQUEST_DELAY
+        return configured
 
     def _get_request_timeout(self) -> float:
         """Get timeout for API requests from options."""
@@ -268,13 +272,30 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._has_enabled_entities(WIFI_STATUS_KEYS)
 
     def _is_bat_status_enabled(self) -> bool:
-        """Return True if any Bat.GetStatus entity is enabled for this entry.
+        """Return True if Bat.GetStatus may be sent for this entry.
 
         Bat.GetStatus is suspected to trigger device resets on some firmwares
-        (issue #14), so the request is only sent while a user has explicitly
-        enabled one of the entities that depend on it.
+        (issue #14). Reset-prone Control builds never send it. On later
+        firmware the request is only sent while a user has enabled one of the
+        entities that depend on it.
         """
+        if self.profile.openapi_reset_prone:
+            return False
         return self._has_enabled_entities(BAT_STATUS_KEYS)
+
+    def _sync_reset_prone_udp_flag(self) -> None:
+        """Keep the UDP client's per-IP serialization flag aligned with this device."""
+        current_ip = self.device_ip
+        previous = self._marked_reset_prone_ip
+        prone = self.profile.openapi_reset_prone
+        if previous is not None and previous != current_ip:
+            self.udp_client.clear_openapi_reset_prone(
+                previous, owner=self._entry.entry_id
+            )
+        self.udp_client.set_openapi_reset_prone(
+            current_ip, prone, owner=self._entry.entry_id
+        )
+        self._marked_reset_prone_ip = current_ip if prone else None
 
     @property
     def profile(self) -> FirmwareProfile:
@@ -311,11 +332,21 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         current_port = self.device_port
         self.last_update_attempt_time = dt_util.now()
         _LOGGER.debug("Start polling device: %s:%s", current_ip, current_port)
+        self._sync_reset_prone_udp_flag()
 
-        if self.udp_client.is_polling_paused(current_ip):
+        if not await self.udp_client.begin_poll_cycle(current_ip):
             _LOGGER.debug("Polling paused for device: %s, skipping update", current_ip)
             return self.data or {}
 
+        try:
+            return await self._async_fetch_device_status(current_ip, current_port)
+        finally:
+            await self.udp_client.end_poll_cycle(current_ip)
+
+    async def _async_fetch_device_status(
+        self, current_ip: str, current_port: int
+    ) -> dict[str, Any]:
+        """Fetch one polling cycle after the poll-cycle lease is held."""
         # Determine which data types to fetch based on elapsed time
         current_time = time.monotonic()
         parallel_requests = self._use_parallel_api_requests()
@@ -389,6 +420,24 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (TimeoutError, OSError, ValueError) as err:
             # Connection failed - Scanner will detect IP changes and update config entry
             return self._handle_update_error(current_ip, err)
+
+    def clear_openapi_reset_mark(self) -> None:
+        """Drop this device's reset-prone UDP flag, including stale IPs."""
+        previous = self._marked_reset_prone_ip
+        current = self.device_ip
+        initial = self._initial_device_ip
+        ips = {previous, current, initial}
+        for ip in ips:
+            if isinstance(ip, str) and ip:
+                self.udp_client.clear_openapi_reset_prone(
+                    ip, owner=self._entry.entry_id
+                )
+        clear_owner = getattr(
+            self.udp_client, "clear_openapi_reset_prone_owner", None
+        )
+        if callable(clear_owner):
+            clear_owner(self._entry.entry_id)
+        self._marked_reset_prone_ip = None
 
     def _issue_id(self) -> str:
         return f"cannot_connect_{self._entry.entry_id}"

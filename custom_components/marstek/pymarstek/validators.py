@@ -86,6 +86,31 @@ def json_rpc_wire_id(value: Any) -> int | None:
     return value & MAX_JSON_RPC_ID
 
 
+def normalize_json_rpc_wire_message(message: str) -> tuple[str, int, str]:
+    """Rewrite a JSON-RPC payload to the uint16 id Control firmware stores.
+
+    ``Marstek.GetDevice`` may use id 0 (discovery echoes that id). Every other
+    method is rewritten to ``1..65535`` so a ``validate=False`` caller cannot
+    send 0 or a value that wraps to 0 on the MCU.
+    """
+    try:
+        payload = json.loads(message)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Invalid message: missing id") from exc
+    if not isinstance(payload, dict) or "id" not in payload:
+        raise ValueError("Invalid message: missing id")
+    method_name = str(payload.get("method", "unknown"))
+    wire_id = json_rpc_wire_id(payload["id"])
+    if wire_id is None:
+        raise ValueError("Invalid message: missing id")
+    if wire_id == 0 and method_name != CMD_DISCOVER:
+        wire_id = 1
+    if payload["id"] != wire_id:
+        payload["id"] = wire_id
+        message = json.dumps(payload, separators=(",", ":"))
+    return message, wire_id, method_name
+
+
 def _strict_warn(message: str, field: str | None = None) -> None:
     """Log a strict mode warning if strict mode is enabled."""
     if _strict_mode:

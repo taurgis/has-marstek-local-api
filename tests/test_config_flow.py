@@ -461,6 +461,37 @@ async def test_integration_discovery_updates_ip(
     assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == "1.2.3.99"
 
 
+async def test_integration_discovery_updates_ip_and_metadata(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Host and firmware metadata land in one config-entry update."""
+    mock_config_entry.add_to_hass(hass)
+
+    discovery_info = {
+        "ip": "1.2.3.99",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusE 3.0",
+        "version": 147,
+        "wifi_name": "AirPort-38",
+        "wifi_mac": "11:22:33:44:55:66",
+        "model": "VenusE 3.0",
+        "firmware": "147",
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.data["host"] == "1.2.3.99"
+    assert updated.data["device_type"] == "VenusE 3.0"
+    assert updated.data["version"] == 147
+    assert updated.data["wifi_name"] == "AirPort-38"
+
+
 async def test_integration_discovery_without_port_keeps_current_port(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -790,6 +821,76 @@ async def test_manual_flow_already_configured(
     assert result["reason"] == "already_configured"
 
 
+async def test_manual_flow_already_configured_via_wifi_mac(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Manual add must abort when only the Wi-Fi MAC matches an existing entry."""
+    mock_config_entry.add_to_hass(hass)
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "device_type": "Venus C",
+        "version": 153,
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["step_id"] == "manual"
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert hass.config_entries.async_entries(DOMAIN)[0].unique_id == "aa:bb:cc:dd:ee:ff"
+
+
+async def test_dhcp_confirm_wifi_mac_keeps_ble_unique_id(
+    hass: HomeAssistant,
+) -> None:
+    """DHCP often reports the Wi-Fi MAC; confirm still creates a BLE unique_id."""
+    dhcp_info = type(
+        "DhcpInfo",
+        (),
+        {
+            "ip": "192.168.1.100",
+            "hostname": "marstek",
+            "macaddress": "112233445566",
+        },
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus C",
+        "version": 153,
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "192.168.1.100", "port": 30000},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == "aa:bb:cc:dd:ee:ff"
+
+
 async def test_reauth_flow_success(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -933,6 +1034,54 @@ async def test_reconfigure_flow_success(
     updated_entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert updated_entry.data["host"] == "192.168.1.201"
     assert updated_entry.data["port"] == 30000
+    assert updated_entry.data["version"] == "3.0"
+    assert updated_entry.data["device_type"] == "Venus"
+
+
+async def test_reconfigure_wifi_unique_id_matches_ble_device(
+    hass: HomeAssistant,
+) -> None:
+    """Reconfigure must not fail when the entry unique_id is the Wi-Fi MAC."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="11:22:33:44:55:66",
+        data={
+            "host": "1.2.3.4",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+        data=None,
+    )
+    assert result["step_id"] == "reconfigure_confirm"
+
+    device_info = {
+        "ip": "192.168.1.201",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus C",
+        "version": 153,
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "192.168.1.201", "port": 30000},
+        )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.unique_id == "11:22:33:44:55:66"
+    assert updated.data["host"] == "192.168.1.201"
 
 
 async def test_reconfigure_confirm_form_snapshot(
@@ -1464,6 +1613,28 @@ async def test_integration_discovery_missing_ble_mac(hass: HomeAssistant) -> Non
     assert result["reason"] == "invalid_discovery_info"
 
 
+@pytest.mark.parametrize("device_type", ["VenusE", "HMG-50", "Venus E2.0"])
+async def test_integration_discovery_aborts_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """Scanner discovery of HMG-50 / Venus E2 must abort, not confirm as Venus E."""
+    discovery_info = {
+        "ip": "172.28.0.29",
+        "ble_mac": "02:de:ad:be:ef:09",
+        "mac": "02:de:ad:be:ef:09",
+        "device_type": device_type,
+        "version": 153,
+        "port": 30000,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "unsupported_device"
+
+
 async def test_user_flow_connection_error_redirects_to_manual(
     hass: HomeAssistant,
 ) -> None:
@@ -1593,3 +1764,139 @@ async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
     assert result["step_id"] == "manual"
     client.async_pause_receiver.assert_awaited()
     client.async_resume_receiver.assert_awaited()
+
+
+@pytest.mark.parametrize(
+    "device_type",
+    ["Venus E2.0", "VenusE", "HMG-50"],
+)
+async def test_manual_flow_rejects_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """HMG-50 Open API names are not a supported family."""
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": device_type,
+        "version": 153,
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+        "model": device_type,
+        "firmware": "153",
+    }
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["step_id"] == "manual"
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert result["errors"] == {"base": "unsupported_device"}
+
+
+@pytest.mark.parametrize("device_type", ["Venus E2.0", "VenusE", "HMG-50"])
+async def test_user_flow_filters_unsupported_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """Discovery lists omit HMG-50 / Venus E2 so it cannot be added as Venus E."""
+    devices = [
+        {
+            "ip": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": device_type,
+            "version": 153,
+            "wifi_name": "marstek",
+            "model": device_type,
+            "firmware": "153",
+        }
+    ]
+
+    with patch_discovery(devices):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+
+
+async def test_dhcp_wifi_mac_updates_ble_unique_id_entry(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """DHCP uses the Wi-Fi MAC; entries identified by BLE MAC must still match."""
+    mock_config_entry.add_to_hass(hass)
+
+    discovery_info = type(
+        "DhcpInfo",
+        (),
+        {
+            "ip": "1.2.3.9",
+            "hostname": "marstek",
+            "macaddress": "112233445566",
+        },
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "dhcp"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.data["host"] == "1.2.3.9"
+    assert updated.unique_id == "aa:bb:cc:dd:ee:ff"
+
+
+async def test_integration_discovery_wifi_only_updates_existing_entry(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Scanner discovery without BLE MAC still updates the matching entry."""
+    mock_config_entry.add_to_hass(hass)
+
+    discovery_info = {
+        "ip": "1.2.3.99",
+        "wifi_mac": "11:22:33:44:55:66",
+        "device_type": "Venus C",
+        "version": 153,
+        "port": 30000,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.data["host"] == "1.2.3.99"
+    assert updated.unique_id == "aa:bb:cc:dd:ee:ff"
+
+
+async def test_integration_discovery_wifi_only_confirms_new_device(
+    hass: HomeAssistant,
+) -> None:
+    """A Wi-Fi-only GetDevice payload can start a confirm flow."""
+    discovery_info = {
+        "ip": "192.168.1.26",
+        "wifi_mac": "DE:AD:BE:EF:00:01",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+

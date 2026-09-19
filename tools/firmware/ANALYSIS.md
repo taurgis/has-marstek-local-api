@@ -84,14 +84,32 @@ calls stay disabled on generation &lt; 150 and remain optional on 150+.
 
 ## Plugin-side mitigations (cannot patch the MCU)
 
-1. JSON-RPC ids cycle `1..65535` and never emit `0`.
-2. Outbound ids above 65535 are rejected; inbound ids are matched as uint16.
+1. JSON-RPC ids cycle `1..65535` and never emit `0` from the command
+   builder. Discovery still sends top-level `"id": 0` on purpose
+   (`discovery._build_discovery_message`); the official PDF requires
+   `params.ble_mac="0"`, not a JSON-RPC id of 0. Do not change discovery
+   without a firmware matrix test.
+2. Outbound ids above 65535 are rejected when validation is on. The UDP
+   client also rewrites `validate=False` payloads to the uint16 wire id
+   (non-discovery methods never send 0). Inbound ids are matched as uint16.
 3. Empty UDP datagrams are never sent and inbound empties are ignored.
-4. `Bat.GetStatus` stays entity-registry gated (issue #14).
+4. `Bat.GetStatus` is not sent on reset-prone firmware, even if battery-detail
+   entities were previously enabled. On 150+ it stays entity-registry gated
+   (issue #14).
 5. Parallel polling is ignored when `openapi_reset_prone` is true
-   (known family, Control generation &lt; 150, including `ver=1476`).
-6. A non-fixable Home Assistant warning points at issue #15 and asks for
-   Control 150+.
+   (known family, Control generation &lt; 150, including `ver=1476`; unknown
+   model names with a Control-like generation 100–149). Unicast requests to
+   those IPs are serialized on a per-IP lock. `pause_polling` waits for the
+   current coordinator cycle to finish and rolls back if the wait is
+   cancelled. Discovery pauses the UDP listener only after in-flight unicasts
+   drain; nested pauses wait until the listener is actually stopped.
+   Reset-prone IPs keep a 1s UDP floor even when a caller asks to bypass
+   rate limiting. Marks are owned by config-entry id so an IP change cannot
+   leave a stale lock on an address a later 150+ device reuses.
+6. A non-fixable Home Assistant warning is created from config-entry metadata
+   **before** the first UDP probe and points at issue #15. The pooled client
+   is created and marked before the scanner starts so the first scan can
+   pause an existing listener; the scanner still starts before the probe.
 
 ## Mock device
 
@@ -109,6 +127,28 @@ the same class of bug on other products:
 
 - HME-3 v122 / HME-4 v124: `udp协议v4 修复udp复位bug` (UDP protocol v4, fix UDP reset bug)
 - HMG-50 Control v156: `优化OpenApi接口稳定性` (optimized Open API interface stability)
+
+## Venus E 2.x / HMG-50 identity
+
+Venus E 2.0 is **HMG-50**, not VNSE3-0. Control **153** is the first archived
+image with `Marstek.GetDevice`. Strings in that binary (and 154–156):
+
+| Role | HMG-50 153+ | VNSE3-0 |
+|------|-------------|---------|
+| GetDevice `device` | `VenusE` | `VenusE 3.0` |
+| JSON-RPC `src` | `VenusE-%s` | `VenusE 3.0-%s` |
+| SKU | `HMG-50` / `HMG-25` / `HMG-1` | `VNSE3-0` |
+
+Matching only `Venus E2.0` / `VNSE2-0` would accept a real E2 as Venus E 3.x.
+The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as unsupported.
+Venus E 3.x requires `VenusE 3.0` / `VNSE3`.
+
+HMG-50 Control **153** Open API methods in the binary: `Marstek.GetDevice`,
+`ES.GetMode`, `ES.SetMode`, `Wifi.SetConfig`, `BLE.GetStatus`, `ES.GetStatus`,
+`PV.GetStatus`, `Wifi.GetStatus`, `Bat.GetStatus`. `EM.GetStatus` appears only
+as a meter *client* request on 153 (`{"id":%d,"method":"EM.GetStatus"...}`).
+Control **156** adds the Open API server method `EM.GetStatus`. The Docker mock
+at `172.28.0.29` (`--device VenusE --ver 153`) follows the 153 image.
 
 Venus A/D reports on issue #15 used the same Local API stack symptoms. This
 integration treats every **known family** below Control generation 150 as

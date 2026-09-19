@@ -34,9 +34,12 @@ def _mock_client(status=None, setup_error=None):
     client.async_setup = AsyncMock(side_effect=setup_error)
     client.async_cleanup = AsyncMock(return_value=None)
     client.send_request = AsyncMock(return_value={"result": {}})
+    client.fetch_es_mode = AsyncMock(return_value={"device_mode": "auto"})
     client.is_polling_paused = MagicMock(return_value=False)
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.begin_poll_cycle = AsyncMock(return_value=True)
+    client.end_poll_cycle = AsyncMock(return_value=None)
     if isinstance(status, Exception):
         client.get_device_status = AsyncMock(side_effect=status)
     else:
@@ -210,8 +213,7 @@ async def test_select_mode_command_failure_retries(
     # Setup succeeds (first call), then 2 failures + 1 success for retries
     client.send_request = AsyncMock(
         side_effect=[
-            {"result": {}},  # Setup call succeeds
-            TimeoutError("timeout"),  # First service attempt fails
+            TimeoutError("timeout"),  # First attempt fails
             TimeoutError("timeout"),  # Second attempt fails
             {"result": {}},  # Third attempt succeeds
         ]
@@ -232,8 +234,8 @@ async def test_select_mode_command_failure_retries(
             blocking=True,
         )
 
-        # Should have called: 1 setup + 3 retries = 4 total
-        assert client.send_request.call_count == 4
+        # Should have called 3 retries (setup uses fetch_es_mode)
+        assert client.send_request.call_count == 3
 
 
 async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_entry):
@@ -250,8 +252,6 @@ async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_ent
     async def send_request_side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        if call_count == 1:  # First call is during setup
-            return {"result": {}}
         raise TimeoutError("timeout")  # All service calls fail
 
     client = _mock_client(status=status)
@@ -404,6 +404,8 @@ def _make_select_entity(
     client.send_request = AsyncMock(return_value={"result": {}})
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.begin_poll_cycle = AsyncMock(return_value=True)
+    client.end_poll_cycle = AsyncMock(return_value=None)
 
     entity = MarstekOperatingModeSelect(
         coordinator,
@@ -433,8 +435,8 @@ def test_select_current_option_normalizes_open_api_auto() -> None:
 @pytest.mark.parametrize(
     ("device_type", "version", "expect_ups"),
     [
-        ("VenusE", 145, False),
-        ("VenusE", 150, True),
+        ("VenusE 3.0", 145, False),
+        ("VenusE 3.0", 150, True),
         ("Venus E mini", 150, True),
         ("Venus E mini", "not-a-version", False),
         ("Marstek Energy Storage", 150, False),
@@ -481,7 +483,7 @@ async def test_select_ups_sends_exact_payload_and_pauses_polling(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
@@ -521,7 +523,7 @@ async def test_select_ups_resumes_polling_after_failure(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     call_count = 0
@@ -529,8 +531,6 @@ async def test_select_ups_resumes_polling_after_failure(
     async def send_request_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
         nonlocal call_count
         call_count += 1
-        if call_count == 1:
-            return {"result": {}}
         raise TimeoutError("timeout")
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
@@ -555,7 +555,7 @@ async def test_select_ups_resumes_polling_after_failure(
 
 async def test_unsupported_direct_ups_selection_sends_no_request() -> None:
     """A profile without UPS cannot transmit UPS even if invoked directly."""
-    entity, client = _make_select_entity(device_type="VenusE", version=145)
+    entity, client = _make_select_entity(device_type="VenusE 3.0", version=145)
 
     with pytest.raises(HomeAssistantError, match="mode_not_supported"):
         await entity.async_select_option(MODE_UPS)
@@ -619,7 +619,7 @@ async def test_manual_and_passive_remain_blocked_on_ups_capable_profile(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})
@@ -653,7 +653,7 @@ async def test_select_reports_ups_state(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusE", "version": 150},
+        data={**mock_config_entry.data, "device_type": "VenusE 3.0", "version": 150},
     )
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": MODE_UPS})

@@ -4,15 +4,27 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek import _async_update_listener
-from custom_components.marstek.const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.const import (
+    DATA_ENTRY_BIND_PORTS,
+    DATA_SUPPRESS_RELOADS,
+    DATA_UDP_CLIENTS,
+    DOMAIN,
+)
 from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 
 from tests.conftest import (
@@ -89,9 +101,10 @@ async def test_setup_with_custom_port(
         assert entry.state == ConfigEntryState.LOADED
 
         # Verify connection was verified with custom port
-        client.send_request.assert_called()
-        call_args = client.send_request.call_args
-        assert call_args.args[2] == 30003  # port argument
+        client.fetch_es_mode.assert_awaited()
+        call_args = client.fetch_es_mode.await_args
+        assert call_args is not None
+        assert call_args.args[1] == 30003  # port argument
 
         # Verify coordinator uses custom port for polling
         coordinator = entry.runtime_data.coordinator
@@ -956,6 +969,81 @@ async def test_openapi_reset_issue_skipped_for_firmware_150(
     )
 
 
+async def test_openapi_reset_issue_created_when_connection_fails(
+    hass: HomeAssistant,
+) -> None:
+    """Firmware warning is created from metadata before the first UDP probe."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(send_request_error=TimeoutError("timeout"))
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.SETUP_RETRY
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.translation_key == "openapi_reset_prone"
+    client.set_openapi_reset_prone.assert_called_with(
+        "1.2.3.4", True, owner=entry.entry_id
+    )
+
+
+async def test_reset_prone_setup_removes_bat_status_entities(
+    hass: HomeAssistant,
+) -> None:
+    """Enabled Bat.GetStatus entities are dropped on reset-prone firmware."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    unique_id = "aa:bb:cc:dd:ee:ff_bat_temp"
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=unique_id,
+        config_entry=entry,
+    )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.LOADED
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
+
+
 async def test_remove_entry_cleans_stale_device(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -981,3 +1069,126 @@ async def test_remove_entry_cleans_stale_device(
         async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac))
         is None
     )
+
+
+async def test_remove_setup_retry_entry_releases_udp_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Deleting a retrying entry must release the socket HA never unloaded."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(send_request_error=TimeoutError("timeout"))
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        assert mock_config_entry.state == ConfigEntryState.SETUP_RETRY
+        assert DATA_UDP_CLIENTS in hass.data.get(DOMAIN, {})
+
+        await hass.config_entries.async_remove(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    client.async_cleanup.assert_awaited()
+    assert DOMAIN not in hass.data or DATA_UDP_CLIENTS not in hass.data.get(
+        DOMAIN, {}
+    )
+
+
+async def test_setup_error_after_lease_releases_udp_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """SETUP_ERROR after the socket is leased must not keep the bind port."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+
+    with (
+        patch_marstek_integration(client=client),
+        patch(
+            "custom_components.marstek._async_verify_device_connection",
+            AsyncMock(side_effect=ConfigEntryError("broken")),
+        ),
+    ):
+        assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert mock_config_entry.state == ConfigEntryState.SETUP_ERROR
+    client.async_cleanup.assert_awaited()
+    domain_data = hass.data.get(DOMAIN, {})
+    assert not domain_data.get(DATA_UDP_CLIENTS)
+    assert not domain_data.get(DATA_ENTRY_BIND_PORTS)
+
+
+async def test_failed_unload_keeps_reset_prone_protection(
+    hass: HomeAssistant,
+) -> None:
+    """A failed platform unload must not drop firmware-reset protections."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        issue_registry = ir.async_get(hass)
+        issue_id = f"openapi_reset_prone_{entry.entry_id}"
+        assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+        with patch.object(
+            hass.config_entries,
+            "async_unload_platforms",
+            AsyncMock(return_value=False),
+        ):
+            unloaded = await hass.config_entries.async_unload(entry.entry_id)
+            await hass.async_block_till_done()
+
+        assert unloaded is False
+        assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+        client.clear_openapi_reset_prone.assert_not_called()
+
+        # FAILED_UNLOAD cannot be unloaded again; stop the coordinator timer.
+        await entry.runtime_data.coordinator.async_shutdown()
+
+
+@pytest.mark.parametrize("device_type", ["Venus E2.0", "VenusE", "HMG-50"])
+async def test_existing_venus_e2_entry_fails_setup(
+    hass: HomeAssistant,
+    device_type: str,
+) -> None:
+    """Migrated HMG-50 / Venus E2 entries must not start polling."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": device_type,
+            "version": 153,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.SETUP_ERROR
+    client.send_request.assert_not_called()
+

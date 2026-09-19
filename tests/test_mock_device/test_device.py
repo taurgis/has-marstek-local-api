@@ -11,7 +11,11 @@ import pytest
 
 from mock_device import MockMarstekDevice
 from mock_device.__main__ import main
-from custom_components.marstek.firmware_profile import resolve_firmware_profile
+from custom_components.marstek.firmware_profile import (
+    DeviceFamily,
+    is_unsupported_venus_e2,
+    resolve_firmware_profile,
+)
 from custom_components.marstek.pymarstek.data_parser import (
     merge_device_status,
     parse_em_status_response,
@@ -261,6 +265,65 @@ class TestDeviceDiscovery:
         assert "wifi_mac" not in response["result"]
         assert "wifi_name" not in response["result"]
         assert "ip" in response["result"]
+
+    def test_hmg50_getdevice_uses_venuse_identity(self) -> None:
+        """HMG-50 Control 153 GetDevice reports device=VenusE, src VenusE-mac."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusE",
+                "ver": 153,
+                "ble_mac": "02deadbeef09",
+                "wifi_mac": "02cafebabe09",
+            },
+        )
+
+        response = device.build_response(1, "Marstek.GetDevice", {})
+
+        assert response is not None
+        assert response["src"] == "VenusE-02deadbeef09"
+        assert response["result"]["device"] == "VenusE"
+        assert response["result"]["ver"] == 153
+        assert is_unsupported_venus_e2(response["result"]["device"]) is True
+        assert device.profile.family is DeviceFamily.UNKNOWN
+        assert device.profile.supports_ups is False
+        assert device.profile.supports_sys_dod is False
+        assert response["result"]["ble_mac"] == "02deadbeef09"
+        assert response["result"]["wifi_mac"] == "02cafebabe09"
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+        pv = device.build_response(3, "PV.GetStatus", {})
+        dod = device.build_response(4, "DOD.SET", {"value": 80})
+        status = device.build_response(5, "ES.GetStatus", {"id": 0})
+        assert em is not None
+        assert em["error"]["code"] == -32601
+        assert pv is not None
+        assert pv["error"]["code"] == -32601
+        assert dod is not None
+        assert dod["error"]["code"] == -32601
+        assert status is not None
+        assert "bat_power" not in status["result"]
+        assert status["result"]["bat_soc"] == 50
+
+    def test_hmg50_156_serves_em_get_status(self) -> None:
+        """HMG-50 Control 156 added Open API EM.GetStatus; 153 does not."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusE",
+                "ver": 156,
+                "ble_mac": "02deadbeef09",
+                "wifi_mac": "02cafebabe09",
+            },
+        )
+
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+
+        assert em is not None
+        assert "result" in em
+        assert "error" not in em
+        assert em["src"] == "VenusE-02deadbeef09"
 
     def test_venus_a_147_getmode_includes_zero_ct_keys(self) -> None:
         """Issue #11: Venus A 147 GetMode includes CT/energy keys as zeros."""
@@ -691,7 +754,7 @@ class TestManualScheduleSlots:
 
     @pytest.mark.parametrize(
         ("device_type", "accepted_slot", "rejected_slot"),
-        [("Venus E mini", 5, 6), ("VenusE", 9, 10), ("Other", 9, 10)],
+        [("Venus E mini", 5, 6), ("VenusE 3.0", 9, 10), ("Other", 9, 10)],
     )
     def test_profile_schedule_boundaries(
         self,
@@ -813,7 +876,7 @@ class TestUpsMode:
         """Legacy firmware returns Method not found and keeps Auto."""
         device = MockMarstekDevice(
             simulate=False,
-            device_config={"device": "VenusE", "ver": 145},
+            device_config={"device": "VenusE 3.0", "ver": 145},
         )
 
         response = device.build_response(1, "ES.SetMode", _ups_set_mode_params())
@@ -829,7 +892,7 @@ class TestUpsMode:
         """Firmware 150+ stores UPS and reports it from ES.GetMode."""
         device = MockMarstekDevice(
             simulate=False,
-            device_config={"device": "VenusE", "ver": 150},
+            device_config={"device": "VenusE 3.0", "ver": 150},
         )
 
         response = device.build_response(1, "ES.SetMode", _ups_set_mode_params())
@@ -868,7 +931,7 @@ class TestUpsMode:
         from custom_components.marstek.pymarstek.command_builder import build_command
         from custom_components.marstek.pymarstek.data_parser import parse_es_mode_response
 
-        profile = resolve_firmware_profile("VenusE", 150)
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
         assert profile.supports_ups is True
         assert MODE_UPS in selectable_operating_modes(profile)
 
@@ -885,7 +948,7 @@ class TestUpsMode:
 
         device = MockMarstekDevice(
             simulate=False,
-            device_config={"device": "VenusE", "ver": 150},
+            device_config={"device": "VenusE 3.0", "ver": 150},
         )
         set_response = device.build_response(1, "ES.SetMode", command["params"])
         assert set_response is not None
@@ -1107,4 +1170,34 @@ class TestFirmwareUdpQuirks:
 
         payload = json.loads(device.sock.sendto.call_args[0][0])
         assert payload["id"] == 0
+
+    def test_lan_replies_go_to_listen_port_not_ephemeral_source(
+        self,
+    ) -> None:
+        """Container/LAN firmware replies to the Open API listen port."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("172.28.0.2", 54321),
+        )
+
+        device._handle_request()
+
+        dest = device.sock.sendto.call_args[0][1]
+        assert dest == ("172.28.0.2", device.port)
+
+    def test_loopback_replies_keep_ephemeral_source_port(self) -> None:
+        """Unit tests bind ephemeral on loopback and must still receive replies."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 54321),
+        )
+
+        device._handle_request()
+
+        dest = device.sock.sendto.call_args[0][1]
+        assert dest == ("127.0.0.1", 54321)
 

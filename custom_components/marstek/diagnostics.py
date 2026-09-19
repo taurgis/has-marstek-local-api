@@ -49,6 +49,9 @@ _REDACT_PATTERNS = (
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b"),
     re.compile(r"\b[0-9A-Fa-f]{12}\b"),
+    re.compile(r"\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){2,7}\b"),
+    re.compile(r"\b(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}\b"),
+    re.compile(r"\b(?:[A-Za-z0-9-]+\.)+local\b"),
 )
 
 
@@ -113,6 +116,9 @@ def _summarize_command_stats(stats: dict[str, Any]) -> dict[str, Any]:
     timeout_rate = (total_timeouts / total_attempts) if total_attempts else None
 
     summary = dict(stats)
+    last_error = summary.get("last_error")
+    if isinstance(last_error, str):
+        summary["last_error"] = _redact_text(last_error)
     summary["success_rate"] = success_rate
     summary["timeout_rate"] = timeout_rate
     summary["last_updated"] = _format_timestamp(stats.get("last_updated"))

@@ -99,6 +99,7 @@ async def test_async_get_config_entry_diagnostics(
         "supports_sys_led": False,
         "supports_ups": False,
         "max_manual_schedule_slot": 9,
+        "control_generation": 1,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
     }
@@ -145,6 +146,7 @@ async def test_diagnostics_reports_capable_firmware_profile(
         "supports_sys_led": True,
         "supports_ups": True,
         "max_manual_schedule_slot": 9,
+        "control_generation": 150,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
     }
@@ -172,6 +174,7 @@ async def test_diagnostics_reports_unknown_e_mini_firmware(
     assert profile["supports_sys_dod"] is False
     assert profile["supports_ups"] is False
     assert profile["max_manual_schedule_slot"] == 5
+    assert profile["control_generation"] is None
     assert profile["openapi_reset_prone"] is True
     assert profile["parallel_requests_safe"] is False
 
@@ -353,6 +356,24 @@ async def test_diagnostics_redacts_exception_message(
     assert "AA:BB:CC:DD:EE:FF" not in traceback_text
 
 
+async def test_diagnostics_redacts_ipv6_and_mdns(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Diagnostics also redact IPv6 and .local hostnames from exceptions."""
+    error = Exception("Polling failed for fe80::1 at battery.local")
+    mock_runtime_data.coordinator.last_exception = error
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    message = result["last_exception"]["message"]
+    assert "fe80::1" not in message
+    assert "battery.local" not in message
+    assert "**REDACTED**" in message
+
+
 async def test_diagnostics_with_empty_coordinator_data(
     hass: HomeAssistant,
     mock_config_entry: MagicMock,
@@ -386,7 +407,7 @@ async def test_diagnostics_includes_command_stats(
             "last_success": False,
             "last_latency": None,
             "last_timeout": True,
-            "last_error": "timeout",
+            "last_error": "Request timeout to 192.168.1.100:30000",
             "last_updated": 1738170001.0,
         }
     }
@@ -401,6 +422,7 @@ async def test_diagnostics_includes_command_stats(
     assert stats["total_attempts"] == 2
     assert stats["success_rate"] == 0.5
     assert stats["timeout_rate"] == 0.5
+    assert stats["last_error"] == "Request timeout to **REDACTED**:30000"
 
 
 async def test_diagnostics_without_last_update_time(

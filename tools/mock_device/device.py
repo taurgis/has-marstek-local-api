@@ -11,6 +11,7 @@ from typing import Any
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     FirmwareProfile,
+    is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
 from custom_components.marstek.pymarstek.const import (
@@ -18,6 +19,7 @@ from custom_components.marstek.pymarstek.const import (
     CMD_DOD_SET,
     CMD_LED_CTRL,
 )
+from custom_components.marstek.pymarstek.network import is_loopback_host
 from custom_components.marstek.pymarstek.validators import json_rpc_wire_id
 
 from .const import (
@@ -120,6 +122,19 @@ class MockMarstekDevice:
         # Control firmware freezes Open API after a 0-byte UDP datagram
         # (VNSE3-0 json_data.c / CH395 recv path).
         self._openapi_frozen = False
+
+    def _hmg50_lacks_em_status(self) -> bool:
+        """Return whether this HMG-50 Open API build has no EM.GetStatus.
+
+        Control 153 (``202505301136007a5b57023.bin``) lists GetDevice, ES.*,
+        BLE.GetStatus, PV.GetStatus, Wifi.*, and Bat.GetStatus. ``EM.GetStatus``
+        is only a meter *client* request on that image. Control 156 added the
+        Open API server method (``20251118172129117290445.bin``).
+        """
+        if not is_unsupported_venus_e2(self.config.get("device")):
+            return False
+        generation = self.profile.control_generation
+        return generation is None or generation < 156
 
     def start(self) -> None:
         """Start the mock device server."""
@@ -280,9 +295,21 @@ class MockMarstekDevice:
         """
         assert self.sock is not None
         response_bytes = json.dumps(response).encode("utf-8")
-        self.sock.sendto(response_bytes, addr)
+        self.sock.sendto(response_bytes, self._reply_addr(addr))
         if self.profile.openapi_reset_prone:
-            self.sock.sendto(response_bytes, addr)
+            self.sock.sendto(response_bytes, self._reply_addr(addr))
+
+    def _reply_addr(self, addr: tuple[str, int]) -> tuple[str, int]:
+        """Choose the UDP destination firmware would use for this sender.
+
+        Real devices reply to the Open API listen port, not an ephemeral
+        source port. Loopback unit tests still bind ephemeral, so those
+        replies keep using the request's source address.
+        """
+        sender_ip, _sender_port = addr
+        if is_loopback_host(sender_ip):
+            return addr
+        return (sender_ip, self.port)
 
     def _get_state(self) -> dict[str, Any]:
         """Get current device state."""
@@ -440,6 +467,8 @@ class MockMarstekDevice:
             return handle_wifi_get_status(request_id, src, self.config, self.ip, state)
 
         elif method == "EM.GetStatus":
+            if self._hmg50_lacks_em_status():
+                return handle_method_not_found(request_id, src)
             return handle_em_get_status(
                 request_id, src, state, profile=self.profile
             )

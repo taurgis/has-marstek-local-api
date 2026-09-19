@@ -58,6 +58,7 @@
       'title': 'Test Marstek Device',
     }),
     'firmware_profile': dict({
+      'control_generation': 1,
       'family': 'Unknown',
       'firmware_known': True,
       'firmware_version': 1,

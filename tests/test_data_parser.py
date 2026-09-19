@@ -1338,7 +1338,7 @@ class TestFirmwareProfileDecoding:
 
     def test_em_energy_decodes_from_deciwatt_hours_including_zero(self) -> None:
         """EM lifetime energy uses 0.1 Wh wire units, including zero."""
-        profile = resolve_firmware_profile("VenusE", 150)
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
         result = parse_em_status_response(
             {
                 "id": 1,
@@ -1370,7 +1370,7 @@ class TestFirmwareProfileDecoding:
 
     def test_em_energy_fields_stay_missing_when_absent(self) -> None:
         """Missing EM energy fields are not manufactured as zero."""
-        profile = resolve_firmware_profile("VenusE", 150)
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
         result = parse_em_status_response(
             {"id": 1, "result": {"ct_state": 1, "total_power": 10}},
             profile,
@@ -1381,7 +1381,7 @@ class TestFirmwareProfileDecoding:
 
     def test_es_get_mode_fills_missing_em_fields(self) -> None:
         """Mode CT/power/energy fill coordinator keys when EM is absent."""
-        profile = resolve_firmware_profile("VenusE", 150)
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
         mode = parse_es_mode_response(
             {
                 "id": 1,
@@ -1408,7 +1408,7 @@ class TestFirmwareProfileDecoding:
 
     def test_em_values_win_field_by_field_over_mode(self) -> None:
         """Current EM.GetStatus values beat overlapping ES.GetMode fallbacks."""
-        profile = resolve_firmware_profile("VenusE", 150)
+        profile = resolve_firmware_profile("VenusE 3.0", 150)
         mode = parse_es_mode_response(
             {
                 "id": 1,

@@ -9,11 +9,23 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.device_registry import format_mac
 
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import get_device_info
-from .helpers.udp_clients import bind_port_for_host, get_udp_client
+from .firmware_profile import is_unsupported_venus_e2
+from .helpers.flow_helpers import (
+    get_unique_id_from_device_info,
+    identities_overlap,
+    identity_macs_from_entry,
+    identity_macs_from_mapping,
+    metadata_from_device_info,
+)
+from .helpers.udp_clients import (
+    bind_port_for_host,
+    discovery_lock,
+    get_udp_client,
+    transfer_reset_prone_mark_for_entry,
+)
 
 
 class CannotConnectRepairFlow(RepairsFlow):
@@ -45,27 +57,42 @@ class CannotConnectRepairFlow(RepairsFlow):
                 errors["base"] = "cannot_connect"
             else:
                 try:
-                    udp_client = get_udp_client(
-                        self.hass, bind_port_for_host(host, port)
-                    )
-                    device_info = await get_device_info(
-                        host=host, port=port, udp_client=udp_client
-                    )
-                    if device_info:
-                        unique_id_mac = (
-                            device_info.get("ble_mac")
-                            or device_info.get("mac")
-                            or device_info.get("wifi_mac")
+                    async with discovery_lock(self.hass):
+                        udp_client = get_udp_client(
+                            self.hass, bind_port_for_host(host, port)
                         )
+                        device_info = await get_device_info(
+                            host=host, port=port, udp_client=udp_client
+                        )
+                    if device_info:
+                        unique_id_mac = get_unique_id_from_device_info(device_info)
                         if not unique_id_mac:
                             errors["base"] = "invalid_discovery_info"
-                        elif format_mac(unique_id_mac) != entry.unique_id:
+                        elif is_unsupported_venus_e2(device_info.get("device_type")):
+                            errors["base"] = "unsupported_device"
+                        elif not identities_overlap(
+                            identity_macs_from_entry(entry),
+                            identity_macs_from_mapping(device_info),
+                        ):
                             errors["base"] = "unique_id_mismatch"
                         else:
+                            old_host = str(entry.data.get(CONF_HOST, ""))
+                            transfer_reset_prone_mark_for_entry(
+                                self.hass,
+                                entry,
+                                old_host,
+                                host,
+                                new_port=port,
+                            )
                             # Update the config entry with the new host/port
                             self.hass.config_entries.async_update_entry(
                                 entry,
-                                data={**entry.data, CONF_HOST: host, CONF_PORT: port},
+                                data={
+                                    **entry.data,
+                                    CONF_HOST: host,
+                                    CONF_PORT: port,
+                                    **metadata_from_device_info(device_info),
+                                },
                             )
                             # Delete the issue since it's resolved
                             ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)

@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -350,6 +351,7 @@ async def test_diagnostics_follow_live_firmware_transition(hass: HomeAssistant) 
             "supports_sys_led": False,
             "supports_ups": False,
             "max_manual_schedule_slot": 9,
+            "control_generation": 149,
             "openapi_reset_prone": True,
             "parallel_requests_safe": False,
         }
@@ -367,6 +369,7 @@ async def test_diagnostics_follow_live_firmware_transition(hass: HomeAssistant) 
             "supports_sys_led": True,
             "supports_ups": True,
             "max_manual_schedule_slot": 9,
+            "control_generation": 150,
             "openapi_reset_prone": False,
             "parallel_requests_safe": True,
         }
@@ -427,3 +430,40 @@ async def test_capability_removal_keeps_unrelated_entities(hass: HomeAssistant) 
         for entity_id in battery_matches:
             assert hass.states.get(entity_id) is not None
         assert _entity_id(hass, OPERATING_MODE_KEY) is not None
+
+
+async def test_scanner_reloads_when_reset_prone_clears_without_capability_change(
+    hass: HomeAssistant,
+) -> None:
+    """Unknown-family 149 to 150 does not change SYS/UPS but must reload safety."""
+    entry = _config_entry(version=149, device_type="Marstek Energy Storage")
+    async with _loaded_entry(hass, entry):
+        issue_registry = ir.async_get(hass)
+        assert (
+            issue_registry.async_get_issue(
+                DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+            )
+            is not None
+        )
+
+        async with _count_reloads(hass) as reload_ids:
+            await _scan_devices(
+                hass,
+                [
+                    _discovered_device(
+                        device_type="Marstek Energy Storage",
+                        version=150,
+                        firmware="150",
+                    )
+                ],
+            )
+
+        assert reload_ids == [entry.entry_id]
+        assert entry.data["version"] == 150
+        assert (
+            issue_registry.async_get_issue(
+                DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+            )
+            is None
+        )
+

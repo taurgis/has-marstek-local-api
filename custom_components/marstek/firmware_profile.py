@@ -30,6 +30,23 @@ _REGULAR_FAMILIES = frozenset(
 )
 _KNOWN_FAMILIES = _REGULAR_FAMILIES | {DeviceFamily.VENUS_E_MINI}
 _PV_FAMILIES = frozenset({DeviceFamily.VENUS_A, DeviceFamily.VENUS_D})
+# Observed Control Open API ``ver`` values start near 144. Unknown model
+# names with a plausible Control generation below 150 still get the reset
+# warning (mis-parsed Venus). Placeholders such as ``version: 3`` do not.
+_UNKNOWN_CONTROL_GENERATION_MIN = 100
+# Venus E 2.x / HMG-50 is not Venus E 3.x. HMG-50 Control 153+ Open API
+# GetDevice reports ``device: "VenusE"`` (src ``VenusE-%s``), not
+# ``Venus E2.0`` / ``VNSE2``. Bare ``VenusE`` without 3.x must not unlock
+# the VNSE3-0 family. VNSE3-0 reports ``VenusE 3.0``.
+_VENUS_E2_PATTERN = re.compile(
+    r"^(?:"
+    r"venus\s*e\s*2(?:\.\d+)?(?:\s|$)|"
+    r"vnse2(?:\s|$|\d)|"
+    r"hmg(?:\s|$|\d)|"
+    r"venus\s*e$"
+    r")",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +83,15 @@ class FirmwareProfile:
         )
 
     @property
+    def setup_reload_signature(self) -> tuple[bool, ...]:
+        """Return setup flags that require a config-entry reload when they change.
+
+        Capability gates recreate SYS/UPS/PV entities. Reset-prone also
+        recreates (or removes) Bat.GetStatus entities and the Open API warning.
+        """
+        return (*self.setup_capability_signature, self.openapi_reset_prone)
+
+    @property
     def control_generation(self) -> int | None:
         """Return the Control generation used for capability and safety gates."""
         return _control_generation(self.firmware_version)
@@ -79,11 +105,15 @@ class FirmwareProfile:
         after updating to 150. Builds below that generation (issues #14/#15),
         including dotted encoding 1476 (app 147.6), disable Open API and wipe
         settings under sustained UDP traffic. Unknown ``ver`` on a known
-        family stays conservative.
+        family stays conservative. Unknown model names with a Control-like
+        generation below 150 are also treated as reset-prone.
         """
-        if self.family not in _KNOWN_FAMILIES:
-            return False
         generation = self.control_generation
+        if self.family not in _KNOWN_FAMILIES:
+            return (
+                generation is not None
+                and _UNKNOWN_CONTROL_GENERATION_MIN <= generation < 150
+            )
         if generation is None:
             return True
         return generation < 150
@@ -102,7 +132,8 @@ _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
     (DeviceFamily.VENUS_A, re.compile(r"^venus\s*a(?:\s|$|\d)", re.IGNORECASE)),
     (DeviceFamily.VENUS_C, re.compile(r"^venus\s*c(?:\s|$|\d)", re.IGNORECASE)),
     (DeviceFamily.VENUS_D, re.compile(r"^venus\s*d(?:\s|$|\d)", re.IGNORECASE)),
-    (DeviceFamily.VENUS_E, re.compile(r"^venus\s*e(?:\s|$|\d)", re.IGNORECASE)),
+    # Require 3.x so bare ``VenusE`` (HMG-50 GetDevice) is not Venus E 3.0.
+    (DeviceFamily.VENUS_E, re.compile(r"^venus\s*e\s*3(?:\s|$|\.)", re.IGNORECASE)),
     # Vendor SKU discovery names; keep Venus* labels as the primary mapping.
     (DeviceFamily.VENUS_A, re.compile(r"^vnsa(?:\s|$|\d)", re.IGNORECASE)),
     (DeviceFamily.VENUS_D, re.compile(r"^vnsd(?:\s|$|\d)", re.IGNORECASE)),
@@ -111,9 +142,19 @@ _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
 )
 
 
+def is_unsupported_venus_e2(device_type: str | None) -> bool:
+    """Return True for Venus E 2.x / HMG-50 names this integration does not support."""
+    if not isinstance(device_type, str):
+        return False
+    normalized = " ".join(re.sub(r"[-_]+", " ", device_type.strip()).split())
+    return bool(_VENUS_E2_PATTERN.match(normalized))
+
+
 def _normalize_family(device_type: str | None) -> DeviceFamily:
     """Normalize a discovery model name to a supported family."""
     if not isinstance(device_type, str):
+        return DeviceFamily.UNKNOWN
+    if is_unsupported_venus_e2(device_type):
         return DeviceFamily.UNKNOWN
     normalized = " ".join(re.sub(r"[-_]+", " ", device_type.strip()).split())
     for family, pattern in _FAMILY_PATTERNS:
@@ -237,6 +278,7 @@ def firmware_profile_diagnostics(profile: FirmwareProfile) -> dict[str, Any]:
         "supports_sys_led": profile.supports_sys_led,
         "supports_ups": profile.supports_ups,
         "max_manual_schedule_slot": profile.max_manual_schedule_slot,
+        "control_generation": profile.control_generation,
         "openapi_reset_prone": profile.openapi_reset_prone,
         "parallel_requests_safe": profile.parallel_requests_safe,
     }

@@ -37,7 +37,12 @@ async def query_device(host: str, port: int = 30000, timeout: float = 5.0):
             data, addr = await asyncio.wait_for(
                 loop.sock_recvfrom(sock, 4096), timeout=0.5
             )
-            response = json.loads(data.decode())
+            if not data:
+                continue
+            try:
+                response = json.loads(data.decode())
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
             print(f"\nResponse from {addr[0]}:{addr[1]}:")
             print(json.dumps(response, indent=2))
 

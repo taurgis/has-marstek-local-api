@@ -11,6 +11,7 @@ from custom_components.marstek.const import (
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
+    is_unsupported_venus_e2,
     resolve_firmware_profile,
     resolve_firmware_profile_from_metadata,
 )
@@ -24,12 +25,21 @@ from custom_components.marstek.firmware_profile import (
         ("VenusC", DeviceFamily.VENUS_C, False, 9),
         ("Venus D Pro", DeviceFamily.VENUS_D, True, 9),
         ("VenusE 3.0", DeviceFamily.VENUS_E, False, 9),
+        ("Venus E 3.0", DeviceFamily.VENUS_E, False, 9),
         ("  VENUS E MINI 3.0 ", DeviceFamily.VENUS_E_MINI, False, 5),
         ("VNSA-0", DeviceFamily.VENUS_A, True, 9),
         ("VNSD-0", DeviceFamily.VENUS_D, True, 9),
         ("VNSE3-0", DeviceFamily.VENUS_E, False, 9),
         ("vnse3 0", DeviceFamily.VENUS_E, False, 9),
         ("VNSE2-0", DeviceFamily.UNKNOWN, False, 9),
+        ("Venus E2.0", DeviceFamily.UNKNOWN, False, 9),
+        ("VenusE2.0", DeviceFamily.UNKNOWN, False, 9),
+        ("Venus E2", DeviceFamily.UNKNOWN, False, 9),
+        ("VenusE", DeviceFamily.UNKNOWN, False, 9),
+        ("Venus E", DeviceFamily.UNKNOWN, False, 9),
+        ("HMG-50", DeviceFamily.UNKNOWN, False, 9),
+        ("HMG-25", DeviceFamily.UNKNOWN, False, 9),
+        ("HMG-1", DeviceFamily.UNKNOWN, False, 9),
         ("Some Energy Device", DeviceFamily.UNKNOWN, False, 9),
     ],
 )
@@ -48,7 +58,7 @@ def test_profile_resolves_family_capabilities(
 
 
 @pytest.mark.parametrize("version", [150, "150"])
-@pytest.mark.parametrize("device_type", ["VenusA", "VenusC", "VenusD", "VenusE"])
+@pytest.mark.parametrize("device_type", ["VenusA", "VenusC", "VenusD", "VenusE 3.0"])
 def test_firmware_150_enables_sys_and_ups(
     device_type: str, version: int | str
 ) -> None:
@@ -304,8 +314,8 @@ def test_setup_capability_signature_ignores_firmware_number_and_label() -> None:
 
 def test_setup_capability_signature_changes_when_ups_and_sys_unlock() -> None:
     """Venus E 149 and 150 differ in setup-time UPS and SYS availability."""
-    legacy = resolve_firmware_profile("VenusE", 149)
-    current = resolve_firmware_profile("VenusE", 150)
+    legacy = resolve_firmware_profile("VenusE 3.0", 149)
+    current = resolve_firmware_profile("VenusE 3.0", 150)
 
     assert legacy.setup_capability_signature != current.setup_capability_signature
     assert legacy.supports_ups is False
@@ -316,8 +326,8 @@ def test_setup_capability_signature_changes_when_ups_and_sys_unlock() -> None:
 
 def test_unparseable_firmware_uses_legacy_safe_setup_signature() -> None:
     """Unknown firmware matches the conservative pre-150 setup capabilities."""
-    unknown = resolve_firmware_profile("VenusE", "not-a-version")
-    legacy = resolve_firmware_profile("VenusE", 149)
+    unknown = resolve_firmware_profile("VenusE 3.0", "not-a-version")
+    legacy = resolve_firmware_profile("VenusE 3.0", 149)
 
     assert unknown.setup_capability_signature == legacy.setup_capability_signature
     assert unknown.supports_ups is False
@@ -370,8 +380,21 @@ def test_vnse3_1476_is_legacy_reset_prone() -> None:
         ("VenusA", 150, False),
         ("Venus E mini", 145, True),
         ("Venus E mini", "not-a-version", True),
-        ("Marstek Energy Storage", 144, False),
+        ("Marstek Energy Storage", 144, True),
+        ("Marstek Energy Storage", 150, False),
+        ("Marstek Energy Storage", 3, False),
+        ("Marstek Energy Storage", 99, False),
+        ("Marstek Energy Storage", 100, True),
+        ("Marstek Energy Storage", 149, True),
+        ("Marstek Energy Storage", 150, False),
+        ("Marstek Energy Storage", 1476, True),
+        ("Marstek Energy Storage", 1509, False),
         ("VenusE 3.0", "147.6", True),
+        ("Venus E2.0", 150, False),
+        ("Venus E2.0", 144, True),
+        ("VenusE", 153, False),
+        ("HMG-50", 156, False),
+        ("HMG-50", 146, True),
     ],
 )
 def test_openapi_reset_prone_follows_control_generation(
@@ -391,9 +414,12 @@ def test_openapi_reset_prone_follows_control_generation(
         ("VNSA-0", 1500, False),
         ("VenusD", 2200, True),
         ("VNSD-0", 2200, True),
-        ("VenusE", 2500, True),
+        ("VenusE 3.0", 2500, True),
         ("VNSE3-0", 2500, True),
         ("VNSE2-0", 5000, False),
+        ("VenusE", 5000, False),
+        ("Venus E2.0", 5000, False),
+        ("HMG-50", 5000, False),
     ],
 )
 def test_sku_and_venus_names_share_power_limits(
@@ -404,3 +430,36 @@ def test_sku_and_venus_names_share_power_limits(
 
     assert max_power == max_discharge
     assert device_default_socket_limit(device_type) is socket_default
+
+
+@pytest.mark.parametrize(
+    "device_type",
+    [
+        "Venus E2.0",
+        "VenusE2.0",
+        "Venus E2",
+        "VNSE2-0",
+        "VenusE",
+        "Venus E",
+        "HMG-50",
+        "HMG-25",
+        "HMG-1",
+        "hmg50",
+    ],
+)
+def test_venus_e2_is_unsupported_and_not_venus_e(device_type: str) -> None:
+    """HMG-50 / bare VenusE GetDevice names must not unlock Venus E 3.x."""
+    assert is_unsupported_venus_e2(device_type) is True
+    profile = resolve_firmware_profile(device_type, 150)
+
+    assert profile.family is DeviceFamily.UNKNOWN
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+    assert profile.openapi_reset_prone is False
+
+
+@pytest.mark.parametrize("device_type", ["Venus E 3.0", "VenusE 3.0", "VNSE3-0"])
+def test_venus_e3_is_not_classified_as_e2(device_type: str) -> None:
+    """Venus E 3.x discovery names stay on the supported Venus E family."""
+    assert is_unsupported_venus_e2(device_type) is False
+    assert resolve_firmware_profile(device_type, 150).family is DeviceFamily.VENUS_E

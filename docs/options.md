@@ -31,7 +31,8 @@ inter-request delay.
 - Wired LAN is recommended if this mode is enabled.
 - Ignored on Control firmware the integration treats as reset-prone
   (generation below 150, including Open API `ver` 1476 / app 147.6). Venus E
-  3.0 **150** is the vendor Local API Ethernet fix.
+  3.0 **150** is the vendor Local API Ethernet fix. Reset-prone devices also
+  serialize unicast requests and skip `Bat.GetStatus`.
 
 The **Request delay** field remains configurable, but it is ignored while
 parallel API requests is enabled.
