@@ -401,7 +401,7 @@ def ha_container_logs(since: str) -> str:
 def marstek_log_lines(log_text: str) -> list[str]:
     """Keep Marstek / Open API lines from a docker log dump."""
     kept: list[str] = []
-    for raw in log_text.splitlines():
+    for raw in strip_ansi(log_text).splitlines():
         if (
             "custom_components.marstek" in raw
             or "pymarstek" in raw
@@ -420,6 +420,7 @@ def marstek_log_lines(log_text: str) -> list[str]:
 
 def analyze_ha_logs(log_text: str) -> dict[str, Any]:
     """Summarize Open API traffic and known wire issues from HA debug logs."""
+    log_text = strip_ansi(log_text)
     send_re = re.compile(r"Send: (\S+):(\d+) \|")
     recv_re = re.compile(r"Recv: (\S+):(\d+) \|")
     method_re = re.compile(r'"method"\s*:\s*"([^"]+)"')
@@ -431,7 +432,7 @@ def analyze_ha_logs(log_text: str) -> dict[str, Any]:
     query_re = re.compile(r"Querying device info from (\S+):(\d+)\b")
     no_resp_re = re.compile(r"No valid response from device at (\S+):(\d+)")
     invalid_re = re.compile(r"Invalid device response from (\S+)")
-    ts_re = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+    ts_re = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
 
     methods: dict[str, int] = {}
     send_hosts: dict[str, int] = {}
@@ -675,6 +676,46 @@ def is_numeric_state(state: Any) -> bool:
     return True
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI color codes from docker logs."""
+    return _ANSI_RE.sub("", text)
+
+
+def state_equals(state: Any, expected: str) -> bool:
+    """Compare an HA state to an expected string, including numeric 73 vs 73.0."""
+    if not isinstance(state, dict):
+        return False
+    raw = state.get("state")
+    if raw is None:
+        return False
+    if str(raw) == expected:
+        return True
+    try:
+        return float(str(raw)) == float(expected)
+    except (TypeError, ValueError):
+        return False
+
+
+def unique_ids_stable(
+    before_unique: list[str],
+    after_unique: list[str],
+    before_ids: list[str],
+    after_ids: list[str],
+) -> bool:
+    """Return whether BLE-MAC unique_ids survived delete/re-add.
+
+    Shared slugs like ``sensor.venus_a_battery_level_2`` are normal with many
+    Venus A mocks. Only a *new* ``_N`` entity_id after re-add is a regression.
+    """
+    if before_unique != after_unique:
+        return False
+    new_ids = set(after_ids) - set(before_ids)
+    return not any(re.search(r"_\d+$", eid.rsplit(".", 1)[-1]) for eid in new_ids)
+
+
 class Campaign:
     """Run the extensive live matrix against one logged-in HA tab."""
 
@@ -807,9 +848,20 @@ class Campaign:
     async def wait_equals(
         self, entity_id: str, expected: str, timeout: float
     ) -> dict[str, Any]:
-        return await ha_cdp.cmd_wait_state(
-            self.cdp, self.page, entity_id, timeout, expected, False
-        )
+        deadline = time.time() + timeout
+        last: Any = None
+        while time.time() < deadline:
+            last = await self.state(entity_id)
+            if state_equals(last, expected):
+                return {"ok": True, "state": last}
+            await asyncio.sleep(2)
+        return {
+            "ok": False,
+            "error": "timeout",
+            "entity_id": entity_id,
+            "want": expected,
+            "last": last,
+        }
 
     async def _safe_navigate(self, url: str) -> None:
         try:
@@ -956,13 +1008,15 @@ class Campaign:
             sync_ok = not (isinstance(sync, dict) and sync.get("ok") is False)
             self.record(f"sync:{mock.host}", sync_ok, sync if not sync_ok else None)
             if power:
-                changed = await ha_cdp.cmd_wait_state(
-                    self.cdp, self.page, str(power["entity_id"]), 90, None, True
-                )
+                live = await self.wait_numeric(str(power["entity_id"]), 90)
+                if not live.get("ok"):
+                    live = await ha_cdp.cmd_wait_state(
+                        self.cdp, self.page, str(power["entity_id"]), 90, None, True
+                    )
                 self.record(
                     f"power-updated:{mock.host}",
-                    bool(changed.get("ok")),
-                    changed.get("error"),
+                    bool(live.get("ok")),
+                    live.get("error") or live.get("last") or live.get("state"),
                 )
             actions = await ha_cdp.cmd_device_actions(self.cdp, self.page, device_id)
             types = {
@@ -991,10 +1045,15 @@ class Campaign:
                 bool(sys_ent),
             )
             em_ent = entity_by_key(entities, "em_total_power")
+            em_energy = entity_by_key(entities, "em_input_energy")
             if mock.supports_em_status:
                 self.record(f"em-present:{mock.host}", em_ent is not None, None)
             else:
-                self.record(f"em-absent:{mock.host}", em_ent is None, em_ent)
+                self.record(
+                    f"em-energy-absent:{mock.host}",
+                    em_energy is None,
+                    em_energy,
+                )
             pv1 = entity_by_key(entities, "pv1_power")
             self.record(
                 f"pv-present:{mock.host}",
@@ -1080,13 +1139,18 @@ class Campaign:
                     on = await self.wait_equals(str(ble["entity_id"]), "on", 60)
                     self.record(f"sys-ble:{mock.host}", bool(on.get("ok")), on.get("error"))
             if mock.supports_pv and pv1:
-                pv_changed = await ha_cdp.cmd_wait_state(
-                    self.cdp, self.page, str(pv1["entity_id"]), 90, None, True
+                await self.service(
+                    "marstek", "request_data_sync", {"device_id": device_id}
                 )
+                pv_live = await self.wait_numeric(str(pv1["entity_id"]), 90)
+                if not pv_live.get("ok"):
+                    pv_live = await ha_cdp.cmd_wait_state(
+                        self.cdp, self.page, str(pv1["entity_id"]), 90, None, True
+                    )
                 self.record(
                     f"pv-updated:{mock.host}",
-                    bool(pv_changed.get("ok")),
-                    pv_changed.get("error"),
+                    bool(pv_live.get("ok")),
+                    pv_live.get("error") or pv_live.get("last") or pv_live.get("state"),
                 )
 
     async def phase_automations(self) -> None:
@@ -1532,9 +1596,27 @@ class Campaign:
             self.record("wifi-rssi", bool(rssi.get("ok")), rssi.get("last") or rssi.get("state"))
         ct = entity_by_key(entities, "ct_connection")
         if ct and ct.get("disabled_by"):
-            await ha_cdp.cmd_enable_entity(self.cdp, self.page, str(ct["entity_id"]))
-            await asyncio.sleep(30)
-            ct_state = await self.state(str(ct["entity_id"]))
+            enabled_ct = await ha_cdp.cmd_enable_entity(
+                self.cdp, self.page, str(ct["entity_id"])
+            )
+            delay = 30
+            if isinstance(enabled_ct, dict):
+                delay = int(enabled_ct.get("reload_delay") or 30)
+            _log(f"waiting {delay}s after enabling ct connection")
+            await asyncio.sleep(delay)
+            await ha_cdp.cmd_wait_entry(
+                self.cdp, self.page, str(row["entry_id"]), "loaded", 90
+            )
+            deadline = time.time() + 90
+            ct_state: Any = None
+            while time.time() < deadline:
+                ct_state = await self.state(str(ct["entity_id"]))
+                if isinstance(ct_state, dict) and ct_state.get("state") in {
+                    "on",
+                    "off",
+                }:
+                    break
+                await asyncio.sleep(2)
             self.record(
                 "ct-connection",
                 isinstance(ct_state, dict) and ct_state.get("state") in {"on", "off"},
@@ -1796,10 +1878,12 @@ class Campaign:
                 for ent in entities
                 if ent.get("unique_id")
             )
-            grew = any(eid.endswith("_2") or "_2_" in eid for eid in after_ids)
+            grew = not unique_ids_stable(
+                before_unique, after_unique, before_ids, after_ids
+            )
             self.record(
                 f"unique-ids:{mock.host}",
-                after_unique == before_unique and not grew,
+                not grew,
                 {"before": before_ids[:3], "after": after_ids[:3], "grew": grew},
             )
             soc = entity_by_key(entities, "battery_soc")

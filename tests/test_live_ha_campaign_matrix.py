@@ -153,3 +153,35 @@ def test_analyze_ha_logs_counts_methods_and_pooled_getdevice() -> None:
     assert analysis["getdevice_pooled"] == ["172.28.0.25:30000"]
     assert analysis["timeout_count"] == 1
     assert analysis["invalid_response"] == []
+    ansi = (
+        "\x1b[36m2026-09-19 14:00:00.000 DEBUG (MainThread) "
+        "[custom_components.marstek.pymarstek.udp] "
+        'Send: 172.28.0.20:30000 | {"id": 1, "method": "ES.GetStatus"}\x1b[0m'
+    )
+    colored = campaign.analyze_ha_logs(ansi)
+    assert colored["send_count"] == 1
+    assert colored["min_send_interval_s"] is None
+    assert campaign.strip_ansi(ansi).startswith("2026-09-19")
+
+
+def test_state_equals_accepts_integer_and_decimal() -> None:
+    """RestoreNumber states may be 73 or 73.0."""
+    campaign = _load_campaign()
+    assert campaign.state_equals({"state": "73.0"}, "73") is True
+    assert campaign.state_equals({"state": "73"}, "73.0") is True
+    assert campaign.state_equals({"state": "ai"}, "auto") is False
+
+
+def test_unique_ids_stable_ignores_preexisting_slug_suffixes() -> None:
+    """Many Venus A/C/D mocks share slugs; _2 in the current id is not a regression."""
+    campaign = _load_campaign()
+    unique = ["02:de:ad:be:ef:02_battery_soc"]
+    ids = ["sensor.venus_e_3_0_battery_level_2"]
+    assert campaign.unique_ids_stable(unique, unique, ids, ids) is True
+    grew = campaign.unique_ids_stable(
+        unique,
+        unique,
+        ids,
+        ["sensor.venus_e_3_0_battery_level_3"],
+    )
+    assert grew is False
