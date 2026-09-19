@@ -64,13 +64,15 @@
       "discovery_failed": "Failed to discover devices. Please check your network connection and try again.",
       "invalid_discovery_info": "Invalid discovery information received from the device",
       "unique_id_mismatch": "The device at this address does not match the discovered device",
-      "all_devices_configured": "All discovered devices are already configured. Enter an IP address manually or ensure additional devices are on the network."
+      "all_devices_configured": "All discovered devices are already configured. Enter an IP address manually or ensure additional devices are on the network.",
+      "unsupported_device": "Venus E2.0 is not supported by this integration"
     },
     "abort": {
       "already_configured": "Device is already configured",
       "invalid_discovery_info": "Invalid discovery information received from the device",
       "reauth_successful": "Device reconnected successfully",
-      "reconfigure_successful": "Device reconfigured successfully"
+      "reconfigure_successful": "Device reconfigured successfully",
+      "unsupported_device": "Venus E2.0 is not supported by this integration"
     }
   },
   "options": {

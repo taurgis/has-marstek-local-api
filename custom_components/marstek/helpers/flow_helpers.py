@@ -61,6 +61,31 @@ def format_already_configured_text(names: list[str]) -> str:
     return "\n\nAlready configured devices:\n" + "\n".join(description_lines)
 
 
+_DEVICE_METADATA_KEYS: tuple[str, ...] = (
+    "device_type",
+    "version",
+    "wifi_name",
+    "wifi_mac",
+    "model",
+    "firmware",
+)
+
+
+def metadata_from_device_info(device_info: dict[str, Any]) -> dict[str, Any]:
+    """Return non-empty discovery fields that should be stored on the entry."""
+    updates: dict[str, Any] = {}
+    for key in _DEVICE_METADATA_KEYS:
+        if key not in device_info:
+            continue
+        value = device_info[key]
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        updates[key] = value
+    return updates
+
+
 def get_unique_id_from_device_info(device_info: dict[str, Any]) -> str | None:
     """Return formatted unique id from device info, if available."""
     unique_id_mac = (

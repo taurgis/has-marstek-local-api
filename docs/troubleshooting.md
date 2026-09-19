@@ -14,7 +14,7 @@ If they are missing:
 1. Check the device model on the device page (Venus E mini is not Venus E).
 2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** → `firmware_profile`).
 3. Unknown or unparseable `ver` stays legacy-safe: no SYS and no UPS.
-4. After a firmware update that crosses the gate, the scanner reloads the config entry; you do not need to delete and re-add the device.
+4. After a firmware update that crosses a capability or reset-safety gate, the scanner reloads the config entry; you do not need to delete and re-add the device.
 
 The Open API documents **no GET methods** for DOD, Bluetooth advertising, or LED. Home Assistant restores the last value it successfully wrote. Changes made in the Marstek app, after a device reboot, or by another controller are not detected.
 

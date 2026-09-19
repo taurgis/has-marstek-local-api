@@ -779,7 +779,7 @@ async def test_all_new_sensors_with_full_status(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        data={**mock_config_entry.data, "device_type": "VenusA", "version": 145},
+        data={**mock_config_entry.data, "device_type": "VenusA", "version": 150},
     )
 
     # Full status with all new fields

@@ -393,16 +393,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> bool:
-    """Unload a config entry."""
-    _LOGGER.info("Unloading Marstek config entry: %s", entry.title)
+def _entry_coordinator(entry: ConfigEntry) -> MarstekDataUpdateCoordinator | None:
+    """Return the runtime coordinator for a config entry, if setup finished."""
+    runtime_data = getattr(entry, "runtime_data", None)
+    coordinator = getattr(runtime_data, "coordinator", None)
+    if isinstance(coordinator, MarstekDataUpdateCoordinator):
+        return coordinator
+    return None
 
+
+def _clear_entry_reset_prone_flag(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Clear the UDP reset-prone mark using the IP the coordinator actually used."""
+    coordinator = _entry_coordinator(entry)
+    if coordinator is not None:
+        coordinator.clear_openapi_reset_mark()
+        return
     host = entry.data.get(CONF_HOST)
     udp_client = get_udp_client_for_entry(hass, entry)
     if isinstance(host, str) and udp_client is not None:
         udp_client.clear_openapi_reset_prone(host)
 
+
+async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> bool:
+    """Unload a config entry."""
+    _LOGGER.info("Unloading Marstek config entry: %s", entry.title)
+
+    coordinator = _entry_coordinator(entry)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        return False
+
+    if coordinator is not None:
+        coordinator.clear_openapi_reset_mark()
+    else:
+        _clear_entry_reset_prone_flag(hass, entry)
 
     # Clear any repair issues tied to this entry
     _clear_connection_issue(hass, entry)
@@ -420,17 +446,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     else:
         await async_release_udp_client_for_entry(hass, entry)
 
-    return unload_ok
+    return True
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:
     """Remove a config entry and clean up stale devices."""
     from homeassistant.helpers.device_registry import format_mac
 
-    host = entry.data.get(CONF_HOST)
-    udp_client = get_udp_client_for_entry(hass, entry)
-    if isinstance(host, str) and udp_client is not None:
-        udp_client.clear_openapi_reset_prone(host)
+    _clear_entry_reset_prone_flag(hass, entry)
 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)

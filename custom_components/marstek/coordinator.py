@@ -327,10 +327,19 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("Start polling device: %s:%s", current_ip, current_port)
         self._sync_reset_prone_udp_flag()
 
-        if self.udp_client.is_polling_paused(current_ip):
+        if not await self.udp_client.begin_poll_cycle(current_ip):
             _LOGGER.debug("Polling paused for device: %s, skipping update", current_ip)
             return self.data or {}
 
+        try:
+            return await self._async_fetch_device_status(current_ip, current_port)
+        finally:
+            await self.udp_client.end_poll_cycle(current_ip)
+
+    async def _async_fetch_device_status(
+        self, current_ip: str, current_port: int
+    ) -> dict[str, Any]:
+        """Fetch one polling cycle after the poll-cycle lease is held."""
         # Determine which data types to fetch based on elapsed time
         current_time = time.monotonic()
         parallel_requests = self._use_parallel_api_requests()
@@ -404,6 +413,13 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (TimeoutError, OSError, ValueError) as err:
             # Connection failed - Scanner will detect IP changes and update config entry
             return self._handle_update_error(current_ip, err)
+
+    def clear_openapi_reset_mark(self) -> None:
+        """Drop this device's reset-prone UDP flag, including a stale previous IP."""
+        previous = self._marked_reset_prone_ip
+        if previous is not None:
+            self.udp_client.clear_openapi_reset_prone(previous)
+            self._marked_reset_prone_ip = None
 
     def _issue_id(self) -> str:
         return f"cannot_connect_{self._entry.entry_id}"

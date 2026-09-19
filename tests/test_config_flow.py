@@ -933,6 +933,8 @@ async def test_reconfigure_flow_success(
     updated_entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert updated_entry.data["host"] == "192.168.1.201"
     assert updated_entry.data["port"] == 30000
+    assert updated_entry.data["version"] == "3.0"
+    assert updated_entry.data["device_type"] == "Venus"
 
 
 async def test_reconfigure_confirm_form_snapshot(
@@ -1593,3 +1595,59 @@ async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
     assert result["step_id"] == "manual"
     client.async_pause_receiver.assert_awaited()
     client.async_resume_receiver.assert_awaited()
+
+
+async def test_manual_flow_rejects_venus_e2(hass: HomeAssistant) -> None:
+    """Venus E2.0 is not a supported Open API family."""
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus E2.0",
+        "version": 150,
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+        "model": "Venus E2.0",
+        "firmware": "150",
+    }
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        assert result["step_id"] == "manual"
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert result["errors"] == {"base": "unsupported_device"}
+
+
+async def test_user_flow_filters_unsupported_venus_e2(hass: HomeAssistant) -> None:
+    """Discovery lists omit Venus E2.0 so it cannot be added as Venus E."""
+    devices = [
+        {
+            "ip": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": "Venus E2.0",
+            "version": 150,
+            "wifi_name": "marstek",
+            "model": "Venus E2.0",
+            "firmware": "150",
+        }
+    ]
+
+    with patch_discovery(devices):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "manual"
+

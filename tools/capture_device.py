@@ -9,9 +9,19 @@ import argparse
 import asyncio
 import json
 import socket
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from custom_components.marstek.firmware_profile import (  # noqa: E402
+    extract_discovery_version,
+    resolve_firmware_profile,
+)
 
 
 # Methods to capture from the device
@@ -30,6 +40,7 @@ METHODS_TO_CAPTURE = [
 
 # Delay between requests in seconds (device is unstable with fast requests)
 REQUEST_DELAY = 10.0
+_SAFE_JSON_RPC_ID = 1
 
 
 async def send_request(
@@ -38,13 +49,29 @@ async def send_request(
     method: str,
     params: dict[str, Any],
     timeout: float = 5.0,
+    *,
+    request_id: int,
 ) -> dict[str, Any] | None:
-    """Send a UDP request and wait for response."""
+    """Send a UDP request and wait for a response.
+
+    Bind the Open API listen port: firmware replies there, not to an
+    ephemeral source port. Discovery may use JSON-RPC id 0; other methods
+    use 1..65535 so the MCU id cannot wrap to the parse-error id.
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     sock.setblocking(False)
+    try:
+        sock.bind(("0.0.0.0", port))
+    except OSError as err:
+        print(f"Failed to bind UDP port {port}: {err}")
+        sock.close()
+        return None
 
-    request = {"id": 0, "method": method, "params": params}
+    wire_id = 0 if method == "Marstek.GetDevice" else request_id
+    request = {"id": wire_id, "method": method, "params": params}
     message = json.dumps(request).encode()
 
     loop = asyncio.get_running_loop()
@@ -55,7 +82,7 @@ async def send_request(
         start = loop.time()
         while (loop.time() - start) < timeout:
             try:
-                data, addr = await asyncio.wait_for(
+                data, _addr = await asyncio.wait_for(
                     loop.sock_recvfrom(sock, 4096), timeout=0.5
                 )
                 response = json.loads(data.decode())
@@ -63,10 +90,10 @@ async def send_request(
                 # Skip echoes (have method+params, no result)
                 if "result" in response:
                     return response
-                elif "method" in response and "params" in response:
-                    continue  # Echo, keep waiting
+                if "method" in response and "params" in response:
+                    continue
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     except OSError as err:
@@ -77,38 +104,96 @@ async def send_request(
     return None
 
 
-async def capture_device_data(host: str, port: int = 30000) -> dict[str, Any]:
+def _methods_for_profile(
+    include_bat_status: bool, reset_prone: bool
+) -> list[tuple[str, dict[str, Any]]]:
+    """Skip Bat.GetStatus on reset-prone firmware unless explicitly requested."""
+    methods = list(METHODS_TO_CAPTURE)
+    if include_bat_status or not reset_prone:
+        return methods
+    return [item for item in methods if item[0] != "Bat.GetStatus"]
+
+
+async def capture_device_data(
+    host: str,
+    port: int = 30000,
+    *,
+    include_bat_status: bool = False,
+) -> dict[str, Any]:
     """Capture all relevant data from a Marstek device."""
     print(f"Capturing data from {host}:{port}...")
     print(f"Note: Using {REQUEST_DELAY}s delay between requests for device stability")
     print("=" * 60)
 
-    captured = {
+    captured: dict[str, Any] = {
         "capture_time": datetime.now().isoformat(),
         "device_ip": host,
         "device_port": port,
         "responses": {},
     }
 
-    for i, (method, params) in enumerate(METHODS_TO_CAPTURE):
-        # Add delay between requests (except for the first one)
-        if i > 0:
-            print(f"\n⏳ Waiting {REQUEST_DELAY}s before next request...")
-            await asyncio.sleep(REQUEST_DELAY)
+    print("\n📡 Marstek.GetDevice...")
+    device_response = await send_request(
+        host,
+        port,
+        "Marstek.GetDevice",
+        {"ble_mac": "0"},
+        request_id=0,
+    )
+    captured["responses"]["Marstek.GetDevice"] = device_response
+    if device_response:
+        print("   ✅ Got response")
+        result = device_response.get("result")
+        if isinstance(result, dict):
+            print(f"   Result: {json.dumps(result, indent=6)}")
+    else:
+        print("   ❌ No response")
+
+    reset_prone = True
+    device_result = (
+        device_response.get("result") if isinstance(device_response, dict) else None
+    )
+    if isinstance(device_result, dict):
+        profile = resolve_firmware_profile(
+            device_result.get("device"),
+            extract_discovery_version(device_result),
+        )
+        reset_prone = profile.openapi_reset_prone
+        print(
+            f"   Profile: {profile.family.value} gen={profile.control_generation} "
+            f"reset_prone={reset_prone}"
+        )
+        if reset_prone and not include_bat_status:
+            print(
+                "   Skipping Bat.GetStatus on reset-prone firmware "
+                "(pass --include-bat-status to override)"
+            )
+
+    methods = [
+        item
+        for item in _methods_for_profile(include_bat_status, reset_prone)
+        if item[0] != "Marstek.GetDevice"
+    ]
+
+    next_id = _SAFE_JSON_RPC_ID
+    for method, params in methods:
+        print(f"\n⏳ Waiting {REQUEST_DELAY}s before next request...")
+        await asyncio.sleep(REQUEST_DELAY)
 
         print(f"\n📡 {method}...")
         if params:
             print(f"   Params: {params}")
-        response = await send_request(host, port, method, params)
+        response = await send_request(host, port, method, params, request_id=next_id)
+        next_id = next_id + 1 if next_id < 65535 else 1
 
         if response:
-            print(f"   ✅ Got response")
+            print("   ✅ Got response")
             captured["responses"][method] = response
             if "result" in response:
                 result = response["result"]
                 print(f"   Result: {json.dumps(result, indent=6)}")
         else:
-            print(f"   ❌ No response")
+            print("   ❌ No response")
             captured["responses"][method] = None
 
     return captured
@@ -141,7 +226,7 @@ MOCK_PV_STATUS = {json.dumps(pv_result, indent=4)}
     return code
 
 
-async def main():
+async def main() -> None:
     parser = argparse.ArgumentParser(
         description="Capture data from a real Marstek device"
     )
@@ -160,9 +245,16 @@ async def main():
         action="store_true",
         help="Update mock_marstek.py with captured data",
     )
+    parser.add_argument(
+        "--include-bat-status",
+        action="store_true",
+        help="Query Bat.GetStatus even on reset-prone firmware (can reboot the device)",
+    )
     args = parser.parse_args()
 
-    captured = await capture_device_data(args.host, args.port)
+    captured = await capture_device_data(
+        args.host, args.port, include_bat_status=args.include_bat_status
+    )
 
     # Determine output file
     if args.output:
@@ -203,7 +295,7 @@ async def main():
     status_info = captured["responses"].get("ES.GetStatus", {})
     if status_info and "result" in status_info:
         result = status_info["result"]
-        print(f"\nStatus snapshot:")
+        print("\nStatus snapshot:")
         print(f"  SOC: {result.get('soc', 'N/A')}%")
         print(f"  Power: {result.get('power', 'N/A')}W")
         print(f"  Mode: {result.get('mode', 'N/A')}")

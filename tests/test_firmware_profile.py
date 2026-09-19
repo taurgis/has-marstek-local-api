@@ -11,6 +11,7 @@ from custom_components.marstek.const import (
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
+    is_unsupported_venus_e2,
     resolve_firmware_profile,
     resolve_firmware_profile_from_metadata,
 )
@@ -30,6 +31,9 @@ from custom_components.marstek.firmware_profile import (
         ("VNSE3-0", DeviceFamily.VENUS_E, False, 9),
         ("vnse3 0", DeviceFamily.VENUS_E, False, 9),
         ("VNSE2-0", DeviceFamily.UNKNOWN, False, 9),
+        ("Venus E2.0", DeviceFamily.UNKNOWN, False, 9),
+        ("VenusE2.0", DeviceFamily.UNKNOWN, False, 9),
+        ("Venus E2", DeviceFamily.UNKNOWN, False, 9),
         ("Some Energy Device", DeviceFamily.UNKNOWN, False, 9),
     ],
 )
@@ -373,7 +377,15 @@ def test_vnse3_1476_is_legacy_reset_prone() -> None:
         ("Marstek Energy Storage", 144, True),
         ("Marstek Energy Storage", 150, False),
         ("Marstek Energy Storage", 3, False),
+        ("Marstek Energy Storage", 99, False),
+        ("Marstek Energy Storage", 100, True),
+        ("Marstek Energy Storage", 149, True),
+        ("Marstek Energy Storage", 150, False),
+        ("Marstek Energy Storage", 1476, True),
+        ("Marstek Energy Storage", 1509, False),
         ("VenusE 3.0", "147.6", True),
+        ("Venus E2.0", 150, False),
+        ("Venus E2.0", 144, True),
     ],
 )
 def test_openapi_reset_prone_follows_control_generation(
@@ -406,3 +418,22 @@ def test_sku_and_venus_names_share_power_limits(
 
     assert max_power == max_discharge
     assert device_default_socket_limit(device_type) is socket_default
+
+
+@pytest.mark.parametrize("device_type", ["Venus E2.0", "VenusE2.0", "Venus E2", "VNSE2-0"])
+def test_venus_e2_is_unsupported_and_not_venus_e(device_type: str) -> None:
+    """Textual E2.0 names must not unlock Venus E SYS/UPS or parallel polling."""
+    assert is_unsupported_venus_e2(device_type) is True
+    profile = resolve_firmware_profile(device_type, 150)
+
+    assert profile.family is DeviceFamily.UNKNOWN
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+    assert profile.openapi_reset_prone is False
+
+
+@pytest.mark.parametrize("device_type", ["Venus E 3.0", "VenusE 3.0", "VNSE3-0"])
+def test_venus_e3_is_not_classified_as_e2(device_type: str) -> None:
+    """Venus E 3.x discovery names stay on the supported Venus E family."""
+    assert is_unsupported_venus_e2(device_type) is False
+    assert resolve_firmware_profile(device_type, 150).family is DeviceFamily.VENUS_E

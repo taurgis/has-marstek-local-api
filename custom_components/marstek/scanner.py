@@ -20,7 +20,10 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
-from .firmware_profile import resolve_firmware_profile_from_metadata
+from .firmware_profile import (
+    is_unsupported_venus_e2,
+    resolve_firmware_profile_from_metadata,
+)
 from .helpers.device_lookup import async_lookup_device_by_identifier
 from .helpers.udp_clients import async_paused_udp_receivers
 
@@ -340,9 +343,8 @@ class MarstekScanner:
         old_profile = resolve_firmware_profile_from_metadata(entry.data)
         merged = {**entry.data, **updates}
         new_profile = resolve_firmware_profile_from_metadata(merged)
-        capabilities_changed = (
-            old_profile.setup_capability_signature
-            != new_profile.setup_capability_signature
+        profile_changed = (
+            old_profile.setup_reload_signature != new_profile.setup_reload_signature
         )
 
         _LOGGER.info(
@@ -351,11 +353,11 @@ class MarstekScanner:
             ", ".join(f"{key}={value}" for key, value in updates.items()),
         )
 
-        if not capabilities_changed:
+        if not profile_changed:
             self._mark_suppress_reload(entry.entry_id)
         else:
             _LOGGER.info(
-                "Scanner: Firmware setup capabilities changed for %s; config entry will reload",
+                "Scanner: Firmware profile changed for %s; config entry will reload",
                 entry.title,
             )
 
@@ -364,7 +366,7 @@ class MarstekScanner:
         )
 
         if (
-            not capabilities_changed
+            not profile_changed
             and entry.state == ConfigEntryState.LOADED
             and hasattr(entry, "runtime_data")
         ):
@@ -520,6 +522,9 @@ class MarstekScanner:
                 continue
 
             if formatted_mac in configured_macs:
+                continue
+
+            if is_unsupported_venus_e2(device.get("device_type")):
                 continue
 
             if not self._should_trigger_unconfigured(formatted_mac):

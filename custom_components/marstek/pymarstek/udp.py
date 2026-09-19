@@ -25,7 +25,7 @@ from .command_builder import (
     get_pv_status,
     get_wifi_status,
 )
-from .const import DEFAULT_UDP_PORT, DISCOVERY_TIMEOUT
+from .const import CMD_BATTERY_STATUS, DEFAULT_UDP_PORT, DISCOVERY_TIMEOUT
 from .data_parser import (
     merge_device_status,
     parse_bat_status_response,
@@ -108,11 +108,15 @@ class MarstekUDPClient:
         self._port = port
         self._bind_port = bind_port if bind_port is not None else port
         self._socket: socket.socket | None = None
-        self._pending_requests: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._pending_requests: dict[
+            int | tuple[str, int], asyncio.Future[dict[str, Any]]
+        ] = {}
         self._response_cache: dict[int, dict[str, Any]] = {}
         self._listen_task: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._receiver_pause_count: int = 0
+        self._in_flight_exchanges: int = 0
+        self._exchange_gate: asyncio.Condition = asyncio.Condition()
 
         self._discovery_cache: list[dict[str, Any]] | None = None
         self._cache_timestamp: float = 0
@@ -121,6 +125,8 @@ class MarstekUDPClient:
         self._local_send_ip: str = "0.0.0.0"
         self._polling_paused: dict[str, bool] = {}
         self._polling_pause_counts: dict[str, int] = {}
+        self._poll_cycle_counts: dict[str, int] = {}
+        self._poll_cycle_idle: dict[str, asyncio.Event] = {}
         self._polling_lock: asyncio.Lock = asyncio.Lock()
         self._reset_prone_ips: set[str] = set()
         self._device_io_locks: dict[str, asyncio.Lock] = {}
@@ -144,6 +150,11 @@ class MarstekUDPClient:
 
         # Working ES.GetMode params.id per device IP (0 or 1)
         self._es_mode_device_ids: dict[str, int] = {}
+
+    @property
+    def bind_port(self) -> int:
+        """Return the local UDP port this client is bound to."""
+        return self._bind_port
 
     def _get_command_stats_bucket(
         self, method: str, *, device_ip: str | None = None
@@ -197,16 +208,64 @@ class MarstekUDPClient:
             for method, stats in self._command_stats_by_ip.get(device_ip, {}).items()
         }
 
+    def _pending_key(
+        self, wire_id: int, device_ip: str | None
+    ) -> int | tuple[str, int]:
+        """Return the pending-request map key for a unicast or broadcast id."""
+        if device_ip is None:
+            return wire_id
+        return (device_ip, wire_id)
+
     def _track_pending(
-        self, request_id: Any
+        self, request_id: Any, *, device_ip: str | None = None
     ) -> tuple[int, asyncio.Future[dict[str, Any]]]:
         """Register a pending request using the firmware's uint16 JSON-RPC id."""
         wire_id = json_rpc_wire_id(request_id)
         if wire_id is None:
             raise ValueError("Invalid message: missing id")
+        key = self._pending_key(wire_id, device_ip)
+        existing = self._pending_requests.get(key)
+        if existing is not None and not existing.done():
+            target = f" for {device_ip}" if device_ip else ""
+            raise ValueError(f"Duplicate pending JSON-RPC id {wire_id}{target}")
         future: asyncio.Future[dict[str, Any]] = asyncio.Future()
-        self._pending_requests[wire_id] = future
+        self._pending_requests[key] = future
         return wire_id, future
+
+    def _pop_pending_future(
+        self, request_id: int, *, source_ip: str | None = None
+    ) -> asyncio.Future[dict[str, Any]] | None:
+        """Resolve a pending future for a unicast reply or broadcast cache."""
+        if source_ip is not None:
+            future = self._pending_requests.pop((source_ip, request_id), None)
+            if future is not None:
+                return future
+        future = self._pending_requests.pop(request_id, None)
+        if future is not None:
+            return future
+        matches = [
+            key
+            for key in self._pending_requests
+            if isinstance(key, tuple) and key[1] == request_id
+        ]
+        if len(matches) == 1:
+            return self._pending_requests.pop(matches[0], None)
+        return None
+
+    async def _enter_unicast_exchange(self) -> None:
+        """Wait until discovery listeners are running, then count this exchange."""
+        async with self._exchange_gate:
+            while self._receiver_pause_count > 0:
+                await self._exchange_gate.wait()
+            self._in_flight_exchanges += 1
+
+    async def _exit_unicast_exchange(self) -> None:
+        """Mark a unicast exchange finished so discovery can pause the listener."""
+        async with self._exchange_gate:
+            if self._in_flight_exchanges > 0:
+                self._in_flight_exchanges -= 1
+            if self._in_flight_exchanges == 0:
+                self._exchange_gate.notify_all()
 
     async def async_setup(self) -> None:
         """Prepare the UDP socket."""
@@ -234,19 +293,28 @@ class MarstekUDPClient:
         Nested pauses are ref-counted so a config-flow scan that overlaps
         the scanner does not resume too early. Unicast GetDevice must reuse
         this client rather than pausing; pause does not unbind.
+
+        In-flight unicast exchanges finish before the listener stops, and new
+        unicasts wait until resume, so discovery does not send into a socket
+        with no receiver.
         """
-        self._receiver_pause_count += 1
-        if self._receiver_pause_count > 1:
-            return
+        async with self._exchange_gate:
+            self._receiver_pause_count += 1
+            if self._receiver_pause_count > 1:
+                return
+            while self._in_flight_exchanges > 0:
+                await self._exchange_gate.wait()
         await self._stop_listener()
 
     async def async_resume_receiver(self) -> None:
         """Restart the background UDP listener if the socket is open."""
-        if self._receiver_pause_count <= 0:
-            return
-        self._receiver_pause_count -= 1
-        if self._receiver_pause_count > 0:
-            return
+        async with self._exchange_gate:
+            if self._receiver_pause_count <= 0:
+                return
+            self._receiver_pause_count -= 1
+            if self._receiver_pause_count > 0:
+                return
+            self._exchange_gate.notify_all()
         if self._socket is None:
             return
         self._ensure_listener()
@@ -277,6 +345,9 @@ class MarstekUDPClient:
         self._reset_prone_ips.clear()
         self._polling_paused.clear()
         self._polling_pause_counts.clear()
+        self._poll_cycle_counts.clear()
+        self._poll_cycle_idle.clear()
+        self._in_flight_exchanges = 0
         self._command_stats.clear()
         self._command_stats_by_ip.clear()
         self._es_mode_device_ids.clear()
@@ -521,6 +592,11 @@ class MarstekUDPClient:
                 raise
 
         message, request_id, method_name = normalize_json_rpc_wire_message(message)
+        if method_name == CMD_BATTERY_STATUS and target_ip in self._reset_prone_ips:
+            raise ValidationError(
+                "Bat.GetStatus is blocked on reset-prone firmware",
+                field="method",
+            )
         if target_ip in self._reset_prone_ips:
             lock = await self._get_device_io_lock(target_ip)
             async with lock:
@@ -558,54 +634,62 @@ class MarstekUDPClient:
         bypass_rate_limit: bool,
     ) -> dict[str, Any]:
         """Send one normalized request and wait for its matching response."""
-        request_id, future = self._track_pending(request_id)
-
+        await self._enter_unicast_exchange()
         try:
-            self._ensure_listener()
+            request_id, future = self._track_pending(request_id, device_ip=target_ip)
 
-            request_started = time.time()
-            await self._send_udp_message(
-                message,
-                target_ip,
-                target_port,
-                bypass_rate_limit=bypass_rate_limit,
-            )
-            _LOGGER.debug("Send request to %s:%d: %s", target_ip, target_port, message)
-            response = await asyncio.wait_for(future, timeout=timeout)
-            latency = time.time() - request_started
-            self._record_command_result(
-                method_name,
-                device_ip=target_ip,
-                success=True,
-                timeout=False,
-                latency=latency,
-                error=None,
-            )
-            return response
-        except TimeoutError as err:
-            if not quiet_on_timeout:
-                _LOGGER.warning("Request timeout: %s:%d", target_ip, target_port)
-            self._record_command_result(
-                method_name,
-                device_ip=target_ip,
-                success=False,
-                timeout=True,
-                latency=None,
-                error="timeout",
-            )
-            raise TimeoutError(f"Request timeout to {target_ip}:{target_port}") from err
-        except (OSError, ValueError) as err:
-            self._record_command_result(
-                method_name,
-                device_ip=target_ip,
-                success=False,
-                timeout=False,
-                latency=None,
-                error=str(err),
-            )
-            raise
+            try:
+                self._ensure_listener()
+
+                request_started = time.time()
+                await self._send_udp_message(
+                    message,
+                    target_ip,
+                    target_port,
+                    bypass_rate_limit=bypass_rate_limit,
+                )
+                _LOGGER.debug(
+                    "Send request to %s:%d: %s", target_ip, target_port, message
+                )
+                response = await asyncio.wait_for(future, timeout=timeout)
+                latency = time.time() - request_started
+                self._record_command_result(
+                    method_name,
+                    device_ip=target_ip,
+                    success=True,
+                    timeout=False,
+                    latency=latency,
+                    error=None,
+                )
+                return response
+            except TimeoutError as err:
+                if not quiet_on_timeout:
+                    _LOGGER.warning("Request timeout: %s:%d", target_ip, target_port)
+                self._record_command_result(
+                    method_name,
+                    device_ip=target_ip,
+                    success=False,
+                    timeout=True,
+                    latency=None,
+                    error="timeout",
+                )
+                raise TimeoutError(
+                    f"Request timeout to {target_ip}:{target_port}"
+                ) from err
+            except (OSError, ValueError) as err:
+                self._record_command_result(
+                    method_name,
+                    device_ip=target_ip,
+                    success=False,
+                    timeout=False,
+                    latency=None,
+                    error=str(err),
+                )
+                raise
+            finally:
+                self._pending_requests.pop((target_ip, request_id), None)
         finally:
-            self._pending_requests.pop(request_id, None)
+            await self._exit_unicast_exchange()
 
     async def _listen_for_responses(self) -> None:
         assert self._socket is not None
@@ -635,14 +719,14 @@ class MarstekUDPClient:
                         "addr": addr,
                         "timestamp": loop.time(),
                     }
-                    future = self._pending_requests.pop(request_id, None)
+                    future = self._pop_pending_future(request_id, source_ip=addr[0])
                     if (
                         future is None
                         and isinstance(raw_id, int)
                         and not isinstance(raw_id, bool)
                         and raw_id != request_id
                     ):
-                        future = self._pending_requests.pop(raw_id, None)
+                        future = self._pop_pending_future(raw_id, source_ip=addr[0])
                     if future and not future.done():
                         future.set_result(response)
 
@@ -680,7 +764,6 @@ class MarstekUDPClient:
         _LOGGER.debug("Starting broadcast discovery with timeout %ss", timeout)
         await self._ensure_socket()
 
-        # Validate message before broadcasting to protect devices
         if validate:
             try:
                 validate_json_message(message)
@@ -689,8 +772,8 @@ class MarstekUDPClient:
                 return []
 
         try:
-            message_obj = json.loads(message)
-            request_id, _future = self._track_pending(message_obj["id"])
+            message, request_id, _method_name = normalize_json_rpc_wire_message(message)
+            request_id, _future = self._track_pending(request_id)
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             _LOGGER.error("Invalid message for broadcast: %s", exc)
             return []
@@ -761,11 +844,45 @@ class MarstekUDPClient:
             _LOGGER.debug("Found device: %s at %s", device.get("device_type"), device.get("ip"))
         return devices
 
+    def _poll_cycle_idle_event(self, device_ip: str) -> asyncio.Event:
+        """Return the idle event for a device poll cycle, creating it if needed."""
+        event = self._poll_cycle_idle.get(device_ip)
+        if event is None:
+            event = asyncio.Event()
+            event.set()
+            self._poll_cycle_idle[device_ip] = event
+        return event
+
+    async def begin_poll_cycle(self, device_ip: str) -> bool:
+        """Mark a coordinator poll cycle as running.
+
+        Returns False when polling is paused so the coordinator can skip.
+        """
+        async with self._polling_lock:
+            if self._polling_paused.get(device_ip, False):
+                return False
+            count = self._poll_cycle_counts.get(device_ip, 0) + 1
+            self._poll_cycle_counts[device_ip] = count
+            self._poll_cycle_idle_event(device_ip).clear()
+            return True
+
+    async def end_poll_cycle(self, device_ip: str) -> None:
+        """Mark a coordinator poll cycle finished so paused writers can proceed."""
+        async with self._polling_lock:
+            count = self._poll_cycle_counts.get(device_ip, 0) - 1
+            if count <= 0:
+                self._poll_cycle_counts.pop(device_ip, None)
+                self._poll_cycle_idle_event(device_ip).set()
+                return
+            self._poll_cycle_counts[device_ip] = count
+
     async def pause_polling(self, device_ip: str) -> None:
         async with self._polling_lock:
             count = self._polling_pause_counts.get(device_ip, 0) + 1
             self._polling_pause_counts[device_ip] = count
             self._polling_paused[device_ip] = True
+            idle = self._poll_cycle_idle_event(device_ip)
+        await idle.wait()
 
     async def resume_polling(self, device_ip: str) -> None:
         async with self._polling_lock:

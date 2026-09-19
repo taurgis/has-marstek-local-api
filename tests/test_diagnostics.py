@@ -99,6 +99,7 @@ async def test_async_get_config_entry_diagnostics(
         "supports_sys_led": False,
         "supports_ups": False,
         "max_manual_schedule_slot": 9,
+        "control_generation": 1,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
     }
@@ -145,6 +146,7 @@ async def test_diagnostics_reports_capable_firmware_profile(
         "supports_sys_led": True,
         "supports_ups": True,
         "max_manual_schedule_slot": 9,
+        "control_generation": 150,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
     }
@@ -172,6 +174,7 @@ async def test_diagnostics_reports_unknown_e_mini_firmware(
     assert profile["supports_sys_dod"] is False
     assert profile["supports_ups"] is False
     assert profile["max_manual_schedule_slot"] == 5
+    assert profile["control_generation"] is None
     assert profile["openapi_reset_prone"] is True
     assert profile["parallel_requests_safe"] is False
 
@@ -386,7 +389,7 @@ async def test_diagnostics_includes_command_stats(
             "last_success": False,
             "last_latency": None,
             "last_timeout": True,
-            "last_error": "timeout",
+            "last_error": "Request timeout to 192.168.1.100:30000",
             "last_updated": 1738170001.0,
         }
     }
@@ -401,6 +404,7 @@ async def test_diagnostics_includes_command_stats(
     assert stats["total_attempts"] == 2
     assert stats["success_rate"] == 0.5
     assert stats["timeout_rate"] == 0.5
+    assert stats["last_error"] == "Request timeout to **REDACTED**:30000"
 
 
 async def test_diagnostics_without_last_update_time(

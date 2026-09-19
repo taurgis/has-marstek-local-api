@@ -132,15 +132,27 @@ def _bind_port_in_use(
 async def async_release_udp_client_for_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
-    """Close the pooled client when no remaining loaded entry needs its port."""
-    bind_port = entry_bind_port(entry)
+    """Close the runtime client when no remaining loaded entry needs its port."""
+    client = get_udp_client_for_entry(hass, entry)
+    bind_port = getattr(client, "bind_port", None)
+    if not isinstance(bind_port, int):
+        bind_port = entry_bind_port(entry)
+
     async with udp_client_lock(hass):
         if _bind_port_in_use(hass, bind_port, excluding_entry_id=entry.entry_id):
             return
-        client = udp_client_pool(hass).pop(bind_port, None)
-    if client is not None:
+        pool = udp_client_pool(hass)
+        to_close: MarstekUDPClient | None = None
+        if client is not None:
+            for port, candidate in list(pool.items()):
+                if candidate is client:
+                    pool.pop(port, None)
+            to_close = client
+        else:
+            to_close = pool.pop(bind_port, None)
+    if to_close is not None:
         _LOGGER.debug("Closing UDP client bound to port %s", bind_port)
-        await client.async_cleanup()
+        await to_close.async_cleanup()
 
 
 async def async_cleanup_all_udp_clients(hass: HomeAssistant) -> None:

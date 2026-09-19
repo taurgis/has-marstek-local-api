@@ -113,6 +113,9 @@ def _summarize_command_stats(stats: dict[str, Any]) -> dict[str, Any]:
     timeout_rate = (total_timeouts / total_attempts) if total_attempts else None
 
     summary = dict(stats)
+    last_error = summary.get("last_error")
+    if isinstance(last_error, str):
+        summary["last_error"] = _redact_text(last_error)
     summary["success_rate"] = success_rate
     summary["timeout_rate"] = timeout_rate
     summary["last_updated"] = _format_timestamp(stats.get("last_updated"))

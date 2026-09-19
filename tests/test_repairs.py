@@ -116,7 +116,9 @@ async def test_repair_flow_submit_updates_entry(
     device_info = {
         "ip": "192.168.1.100",
         "ble_mac": "AA:BB:CC:DD:EE:FF",
-        "device_type": "Venus",
+        "device_type": "VenusE 3.0",
+        "version": 150,
+        "firmware": "150",
     }
 
     with (
@@ -133,6 +135,8 @@ async def test_repair_flow_submit_updates_entry(
     # Verify entry was updated
     assert mock_config_entry.data["host"] == "192.168.1.100"
     assert mock_config_entry.data["port"] == 30000
+    assert mock_config_entry.data["version"] == 150
+    assert mock_config_entry.data["device_type"] == "VenusE 3.0"
     
     # Verify reload was called
     mock_reload.assert_called_once_with(mock_config_entry.entry_id)

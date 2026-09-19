@@ -40,11 +40,13 @@ from .const import (
 )
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
+from .firmware_profile import is_unsupported_venus_e2
 from .helpers.flow_helpers import (
     build_entry_data,
     collect_configured_macs,
     format_already_configured_text,
     get_unique_id_from_device_info,
+    metadata_from_device_info,
     split_devices_by_configured,
 )
 from .helpers.flow_schemas import (
@@ -102,6 +104,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors={"base": "invalid_discovery_info"}
                 )
 
+            if is_unsupported_venus_e2(device.get("device_type")):
+                return self.async_abort(reason="unsupported_device")
+
             await self.async_set_unique_id(formatted_unique_id)
             self._abort_if_unique_id_configured()
 
@@ -121,6 +126,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Execute broadcast discovery with retry mechanism
             # Uses local discovery module (workaround for pymarstek echo issues)
             devices = await self._discover_devices_with_retry()
+            devices = [
+                device
+                for device in devices
+                if not is_unsupported_venus_e2(device.get("device_type"))
+            ]
 
             if not devices:
                 # No devices found, offer manual entry
@@ -209,6 +219,13 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         step_id="manual",
                         data_schema=manual_entry_schema,
                         errors={"base": "invalid_discovery_info"},
+                    )
+
+                if is_unsupported_venus_e2(device_info.get("device_type")):
+                    return self.async_show_form(
+                        step_id="manual",
+                        data_schema=manual_entry_schema,
+                        errors={"base": "unsupported_device"},
                     )
 
                 await self.async_set_unique_id(formatted_unique_id)
@@ -381,6 +398,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     formatted_unique_id = get_unique_id_from_device_info(device_info)
                     if not formatted_unique_id:
                         errors["base"] = "invalid_discovery_info"
+                    elif is_unsupported_venus_e2(device_info.get("device_type")):
+                        errors["base"] = "unsupported_device"
                     else:
                         if self.unique_id and self.unique_id != formatted_unique_id:
                             errors["base"] = "unique_id_mismatch"
@@ -579,7 +598,10 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(formatted_unique_id)
             self._abort_if_unique_id_mismatch()
 
-            data_updates: dict[str, Any] = {CONF_HOST: host}
+            data_updates: dict[str, Any] = {
+                CONF_HOST: host,
+                **metadata_from_device_info(device_info),
+            }
             if update_port:
                 data_updates[CONF_PORT] = port
 

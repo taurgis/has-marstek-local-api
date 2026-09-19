@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.marstek.const import DOMAIN
 from custom_components.marstek.helpers.udp_clients import (
     async_paused_udp_receivers,
+    async_release_udp_client_for_entry,
     bind_port_for_host,
     configured_device_port,
     entry_bind_port,
@@ -121,3 +122,32 @@ async def test_paused_udp_receivers_context_resumes_after_error(
 
     client.async_pause_receiver.assert_awaited_once()
     client.async_resume_receiver.assert_awaited_once()
+
+
+async def test_release_uses_runtime_client_bind_port(
+    hass: HomeAssistant,
+) -> None:
+    """Unload after a host/port change closes the socket that was actually used."""
+    runtime_client = MagicMock()
+    runtime_client.bind_port = 30000
+    runtime_client.async_cleanup = AsyncMock()
+    leftover_client = MagicMock()
+    leftover_client.async_cleanup = AsyncMock()
+    store_udp_client(hass, 30000, runtime_client)
+    store_udp_client(hass, 30001, leftover_client)
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.168.1.50", "port": 30001},
+    )
+    entry.runtime_data = MagicMock(
+        coordinator=MagicMock(udp_client=runtime_client)
+    )
+    entry.add_to_hass(hass)
+
+    await async_release_udp_client_for_entry(hass, entry)
+
+    runtime_client.async_cleanup.assert_awaited_once()
+    leftover_client.async_cleanup.assert_not_called()
+    assert 30000 not in udp_client_pool(hass)
+    assert udp_client_pool(hass)[30001] is leftover_client

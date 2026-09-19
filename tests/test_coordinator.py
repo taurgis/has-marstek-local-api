@@ -639,7 +639,7 @@ async def test_coordinator_polling_paused_returns_cached_data(
 ):
     """Test that polling paused returns cached data."""
     mock_config_entry.add_to_hass(hass)
-    mock_udp_client.is_polling_paused = MagicMock(return_value=True)
+    mock_udp_client.begin_poll_cycle = AsyncMock(return_value=False)
 
     coordinator = MarstekDataUpdateCoordinator(
         hass,
@@ -663,7 +663,7 @@ async def test_coordinator_polling_paused_returns_empty_dict_when_no_cache(
 ):
     """Test that polling paused returns empty dict when no cached data."""
     mock_config_entry.add_to_hass(hass)
-    mock_udp_client.is_polling_paused = MagicMock(return_value=True)
+    mock_udp_client.begin_poll_cycle = AsyncMock(return_value=False)
 
     coordinator = MarstekDataUpdateCoordinator(
         hass,

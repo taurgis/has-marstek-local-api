@@ -1058,3 +1058,46 @@ async def test_remove_entry_cleans_stale_device(
         async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac))
         is None
     )
+
+
+async def test_failed_unload_keeps_reset_prone_protection(
+    hass: HomeAssistant,
+) -> None:
+    """A failed platform unload must not drop firmware-reset protections."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        issue_registry = ir.async_get(hass)
+        issue_id = f"openapi_reset_prone_{entry.entry_id}"
+        assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+        with patch.object(
+            hass.config_entries,
+            "async_unload_platforms",
+            AsyncMock(return_value=False),
+        ):
+            unloaded = await hass.config_entries.async_unload(entry.entry_id)
+            await hass.async_block_till_done()
+
+        assert unloaded is False
+        assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+        client.clear_openapi_reset_prone.assert_not_called()
+

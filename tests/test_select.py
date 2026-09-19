@@ -37,6 +37,8 @@ def _mock_client(status=None, setup_error=None):
     client.is_polling_paused = MagicMock(return_value=False)
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.begin_poll_cycle = AsyncMock(return_value=True)
+    client.end_poll_cycle = AsyncMock(return_value=None)
     if isinstance(status, Exception):
         client.get_device_status = AsyncMock(side_effect=status)
     else:
@@ -404,6 +406,8 @@ def _make_select_entity(
     client.send_request = AsyncMock(return_value={"result": {}})
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.begin_poll_cycle = AsyncMock(return_value=True)
+    client.end_poll_cycle = AsyncMock(return_value=None)
 
     entity = MarstekOperatingModeSelect(
         coordinator,
