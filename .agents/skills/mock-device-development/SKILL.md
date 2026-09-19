@@ -61,9 +61,15 @@ mock-marstek-5:
 
 mock-marstek-6:
   command: ["python", "-m", "mock_device", "--ip", "172.28.0.26", "--device", "VenusC", "--ver", "153", "--ble-mac", "02deadbeef06"]
+
+mock-marstek-7:
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.27", "--port", "30004", "--device", "VenusA", "--ver", "150", "--ble-mac", "02deadbeef07"]
+
+mock-marstek-8:
+  command: ["python", "-m", "mock_device", "--ip", "172.28.0.28", "--device", "Venus E mini", "--ver", "145", "--ble-mac", "02deadbeef08"]
 ```
 
-Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. PV1 stays deciwatts through 150.9; that is separate from the #35 solar-energy scale.
+Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. Keep a separate Venus A **150** mock for SYS/UPS plus PV1 deciwatts (firmware **150.9**, issue #57). PV1 stays deciwatts through 150.9; that is separate from the #35 solar-energy scale. Venus E mini is not Venus E: it needs its own mock for SYS-without-150 and slots 0–5.
 
 ### Adding a New Mock Device
 

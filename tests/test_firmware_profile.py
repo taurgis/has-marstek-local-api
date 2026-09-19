@@ -170,6 +170,8 @@ def test_firmware_150_known_family_uses_rev31_energy_not_watt_pv() -> None:
 @pytest.mark.parametrize(
     ("version", "firmware_version", "pv_energy_scale", "pv_channel_1_power_scale"),
     [
+        ("147.7", 147, 1.0, 0.1),
+        ("148.3", 148, 1.0, 0.1),
         ("149.1", 149, 10.0, 0.1),
         ("150.9", 150, 10.0, 0.1),
     ],
@@ -186,6 +188,58 @@ def test_dotted_app_firmware_labels_use_leading_open_api_integer(
     assert profile.firmware_version == firmware_version
     assert profile.pv_energy_scale == pv_energy_scale
     assert profile.pv_channel_1_power_scale == pv_channel_1_power_scale
+
+
+@pytest.mark.parametrize(
+    (
+        "device_type",
+        "version",
+        "family",
+        "pv_energy_scale",
+        "supports_sys",
+        "supports_ups",
+        "supports_em_energy",
+        "supports_pv",
+        "max_slot",
+    ),
+    [
+        ("VenusA", 147, DeviceFamily.VENUS_A, 1.0, False, False, False, True, 9),
+        ("VenusA", "148.3", DeviceFamily.VENUS_A, 1.0, False, False, False, True, 9),
+        ("VenusA", 149, DeviceFamily.VENUS_A, 10.0, False, False, False, True, 9),
+        ("VenusA", "150.9", DeviceFamily.VENUS_A, 10.0, True, True, True, True, 9),
+        ("VenusE 3.0", 144, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
+        ("VenusE 3.0", 147, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
+        ("VenusE 3.0", 148, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
+        ("VenusE 3.0", 150, DeviceFamily.VENUS_E, 10.0, True, True, True, False, 9),
+        ("VenusC", 153, DeviceFamily.VENUS_C, 10.0, True, True, True, False, 9),
+        ("Venus E mini", 145, DeviceFamily.VENUS_E_MINI, 1.0, True, False, False, False, 5),
+        ("VenusD", 145, DeviceFamily.VENUS_D, 1.0, False, False, False, True, 9),
+    ],
+)
+def test_github_issue_firmware_versions_resolve_observed_capabilities(
+    device_type: str,
+    version: int | str,
+    family: DeviceFamily,
+    pv_energy_scale: float,
+    supports_sys: bool,
+    supports_ups: bool,
+    supports_em_energy: bool,
+    supports_pv: bool,
+    max_slot: int,
+) -> None:
+    """Every firmware version reported in GitHub issues maps to the right profile."""
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.family is family
+    assert profile.pv_energy_scale == pv_energy_scale
+    assert profile.pv_channel_1_power_scale == 0.1
+    assert profile.supports_sys_dod is supports_sys
+    assert profile.supports_sys_ble_advertising is supports_sys
+    assert profile.supports_sys_led is supports_sys
+    assert profile.supports_ups is supports_ups
+    assert profile.supports_em_energy is supports_em_energy
+    assert profile.supports_pv is supports_pv
+    assert profile.max_manual_schedule_slot == max_slot
 
 
 def test_legacy_venus_d_keeps_deciwatt_pv_and_wh_solar() -> None:

@@ -107,6 +107,36 @@ services:
         ipv4_address: 172.28.0.26
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.26", "--device", "VenusC", "--ver", "153", "--ble-mac", "02deadbeef06", "--wifi-mac", "02cafebabe06", "--soc", "48"]
 
+  # Mock device 7 - Venus A with PV, custom UDP port 30004
+  # Firmware 150 / app label 150.9 (issue #57): solar 0.01 kWh, PV1 still
+  # deciwatts, SYS + UPS. Keep 148 and 149 mocks; do not collapse them here.
+  mock-marstek-7:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-7
+    environment:
+      - MOCK_IP=172.28.0.27
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.27
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.27", "--port", "30004", "--device", "VenusA", "--ver", "150", "--ble-mac", "02deadbeef07", "--wifi-mac", "02cafebabe07", "--soc", "70", "--pv-channels", "400:45:8.8,310:42:7.4,250:40:6.2,190:38:5.0"]
+
+  # Mock device 8 - Venus E mini, default UDP port 30000
+  # Known integer ver below 150: SYS without the 150 gate, no UPS, slots 0–5.
+  # Distinct from Venus E 145 (no SYS) and Venus E 150 (UPS + ten slots).
+  mock-marstek-8:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-8
+    environment:
+      - MOCK_IP=172.28.0.28
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.28
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.28", "--device", "Venus E mini", "--ver", "145", "--ble-mac", "02deadbeef08", "--wifi-mac", "02cafebabe08", "--soc", "55"]
+
 networks:
   marstek_net:
     driver: bridge

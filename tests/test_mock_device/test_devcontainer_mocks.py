@@ -9,19 +9,23 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MOCK_DEVICE_ROOT = _REPO_ROOT / "tools" / "mock_device"
 
 
-def test_devcontainer_runs_venus_a_148_and_149_mocks() -> None:
-    """Compose must expose both Venus A solar encodings: 148-or-older and 149."""
+def test_devcontainer_runs_observed_firmware_mocks() -> None:
+    """Compose must cover each observed family/firmware wire generation."""
     compose = (_REPO_ROOT / ".devcontainer" / "docker-compose.yml").read_text(
         encoding="utf-8"
     )
 
     assert '"--device", "VenusA", "--ver", "148"' in compose
     assert '"--device", "VenusA", "--ver", "149"' in compose
+    assert '"--device", "VenusA", "--ver", "150"' in compose
     assert '"--device", "VenusD", "--ver", "145"' in compose
     assert '"--device", "VenusE 3.0", "--ver", "150"' in compose
     assert '"--device", "VenusC", "--ver", "153"' in compose
+    assert '"--device", "Venus E mini", "--ver", "145"' in compose
     assert "172.28.0.26" in compose
-    assert '"--device", "VenusA", "--ver", "150"' not in compose
+    assert "172.28.0.27" in compose
+    assert "172.28.0.28" in compose
+    assert '"--port", "30004"' in compose
 
 
 def _mock_custom_component_modules() -> set[str]:

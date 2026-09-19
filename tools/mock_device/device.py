@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from custom_components.marstek.firmware_profile import (
+    DeviceFamily,
     FirmwareProfile,
     resolve_firmware_profile,
 )
@@ -319,7 +320,18 @@ class MockMarstekDevice:
         state = self._get_state()
 
         if method == "Marstek.GetDevice":
-            return handle_get_device(request_id, src, self.config, self.ip)
+            omit_result_macs = (
+                self.profile.family is DeviceFamily.VENUS_C
+                and self.profile.firmware_version is not None
+                and self.profile.firmware_version >= 153
+            )
+            return handle_get_device(
+                request_id,
+                src,
+                self.config,
+                self.ip,
+                omit_result_macs=omit_result_macs,
+            )
 
         elif method == "BLE.GetStatus":
             return handle_ble_get_status(

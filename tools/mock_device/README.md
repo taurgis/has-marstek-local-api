@@ -94,8 +94,11 @@ python -m mock_device --device VenusA --ver 149
 # Venus C firmware 153: SYS/UPS, no PV (issue #60 wire shape)
 python -m mock_device --device VenusC --ver 153
 
-# Firmware 150 / 150.9: scaled solar energy, still deciwatt PV, SYS + UPS
+# Venus A firmware 150 / 150.9: scaled solar, deciwatt PV1, SYS + UPS
 python -m mock_device --device VenusA --ver 150 --soc 75
+
+# Venus E mini: SYS without the 150 gate, no UPS, slots 0-5
+python -m mock_device --device "Venus E mini" --ver 145
 
 # Static mode (no simulation)
 python -m mock_device --no-simulate
@@ -103,18 +106,20 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs **these six** mock devices.
+The devcontainer runs **these eight** mock devices.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
-| mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh |
+| mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh. Stands in for Venus E **144/147/148** issue logs. |
 | mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 150 | Rev 3.1 | n/a (no PV) | SYS + UPS + EM energy; GetMode CT keys are zeros (LAN capture) |
-| mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 148 | 148 or older | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)) |
+| mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 148 | 148 or older | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS. Stands in for Venus A **147** (#11) and **148.3** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)); GetMode CT keys are zeros |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
 | mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 149 | Venus A 149 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; no SYS, no UPS ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
-| mock-marstek-6 | 172.28.0.26 | 30000 | VenusC | 153 | Rev 3.1 | n/a (no PV) | SYS + UPS; no PV ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)) |
+| mock-marstek-6 | 172.28.0.26 | 30000 | VenusC | 153 | Rev 3.1 | n/a (no PV) | SYS + UPS; no PV; GetDevice omits result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)) |
+| mock-marstek-7 | 172.28.0.27 | 30004 | VenusA | 150 | Rev 3.1 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; SYS + UPS ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57) firmware **150.9**) |
+| mock-marstek-8 | 172.28.0.28 | 30000 | Venus E mini | 145 | E mini | n/a (no PV) | SYS without the 150 gate; no UPS; slots 0–5 |
 
-Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. `python -m mock_device --device VenusA --ver 150` covers SYS/UPS plus that deciwatt PV1 wire.
+Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. Venus A @ 150 is the SYS/UPS PV device; do not replace the 148/149 pair with it.
 
 > **Note:** MAC addresses use the locally-administered range (`02:xx:xx:xx:xx:xx`) with memorable patterns (`deadbeef`, `cafebabe`) to clearly distinguish mock devices from real hardware.
 
@@ -128,6 +133,8 @@ To add devices in Home Assistant:
     - `172.28.0.23:30002`
     - `172.28.0.24:30003`
     - `172.28.0.26:30000`
+    - `172.28.0.27:30004`
+    - `172.28.0.28:30000`
 
 ## Simulation Behavior
 

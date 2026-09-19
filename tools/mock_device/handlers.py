@@ -10,20 +10,31 @@ from .const import STATUS_IDLE
 
 
 def handle_get_device(
-    request_id: int, src: str, config: dict[str, Any], ip: str
+    request_id: int,
+    src: str,
+    config: dict[str, Any],
+    ip: str,
+    *,
+    omit_result_macs: bool = False,
 ) -> dict[str, Any]:
-    """Handle Marstek.GetDevice request."""
+    """Handle Marstek.GetDevice request.
+
+    Venus C firmware 153 (issue #60) omits ``ble_mac`` / ``wifi_mac`` /
+    ``wifi_name`` from ``result`` while still embedding the BLE MAC in ``src``.
+    """
+    result: dict[str, Any] = {
+        "device": config["device"],
+        "ver": config["ver"],
+        "ip": ip,
+    }
+    if not omit_result_macs:
+        result["ble_mac"] = config["ble_mac"]
+        result["wifi_mac"] = config["wifi_mac"]
+        result["wifi_name"] = config["wifi_name"]
     return {
         "id": request_id,
         "src": src,
-        "result": {
-            "device": config["device"],
-            "ver": config["ver"],
-            "ble_mac": config["ble_mac"],
-            "wifi_mac": config["wifi_mac"],
-            "wifi_name": config["wifi_name"],
-            "ip": ip,
-        },
+        "result": result,
     }
 
 
@@ -71,6 +82,9 @@ def handle_es_get_status(
     """
     # Negate power: internal +discharge/-charge → API +charge/-discharge
     bat_power = -state["power"]
+    # Venus A/D ES.GetStatus reports pv_power=0 even while PV.GetStatus
+    # channels are live (issues #5, #11). The integration sums channels.
+    pv_power = 0 if profile.supports_pv else state.get("pv_power", 0)
     result: dict[str, Any] = {
         "id": request_id,
         "src": src,
@@ -78,7 +92,7 @@ def handle_es_get_status(
             "id": 0,
             "bat_soc": state["soc"],
             "bat_cap": state.get("capacity_wh", 5120),
-            "pv_power": state.get("pv_power", 0),
+            "pv_power": pv_power,
             "ongrid_power": state["grid_power"],
             "offgrid_power": 0,
             "total_pv_energy": _encode_value(
@@ -110,11 +124,12 @@ def _getmode_instance_id(params: dict[str, Any] | None) -> int:
     return raw_id
 
 
-def _venus_e_getmode_meter_template() -> dict[str, int]:
-    """Return the unpopulated Rev 3.1 GetMode CT/energy keys.
+def _unpopulated_getmode_meter_template() -> dict[str, int]:
+    """Return unpopulated GetMode CT/energy keys.
 
-    Observed on Venus E 3.0 firmware 150: these fields are present but stay
-    zeros while EM.GetStatus reports a live CT.
+    Observed on Venus E 3.0 firmware 150 (LAN capture) and Venus A firmware
+    147 (issue #11): these fields are present but stay zeros while
+    ``EM.GetStatus`` reports a live CT.
     """
     return {
         "ct_state": 0,
@@ -145,7 +160,7 @@ def handle_es_get_mode(
     }
     if profile.supports_em_energy:
         if profile.family is DeviceFamily.VENUS_E:
-            result.update(_venus_e_getmode_meter_template())
+            result.update(_unpopulated_getmode_meter_template())
         else:
             result.update(
                 {
@@ -157,6 +172,10 @@ def handle_es_get_mode(
                     **_encoded_meter_energy(state, profile),
                 }
             )
+    elif profile.family is DeviceFamily.VENUS_A:
+        # Issue #11: Venus A 147 already includes the GetMode CT/energy keys
+        # as zeros. Venus E 144 (#21) does not.
+        result.update(_unpopulated_getmode_meter_template())
     return {
         "id": request_id,
         "src": src,
@@ -295,8 +314,10 @@ def handle_em_get_status(
         "c_power": state.get("em_c_power", 0),
         "total_power": state["grid_power"],
     }
-    if profile.supports_em_energy:
-        result.update(_encoded_meter_energy(state, profile))
+    # Observed on Venus A 147 (#11), Venus E 144 (#21), and Venus E 150:
+    # input_energy / output_energy are present. Scale to 0.1 Wh only when
+    # the firmware profile says so; legacy builds stay unscaled (often 0).
+    result.update(_encoded_meter_energy(state, profile))
     return {
         "id": request_id,
         "src": src,
