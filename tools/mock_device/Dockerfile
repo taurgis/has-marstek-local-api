@@ -8,6 +8,7 @@ WORKDIR /app
 COPY tools/mock_device /app/mock_device/
 COPY custom_components/marstek/firmware_profile.py /app/custom_components/marstek/firmware_profile.py
 COPY custom_components/marstek/pymarstek/const.py /app/custom_components/marstek/pymarstek/const.py
+COPY custom_components/marstek/pymarstek/validators.py /app/custom_components/marstek/pymarstek/validators.py
 
 # Run the mock device as a module
 CMD ["python", "-m", "mock_device"]

@@ -577,7 +577,12 @@ class MarstekUDPClient:
                         "timestamp": loop.time(),
                     }
                     future = self._pending_requests.pop(request_id, None)
-                    if future is None and raw_id != request_id:
+                    if (
+                        future is None
+                        and isinstance(raw_id, int)
+                        and not isinstance(raw_id, bool)
+                        and raw_id != request_id
+                    ):
                         future = self._pending_requests.pop(raw_id, None)
                     if future and not future.done():
                         future.set_result(response)
@@ -626,7 +631,7 @@ class MarstekUDPClient:
 
         try:
             message_obj = json.loads(message)
-            request_id, future = self._track_pending(message_obj["id"])
+            request_id, _future = self._track_pending(message_obj["id"])
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             _LOGGER.error("Invalid message for broadcast: %s", exc)
             return []

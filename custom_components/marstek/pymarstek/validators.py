@@ -71,6 +71,11 @@ def enable_strict_mode(enabled: bool = True) -> None:
     _LOGGER.info("Strict validation mode %s", "enabled" if enabled else "disabled")
 
 
+def is_strict_mode() -> bool:
+    """Check if strict validation mode is enabled."""
+    return _strict_mode
+
+
 def json_rpc_wire_id(value: Any) -> int | None:
     """Return the 16-bit JSON-RPC id Control firmware actually stores.
 

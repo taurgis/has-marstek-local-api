@@ -155,8 +155,8 @@ def _control_generation(version: int | None) -> int | None:
     """Map Open API ``ver`` to the Control generation used for capability gates.
 
     VNSE3-0 Control **1476** is app firmware **147.6** (March 2026, before 148
-    and 150). Four-digit values in 1000–1999 are that dotted encoding
-    (147.6 → 1476, and 150.9 would be 1509 if a device ever reported it).
+    and 150). Four-digit values in 1000-1999 are that dotted encoding
+    (147.6 -> 1476, and 150.9 would be 1509 if a device ever reported it).
     """
     if version is None:
         return None
