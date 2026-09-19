@@ -883,6 +883,11 @@ class MarstekUDPClient:
             except OSError as err:
                 _LOGGER.error("Error receiving UDP response: %s", err)
                 await asyncio.sleep(1)
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected error in Open API UDP listener; continuing"
+                )
+                await asyncio.sleep(1)
 
     async def send_broadcast_request(
         self,

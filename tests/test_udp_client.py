@@ -1502,6 +1502,39 @@ class TestListenForResponses:
         assert future.done()
         assert future.result() == response
 
+    async def test_unexpected_listener_error_does_not_stop_loop(self) -> None:
+        """A programming error while decoding one datagram must not stop polling."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        loop = asyncio.get_event_loop()
+        client._loop = loop
+
+        recv_calls = 0
+        response = {"id": 8, "result": {"mode": "Auto"}}
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        client._pending_requests[8] = future
+
+        async def mock_recvfrom(
+            sock: Any, bufsize: int
+        ) -> tuple[bytes, tuple[str, int]]:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                raise RuntimeError("unexpected listener failure")
+            if recv_calls == 2:
+                return (json.dumps(response).encode(), ("192.168.1.100", 30000))
+            raise asyncio.CancelledError()
+
+        with (
+            patch.object(loop, "sock_recvfrom", mock_recvfrom),
+            patch("asyncio.sleep", AsyncMock()),
+        ):
+            await client._listen_for_responses()
+
+        assert recv_calls == 3
+        assert future.done()
+        assert future.result() == response
+
     async def test_matches_uint16_truncated_response_id(self) -> None:
         """Control firmware stores JSON-RPC id as uint16 (65537 → 1)."""
         client = MarstekUDPClient()
