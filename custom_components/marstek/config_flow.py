@@ -69,7 +69,7 @@ class DhcpServiceInfoLike(Protocol):
 
 _LOGGER = logging.getLogger(__name__)
 
-_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30030)
+_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30004, 30030)
 _MANUAL_DEVICE_OPTION = "__manual__"
 
 

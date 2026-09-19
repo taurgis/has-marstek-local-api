@@ -45,7 +45,7 @@ _DEVICE_METADATA_FIELDS: tuple[str, ...] = (
     "firmware",
 )
 
-_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30030)
+_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30004, 30030)
 
 
 def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
