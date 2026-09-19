@@ -1064,6 +1064,28 @@ async def test_remove_entry_cleans_stale_device(
     )
 
 
+async def test_remove_setup_retry_entry_releases_udp_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Deleting a retrying entry must release the socket HA never unloaded."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(send_request_error=TimeoutError("timeout"))
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        assert mock_config_entry.state == ConfigEntryState.SETUP_RETRY
+        assert DATA_UDP_CLIENTS in hass.data.get(DOMAIN, {})
+
+        await hass.config_entries.async_remove(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    client.async_cleanup.assert_awaited()
+    assert DOMAIN not in hass.data or DATA_UDP_CLIENTS not in hass.data.get(
+        DOMAIN, {}
+    )
+
+
 async def test_failed_unload_keeps_reset_prone_protection(
     hass: HomeAssistant,
 ) -> None:

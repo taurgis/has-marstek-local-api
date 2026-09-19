@@ -422,13 +422,22 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self._handle_update_error(current_ip, err)
 
     def clear_openapi_reset_mark(self) -> None:
-        """Drop this device's reset-prone UDP flag, including a stale previous IP."""
+        """Drop this device's reset-prone UDP flag, including stale IPs."""
         previous = self._marked_reset_prone_ip
-        if previous is not None:
-            self.udp_client.clear_openapi_reset_prone(
-                previous, owner=self._entry.entry_id
-            )
-            self._marked_reset_prone_ip = None
+        current = self.device_ip
+        initial = self._initial_device_ip
+        ips = {previous, current, initial}
+        for ip in ips:
+            if isinstance(ip, str) and ip:
+                self.udp_client.clear_openapi_reset_prone(
+                    ip, owner=self._entry.entry_id
+                )
+        clear_owner = getattr(
+            self.udp_client, "clear_openapi_reset_prone_owner", None
+        )
+        if callable(clear_owner):
+            clear_owner(self._entry.entry_id)
+        self._marked_reset_prone_ip = None
 
     def _issue_id(self) -> str:
         return f"cannot_connect_{self._entry.entry_id}"

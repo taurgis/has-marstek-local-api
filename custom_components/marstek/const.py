@@ -11,6 +11,9 @@ from .firmware_profile import DeviceFamily, FirmwareProfile, resolve_firmware_pr
 DOMAIN: Final = "marstek"
 DATA_UDP_CLIENTS: Final = "udp_clients"  # dict[int, MarstekUDPClient] keyed by bind port
 DATA_UDP_CLIENTS_LOCK: Final = "udp_clients_lock"
+DATA_DISCOVERY_LOCK: Final = "discovery_lock"
+DATA_UDP_CLIENT_OWNERS: Final = "udp_client_owners"  # bind_port -> entry ids
+DATA_ENTRY_BIND_PORTS: Final = "entry_bind_ports"  # entry id -> leased bind port
 DATA_SUPPRESS_RELOADS: Final = "suppress_reload_entry_ids"  # Set of entry_ids to skip reload
 
 PLATFORMS: Final[list[Platform]] = [

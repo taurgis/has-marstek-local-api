@@ -45,7 +45,11 @@ from .helpers.flow_helpers import (
     build_entry_data,
     collect_configured_macs,
     format_already_configured_text,
+    formatted_mac_or_none,
     get_unique_id_from_device_info,
+    identities_overlap,
+    identity_macs_from_entry,
+    identity_macs_from_mapping,
     metadata_from_device_info,
     split_devices_by_configured,
 )
@@ -84,6 +88,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     _discovered_ip: str | None = None
     _discovered_port: int | None = None
     _discovered_metadata: dict[str, Any] | None = None
+    _discovered_identity_macs: set[str] | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -345,6 +350,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_ip = discovery_info.ip
         self._discovered_port = None
         self._discovered_metadata = {}
+        self._discovered_identity_macs = {mac}
 
         # Use shared discovery handler to update existing entries or confirm new ones
         return await self._async_handle_discovery_with_unique_id()
@@ -354,18 +360,22 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Handle discovery from Scanner (integration discovery)."""
         discovered_ip = discovery_info.get("ip")
-        discovered_ble_mac = discovery_info.get("ble_mac")
+        identity_macs = identity_macs_from_mapping(discovery_info)
 
-        if not discovered_ble_mac or not discovered_ip:
+        if not identity_macs or not discovered_ip:
             return self.async_abort(reason="invalid_discovery_info")
 
         if is_unsupported_venus_e2(discovery_info.get("device_type")):
             return self.async_abort(reason="unsupported_device")
 
-        # Set unique_id using BLE-MAC
-        await self.async_set_unique_id(format_mac(discovered_ble_mac))
+        preferred_unique_id = get_unique_id_from_device_info(discovery_info)
+        if preferred_unique_id is None:
+            return self.async_abort(reason="invalid_discovery_info")
+
+        await self.async_set_unique_id(preferred_unique_id)
         self._discovered_ip = discovered_ip
         self._discovered_metadata = metadata_from_device_info(discovery_info)
+        self._discovered_identity_macs = identity_macs
         discovered_port = discovery_info.get("port")
         try:
             self._discovered_port = (
@@ -571,9 +581,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if updates:
                 old_host = entry.data.get(CONF_HOST)
                 new_host = updates.get(CONF_HOST, old_host)
+                new_port = updates.get(CONF_PORT)
                 if isinstance(old_host, str) and isinstance(new_host, str):
                     transfer_reset_prone_mark_for_entry(
-                        self.hass, entry, old_host, new_host
+                        self.hass,
+                        entry,
+                        old_host,
+                        new_host,
+                        new_port=new_port if isinstance(new_port, int) else None,
                     )
                 self.hass.config_entries.async_update_entry(
                     entry,
@@ -625,7 +640,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             old_host = entry.data.get(CONF_HOST)
             if isinstance(old_host, str):
                 transfer_reset_prone_mark_for_entry(
-                    self.hass, entry, old_host, host
+                    self.hass,
+                    entry,
+                    old_host,
+                    host,
+                    new_port=port if update_port else None,
                 )
 
             if reason is None:
@@ -649,19 +668,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return None, "cannot_connect"
 
     def _entry_matches_unique_id(self, entry: config_entries.ConfigEntry) -> bool:
-        """Return True if entry matches current flow unique id."""
-        if entry.unique_id and entry.unique_id == self.unique_id:
-            return True
-
-        if not self.unique_id:
-            return False
-
-        entry_mac = (
-            entry.data.get("ble_mac")
-            or entry.data.get("mac")
-            or entry.data.get("wifi_mac")
-        )
-        return bool(entry_mac and format_mac(entry_mac) == self.unique_id)
+        """Return True if entry shares any stable MAC with this flow."""
+        entry_macs = identity_macs_from_entry(entry)
+        discovered = set(self._discovered_identity_macs or ())
+        unique_id_mac = formatted_mac_or_none(self.unique_id)
+        if unique_id_mac is not None:
+            discovered.add(unique_id_mac)
+        if self._discovered_metadata:
+            discovered.update(identity_macs_from_mapping(self._discovered_metadata))
+        return identities_overlap(entry_macs, discovered)
 
     @staticmethod
     def async_get_options_flow(

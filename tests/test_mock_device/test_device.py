@@ -1136,3 +1136,33 @@ class TestFirmwareUdpQuirks:
         payload = json.loads(device.sock.sendto.call_args[0][0])
         assert payload["id"] == 0
 
+    def test_lan_replies_go_to_listen_port_not_ephemeral_source(
+        self,
+    ) -> None:
+        """Container/LAN firmware replies to the Open API listen port."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("172.28.0.2", 54321),
+        )
+
+        device._handle_request()
+
+        dest = device.sock.sendto.call_args[0][1]
+        assert dest == ("172.28.0.2", device.port)
+
+    def test_loopback_replies_keep_ephemeral_source_port(self) -> None:
+        """Unit tests bind ephemeral on loopback and must still receive replies."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 54321),
+        )
+
+        device._handle_request()
+
+        dest = device.sock.sendto.call_args[0][1]
+        assert dest == ("127.0.0.1", 54321)
+

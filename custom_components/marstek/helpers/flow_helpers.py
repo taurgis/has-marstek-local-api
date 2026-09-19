@@ -2,11 +2,51 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT
 from homeassistant.helpers.device_registry import format_mac
+
+_IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
+
+
+def formatted_mac_or_none(value: Any) -> str | None:
+    """Return a normalized MAC string, or None when *value* is not a MAC."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return format_mac(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def identity_macs_from_mapping(
+    data: Mapping[str, Any],
+    *,
+    include_unique_id: str | None = None,
+) -> set[str]:
+    """Collect formatted BLE, Wi-Fi, and legacy MAC identities from a mapping."""
+    macs: set[str] = set()
+    for key in _IDENTITY_MAC_KEYS:
+        formatted = formatted_mac_or_none(data.get(key))
+        if formatted is not None:
+            macs.add(formatted)
+    formatted_unique = formatted_mac_or_none(include_unique_id)
+    if formatted_unique is not None:
+        macs.add(formatted_unique)
+    return macs
+
+
+def identity_macs_from_entry(entry: config_entries.ConfigEntry) -> set[str]:
+    """Collect every stable MAC stored on a config entry, including unique_id."""
+    return identity_macs_from_mapping(entry.data, include_unique_id=entry.unique_id)
+
+
+def identities_overlap(left: set[str], right: set[str]) -> bool:
+    """Return True when two identity sets share a MAC."""
+    return bool(left & right)
 
 
 def collect_configured_macs(
@@ -15,13 +55,7 @@ def collect_configured_macs(
     """Collect formatted MAC addresses from existing entries."""
     configured_macs: set[str] = set()
     for entry in entries:
-        entry_mac = (
-            entry.data.get("ble_mac")
-            or entry.data.get(CONF_MAC)
-            or entry.data.get("wifi_mac")
-        )
-        if entry_mac:
-            configured_macs.add(format_mac(entry_mac))
+        configured_macs.update(identity_macs_from_entry(entry))
     return configured_macs
 
 
@@ -44,8 +78,8 @@ def split_devices_by_configured(
     already_configured_names: list[str] = []
     for i, device in enumerate(devices):
         device_name = device_display_name(device)
-        device_mac = device.get("ble_mac") or device.get("mac") or device.get("wifi_mac")
-        is_configured = bool(device_mac and format_mac(device_mac) in configured_macs)
+        device_macs = identity_macs_from_mapping(device)
+        is_configured = identities_overlap(device_macs, configured_macs)
         if is_configured:
             already_configured_names.append(device_name)
         else:

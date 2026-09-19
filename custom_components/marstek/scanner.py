@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Any, ClassVar, Self
@@ -25,6 +26,12 @@ from .firmware_profile import (
     resolve_firmware_profile_from_metadata,
 )
 from .helpers.device_lookup import async_lookup_device_by_identifier
+from .helpers.flow_helpers import (
+    formatted_mac_or_none,
+    identities_overlap,
+    identity_macs_from_entry,
+    identity_macs_from_mapping,
+)
 from .helpers.udp_clients import async_paused_udp_receivers
 
 _LOGGER = logging.getLogger(__name__)
@@ -190,119 +197,134 @@ class MarstekScanner:
             scan_ports = self._build_scan_ports()
             async with async_paused_udp_receivers(self._hass):
                 devices = await discover_devices(ports=scan_ports)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Scanner discovery failed")
+            return
 
+        _LOGGER.debug(
+            "Scanner: Discovered %d device(s)", len(devices) if devices else 0
+        )
+
+        if not devices:
+            return
+
+        # Log discovered devices for debugging
+        _LOGGER.debug("Scanner: Discovered devices:")
+        for device in devices:
             _LOGGER.debug(
-                "Scanner: Discovered %d device(s)", len(devices) if devices else 0
+                "  Device: %s at IP %s (BLE-MAC: %s, WiFi-MAC: %s)",
+                device.get("device_type", "Unknown"),
+                device.get("ip", "Unknown"),
+                device.get("ble_mac", "N/A"),
+                device.get("wifi_mac", "N/A"),
             )
 
-            if not devices:
-                return
-
-            # Log discovered devices for debugging
-            _LOGGER.debug("Scanner: Discovered devices:")
-            for device in devices:
-                _LOGGER.debug(
-                    "  Device: %s at IP %s (BLE-MAC: %s)",
-                    device.get("device_type", "Unknown"),
-                    device.get("ip", "Unknown"),
-                    device.get("ble_mac", "N/A"),
+        for entry in self._hass.config_entries.async_entries(DOMAIN):
+            try:
+                self._process_discovered_entry(entry, devices)
+            except Exception:
+                _LOGGER.exception(
+                    "Scanner failed while processing entry %s",
+                    entry.entry_id,
                 )
 
-            # Check all configured entries for IP changes
-            # Check both LOADED and SETUP_RETRY states (SETUP_RETRY means connection failed)
-            for entry in self._hass.config_entries.async_entries(DOMAIN):
-                _LOGGER.debug(
-                    "Scanner: Checking entry %s (state: %s)",
-                    entry.title,
-                    entry.state,
-                )
-                if entry.state not in (
-                    ConfigEntryState.LOADED,
-                    ConfigEntryState.SETUP_RETRY,
-                ):
-                    _LOGGER.debug(
-                        "Scanner: Skipping entry %s - state is %s (not LOADED)",
-                        entry.title,
-                        entry.state,
-                    )
-                    continue
-
-                stored_ble_mac = entry.data.get("ble_mac")
-                stored_ip = entry.data.get(CONF_HOST)
-                stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
-
-                _LOGGER.debug(
-                    "Scanner: Entry %s - stored BLE-MAC: %s, stored IP: %s",
-                    entry.title,
-                    stored_ble_mac or "N/A",
-                    stored_ip or "N/A",
-                )
-
-                if not stored_ble_mac or not stored_ip:
-                    _LOGGER.debug(
-                        "Scanner: Skipping entry %s - missing BLE-MAC or IP",
-                        entry.title,
-                    )
-                    continue
-
-                # Find matching device by BLE-MAC
-                matched_device = self._find_device_by_ble_mac(
-                    devices, stored_ble_mac, entry.title
-                )
-
-                if not matched_device:
-                    _LOGGER.debug(
-                        "Scanner: No matching device found for entry %s (BLE-MAC: %s)",
-                        entry.title,
-                        stored_ble_mac,
-                    )
-                    continue
-
-                new_ip = matched_device.get("ip")
-                new_port = int(matched_device.get("port", DEFAULT_UDP_PORT))
-                _LOGGER.debug(
-                    "Scanner: Entry %s - current %s:%s, discovered %s:%s",
-                    entry.title,
-                    stored_ip,
-                    stored_port,
-                    new_ip,
-                    new_port,
-                )
-                ip_changed = bool(new_ip and new_ip != stored_ip)
-                port_changed = bool(new_ip and new_port != stored_port)
-                if ip_changed or port_changed:
-                    _LOGGER.info(
-                        "Scanner detected endpoint change for device %s: %s:%s -> %s:%s",
-                        stored_ble_mac,
-                        stored_ip,
-                        stored_port,
-                        new_ip,
-                        new_port,
-                    )
-                    # Trigger discovery flow to update config entry endpoint
-                    # and metadata in one reload. Do not apply metadata first:
-                    # that would reload against the old IP.
-                    discovery_flow.async_create_flow(
-                        self._hass,
-                        DOMAIN,
-                        context={"source": config_entries.SOURCE_INTEGRATION_DISCOVERY},
-                        data=_build_discovery_flow_data(matched_device),
-                    )
-                else:
-                    self._maybe_update_entry_metadata(entry, matched_device)
-                    _LOGGER.debug(
-                        "Scanner: Entry %s endpoint unchanged (%s:%s)",
-                        entry.title,
-                        stored_ip,
-                        stored_port,
-                    )
-
-            # Trigger discovery flows for unconfigured devices
+        try:
             configured_macs = self._get_configured_macs()
             self._prune_unconfigured_cache(configured_macs)
             self._trigger_unconfigured_discovery(devices, configured_macs)
-        except Exception as err:
-            _LOGGER.debug("Scanner discovery failed: %s", err)
+        except Exception:
+            _LOGGER.exception("Scanner failed while advertising unconfigured devices")
+
+    def _process_discovered_entry(
+        self,
+        entry: config_entries.ConfigEntry,
+        devices: list[dict[str, Any]],
+    ) -> None:
+        """Match one config entry against discovered devices and update it."""
+        _LOGGER.debug(
+            "Scanner: Checking entry %s (state: %s)",
+            entry.title,
+            entry.state,
+        )
+        if entry.state not in (
+            ConfigEntryState.LOADED,
+            ConfigEntryState.SETUP_RETRY,
+        ):
+            _LOGGER.debug(
+                "Scanner: Skipping entry %s - state is %s (not LOADED)",
+                entry.title,
+                entry.state,
+            )
+            return
+
+        stored_macs = identity_macs_from_entry(entry)
+        stored_ip = entry.data.get(CONF_HOST)
+        stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
+
+        _LOGGER.debug(
+            "Scanner: Entry %s - stored MACs: %s, stored IP: %s",
+            entry.title,
+            stored_macs or "N/A",
+            stored_ip or "N/A",
+        )
+
+        if not stored_macs or not stored_ip:
+            _LOGGER.debug(
+                "Scanner: Skipping entry %s - missing identity MAC or IP",
+                entry.title,
+            )
+            return
+
+        matched_device = self._find_device_by_identity(
+            devices, stored_macs, entry.title
+        )
+
+        if not matched_device:
+            _LOGGER.debug(
+                "Scanner: No matching device found for entry %s (MACs: %s)",
+                entry.title,
+                stored_macs,
+            )
+            return
+
+        new_ip = matched_device.get("ip")
+        new_port = int(matched_device.get("port", DEFAULT_UDP_PORT))
+        _LOGGER.debug(
+            "Scanner: Entry %s - current %s:%s, discovered %s:%s",
+            entry.title,
+            stored_ip,
+            stored_port,
+            new_ip,
+            new_port,
+        )
+        ip_changed = bool(new_ip and new_ip != stored_ip)
+        port_changed = bool(new_ip and new_port != stored_port)
+        if ip_changed or port_changed:
+            _LOGGER.info(
+                "Scanner detected endpoint change for device %s: %s:%s -> %s:%s",
+                stored_macs,
+                stored_ip,
+                stored_port,
+                new_ip,
+                new_port,
+            )
+            discovery_flow.async_create_flow(
+                self._hass,
+                DOMAIN,
+                context={"source": config_entries.SOURCE_INTEGRATION_DISCOVERY},
+                data=_build_discovery_flow_data(matched_device),
+            )
+            return
+
+        self._maybe_update_entry_metadata(entry, matched_device)
+        _LOGGER.debug(
+            "Scanner: Entry %s endpoint unchanged (%s:%s)",
+            entry.title,
+            stored_ip,
+            stored_port,
+        )
 
     def _build_scan_ports(self) -> list[int]:
         """Build the UDP port list for discovery scans.
@@ -421,49 +443,39 @@ class MarstekScanner:
         if update_kwargs:
             device_registry.async_update_device(device.id, **update_kwargs)
 
+    def _find_device_by_identity(
+        self,
+        devices: list[dict[str, Any]],
+        stored_macs: set[str],
+        entry_title: str,
+    ) -> dict[str, Any] | None:
+        """Find a discovered device that shares any stable MAC with an entry."""
+        if not stored_macs:
+            return None
+        for device in devices:
+            device_macs = identity_macs_from_mapping(device)
+            if not identities_overlap(stored_macs, device_macs):
+                continue
+            _LOGGER.debug(
+                "Scanner: Identity match found for entry %s (%s)",
+                entry_title,
+                stored_macs & device_macs,
+            )
+            return device
+        return None
+
     def _find_device_by_ble_mac(
         self, devices: list[dict[str, Any]], stored_ble_mac: str, entry_title: str
     ) -> dict[str, Any] | None:
-        """Find device by BLE-MAC address."""
-        try:
-            stored_formatted = format_mac(stored_ble_mac)
-        except (TypeError, ValueError):
-            return None
-        for device in devices:
-            device_ble_mac = device.get("ble_mac")
-            if not device_ble_mac:
-                continue
-            try:
-                device_formatted = format_mac(device_ble_mac)
-            except (TypeError, ValueError):
-                continue
-            _LOGGER.debug(
-                "Scanner: Comparing stored BLE-MAC %s with device BLE-MAC %s",
-                stored_formatted,
-                device_formatted,
-            )
-            if device_formatted == stored_formatted:
-                _LOGGER.debug(
-                    "Scanner: BLE-MAC match found for entry %s",
-                    entry_title,
-                )
-                return device
-        return None
+        """Find device by a stored MAC, matching any discovered identity field."""
+        stored = identity_macs_from_mapping({"ble_mac": stored_ble_mac})
+        return self._find_device_by_identity(devices, stored, entry_title)
 
     def _get_configured_macs(self) -> set[str]:
         """Collect all configured MACs for this integration."""
         configured: set[str] = set()
         for entry in self._hass.config_entries.async_entries(DOMAIN):
-            candidates: list[Any] = [entry.unique_id]
-            for key in ("ble_mac", "mac", "wifi_mac"):
-                candidates.append(entry.data.get(key))
-            for value in candidates:
-                if not isinstance(value, str) or not value:
-                    continue
-                try:
-                    configured.add(format_mac(value))
-                except (TypeError, ValueError):
-                    continue
+            configured.update(identity_macs_from_entry(entry))
         return configured
 
     def _prune_unconfigured_cache(self, configured_macs: set[str]) -> None:
@@ -472,48 +484,54 @@ class MarstekScanner:
             if mac in configured_macs:
                 self._unconfigured_seen.pop(mac, None)
 
-    def _has_pending_discovery(self, ble_mac: str) -> bool:
+    def _flow_identity_macs(self, flow: Mapping[str, Any]) -> set[str]:
+        """Collect identity MACs from an in-progress config flow."""
+        macs: set[str] = set()
+        context = flow.get("context", {})
+        unique_id = formatted_mac_or_none(context.get("unique_id"))
+        if unique_id is not None:
+            macs.add(unique_id)
+        data = flow.get("data", {})
+        if isinstance(data, dict):
+            macs.update(identity_macs_from_mapping(data))
+        return macs
+
+    def _has_pending_discovery(self, macs: str | set[str]) -> bool:
         """Return True if a discovery flow is already in progress for this device."""
-        try:
-            formatted = format_mac(ble_mac)
-        except (TypeError, ValueError):
+        if isinstance(macs, str):
+            formatted = formatted_mac_or_none(macs)
+            wanted = {formatted} if formatted is not None else set()
+        else:
+            wanted = macs
+        if not wanted:
             return False
 
         flows = self._hass.config_entries.flow.async_progress_by_handler(DOMAIN)
         for flow in flows:
             context = flow.get("context", {})
+            if not isinstance(context, dict):
+                continue
             if context.get("source") != config_entries.SOURCE_INTEGRATION_DISCOVERY:
                 continue
-            if context.get("unique_id") == formatted:
+            if identities_overlap(wanted, self._flow_identity_macs(flow)):
                 return True
-            data = flow.get("data", {})
-            flow_ble_mac = data.get("ble_mac")
-            if flow_ble_mac:
-                try:
-                    if format_mac(flow_ble_mac) == formatted:
-                        return True
-                except (TypeError, ValueError):
-                    continue
         return False
 
-    def _should_trigger_unconfigured(self, ble_mac: str) -> bool:
+    def _should_trigger_unconfigured(self, identity_macs: set[str]) -> bool:
         """Return True if we should trigger a discovery flow for this device."""
-        if not ble_mac:
+        if not identity_macs:
             return False
-        try:
-            formatted = format_mac(ble_mac)
-        except (TypeError, ValueError):
-            return False
-
-        if self._has_pending_discovery(formatted):
+        if self._has_pending_discovery(identity_macs):
             return False
 
         now = datetime.now()
-        last_seen = self._unconfigured_seen.get(formatted)
-        if last_seen and (now - last_seen) < UNCONFIGURED_DISCOVERY_DEBOUNCE:
-            return False
+        for mac in identity_macs:
+            last_seen = self._unconfigured_seen.get(mac)
+            if last_seen and (now - last_seen) < UNCONFIGURED_DISCOVERY_DEBOUNCE:
+                return False
 
-        self._unconfigured_seen[formatted] = now
+        for mac in identity_macs:
+            self._unconfigured_seen[mac] = now
         return True
 
     def _trigger_unconfigured_discovery(
@@ -522,27 +540,22 @@ class MarstekScanner:
         """Create discovery flows for devices not yet configured."""
         for device in devices:
             device_ip = device.get("ip")
-            device_ble_mac = device.get("ble_mac")
-            if not device_ip or not device_ble_mac:
+            device_macs = identity_macs_from_mapping(device)
+            if not device_ip or not device_macs:
                 continue
 
-            try:
-                formatted_mac = format_mac(device_ble_mac)
-            except (TypeError, ValueError):
-                continue
-
-            if formatted_mac in configured_macs:
+            if identities_overlap(device_macs, configured_macs):
                 continue
 
             if is_unsupported_venus_e2(device.get("device_type")):
                 continue
 
-            if not self._should_trigger_unconfigured(formatted_mac):
+            if not self._should_trigger_unconfigured(device_macs):
                 continue
 
             _LOGGER.info(
                 "Scanner discovered unconfigured device %s at %s",
-                formatted_mac,
+                device_macs,
                 device_ip,
             )
             discovery_flow.async_create_flow(

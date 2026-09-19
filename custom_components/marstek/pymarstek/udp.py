@@ -35,7 +35,12 @@ from .data_parser import (
     parse_pv_status_response,
     parse_wifi_status_response,
 )
-from .network import PsutilModule, create_udp_socket, get_broadcast_addresses
+from .network import (
+    PsutilModule,
+    create_udp_socket,
+    get_broadcast_addresses,
+    mac_from_openapi_src,
+)
 from .validators import (
     ValidationError,
     json_rpc_wire_id,
@@ -80,19 +85,32 @@ def _new_command_stats() -> dict[str, Any]:
     }
 
 
-def _build_discovered_device(result: dict[str, Any]) -> dict[str, Any]:
+def _non_empty_str(value: Any) -> str:
+    """Return a stripped string, or empty when the value is missing."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _build_discovered_device(
+    result: dict[str, Any], *, src: str = ""
+) -> dict[str, Any]:
     """Build device info dict from discovery response."""
     device_ip = result.get("ip", "")
     version = extract_discovery_version(result)
+    ble_mac = _non_empty_str(result.get("ble_mac"))
+    wifi_mac = _non_empty_str(result.get("wifi_mac"))
+    if not ble_mac and not wifi_mac:
+        ble_mac = mac_from_openapi_src(src)
     return {
         "id": result.get("id", 0),
         "device_type": result.get("device", "Unknown"),
         "version": version,
         "wifi_name": result.get("wifi_name", ""),
         "ip": device_ip,
-        "wifi_mac": result.get("wifi_mac", ""),
-        "ble_mac": result.get("ble_mac", ""),
-        "mac": result.get("wifi_mac") or result.get("ble_mac", ""),
+        "wifi_mac": wifi_mac,
+        "ble_mac": ble_mac,
+        "mac": wifi_mac or ble_mac,
         "model": result.get("device", "Unknown"),
         "firmware": "" if version is None else str(version),
     }
@@ -483,6 +501,26 @@ class MarstekUDPClient:
             return
         self.set_openapi_reset_prone(device_ip, False, owner=owner)
 
+    def is_openapi_reset_prone(
+        self, device_ip: str, *, owner: str | None = None
+    ) -> bool:
+        """Return True when *device_ip* is marked reset-prone for *owner*."""
+        if device_ip not in self._reset_prone_ips:
+            return False
+        if owner is None:
+            return True
+        owners = self._reset_prone_owners.get(device_ip, set())
+        return (
+            owner in owners
+            or _ANONYMOUS_RESET_PRONE_OWNER in owners
+            or not owners
+        )
+
+    def clear_openapi_reset_prone_owner(self, owner: str) -> None:
+        """Drop every reset-prone mark owned by a config entry."""
+        for device_ip in list(self._reset_prone_owners):
+            self.set_openapi_reset_prone(device_ip, False, owner=owner)
+
     def transfer_openapi_reset_prone(
         self, old_ip: str, new_ip: str, *, owner: str
     ) -> None:
@@ -802,7 +840,15 @@ class MarstekUDPClient:
                         addr[1],
                     )
                     continue
-                response_text = data.decode("utf-8")
+                try:
+                    response_text = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    _LOGGER.debug(
+                        "Ignoring malformed UTF-8 UDP datagram from %s:%d",
+                        addr[0],
+                        addr[1],
+                    )
+                    continue
                 try:
                     response = json.loads(response_text)
                 except json.JSONDecodeError:
@@ -929,7 +975,10 @@ class MarstekUDPClient:
                 continue
             seen_devices.add(device_id)
 
-            devices.append(_build_discovered_device(result))
+            src = ""
+            if isinstance(response, dict):
+                src = _non_empty_str(response.get("src"))
+            devices.append(_build_discovered_device(result, src=src))
 
         self._discovery_cache = devices.copy()
         self._cache_timestamp = loop.time()

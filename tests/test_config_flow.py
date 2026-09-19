@@ -1713,3 +1713,74 @@ async def test_user_flow_filters_unsupported_venus_e2(
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
 
+
+async def test_dhcp_wifi_mac_updates_ble_unique_id_entry(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """DHCP uses the Wi-Fi MAC; entries identified by BLE MAC must still match."""
+    mock_config_entry.add_to_hass(hass)
+
+    discovery_info = type(
+        "DhcpInfo",
+        (),
+        {
+            "ip": "1.2.3.9",
+            "hostname": "marstek",
+            "macaddress": "112233445566",
+        },
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "dhcp"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.data["host"] == "1.2.3.9"
+    assert updated.unique_id == "aa:bb:cc:dd:ee:ff"
+
+
+async def test_integration_discovery_wifi_only_updates_existing_entry(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Scanner discovery without BLE MAC still updates the matching entry."""
+    mock_config_entry.add_to_hass(hass)
+
+    discovery_info = {
+        "ip": "1.2.3.99",
+        "wifi_mac": "11:22:33:44:55:66",
+        "device_type": "Venus C",
+        "version": 153,
+        "port": 30000,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    updated = hass.config_entries.async_entries(DOMAIN)[0]
+    assert updated.data["host"] == "1.2.3.99"
+    assert updated.unique_id == "aa:bb:cc:dd:ee:ff"
+
+
+async def test_integration_discovery_wifi_only_confirms_new_device(
+    hass: HomeAssistant,
+) -> None:
+    """A Wi-Fi-only GetDevice payload can start a confirm flow."""
+    discovery_info = {
+        "ip": "192.168.1.26",
+        "wifi_mac": "DE:AD:BE:EF:00:01",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+

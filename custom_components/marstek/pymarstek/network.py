@@ -4,12 +4,40 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 import socket
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import Protocol
+from typing import Any, Protocol
 
 _LOGGER = logging.getLogger(__name__)
+
+# Open API `src` is typically "{model}-{ble_mac}", e.g. "VenusC-AABBCCDDEEFF".
+_SRC_MAC_SEPARATED = re.compile(
+    r"(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}"
+)
+_SRC_MAC_COMPACT = re.compile(r"[0-9A-Fa-f]{12}")
+
+
+def mac_from_openapi_src(src: Any) -> str:
+    """Extract a MAC address from a GetDevice ``src`` field.
+
+    Some firmware builds (observed on Venus C ``ver`` 153) omit ``ble_mac`` /
+    ``wifi_mac`` from ``result`` while still embedding the BLE MAC in ``src``.
+    """
+    if not isinstance(src, str) or not src:
+        return ""
+    separated = _SRC_MAC_SEPARATED.search(src)
+    raw = separated.group(0) if separated else ""
+    if not raw:
+        compact = _SRC_MAC_COMPACT.search(src)
+        raw = compact.group(0) if compact else ""
+    if not raw:
+        return ""
+    hex_only = re.sub(r"[:\-]", "", raw)
+    if len(hex_only) != 12:
+        return ""
+    return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
 
 
 def is_loopback_host(host: str) -> bool:

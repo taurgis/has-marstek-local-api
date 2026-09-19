@@ -1201,3 +1201,121 @@ async def test_scanner_ignores_malformed_discovered_mac(
 
     assert mock_config_entry.data["version"] == 147
     assert mock_config_entry.data["wifi_name"] == "AirPort-38"
+
+
+async def test_scanner_scan_impl_wifi_only_identity_updates_ip(
+    hass: HomeAssistant,
+) -> None:
+    """Wi-Fi-identified entries recover IP changes without a BLE MAC."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="11:22:33:44:55:66",
+        data={
+            "host": "1.2.3.4",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+
+    scanner = MarstekScanner(hass)
+
+    with (
+        patch(
+            "custom_components.marstek.scanner.discover_devices",
+            AsyncMock(
+                return_value=[
+                    {
+                        "ip": "5.6.7.8",
+                        "wifi_mac": "11:22:33:44:55:66",
+                        "device_type": "Venus C",
+                        "version": 153,
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "custom_components.marstek.scanner.discovery_flow.async_create_flow"
+        ) as mock_create_flow,
+    ):
+        await scanner._async_scan_impl()
+
+    mock_create_flow.assert_called_once()
+    assert mock_create_flow.call_args[1]["data"]["ip"] == "5.6.7.8"
+    assert mock_create_flow.call_args[1]["data"]["wifi_mac"] == "11:22:33:44:55:66"
+
+
+async def test_scanner_scan_impl_continues_after_entry_error(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """One malformed entry must not skip IP recovery for the remaining devices."""
+    mock_config_entry.add_to_hass(hass)
+    mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)
+    broken = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="02:de:ad:be:ef:00",
+        data={"host": "9.9.9.9", "ble_mac": "02:DE:AD:BE:EF:00"},
+    )
+    broken.add_to_hass(hass)
+    broken.mock_state(hass, ConfigEntryState.LOADED)
+
+    scanner = MarstekScanner(hass)
+    original = scanner._process_discovered_entry
+    calls = {"count": 0}
+
+    def _side_effect(
+        entry: MockConfigEntry, devices: list[dict[str, object]]
+    ) -> None:
+        calls["count"] += 1
+        if entry is broken:
+            raise RuntimeError("bad entry")
+        original(entry, devices)
+
+    with (
+        patch(
+            "custom_components.marstek.scanner.discover_devices",
+            AsyncMock(
+                return_value=[
+                    {
+                        "ip": "5.6.7.8",
+                        "ble_mac": "AA:BB:CC:DD:EE:FF",
+                    }
+                ]
+            ),
+        ),
+        patch.object(
+            scanner, "_process_discovered_entry", side_effect=_side_effect
+        ),
+        patch(
+            "custom_components.marstek.scanner.discovery_flow.async_create_flow"
+        ) as mock_create_flow,
+    ):
+        await scanner._async_scan_impl()
+
+    assert calls["count"] == 2
+    mock_create_flow.assert_called_once()
+
+
+async def test_scanner_trigger_unconfigured_wifi_only(
+    hass: HomeAssistant,
+) -> None:
+    """Devices that only report a Wi-Fi MAC still get a discovery card."""
+    scanner = MarstekScanner(hass)
+
+    devices = [
+        {
+            "ip": "5.6.7.8",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": "Venus C",
+        }
+    ]
+
+    with patch(
+        "custom_components.marstek.scanner.discovery_flow.async_create_flow"
+    ) as mock_create_flow:
+        scanner._trigger_unconfigured_discovery(devices, set())
+
+    mock_create_flow.assert_called_once()
+    assert mock_create_flow.call_args[1]["data"]["wifi_mac"] == "11:22:33:44:55:66"

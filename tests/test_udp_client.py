@@ -597,6 +597,28 @@ class TestDiscoverDevices:
         assert result[0]["device_type"] == "Venus"
         assert result[0]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
 
+    async def test_parses_src_mac_when_result_omits_macs(
+        self, udp_client: MarstekUDPClient
+    ) -> None:
+        """Venus C-style GetDevice embeds the BLE MAC in src."""
+        response = {
+            "id": 1,
+            "src": "VenusC-AABBCCDDEEFF",
+            "result": {
+                "device": "VenusC",
+                "ver": 153,
+                "ip": "192.168.1.26",
+            },
+        }
+
+        with patch.object(
+            udp_client, "send_broadcast_request", AsyncMock(return_value=[response])
+        ):
+            result = await udp_client.discover_devices(use_cache=False)
+
+        assert result[0]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+        assert result[0]["mac"] == "AA:BB:CC:DD:EE:FF"
+
     async def test_omitted_ver_is_not_coerced_to_zero(
         self, udp_client: MarstekUDPClient
     ) -> None:
@@ -1449,6 +1471,36 @@ class TestListenForResponses:
         assert recv_calls == 2
         assert client._pending_requests == {}
         assert client._response_cache == {}
+
+    async def test_ignores_malformed_utf8_datagram(self) -> None:
+        """A non-UTF-8 datagram must not kill the UDP listener."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        loop = asyncio.get_event_loop()
+        client._loop = loop
+
+        recv_calls = 0
+        response = {"id": 7, "result": {"mode": "Auto"}}
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        client._pending_requests[7] = future
+
+        async def mock_recvfrom(
+            sock: Any, bufsize: int
+        ) -> tuple[bytes, tuple[str, int]]:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                return (b"\xff\xfe not utf-8", ("192.168.1.100", 30000))
+            if recv_calls == 2:
+                return (json.dumps(response).encode(), ("192.168.1.100", 30000))
+            raise asyncio.CancelledError()
+
+        with patch.object(loop, "sock_recvfrom", mock_recvfrom):
+            await client._listen_for_responses()
+
+        assert recv_calls == 3
+        assert future.done()
+        assert future.result() == response
 
     async def test_matches_uint16_truncated_response_id(self) -> None:
         """Control firmware stores JSON-RPC id as uint16 (65537 → 1)."""
@@ -2706,6 +2758,17 @@ class TestResetProneOwners:
 
         client.clear_openapi_reset_prone("5.6.7.8", owner="entry-b")
         assert "5.6.7.8" not in client._reset_prone_ips
+
+    def test_clear_owner_drops_marks_across_ips(self) -> None:
+        """Unload must drop every IP this config entry marked."""
+        client = MarstekUDPClient()
+        client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-a")
+        client.set_openapi_reset_prone("5.6.7.8", True, owner="entry-a")
+        client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-b")
+        client.clear_openapi_reset_prone_owner("entry-a")
+        assert "5.6.7.8" not in client._reset_prone_ips
+        assert "1.2.3.4" in client._reset_prone_ips
+        assert client.is_openapi_reset_prone("1.2.3.4", owner="entry-b")
 
     def test_clear_without_owner_drops_all_marks(self) -> None:
         """Unload of the last client may drop every owner for an IP."""

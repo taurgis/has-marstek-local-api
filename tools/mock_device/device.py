@@ -18,6 +18,7 @@ from custom_components.marstek.pymarstek.const import (
     CMD_DOD_SET,
     CMD_LED_CTRL,
 )
+from custom_components.marstek.pymarstek.network import is_loopback_host
 from custom_components.marstek.pymarstek.validators import json_rpc_wire_id
 
 from .const import (
@@ -280,9 +281,21 @@ class MockMarstekDevice:
         """
         assert self.sock is not None
         response_bytes = json.dumps(response).encode("utf-8")
-        self.sock.sendto(response_bytes, addr)
+        self.sock.sendto(response_bytes, self._reply_addr(addr))
         if self.profile.openapi_reset_prone:
-            self.sock.sendto(response_bytes, addr)
+            self.sock.sendto(response_bytes, self._reply_addr(addr))
+
+    def _reply_addr(self, addr: tuple[str, int]) -> tuple[str, int]:
+        """Choose the UDP destination firmware would use for this sender.
+
+        Real devices reply to the Open API listen port, not an ephemeral
+        source port. Loopback unit tests still bind ephemeral, so those
+        replies keep using the request's source address.
+        """
+        sender_ip, _sender_port = addr
+        if is_loopback_host(sender_ip):
+            return addr
+        return (sender_ip, self.port)
 
     def _get_state(self) -> dict[str, Any]:
         """Get current device state."""
