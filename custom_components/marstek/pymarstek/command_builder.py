@@ -23,22 +23,24 @@ from .const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
 )
-from .validators import ValidationError, validate_command
+from .validators import MAX_JSON_RPC_ID, ValidationError, validate_command
 
 _LOGGER = logging.getLogger(__name__)
 
 _request_id = 0
-_MAX_REQUEST_ID = 0xFFFF
 
 
 def get_next_request_id() -> int:
     """Get the next request identifier.
 
-    Marstek devices appear to treat request IDs as 16-bit values, so wrap the
-    counter to keep request/response matching stable during long-running polls.
+    Control firmware stores JSON-RPC ``id`` as uint16. Wrapping through 0
+    collides with parse-error replies (``id: 0``, code -32700), so the
+    generator cycles ``1..65535`` and never emits 0.
     """
     global _request_id
-    _request_id = (_request_id + 1) & _MAX_REQUEST_ID
+    _request_id += 1
+    if _request_id > MAX_JSON_RPC_ID:
+        _request_id = 1
     return _request_id
 
 

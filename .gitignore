@@ -1,6 +1,9 @@
 # Temporary files
 tmp/
 
+# Local firmware blobs (fetch with tools/firmware/fetch_firmware.py)
+tools/firmware/blobs/
+
 # Python
 __pycache__/
 *.py[cod]

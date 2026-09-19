@@ -176,6 +176,39 @@ async def test_coordinator_parallel_requests_option(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_ignores_parallel_on_reset_prone_firmware(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+):
+    """Firmware below Control 150 ignores the parallel-requests option."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 147,
+        },
+        options={
+            CONF_PARALLEL_API_REQUESTS: True,
+            CONF_REQUEST_DELAY: 5.0,
+        },
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["parallel_requests"] is False
+    assert kwargs["delay_between_requests"] == 5.0
+
+
+@pytest.mark.asyncio
 async def test_coordinator_skips_wifi_status_when_disabled(
     hass: HomeAssistant, mock_config_entry, mock_udp_client
 ):

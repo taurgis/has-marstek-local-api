@@ -32,6 +32,7 @@ Device family plus discovery firmware `ver` select a **firmware profile**. That 
 - [Troubleshooting](troubleshooting.md)
 - [Development](development.md)
 - [Open API Rev 3.1 reference](marstek_device_openapi.MD)
+- [Control firmware research (issue #15)](../tools/firmware/README.md)
 
 ## Screenshots
 

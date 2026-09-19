@@ -18,6 +18,7 @@ from custom_components.marstek.pymarstek.const import (
     CMD_DOD_SET,
     CMD_LED_CTRL,
 )
+from custom_components.marstek.pymarstek.validators import json_rpc_wire_id
 
 from .const import (
     DEFAULT_CONFIG,
@@ -116,6 +117,10 @@ class MockMarstekDevice:
             self._static_soc = int(persisted_state.get("soc", initial_soc))
             self._static_totals = self._totals_from_state(persisted_state)
 
+        # Control firmware freezes Open API after a 0-byte UDP datagram
+        # (VNSE3-0 json_data.c / CH395 recv path).
+        self._openapi_frozen = False
+
     def start(self) -> None:
         """Start the mock device server."""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -199,32 +204,85 @@ class MockMarstekDevice:
 
     def _handle_request(self) -> None:
         """Handle incoming UDP request."""
+        assert self.sock is not None
         data, addr = self.sock.recvfrom(4096)
         sender_ip, sender_port = addr
 
-        try:
-            request = json.loads(data.decode("utf-8"))
-        except json.JSONDecodeError:
-            print(f"[{time.strftime('%H:%M:%S')}] Invalid JSON from {sender_ip}:{sender_port}")
+        if self._openapi_frozen:
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Open API frozen; "
+                f"ignoring {len(data)} bytes from {sender_ip}:{sender_port}"
+            )
             return
 
-        request_id = request.get("id", 0)
+        if not data:
+            self._openapi_frozen = True
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Empty UDP datagram from "
+                f"{sender_ip}:{sender_port}; freezing Open API "
+                "(Control firmware behavior)"
+            )
+            return
+
+        try:
+            request = json.loads(data.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Invalid JSON from "
+                f"{sender_ip}:{sender_port}"
+            )
+            self._send_openapi_datagram(
+                {
+                    "id": 0,
+                    "error": {"code": -32700, "message": "Parse error"},
+                },
+                addr,
+            )
+            return
+
+        if not isinstance(request, dict):
+            print(
+                f"[{time.strftime('%H:%M:%S')}] Non-object JSON from "
+                f"{sender_ip}:{sender_port}"
+            )
+            return
+
+        raw_id = request.get("id", 0)
+        wire_id = json_rpc_wire_id(raw_id)
+        request_id = 0 if wire_id is None else wire_id
         method = request.get("method", "")
+        params = request.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
 
         print(f"[{time.strftime('%H:%M:%S')}] Request from {sender_ip}:{sender_port}")
         print(f"   Method: {method}")
-        print(f"   ID: {request_id}")
+        print(f"   ID: {raw_id} (wire {request_id})")
 
-        response = self.build_response(request_id, method, request.get("params", {}))
+        response = self.build_response(request_id, method, params)
 
         if response:
-            response_bytes = json.dumps(response).encode("utf-8")
-            self.sock.sendto(response_bytes, addr)
+            self._send_openapi_datagram(response, addr)
             print(f"   -> Sent response: {method}")
         else:
             print("   -> Unknown method, no response")
 
         print()
+
+    def _send_openapi_datagram(
+        self, response: dict[str, Any], addr: tuple[str, int]
+    ) -> None:
+        """Send a UDP reply, duplicating it on reset-prone Control firmware.
+
+        Pre-150 VNSE3-0 builds send Local API replies on both the FC41D WiFi
+        AT+QISEND path and the CH395 Ethernet socket (the v150 OTA note
+        "Optimized Local API send anomaly on Ethernet").
+        """
+        assert self.sock is not None
+        response_bytes = json.dumps(response).encode("utf-8")
+        self.sock.sendto(response_bytes, addr)
+        if self.profile.openapi_reset_prone:
+            self.sock.sendto(response_bytes, addr)
 
     def _get_state(self) -> dict[str, Any]:
         """Get current device state."""

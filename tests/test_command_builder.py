@@ -55,12 +55,16 @@ class TestRequestIdManagement:
     def test_get_next_request_id_wraps_at_16_bits(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that request IDs wrap after 65535 and keep incrementing."""
+        """Test that request IDs wrap after 65535 and skip 0.
+
+        Control firmware stores JSON-RPC ``id`` as uint16. Id 0 collides with
+        parse-error replies (``id: 0``, code -32700).
+        """
         monkeypatch.setattr(command_builder, "_request_id", 0xFFFC)
 
         generated_ids = [get_next_request_id() for _ in range(6)]
 
-        assert generated_ids == [0xFFFD, 0xFFFE, 0xFFFF, 0, 1, 2]
+        assert generated_ids == [0xFFFD, 0xFFFE, 0xFFFF, 1, 2, 3]
 
 
 class TestBuildCommand:

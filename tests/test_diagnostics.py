@@ -99,6 +99,8 @@ async def test_async_get_config_entry_diagnostics(
         "supports_sys_led": False,
         "supports_ups": False,
         "max_manual_schedule_slot": 9,
+        "openapi_reset_prone": False,
+        "parallel_requests_safe": True,
     }
 
     # Verify polling_config has expected keys with defaults
@@ -143,6 +145,8 @@ async def test_diagnostics_reports_capable_firmware_profile(
         "supports_sys_led": True,
         "supports_ups": True,
         "max_manual_schedule_slot": 9,
+        "openapi_reset_prone": False,
+        "parallel_requests_safe": True,
     }
 
 
@@ -168,6 +172,8 @@ async def test_diagnostics_reports_unknown_e_mini_firmware(
     assert profile["supports_sys_dod"] is False
     assert profile["supports_ups"] is False
     assert profile["max_manual_schedule_slot"] == 5
+    assert profile["openapi_reset_prone"] is True
+    assert profile["parallel_requests_safe"] is False
 
 
 async def test_diagnostics_parallel_mode_effective_delay(
@@ -198,6 +204,32 @@ async def test_diagnostics_parallel_mode_effective_delay(
     assert "consecutive_failures" in result["coordinator"]
     assert "diagnostics_generated_at" in result["coordinator"]
     assert result["coordinator"]["consecutive_failures"] == 0
+
+
+async def test_diagnostics_parallel_ignored_on_reset_prone_firmware(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Firmware below Control 150 keeps sequential polling even if parallel is on."""
+    mock_config_entry.data = {
+        **mock_config_entry.data,
+        "device_type": "VenusE 3.0",
+        "version": 147,
+    }
+    mock_config_entry.runtime_data = mock_runtime_data
+    mock_config_entry.options = {
+        "parallel_api_requests": True,
+        "request_delay": 7.5,
+    }
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    assert result["firmware_profile"]["openapi_reset_prone"] is True
+    assert result["polling_config"]["parallel_api_requests"] is False
+    assert result["polling_config"]["request_strategy"] == "sequential"
+    assert result["polling_config"]["request_delay_effective"] == 7.5
+    assert result["polling_config"]["udp_rate_limit_bypassed"] is False
 
 
 async def test_diagnostics_redacts_sensitive_data(

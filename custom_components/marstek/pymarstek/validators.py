@@ -41,6 +41,11 @@ MAX_DEVICE_ID: Final = 255
 MAX_TIME_SLOTS: Final = 10  # Schedule slots 0-9
 MAX_WEEK_SET: Final = 127  # 7 bits for 7 days (all days = 127)
 MAX_PASSIVE_DURATION: Final = 86400  # 24 hours in seconds
+# Control firmware stores JSON-RPC `id` as uint16 (`ldrh` in VNSE3-0
+# json_data.c). Values above 65535 wrap on the device; 0 collides with
+# parse-error replies. Generated IDs skip 0; validators still allow 0 so
+# we can match truncated echoes.
+MAX_JSON_RPC_ID: Final = 65535
 
 # Strict mode thresholds - values beyond these trigger warnings
 STRICT_POWER_WARN_THRESHOLD: Final = 4500  # Warn if power is >90% of max
@@ -66,9 +71,14 @@ def enable_strict_mode(enabled: bool = True) -> None:
     _LOGGER.info("Strict validation mode %s", "enabled" if enabled else "disabled")
 
 
-def is_strict_mode() -> bool:
-    """Check if strict validation mode is enabled."""
-    return _strict_mode
+def json_rpc_wire_id(value: Any) -> int | None:
+    """Return the 16-bit JSON-RPC id Control firmware actually stores.
+
+    Non-integers and bools (bool is a subclass of int) are not ids.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value & MAX_JSON_RPC_ID
 
 
 def _strict_warn(message: str, field: str | None = None) -> None:
@@ -681,9 +691,15 @@ def validate_command(command: dict[str, Any]) -> None:
 
     # Validate id
     request_id = command.get("id")
-    if not isinstance(request_id, int) or request_id < 0:
+    if isinstance(request_id, bool) or not isinstance(request_id, int) or request_id < 0:
         raise ValidationError(
             f"command id must be a non-negative integer (got {request_id})",
+            "id",
+        )
+    if request_id > MAX_JSON_RPC_ID:
+        raise ValidationError(
+            f"command id must be <= {MAX_JSON_RPC_ID} (got {request_id}); "
+            "Marstek Control firmware stores JSON-RPC ids as uint16",
             "id",
         )
 

@@ -48,6 +48,17 @@ Issue [#57](https://github.com/taurgis/has-marstek-local-api/issues/57) is **PV1
 
 Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be configured as Venus E if you need the SYS-without-150 and slots 0–5 behavior.
 
+## Firmware UDP quirks
+
+The mock reproduces Control firmware behavior found in VNSE3-0 binaries
+(see [tools/firmware/ANALYSIS.md](../firmware/ANALYSIS.md)):
+
+- JSON-RPC `id` is stored as uint16 (`65536` replies as `0`)
+- Invalid JSON replies with parse error `id=0`, code `-32700`
+- A 0-byte UDP datagram freezes later Open API replies
+- Firmware below Control 150 duplicates each UDP reply (WiFi + Ethernet send
+  anomaly). Firmware **150+** sends a single reply.
+
 ## Usage
 
 ### As a Module (Recommended)

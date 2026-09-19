@@ -1,0 +1,63 @@
+{
+  "source": "https://github.com/rweijnen/marstek-firmware-archive",
+  "officialOta": "https://static-eu.marstekenergy.com/",
+  "note": "Vendor firmware blobs are not vendored here (Marstek/Hamedata copyright). Use fetch_firmware.py to download locally and verify SHA-256.",
+  "images": [
+    {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 144,
+      "controlGeneration": 144,
+      "filename": "20251118161530cc2d80857.bin",
+      "size": 354304,
+      "sha256": "518a3b8e40c060e5bea51aa2b2257e75712574f8355d67d0ef1bdea56efd5abe",
+      "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20251118/20251118161530cc2d80857.bin",
+      "buildStamp": "Nov 18 2025 16:12:37",
+      "banner": "VNSE3-0 v144",
+      "vectorTable": { "sp": "0x2001f0d8", "reset": "0x08004a6d" },
+      "remark": "Adds anti-backflow baseline, extra meters, DOD range, BLE off, XID/VID."
+    },
+    {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 1476,
+      "controlGeneration": 147,
+      "filename": "VNSEE3-0_app_1476_0312_182736.bin",
+      "size": 364544,
+      "sha256": "a2f8dedfe48992d59b212d3d1e23f479e286228724ccbbc8a88eed226ef78a00",
+      "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20260312/VNSEE3-0_app_1476_0312_182736.bin",
+      "buildStamp": "Mar 12 2026 18:27:09",
+      "banner": "VNSE3-0 v1476",
+      "vectorTable": { "sp": "0x2001f318", "reset": "0x08004a71" },
+      "remark": "Optimized MQTT connection stability. App label 147.6; Open API ver 1476 is not newer than 150."
+    },
+    {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 148,
+      "controlGeneration": 148,
+      "filename": "VNSEE3-0_app_0148_0331_093751.bin",
+      "size": 366592,
+      "sha256": "7dd227641f62d590c9f39266aa414f01436f41bfd893d9785dbd4322ef9e0b9f",
+      "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20260331/VNSEE3-0_app_0148_0331_093751.bin",
+      "buildStamp": "Mar 31 2026 09:36:17",
+      "banner": "VNSE3-0 v148",
+      "vectorTable": { "sp": "0x2001f328", "reset": "0x08004a71" },
+      "remark": "Data backup, meter disconnect/phase detection, MQTT Ethernet flags, DOD discharge fix."
+    },
+    {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 150,
+      "controlGeneration": 150,
+      "filename": "VNSEE3-0_app_0150_0804_151249.bin",
+      "size": 374784,
+      "sha256": "f043becb81ba2c7a5fb5e13edcdc625c6778724bc27073056967c728c989841b",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260804/VNSEE3-0_app_0150_0804_151249.bin",
+      "buildStamp": "Aug  4 2026 15:11:03",
+      "banner": "VNSE3-0 v150",
+      "vectorTable": { "sp": "0x2001f5e0", "reset": "0x08004a71" },
+      "remark": "Optimized Local API send anomaly on Ethernet; HTTP OTA on Ethernet; Peak-shaving; HTTP payload length; CT_TYPE meter."
+    }
+  ]
+}

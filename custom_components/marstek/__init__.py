@@ -59,6 +59,43 @@ def _issue_id_for_entry(entry: ConfigEntry) -> str:
     return f"cannot_connect_{entry.entry_id}"
 
 
+def _openapi_reset_issue_id(entry: ConfigEntry) -> str:
+    """Build the Local API firmware-reset warning id for a config entry."""
+    return f"openapi_reset_prone_{entry.entry_id}"
+
+
+def _sync_openapi_reset_issue(
+    hass: HomeAssistant, entry: ConfigEntry, profile: FirmwareProfile
+) -> None:
+    """Warn when Control firmware is known to reset Open API under polling."""
+    issue_id = _openapi_reset_issue_id(entry)
+    issue_registry = ir.async_get(hass)
+    if not profile.openapi_reset_prone:
+        if issue_registry.async_get_issue(DOMAIN, issue_id):
+            issue_registry.async_delete(DOMAIN, issue_id)
+        return
+
+    firmware = (
+        str(profile.firmware_version)
+        if profile.firmware_version is not None
+        else "unknown"
+    )
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        is_persistent=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="openapi_reset_prone",
+        translation_placeholders={
+            "family": profile.family.value,
+            "firmware": firmware,
+        },
+        learn_more_url="https://github.com/taurgis/has-marstek-local-api/issues/15",
+    )
+
+
 def _create_connection_issue(
     hass: HomeAssistant, entry: ConfigEntry, host: str, error: str
 ) -> None:
@@ -79,6 +116,14 @@ def _clear_connection_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Clear a connection issue for the entry if present."""
     issue_registry = ir.async_get(hass)
     issue_id = _issue_id_for_entry(entry)
+    if issue_registry.async_get_issue(DOMAIN, issue_id):
+        issue_registry.async_delete(DOMAIN, issue_id)
+
+
+def _clear_openapi_reset_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear the Local API firmware-reset warning if present."""
+    issue_registry = ir.async_get(hass)
+    issue_id = _openapi_reset_issue_id(entry)
     if issue_registry.async_get_issue(DOMAIN, issue_id):
         issue_registry.async_delete(DOMAIN, issue_id)
 
@@ -316,6 +361,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
 
     # Clear any prior connection issue after successful setup
     _clear_connection_issue(hass, entry)
+    _sync_openapi_reset_issue(hass, entry, coordinator.profile)
 
     # Store coordinator and device_info in runtime_data.
     # UDP clients are pooled per Open API bind port in hass.data.
@@ -339,6 +385,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
 
     # Clear any repair issues tied to this entry
     _clear_connection_issue(hass, entry)
+    _clear_openapi_reset_issue(hass, entry)
 
     # Check if this is the last LOADED config entry
     # (unloaded entries still exist in registry with NOT_LOADED state)
@@ -361,6 +408,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)
+    _clear_openapi_reset_issue(hass, entry)
 
     device_identifier_raw = (
         entry.data.get("ble_mac")

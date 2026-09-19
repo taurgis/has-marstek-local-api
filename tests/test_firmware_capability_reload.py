@@ -350,6 +350,8 @@ async def test_diagnostics_follow_live_firmware_transition(hass: HomeAssistant) 
             "supports_sys_led": False,
             "supports_ups": False,
             "max_manual_schedule_slot": 9,
+            "openapi_reset_prone": True,
+            "parallel_requests_safe": False,
         }
 
         await _scan_devices(hass, [_discovered_device(version=150, firmware="150")])
@@ -365,6 +367,8 @@ async def test_diagnostics_follow_live_firmware_transition(hass: HomeAssistant) 
             "supports_sys_led": True,
             "supports_ups": True,
             "max_manual_schedule_slot": 9,
+            "openapi_reset_prone": False,
+            "parallel_requests_safe": True,
         }
 
 

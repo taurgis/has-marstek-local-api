@@ -343,6 +343,45 @@ def test_resolve_firmware_profile_from_metadata_uses_device_type_and_version() -
     assert profile.family is DeviceFamily.VENUS_E
     assert profile.firmware_version == 150
     assert profile.supports_ups is True
+    assert profile.openapi_reset_prone is False
+    assert profile.parallel_requests_safe is True
+
+
+def test_vnse3_1476_is_legacy_reset_prone() -> None:
+    """Control 1476 is app 147.6 and must not be treated as newer than 150."""
+    profile = resolve_firmware_profile("VNSE3-0", 1476)
+
+    assert profile.firmware_version == 1476
+    assert profile.control_generation == 147
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+    assert profile.openapi_reset_prone is True
+    assert profile.parallel_requests_safe is False
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "reset_prone"),
+    [
+        ("VenusE 3.0", 144, True),
+        ("VenusE 3.0", 147, True),
+        ("VenusE 3.0", 149, True),
+        ("VenusE 3.0", 150, False),
+        ("VenusA", 148, True),
+        ("VenusA", 150, False),
+        ("Venus E mini", 145, True),
+        ("Venus E mini", "not-a-version", True),
+        ("Marstek Energy Storage", 144, False),
+        ("VenusE 3.0", "147.6", True),
+    ],
+)
+def test_openapi_reset_prone_follows_control_generation(
+    device_type: str, version: int | str, reset_prone: bool
+) -> None:
+    """Issue #15 is firmware-side; generation < 150 stays sequential-only."""
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.openapi_reset_prone is reset_prone
+    assert profile.parallel_requests_safe is not reset_prone
 
 
 @pytest.mark.parametrize(

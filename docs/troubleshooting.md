@@ -45,8 +45,27 @@ This is expected behavior.
 - Reduce request rate (increase fast/medium intervals).
 - Ensure only one controller is talking to the device.
 - If **Parallel API requests** is enabled, try disabling it first (especially on Wi-Fi).
+- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API Ethernet send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)).
 - In diagnostics, check `polling_config.request_strategy` and
   `polling_config.request_delay_effective` to confirm actual request behavior.
+
+## Local API disables itself / settings reset to defaults
+
+That is Control firmware, not a Home Assistant entity bug. While Open API is
+polled, some builds disable Local API and wipe user settings (Wi-Fi often
+survives). Venus E 3.0 Control **150** is the published fix (“Optimized Local
+API send anomaly on Ethernet”); a user confirmed [#15](https://github.com/taurgis/has-marstek-local-api/issues/15) after updating in the Marstek app (Wi-Fi or Bluetooth if LAN OTA fails).
+
+On firmware the integration treats as reset-prone (known family, Control
+generation below 150):
+
+1. A **warning** appears in Settings → Repairs (not a fixable flow).
+2. Parallel API requests stay off even if the option is enabled.
+3. Keep battery-detail entities disabled so `Bat.GetStatus` is not sent ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)).
+4. Prefer sequential polling and a wired LAN.
+
+Do not factory-reset from Home Assistant (`Reset.Factory` is not exposed).
+Firmware research notes: [tools/firmware/ANALYSIS.md](../tools/firmware/ANALYSIS.md).
 
 ## Grid energy totals look frozen
 

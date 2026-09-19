@@ -871,6 +871,91 @@ async def test_repair_issue_cleared_on_success(
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
 
 
+async def test_openapi_reset_issue_created_for_legacy_firmware(
+    hass: HomeAssistant,
+) -> None:
+    """Venus E Control below 150 raises a non-fixable Open API reset warning."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        issue_registry = ir.async_get(hass)
+        issue = issue_registry.async_get_issue(
+            DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+        )
+        assert issue is not None
+        assert issue.translation_key == "openapi_reset_prone"
+        assert issue.severity is ir.IssueSeverity.WARNING
+        assert issue.is_fixable is False
+        assert issue.translation_placeholders == {
+            "family": "Venus E",
+            "firmware": "147",
+        }
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert (
+        issue_registry.async_get_issue(
+            DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+        )
+        is None
+    )
+
+
+async def test_openapi_reset_issue_skipped_for_firmware_150(
+    hass: HomeAssistant,
+) -> None:
+    """Venus E Control 150 does not warn; community report says issue #15 is fixed."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 150,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    assert (
+        issue_registry.async_get_issue(
+            DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+        )
+        is None
+    )
+
+
 async def test_remove_entry_cleans_stale_device(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

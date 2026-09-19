@@ -5,6 +5,7 @@
 - `custom_components/marstek/` — integration
 - `custom_components/marstek/pymarstek/` — UDP client
 - `tools/mock_device/` — mock device for local testing
+- `tools/firmware/` — Control firmware hashes, OTA notes, and issue #15 analysis (blobs are not vendored)
 - `docs/marstek_device_openapi.MD` — protocol reference
 
 ## Running tests

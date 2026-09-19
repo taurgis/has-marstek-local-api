@@ -1355,6 +1355,60 @@ class TestListenForResponses:
         assert future.result() == response
         assert client._response_cache[0]["response"] == response
 
+    async def test_ignores_empty_udp_datagram(self) -> None:
+        """Empty datagrams must not be decoded; Control firmware freezes on them."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        loop = asyncio.get_event_loop()
+        client._loop = loop
+
+        recv_calls = 0
+
+        async def mock_recvfrom(
+            sock: Any, bufsize: int
+        ) -> tuple[bytes, tuple[str, int]]:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                return (b"", ("192.168.1.100", 30000))
+            raise asyncio.CancelledError()
+
+        with patch.object(loop, "sock_recvfrom", mock_recvfrom):
+            await client._listen_for_responses()
+
+        assert recv_calls == 2
+        assert client._pending_requests == {}
+        assert client._response_cache == {}
+
+    async def test_matches_uint16_truncated_response_id(self) -> None:
+        """Control firmware stores JSON-RPC id as uint16 (65537 → 1)."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        loop = asyncio.get_event_loop()
+        client._loop = loop
+
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        client._pending_requests[1] = future
+
+        recv_calls = 0
+        response = {"id": 65537, "result": {"mode": "Auto"}}
+
+        async def mock_recvfrom(
+            sock: Any, bufsize: int
+        ) -> tuple[bytes, tuple[str, int]]:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                return (json.dumps(response).encode(), ("192.168.1.100", 30000))
+            raise asyncio.CancelledError()
+
+        with patch.object(loop, "sock_recvfrom", mock_recvfrom):
+            await client._listen_for_responses()
+
+        assert future.done()
+        assert future.result() == response
+        assert 1 in client._response_cache
+
 
 class TestPsutilHandling:
     """Tests for psutil import handling."""
@@ -1525,6 +1579,18 @@ class TestRateLimitCleanupEnforcement:
         
         # No new entries should be tracked
         assert client._last_request_time == initial_time_tracking
+
+    async def test_refuses_empty_udp_datagram(self) -> None:
+        """Refuse 0-byte sends; Control firmware freezes Open API on empty packets."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        with pytest.raises(ValueError, match="empty UDP datagram"):
+            await client._send_udp_message("", "192.168.1.100", 30000)
+
+        client._socket.sendto.assert_not_called()
 
 
 class TestValidationErrorLogging:

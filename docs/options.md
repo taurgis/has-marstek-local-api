@@ -29,6 +29,9 @@ inter-request delay.
 - Improves update speed on some stable networks.
 - Can increase API timeouts/failures, especially on Wi-Fi.
 - Wired LAN is recommended if this mode is enabled.
+- Ignored on Control firmware the integration treats as reset-prone
+  (generation below 150, including Open API `ver` 1476 / app 147.6). Venus E
+  3.0 **150** is the vendor Local API Ethernet fix.
 
 The **Request delay** field remains configurable, but it is ignored while
 parallel API requests is enabled.

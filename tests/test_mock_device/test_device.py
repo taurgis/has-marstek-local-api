@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1016,4 +1017,94 @@ class TestVenusEFirmware150Capture:
             "data": 424,
         }
         assert "result" not in response
+
+
+class TestFirmwareUdpQuirks:
+    """Reproduce Control firmware Open API quirks found in VNSE3-0 binaries."""
+
+    def _device_with_socket(
+        self, *, ver: int, device: str = "VenusE 3.0"
+    ) -> MockMarstekDevice:
+        mock = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": device, "ver": ver},
+        )
+        mock.sock = MagicMock()
+        return mock
+
+    def test_empty_datagram_freezes_openapi(self) -> None:
+        """A 0-byte UDP packet stops later Local API replies."""
+        device = self._device_with_socket(ver=145)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (b"", ("127.0.0.1", 12345))
+
+        device._handle_request()
+
+        assert device._openapi_frozen is True
+        device.sock.sendto.assert_not_called()
+
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 12345),
+        )
+        device._handle_request()
+        device.sock.sendto.assert_not_called()
+
+    def test_invalid_json_returns_parse_error(self) -> None:
+        """Malformed JSON yields JSON-RPC parse error id 0 / -32700."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (b"{not json", ("127.0.0.1", 1))
+
+        device._handle_request()
+
+        payload = json.loads(device.sock.sendto.call_args[0][0])
+        assert payload["id"] == 0
+        assert payload["error"]["code"] == -32700
+        assert device.sock.sendto.call_count == 1
+
+    def test_legacy_firmware_duplicates_udp_reply(self) -> None:
+        """Pre-150 Control sends Local API replies twice (WiFi + Ethernet)."""
+        device = self._device_with_socket(ver=145)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 1),
+        )
+
+        device._handle_request()
+
+        assert device.profile.openapi_reset_prone is True
+        assert device.sock.sendto.call_count == 2
+        first = device.sock.sendto.call_args_list[0][0][0]
+        second = device.sock.sendto.call_args_list[1][0][0]
+        assert first == second
+
+    def test_firmware_150_sends_single_reply(self) -> None:
+        """Control 150's Local API ethernet send anomaly fix is a single reply."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 1),
+        )
+
+        device._handle_request()
+
+        assert device.profile.openapi_reset_prone is False
+        assert device.sock.sendto.call_count == 1
+
+    def test_uint16_id_truncation(self) -> None:
+        """JSON-RPC ids wrap to uint16 the way json_data.c stores them."""
+        device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":65536,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 1),
+        )
+
+        device._handle_request()
+
+        payload = json.loads(device.sock.sendto.call_args[0][0])
+        assert payload["id"] == 0
 

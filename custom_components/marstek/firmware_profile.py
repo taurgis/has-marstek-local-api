@@ -65,6 +65,34 @@ class FirmwareProfile:
             self.supports_ups,
         )
 
+    @property
+    def control_generation(self) -> int | None:
+        """Return the Control generation used for capability and safety gates."""
+        return _control_generation(self.firmware_version)
+
+    @property
+    def openapi_reset_prone(self) -> bool:
+        """Return whether Local API polling can factory-reset this firmware.
+
+        VNSE3-0 Control v150's OTA note is "Optimized Local API send anomaly
+        on Ethernet mode". A Venus E 3.0 user confirmed issue #15 is fixed
+        after updating to 150. Builds below that generation (issues #14/#15),
+        including dotted encoding 1476 (app 147.6), disable Open API and wipe
+        settings under sustained UDP traffic. Unknown ``ver`` on a known
+        family stays conservative.
+        """
+        if self.family not in _KNOWN_FAMILIES:
+            return False
+        generation = self.control_generation
+        if generation is None:
+            return True
+        return generation < 150
+
+    @property
+    def parallel_requests_safe(self) -> bool:
+        """Return whether parallel Open API calls are safe on this firmware."""
+        return not self.openapi_reset_prone
+
 
 _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
     (
@@ -123,6 +151,20 @@ def extract_discovery_version(result: Mapping[str, Any] | None) -> Any:
     return result["ver"]
 
 
+def _control_generation(version: int | None) -> int | None:
+    """Map Open API ``ver`` to the Control generation used for capability gates.
+
+    VNSE3-0 Control **1476** is app firmware **147.6** (March 2026, before 148
+    and 150). Four-digit values in 1000–1999 are that dotted encoding
+    (147.6 → 1476, and 150.9 would be 1509 if a device ever reported it).
+    """
+    if version is None:
+        return None
+    if 1000 <= version <= 1999:
+        return version // 10
+    return version
+
+
 def resolve_firmware_profile_from_metadata(data: Mapping[str, Any]) -> FirmwareProfile:
     """Resolve capabilities from config-entry or discovery metadata."""
     return resolve_firmware_profile(data.get("device_type"), data.get("version"))
@@ -136,8 +178,9 @@ def resolve_firmware_profile(
     family = _normalize_family(device_type)
     firmware_version = _normalize_version(version)
     firmware_known = firmware_version is not None
-    firmware_149 = firmware_version is not None and firmware_version >= 149
-    firmware_150 = firmware_version is not None and firmware_version >= 150
+    generation = _control_generation(firmware_version)
+    firmware_149 = generation is not None and generation >= 149
+    firmware_150 = generation is not None and generation >= 150
     known_family = family in _KNOWN_FAMILIES
     regular_family = family in _REGULAR_FAMILIES
     supports_sys = (regular_family and firmware_150) or (
@@ -180,3 +223,20 @@ def resolve_firmware_profile(
         em_energy_scale=0.1 if supports_em_energy else 1.0,
         supports_em_energy=supports_em_energy,
     )
+
+
+def firmware_profile_diagnostics(profile: FirmwareProfile) -> dict[str, Any]:
+    """Return the firmware-profile section used in config-entry diagnostics."""
+    return {
+        "family": profile.family.value,
+        "firmware_version": profile.firmware_version,
+        "firmware_known": profile.firmware_known,
+        "supports_pv": profile.supports_pv,
+        "supports_sys_dod": profile.supports_sys_dod,
+        "supports_sys_ble_advertising": profile.supports_sys_ble_advertising,
+        "supports_sys_led": profile.supports_sys_led,
+        "supports_ups": profile.supports_ups,
+        "max_manual_schedule_slot": profile.max_manual_schedule_slot,
+        "openapi_reset_prone": profile.openapi_reset_prone,
+        "parallel_requests_safe": profile.parallel_requests_safe,
+    }

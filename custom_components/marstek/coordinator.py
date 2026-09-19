@@ -197,7 +197,13 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ))
 
     def _use_parallel_api_requests(self) -> bool:
-        """Return True when polling should call status APIs in parallel."""
+        """Return True when polling should call status APIs in parallel.
+
+        Firmware below Control v150 leaks/crashes the JSON heap under concurrent
+        UDP (issues #14/#15), so parallel mode is ignored on those builds.
+        """
+        if not self.profile.parallel_requests_safe:
+            return False
         return bool(
             self._entry.options.get(
                 CONF_PARALLEL_API_REQUESTS,

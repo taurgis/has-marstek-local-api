@@ -36,7 +36,7 @@ from .data_parser import (
     parse_wifi_status_response,
 )
 from .network import PsutilModule, create_udp_socket, get_broadcast_addresses
-from .validators import ValidationError, validate_json_message
+from .validators import ValidationError, json_rpc_wire_id, validate_json_message
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -188,6 +188,17 @@ class MarstekUDPClient:
             method: dict(stats)
             for method, stats in self._command_stats_by_ip.get(device_ip, {}).items()
         }
+
+    def _track_pending(
+        self, request_id: Any
+    ) -> tuple[int, asyncio.Future[dict[str, Any]]]:
+        """Register a pending request using the firmware's uint16 JSON-RPC id."""
+        wire_id = json_rpc_wire_id(request_id)
+        if wire_id is None:
+            raise ValueError("Invalid message: missing id")
+        future: asyncio.Future[dict[str, Any]] = asyncio.Future()
+        self._pending_requests[wire_id] = future
+        return wire_id, future
 
     async def async_setup(self) -> None:
         """Prepare the UDP socket."""
@@ -415,6 +426,11 @@ class MarstekUDPClient:
             await self._enforce_rate_limit(target_ip)
 
         data = message.encode("utf-8")
+        if not data:
+            raise ValueError(
+                "Refusing to send an empty UDP datagram; Control firmware "
+                "freezes Open API on 0-byte packets"
+            )
         sock.sendto(data, (target_ip, target_port))
         _LOGGER.debug("Send: %s:%d | %s", target_ip, target_port, message)
 
@@ -483,8 +499,7 @@ class MarstekUDPClient:
             except (json.JSONDecodeError, KeyError) as exc:
                 raise ValueError("Invalid message: missing id") from exc
 
-        future: asyncio.Future[dict[str, Any]] = asyncio.Future()
-        self._pending_requests[request_id] = future
+        request_id, future = self._track_pending(request_id)
 
         try:
             self._ensure_listener()
@@ -540,20 +555,30 @@ class MarstekUDPClient:
         while True:
             try:
                 data, addr = await loop.sock_recvfrom(self._socket, 4096)
+                if not data:
+                    _LOGGER.debug(
+                        "Ignoring empty UDP datagram from %s:%d",
+                        addr[0],
+                        addr[1],
+                    )
+                    continue
                 response_text = data.decode("utf-8")
                 try:
                     response = json.loads(response_text)
                 except json.JSONDecodeError:
                     response = {"raw": response_text}
-                request_id = response.get("id") if isinstance(response, dict) else None
+                raw_id = response.get("id") if isinstance(response, dict) else None
+                request_id = json_rpc_wire_id(raw_id)
                 _LOGGER.debug("Recv: %s:%d | %s", addr[0], addr[1], response)
-                if isinstance(request_id, int):
+                if request_id is not None:
                     self._response_cache[request_id] = {
                         "response": response,
                         "addr": addr,
                         "timestamp": loop.time(),
                     }
                     future = self._pending_requests.pop(request_id, None)
+                    if future is None and raw_id != request_id:
+                        future = self._pending_requests.pop(raw_id, None)
                     if future and not future.done():
                         future.set_result(response)
 
@@ -601,17 +626,14 @@ class MarstekUDPClient:
 
         try:
             message_obj = json.loads(message)
-            request_id = message_obj["id"]
-        except (json.JSONDecodeError, KeyError) as exc:
+            request_id, future = self._track_pending(message_obj["id"])
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
             _LOGGER.error("Invalid message for broadcast: %s", exc)
             return []
 
         responses: list[dict[str, Any]] = []
         loop = self._loop or asyncio.get_running_loop()
         start_time = loop.time()
-
-        future: asyncio.Future[dict[str, Any]] = asyncio.Future()
-        self._pending_requests[request_id] = future
 
         try:
             self._ensure_listener()
