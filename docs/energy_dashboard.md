@@ -31,7 +31,9 @@ Note: Some Marstek firmware versions can keep the raw grid input/output energy
 counters fixed even while grid power is still changing. When that happens, the
 integration keeps the grid totals monotonic by deriving the missing growth from
 `on_grid_power` between updates and restoring the corrected total after Home
-Assistant restarts.
+Assistant restarts. Impossible spikes (above 1 GWh, or more than 5 MWh in one
+poll) are ignored on every lifetime energy total so they cannot freeze the
+Energy Dashboard at a bogus value.
 
 Note: `total_load_energy` is reported by the Marstek Open API as load or
 off-grid energy, and its semantics vary by device and firmware. The integration

@@ -260,6 +260,70 @@ async def test_grid_input_total_restores_corrected_value_after_restart(
         assert float(state.state) == 1106.0
 
 
+async def test_implausible_restored_energy_totals_are_not_applied(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A garbage restored floor must not override a sane device reading."""
+    mock_config_entry.add_to_hass(hass)
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": -250,
+        "ongrid_power": -360,
+        "total_grid_input_energy": 267386.0,
+        "total_grid_output_energy": 217251.0,
+        "total_pv_energy": 0.0,
+        "total_load_energy": 0.0,
+    }
+
+    client = create_mock_client(status=status)
+
+    async def _get_device_status(*_args, **kwargs):
+        previous_status = kwargs.get("previous_status")
+        last_update = 160.0 if previous_status else 100.0
+        return merge_device_status(
+            es_status_data=status,
+            last_update=last_update,
+            previous_status=previous_status,
+        )
+
+    client.get_device_status = AsyncMock(side_effect=_get_device_status)
+
+    async def _restore_sensor_data(
+        self: MarstekSensor,
+    ) -> SensorExtraStoredData | None:
+        if self.entity_description.key in {
+            "total_grid_input_energy",
+            "total_grid_output_energy",
+            "total_pv_energy",
+            "total_load_energy",
+        }:
+            return SensorExtraStoredData(
+                native_value=4_294_967_295_267.680,
+                native_unit_of_measurement="Wh",
+            )
+        return None
+
+    with (
+        patch.object(
+            MarstekSensor,
+            "async_get_last_sensor_data",
+            _restore_sensor_data,
+        ),
+        patch_marstek_integration(client=client),
+    ):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        grid_in = hass.states.get("sensor.venus_total_grid_input_energy")
+        grid_out = hass.states.get("sensor.venus_total_grid_output_energy")
+        assert grid_in is not None
+        assert grid_out is not None
+        assert float(grid_in.state) == 267386.0
+        assert float(grid_out.state) == 217251.0
+
+
 async def test_no_pv_entities_when_data_missing(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

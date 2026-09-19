@@ -22,13 +22,15 @@ from .helpers.sensor_descriptions import (
     SENSORS,
     MarstekSensorEntityDescription,
 )
+from .pymarstek.energy_guard import (
+    ENERGY_TOTAL_KEYS,
+    MAX_PLAUSIBLE_ENERGY_JUMP_WH,
+    energy_total_is_plausible,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-_RESTORED_GRID_TOTAL_KEYS = {
-    "total_grid_input_energy",
-    "total_grid_output_energy",
-}
+_RESTORED_ENERGY_TOTAL_KEYS = ENERGY_TOTAL_KEYS
 
 
 class MarstekSensor(
@@ -56,10 +58,10 @@ class MarstekSensor(
         self._attr_device_info = build_device_info(device_info)
 
     async def async_added_to_hass(self) -> None:
-        """Restore corrected grid totals so total_increasing stays monotonic."""
+        """Restore last good energy totals so total_increasing stays monotonic."""
         await super().async_added_to_hass()
 
-        if self.entity_description.key not in _RESTORED_GRID_TOTAL_KEYS:
+        if self.entity_description.key not in _RESTORED_ENERGY_TOTAL_KEYS:
             return
 
         restored_data = await self.async_get_last_sensor_data()
@@ -67,7 +69,9 @@ class MarstekSensor(
             return
 
         restored_value = restored_data.native_value
-        if not isinstance(restored_value, (int, float)):
+        if not isinstance(restored_value, (int, float)) or not energy_total_is_plausible(
+            restored_value
+        ):
             return
 
         expected_unit = self.entity_description.native_unit_of_measurement
@@ -75,6 +79,12 @@ class MarstekSensor(
             return
 
         current_value = self.coordinator.data.get(self.entity_description.key)
+        if (
+            energy_total_is_plausible(current_value)
+            and isinstance(current_value, (int, float))
+            and restored_value - current_value > MAX_PLAUSIBLE_ENERGY_JUMP_WH
+        ):
+            return
         if not isinstance(current_value, (int, float)) or current_value < restored_value:
             self.coordinator.data[self.entity_description.key] = float(restored_value)
 

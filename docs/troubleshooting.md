@@ -87,6 +87,23 @@ between updates and restores the corrected total after Home Assistant restarts.
 If the totals still look wrong, compare the grid energy sensors with
 `sensor.<device>_on_grid_power` and include debug logs in your report.
 
+## Energy totals jump to an impossible value
+
+Lifetime energy sensors (`total_grid_*`, `total_pv_energy`, `total_load_energy`,
+and meter `em_*_energy`) are ``total_increasing``. Home Assistant adds every
+upward jump to long-term ``sum`` statistics and does not drop spikes
+([sensor entity](https://developers.home-assistant.io/docs/core/entity/sensor/)).
+
+The integration therefore ignores readings that cannot be Wh on a home battery
+(negative, non-finite, above 1 GWh, or a single-poll jump above 5 MWh). A later
+sane Open API value replaces a previously stored garbage floor instead of
+keeping it forever ([#70](https://github.com/taurgis/has-marstek-local-api/issues/70)).
+
+Already-recorded statistics are **not** rewritten. Use
+**Settings → Tools → Statistics** to delete the bad points if a spike was stored
+before this guard:
+https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
+
 ## Venus A solar totals look 10× too low, then jump
 
 Venus A firmware 149 reports `total_pv_energy` as 0.01 kWh (for example raw
