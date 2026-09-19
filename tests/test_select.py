@@ -34,6 +34,7 @@ def _mock_client(status=None, setup_error=None):
     client.async_setup = AsyncMock(side_effect=setup_error)
     client.async_cleanup = AsyncMock(return_value=None)
     client.send_request = AsyncMock(return_value={"result": {}})
+    client.fetch_es_mode = AsyncMock(return_value={"device_mode": "auto"})
     client.is_polling_paused = MagicMock(return_value=False)
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
@@ -212,8 +213,7 @@ async def test_select_mode_command_failure_retries(
     # Setup succeeds (first call), then 2 failures + 1 success for retries
     client.send_request = AsyncMock(
         side_effect=[
-            {"result": {}},  # Setup call succeeds
-            TimeoutError("timeout"),  # First service attempt fails
+            TimeoutError("timeout"),  # First attempt fails
             TimeoutError("timeout"),  # Second attempt fails
             {"result": {}},  # Third attempt succeeds
         ]
@@ -234,8 +234,8 @@ async def test_select_mode_command_failure_retries(
             blocking=True,
         )
 
-        # Should have called: 1 setup + 3 retries = 4 total
-        assert client.send_request.call_count == 4
+        # Should have called 3 retries (setup uses fetch_es_mode)
+        assert client.send_request.call_count == 3
 
 
 async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_entry):
@@ -252,8 +252,6 @@ async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_ent
     async def send_request_side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        if call_count == 1:  # First call is during setup
-            return {"result": {}}
         raise TimeoutError("timeout")  # All service calls fail
 
     client = _mock_client(status=status)
@@ -533,8 +531,6 @@ async def test_select_ups_resumes_polling_after_failure(
     async def send_request_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
         nonlocal call_count
         call_count += 1
-        if call_count == 1:
-            return {"result": {}}
         raise TimeoutError("timeout")
 
     client = _mock_client(status={"battery_soc": 55, "device_mode": "auto"})

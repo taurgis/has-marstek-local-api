@@ -57,6 +57,7 @@ def _mock_client(status=None, mode_response=None):
     client.send_request = AsyncMock(
         return_value=mode_response or _verify_status(charge=True)
     )
+    client.fetch_es_mode = AsyncMock(return_value={"device_mode": "manual"})
     client.get_device_status = AsyncMock(return_value=status or {
         "device_mode": "SelfUse",
         "battery_soc": 55,
