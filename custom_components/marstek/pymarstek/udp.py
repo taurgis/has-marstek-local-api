@@ -36,7 +36,12 @@ from .data_parser import (
     parse_wifi_status_response,
 )
 from .network import PsutilModule, create_udp_socket, get_broadcast_addresses
-from .validators import ValidationError, json_rpc_wire_id, validate_json_message
+from .validators import (
+    ValidationError,
+    json_rpc_wire_id,
+    normalize_json_rpc_wire_message,
+    validate_json_message,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,7 +120,10 @@ class MarstekUDPClient:
 
         self._local_send_ip: str = "0.0.0.0"
         self._polling_paused: dict[str, bool] = {}
+        self._polling_pause_counts: dict[str, int] = {}
         self._polling_lock: asyncio.Lock = asyncio.Lock()
+        self._reset_prone_ips: set[str] = set()
+        self._device_io_locks: dict[str, asyncio.Lock] = {}
 
         # Rate limiting: track last request time per device IP
         self._last_request_time: dict[str, float] = {}
@@ -265,7 +273,10 @@ class MarstekUDPClient:
         self._discovery_cache = None
         self._last_request_time.clear()
         self._rate_limit_locks.clear()
+        self._device_io_locks.clear()
+        self._reset_prone_ips.clear()
         self._polling_paused.clear()
+        self._polling_pause_counts.clear()
         self._command_stats.clear()
         self._command_stats_by_ip.clear()
         self._es_mode_device_ids.clear()
@@ -313,6 +324,24 @@ class MarstekUDPClient:
                 self._rate_limit_locks[target_ip] = asyncio.Lock()
             return self._rate_limit_locks[target_ip]
 
+    async def _get_device_io_lock(self, target_ip: str) -> asyncio.Lock:
+        """Get or create a per-IP lock for reset-prone unicast exchanges."""
+        async with self._rate_limit_meta_lock:
+            if target_ip not in self._device_io_locks:
+                self._device_io_locks[target_ip] = asyncio.Lock()
+            return self._device_io_locks[target_ip]
+
+    def set_openapi_reset_prone(self, device_ip: str, prone: bool) -> None:
+        """Enable or disable per-request serialization for a device IP."""
+        if prone:
+            self._reset_prone_ips.add(device_ip)
+            return
+        self._reset_prone_ips.discard(device_ip)
+
+    def clear_openapi_reset_prone(self, device_ip: str) -> None:
+        """Stop serializing Open API traffic for a device IP."""
+        self._reset_prone_ips.discard(device_ip)
+
     async def _cleanup_rate_limit_tracking(self) -> None:
         """Remove stale entries from rate limit tracking to prevent memory leaks."""
         loop = self._loop or asyncio.get_running_loop()
@@ -331,6 +360,7 @@ class MarstekUDPClient:
             for ip in stale_ips:
                 self._last_request_time.pop(ip, None)
                 self._rate_limit_locks.pop(ip, None)
+                self._device_io_locks.pop(ip, None)
                 self._command_stats_by_ip.pop(ip, None)
 
             if stale_ips:
@@ -470,7 +500,7 @@ class MarstekUDPClient:
         # Validate message before sending to protect device
         if validate:
             try:
-                command = validate_json_message(message)
+                validate_json_message(message)
             except ValidationError as err:
                 # Safely try to extract method for logging context
                 method_name = "unknown"
@@ -489,16 +519,45 @@ class MarstekUDPClient:
                     err.message,
                 )
                 raise
-            request_id = command["id"]
-            method_name = str(command.get("method", "unknown"))
-        else:
-            try:
-                message_obj = json.loads(message)
-                request_id = message_obj["id"]
-                method_name = str(message_obj.get("method", "unknown"))
-            except (json.JSONDecodeError, KeyError) as exc:
-                raise ValueError("Invalid message: missing id") from exc
 
+        message, request_id, method_name = normalize_json_rpc_wire_message(message)
+        if target_ip in self._reset_prone_ips:
+            lock = await self._get_device_io_lock(target_ip)
+            async with lock:
+                return await self._exchange_request(
+                    message,
+                    request_id,
+                    method_name,
+                    target_ip,
+                    target_port,
+                    timeout,
+                    quiet_on_timeout=quiet_on_timeout,
+                    bypass_rate_limit=bypass_rate_limit,
+                )
+        return await self._exchange_request(
+            message,
+            request_id,
+            method_name,
+            target_ip,
+            target_port,
+            timeout,
+            quiet_on_timeout=quiet_on_timeout,
+            bypass_rate_limit=bypass_rate_limit,
+        )
+
+    async def _exchange_request(
+        self,
+        message: str,
+        request_id: int,
+        method_name: str,
+        target_ip: str,
+        target_port: int,
+        timeout: float,
+        *,
+        quiet_on_timeout: bool,
+        bypass_rate_limit: bool,
+    ) -> dict[str, Any]:
+        """Send one normalized request and wait for its matching response."""
         request_id, future = self._track_pending(request_id)
 
         try:
@@ -704,11 +763,18 @@ class MarstekUDPClient:
 
     async def pause_polling(self, device_ip: str) -> None:
         async with self._polling_lock:
+            count = self._polling_pause_counts.get(device_ip, 0) + 1
+            self._polling_pause_counts[device_ip] = count
             self._polling_paused[device_ip] = True
 
     async def resume_polling(self, device_ip: str) -> None:
         async with self._polling_lock:
-            self._polling_paused[device_ip] = False
+            count = self._polling_pause_counts.get(device_ip, 0) - 1
+            if count <= 0:
+                self._polling_pause_counts.pop(device_ip, None)
+                self._polling_paused[device_ip] = False
+                return
+            self._polling_pause_counts[device_ip] = count
 
     def is_polling_paused(self, device_ip: str) -> bool:
         return self._polling_paused.get(device_ip, False)

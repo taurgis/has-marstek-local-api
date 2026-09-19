@@ -618,6 +618,49 @@ async def test_battery_detail_sensors_disabled_by_default(
             assert entry.entity_category is EntityCategory.DIAGNOSTIC
 
 
+async def test_battery_detail_sensors_omitted_on_reset_prone_firmware(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Reset-prone firmware does not create Bat.GetStatus entities."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 147,
+        },
+    )
+
+    status = {
+        "device_mode": "auto",
+        "battery_soc": 55,
+        "battery_power": 120,
+        "bat_temp": 27.5,
+        "bat_capacity": 2508,
+        "bat_rated_capacity": 2560,
+        "bat_charg_flag": 1,
+        "bat_dischrg_flag": 1,
+    }
+    client = create_mock_client(status=status)
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    device_identifier = get_device_identifier(mock_config_entry.data)
+    for domain, key in (
+        ("sensor", "bat_temp"),
+        ("sensor", "bat_capacity"),
+        ("sensor", "bat_rated_capacity"),
+        ("binary_sensor", "bat_charg_flag"),
+        ("binary_sensor", "bat_dischrg_flag"),
+    ):
+        unique_id = f"{device_identifier}_{key}"
+        assert entity_registry.async_get_entity_id(domain, DOMAIN, unique_id) is None
+
+
 async def test_battery_detail_sensor_states_when_enabled(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

@@ -30,6 +30,10 @@ _REGULAR_FAMILIES = frozenset(
 )
 _KNOWN_FAMILIES = _REGULAR_FAMILIES | {DeviceFamily.VENUS_E_MINI}
 _PV_FAMILIES = frozenset({DeviceFamily.VENUS_A, DeviceFamily.VENUS_D})
+# Observed Control Open API ``ver`` values start near 144. Unknown model
+# names with a plausible Control generation below 150 still get the reset
+# warning (mis-parsed Venus). Placeholders such as ``version: 3`` do not.
+_UNKNOWN_CONTROL_GENERATION_MIN = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,11 +83,15 @@ class FirmwareProfile:
         after updating to 150. Builds below that generation (issues #14/#15),
         including dotted encoding 1476 (app 147.6), disable Open API and wipe
         settings under sustained UDP traffic. Unknown ``ver`` on a known
-        family stays conservative.
+        family stays conservative. Unknown model names with a Control-like
+        generation below 150 are also treated as reset-prone.
         """
-        if self.family not in _KNOWN_FAMILIES:
-            return False
         generation = self.control_generation
+        if self.family not in _KNOWN_FAMILIES:
+            return (
+                generation is not None
+                and _UNKNOWN_CONTROL_GENERATION_MIN <= generation < 150
+            )
         if generation is None:
             return True
         return generation < 150

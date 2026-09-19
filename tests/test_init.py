@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, patch
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -954,6 +958,79 @@ async def test_openapi_reset_issue_skipped_for_firmware_150(
         )
         is None
     )
+
+
+async def test_openapi_reset_issue_created_when_connection_fails(
+    hass: HomeAssistant,
+) -> None:
+    """Firmware warning is created from metadata before the first UDP probe."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(send_request_error=TimeoutError("timeout"))
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.SETUP_RETRY
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.translation_key == "openapi_reset_prone"
+    client.set_openapi_reset_prone.assert_called_with("1.2.3.4", True)
+
+
+async def test_reset_prone_setup_removes_bat_status_entities(
+    hass: HomeAssistant,
+) -> None:
+    """Enabled Bat.GetStatus entities are dropped on reset-prone firmware."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 147,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    unique_id = "aa:bb:cc:dd:ee:ff_bat_temp"
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=unique_id,
+        config_entry=entry,
+    )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.LOADED
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
 
 
 async def test_remove_entry_cleans_stale_device(

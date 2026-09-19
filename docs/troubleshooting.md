@@ -57,12 +57,15 @@ survives). Venus E 3.0 Control **150** is the published fix (“Optimized Local
 API send anomaly on Ethernet”); a user confirmed [#15](https://github.com/taurgis/has-marstek-local-api/issues/15) after updating in the Marstek app (Wi-Fi or Bluetooth if LAN OTA fails).
 
 On firmware the integration treats as reset-prone (known family, Control
-generation below 150):
+generation below 150, or an unknown model with a Control-like `ver` 100–149):
 
-1. A **warning** appears in Settings → Repairs (not a fixable flow).
+1. A **warning** appears in Settings → Repairs (not a fixable flow) as soon
+   as the config entry is set up, even if the first UDP probe still fails.
 2. Parallel API requests stay off even if the option is enabled.
-3. Keep battery-detail entities disabled so `Bat.GetStatus` is not sent ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)).
-4. Prefer sequential polling and a wired LAN.
+3. Unicast Open API calls to that device are sent one at a time.
+4. `Bat.GetStatus` is **not sent**. Battery-detail entities are omitted
+   (issue #14).
+5. Prefer sequential polling and a wired LAN.
 
 Do not factory-reset from Home Assistant (`Reset.Factory` is not exposed).
 Firmware research notes: [tools/firmware/ANALYSIS.md](../tools/firmware/ANALYSIS.md).

@@ -22,7 +22,7 @@ from custom_components.marstek.pymarstek.data_parser import (
     parse_pv_status_response,
     parse_wifi_status_response,
 )
-from custom_components.marstek.pymarstek.validators import ValidationError
+from custom_components.marstek.pymarstek.validators import MAX_JSON_RPC_ID, ValidationError
 
 
 _STATUS_COMBINATION_LABELS = (
@@ -649,6 +649,21 @@ class TestPollingControl:
         await udp_client.pause_polling(device_ip)
         assert udp_client.is_polling_paused(device_ip)
         
+        await udp_client.resume_polling(device_ip)
+        assert not udp_client.is_polling_paused(device_ip)
+
+    async def test_pause_is_ref_counted(self, udp_client: MarstekUDPClient) -> None:
+        """Overlapping pause/resume must not unpause while another caller holds it."""
+        device_ip = "192.168.1.100"
+
+        await udp_client.pause_polling(device_ip)
+        await udp_client.pause_polling(device_ip)
+        await udp_client.resume_polling(device_ip)
+        assert udp_client.is_polling_paused(device_ip)
+
+        await udp_client.resume_polling(device_ip)
+        assert not udp_client.is_polling_paused(device_ip)
+
         await udp_client.resume_polling(device_ip)
         assert not udp_client.is_polling_paused(device_ip)
 
@@ -2154,6 +2169,169 @@ class TestSendRequestSkipValidation:
                 await client._listen_task
             except asyncio.CancelledError:
                 pass
+
+    async def test_send_request_rewrites_overflow_id_when_validation_skipped(
+        self,
+    ) -> None:
+        """validate=False still rewrites ids that would wrap to 0 on the MCU."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        mock_loop = MagicMock()
+        mock_loop.time.return_value = 1000.0
+        client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+
+        message = json.dumps(
+            {"id": MAX_JSON_RPC_ID + 1, "method": "ES.GetStatus", "params": {"id": 0}}
+        )
+        with patch.object(client, "_send_udp_message", AsyncMock()) as mock_send:
+            with patch(
+                "asyncio.wait_for", AsyncMock(return_value={"id": 1, "result": {}})
+            ):
+                await client.send_request(
+                    message,
+                    "192.168.1.100",
+                    30000,
+                    timeout=0.1,
+                    validate=False,
+                )
+
+        sent = json.loads(mock_send.call_args.args[0])
+        assert sent["id"] == 1
+        assert sent["method"] == "ES.GetStatus"
+
+    async def test_send_request_keeps_discovery_id_zero(self) -> None:
+        """Discovery may still send JSON-RPC id 0."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        mock_loop = MagicMock()
+        mock_loop.time.return_value = 1000.0
+        client._loop = mock_loop
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+
+        message = json.dumps(
+            {"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}
+        )
+        with patch.object(client, "_send_udp_message", AsyncMock()) as mock_send:
+            with patch(
+                "asyncio.wait_for", AsyncMock(return_value={"id": 0, "result": {}})
+            ):
+                await client.send_request(
+                    message,
+                    "192.168.1.100",
+                    30000,
+                    timeout=0.1,
+                    validate=False,
+                )
+
+        assert json.loads(mock_send.call_args.args[0])["id"] == 0
+
+
+class TestResetProneRequestLock:
+    """Tests for per-IP unicast serialization on reset-prone firmware."""
+
+    async def test_device_io_lock_is_shared_per_ip(self) -> None:
+        """The same IP reuses one lock; different IPs do not."""
+        client = MarstekUDPClient()
+        lock1 = await client._get_device_io_lock("192.168.1.100")
+        lock2 = await client._get_device_io_lock("192.168.1.100")
+        lock3 = await client._get_device_io_lock("192.168.1.101")
+        assert lock1 is lock2
+        assert lock1 is not lock3
+
+    async def test_reset_prone_requests_do_not_overlap(self) -> None:
+        """Two unicast requests to a reset-prone IP are serialized."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+        client.set_openapi_reset_prone("192.168.1.100", True)
+
+        inflight = 0
+        peak = 0
+
+        async def slow_send(*args: Any, **kwargs: Any) -> None:
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            for future in list(client._pending_requests.values()):
+                if not future.done():
+                    future.set_result({"id": 1, "result": {}})
+            await asyncio.sleep(0.05)
+            inflight -= 1
+
+        with patch.object(client, "_send_udp_message", side_effect=slow_send):
+            await asyncio.gather(
+                client.send_request(
+                    '{"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                ),
+                client.send_request(
+                    '{"id": 2, "method": "ES.GetMode", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                ),
+            )
+
+        assert peak == 1
+
+    async def test_unmarked_ips_may_overlap(self) -> None:
+        """Firmware 150+ is not forced through the reset-prone lock."""
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = asyncio.get_running_loop()
+        client._listen_task = MagicMock()
+        client._listen_task.done.return_value = False
+
+        inflight = 0
+        peak = 0
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_send(*args: Any, **kwargs: Any) -> None:
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            for future in list(client._pending_requests.values()):
+                if not future.done():
+                    future.set_result({"id": 1, "result": {}})
+            started.set()
+            await release.wait()
+            inflight -= 1
+
+        with patch.object(client, "_send_udp_message", side_effect=slow_send):
+            first = asyncio.create_task(
+                client.send_request(
+                    '{"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                )
+            )
+            await started.wait()
+            started.clear()
+            second = asyncio.create_task(
+                client.send_request(
+                    '{"id": 2, "method": "ES.GetMode", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    timeout=1.0,
+                    validate=False,
+                )
+            )
+            await started.wait()
+            assert peak == 2
+            release.set()
+            await asyncio.gather(first, second)
 
     async def test_send_request_skip_validation_missing_id(self) -> None:
         """Test send_request raises ValueError for missing id when validation skipped."""

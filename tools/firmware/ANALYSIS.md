@@ -84,14 +84,24 @@ calls stay disabled on generation &lt; 150 and remain optional on 150+.
 
 ## Plugin-side mitigations (cannot patch the MCU)
 
-1. JSON-RPC ids cycle `1..65535` and never emit `0`.
-2. Outbound ids above 65535 are rejected; inbound ids are matched as uint16.
+1. JSON-RPC ids cycle `1..65535` and never emit `0` from the command
+   builder. Discovery still sends top-level `"id": 0` on purpose
+   (`discovery._build_discovery_message`); the official PDF requires
+   `params.ble_mac="0"`, not a JSON-RPC id of 0. Do not change discovery
+   without a firmware matrix test.
+2. Outbound ids above 65535 are rejected when validation is on. The UDP
+   client also rewrites `validate=False` payloads to the uint16 wire id
+   (non-discovery methods never send 0). Inbound ids are matched as uint16.
 3. Empty UDP datagrams are never sent and inbound empties are ignored.
-4. `Bat.GetStatus` stays entity-registry gated (issue #14).
+4. `Bat.GetStatus` is not sent on reset-prone firmware, even if battery-detail
+   entities were previously enabled. On 150+ it stays entity-registry gated
+   (issue #14).
 5. Parallel polling is ignored when `openapi_reset_prone` is true
-   (known family, Control generation &lt; 150, including `ver=1476`).
-6. A non-fixable Home Assistant warning points at issue #15 and asks for
-   Control 150+.
+   (known family, Control generation &lt; 150, including `ver=1476`; unknown
+   model names with a Control-like generation 100–149). Unicast requests to
+   those IPs are serialized on a per-IP lock. `pause_polling` is ref-counted.
+6. A non-fixable Home Assistant warning is created from config-entry metadata
+   **before** the first UDP probe and points at issue #15.
 
 ## Mock device
 

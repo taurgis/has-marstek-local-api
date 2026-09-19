@@ -370,7 +370,9 @@ def test_vnse3_1476_is_legacy_reset_prone() -> None:
         ("VenusA", 150, False),
         ("Venus E mini", 145, True),
         ("Venus E mini", "not-a-version", True),
-        ("Marstek Energy Storage", 144, False),
+        ("Marstek Energy Storage", 144, True),
+        ("Marstek Energy Storage", 150, False),
+        ("Marstek Energy Storage", 3, False),
         ("VenusE 3.0", "147.6", True),
     ],
 )

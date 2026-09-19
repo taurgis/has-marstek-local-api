@@ -104,6 +104,8 @@ def create_mock_client(
     client.is_polling_paused = MagicMock(return_value=False)
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
+    client.set_openapi_reset_prone = MagicMock()
+    client.clear_openapi_reset_prone = MagicMock()
     client.async_pause_receiver = AsyncMock(return_value=None)
     client.async_resume_receiver = AsyncMock(return_value=None)
 

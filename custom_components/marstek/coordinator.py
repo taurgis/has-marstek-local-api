@@ -89,6 +89,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_update_success_time: datetime | None = None
         self.last_update_attempt_time: datetime | None = None
         self.consecutive_failures: int = 0
+        self._marked_reset_prone_ip: str | None = None
 
         # Get configured fast polling interval
         fast_interval = config_entry.options.get(
@@ -268,13 +269,26 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._has_enabled_entities(WIFI_STATUS_KEYS)
 
     def _is_bat_status_enabled(self) -> bool:
-        """Return True if any Bat.GetStatus entity is enabled for this entry.
+        """Return True if Bat.GetStatus may be sent for this entry.
 
         Bat.GetStatus is suspected to trigger device resets on some firmwares
-        (issue #14), so the request is only sent while a user has explicitly
-        enabled one of the entities that depend on it.
+        (issue #14). Reset-prone Control builds never send it. On later
+        firmware the request is only sent while a user has enabled one of the
+        entities that depend on it.
         """
+        if self.profile.openapi_reset_prone:
+            return False
         return self._has_enabled_entities(BAT_STATUS_KEYS)
+
+    def _sync_reset_prone_udp_flag(self) -> None:
+        """Keep the UDP client's per-IP serialization flag aligned with this device."""
+        current_ip = self.device_ip
+        previous = self._marked_reset_prone_ip
+        prone = self.profile.openapi_reset_prone
+        if previous is not None and previous != current_ip:
+            self.udp_client.clear_openapi_reset_prone(previous)
+        self.udp_client.set_openapi_reset_prone(current_ip, prone)
+        self._marked_reset_prone_ip = current_ip if prone else None
 
     @property
     def profile(self) -> FirmwareProfile:
@@ -311,6 +325,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         current_port = self.device_port
         self.last_update_attempt_time = dt_util.now()
         _LOGGER.debug("Start polling device: %s:%s", current_ip, current_port)
+        self._sync_reset_prone_udp_flag()
 
         if self.udp_client.is_polling_paused(current_ip):
             _LOGGER.debug("Polling paused for device: %s, skipping update", current_ip)

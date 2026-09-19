@@ -16,10 +16,10 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
+from .const import BAT_STATUS_KEYS, DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier
-from .firmware_profile import FirmwareProfile
+from .firmware_profile import FirmwareProfile, resolve_firmware_profile
 from .helpers.device_lookup import (
     async_lookup_device_by_identifier,
     iter_device_config_entry_ids,
@@ -31,6 +31,7 @@ from .helpers.udp_clients import (
     async_release_udp_client_for_entry,
     bind_port_for_host,
     get_udp_client,
+    get_udp_client_for_entry,
     store_udp_client,
     udp_client_lock,
 )
@@ -155,6 +156,16 @@ def _async_remove_unsupported_capability_entities(
             if description.supported_fn(profile):
                 continue
             unique_id = f"{device_identifier}_{description.key}"
+            entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+            if entity_id is not None:
+                registry.async_remove(entity_id)
+
+    if not profile.openapi_reset_prone:
+        return
+
+    for key in BAT_STATUS_KEYS:
+        for platform in (Platform.SENSOR, Platform.BINARY_SENSOR):
+            unique_id = f"{device_identifier}_{key}"
             entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
             if entity_id is not None:
                 registry.async_remove(entity_id)
@@ -330,6 +341,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
         stored_ble_mac or "unknown",
     )
 
+    device_info_dict = _build_device_info_dict(entry, stored_ip, stored_port)
+    profile = resolve_firmware_profile(
+        device_info_dict.get("device_type"),
+        device_info_dict.get("version"),
+    )
+    _sync_openapi_reset_issue(hass, entry, profile)
+    udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone)
+
     # Try to connect with stored IP (mik-laj feedback)
     # If we have an IP address in the configuration, we should always connect to that IP
     # Discovery is handled by Scanner, not here
@@ -340,9 +359,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
         stored_ip,
         stored_port,
     )
-
-    # Use device info from config_entry (saved during config flow)
-    device_info_dict = _build_device_info_dict(entry, stored_ip, stored_port)
 
     # Create coordinator in __init__.py (mik-laj feedback)
     # Use is_initial_setup=True for faster API request delays during first data fetch
@@ -381,6 +397,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     """Unload a config entry."""
     _LOGGER.info("Unloading Marstek config entry: %s", entry.title)
 
+    host = entry.data.get(CONF_HOST)
+    udp_client = get_udp_client_for_entry(hass, entry)
+    if isinstance(host, str) and udp_client is not None:
+        udp_client.clear_openapi_reset_prone(host)
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     # Clear any repair issues tied to this entry
@@ -405,6 +426,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
 async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:
     """Remove a config entry and clean up stale devices."""
     from homeassistant.helpers.device_registry import format_mac
+
+    host = entry.data.get(CONF_HOST)
+    udp_client = get_udp_client_for_entry(hass, entry)
+    if isinstance(host, str) and udp_client is not None:
+        udp_client.clear_openapi_reset_prone(host)
 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)

@@ -30,6 +30,7 @@ from .validators import (
     enable_strict_mode,
     is_strict_mode,
     json_rpc_wire_id,
+    normalize_json_rpc_wire_message,
     validate_json_message,
 )
 
@@ -53,6 +54,7 @@ __all__ = [
     "is_strict_mode",
     "json_rpc_wire_id",
     "merge_device_status",
+    "normalize_json_rpc_wire_message",
     "parse_es_mode_response",
     "parse_es_status_response",
     "parse_pv_status_response",
