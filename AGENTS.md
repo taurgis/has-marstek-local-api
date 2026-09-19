@@ -264,6 +264,22 @@ This repository enforces **strict typing** via `mypy --strict`. When adding or m
 - When troubleshooting discovery: ensure devices and HA are on the same LAN segment and UDP port is reachable.
 - Devcontainer supports multiple mock devices (see `.devcontainer/docker-compose.yml`).
 
+## Cursor Cloud specific instructions
+
+Cloud Agents must use **Python 3.14.2+**. Home Assistant Core 2026.9 and `pytest-homeassistant-custom-component==0.13.365` declare `requires-python = ">=3.14.2"` ([HA 2026.9.2 pyproject](https://github.com/home-assistant/core/blob/2026.9.2/pyproject.toml)). The default Ubuntu 24.04 `python3` is 3.12 and cannot install the test harness.
+
+`.cursor/install.sh` provisions Python 3.14, a venv at `~/.venvs/ha-marstek` (symlinked onto `PATH` via `/usr/local/bin`), and Docker Engine. `.cursor/start.sh` starts `dockerd` (this VM has no systemd; PID 1 is `tini`) and brings up `.devcontainer/docker-compose.yml`.
+
+After start:
+
+- Home Assistant: `http://127.0.0.1:8123` (onboarding, then username `admin` / password `marstek-dev`)
+- Mock devices: `172.28.0.20`–`172.28.0.26` as documented in the Chrome UI testing skill
+- Nested Docker uses `fuse-overlayfs` and `iptables-legacy`. If HA cannot ping a mock, `start.sh` already sets `FORWARD ACCEPT`.
+
+Use `python3 -m ruff`, `python3 -m mypy --strict`, and `pytest` from that venv (same commands as in Verification after changes). Drive the HA UI with `.agents/skills/homeassistant-chrome-ui-testing` (`ha_cdp.py`), not screenshot clicks.
+
+Official setup notes: [Cursor Cloud Agent environment](https://cursor.com/docs/cloud-agent/setup), [Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/), [HA Container install](https://www.home-assistant.io/installation/linux#install-home-assistant-container).
+
 ## Development Tools
 
 The `tools/` directory contains utilities for testing, debugging, and development. **Use these tools proactively** when working on device communication, debugging issues, or improving mock data.
