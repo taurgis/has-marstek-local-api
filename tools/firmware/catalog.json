@@ -1,7 +1,11 @@
 {
   "source": "https://github.com/rweijnen/marstek-firmware-archive",
+  "communityArchives": [
+    "https://github.com/rweijnen/marstek-firmware-archive",
+    "https://github.com/sphings79/marstek-firmware-archiv"
+  ],
   "officialOta": "https://static-eu.marstekenergy.com/",
-  "note": "Vendor firmware blobs are not vendored here (Marstek/Hamedata copyright). Use fetch_firmware.py to download locally and verify SHA-256.",
+  "note": "Vendor firmware blobs are not vendored here (Marstek/Hamedata copyright). Use fetch_firmware.py to download locally and verify SHA-256. String presence of SYS methods is not an Open API capability gate.",
   "images": [
     {
       "deviceType": "VNSE3-0",
@@ -14,8 +18,28 @@
       "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20251118/20251118161530cc2d80857.bin",
       "buildStamp": "Nov 18 2025 16:12:37",
       "banner": "VNSE3-0 v144",
-      "vectorTable": { "sp": "0x2001f0d8", "reset": "0x08004a6d" },
+      "vectorTable": {
+        "sp": "0x2001f0d8",
+        "reset": "0x08004a6d"
+      },
       "remark": "Adds anti-backflow baseline, extra meters, DOD range, BLE off, XID/VID."
+    },
+    {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 147,
+      "controlGeneration": 147,
+      "filename": "202601281724177c3442083.bin",
+      "size": 360448,
+      "sha256": "0782d6862c53ee3a6b0324b85282dc848edd6a278e2983bcb6d7ae935fc6dab6",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260128/202601281724177c3442083.bin",
+      "buildStamp": "Jan 28 2026 17:23:07",
+      "banner": "VNSE3-0 v147",
+      "vectorTable": {
+        "sp": "0x2001f1d8",
+        "reset": "0x08004a71"
+      },
+      "remark": "German meter connection and third-party Ethernet server improvements. Recv list adds DOD.SET strings; this integration still gates SYS at generation 150."
     },
     {
       "deviceType": "VNSE3-0",
@@ -28,7 +52,10 @@
       "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20260312/VNSEE3-0_app_1476_0312_182736.bin",
       "buildStamp": "Mar 12 2026 18:27:09",
       "banner": "VNSE3-0 v1476",
-      "vectorTable": { "sp": "0x2001f318", "reset": "0x08004a71" },
+      "vectorTable": {
+        "sp": "0x2001f318",
+        "reset": "0x08004a71"
+      },
       "remark": "Optimized MQTT connection stability. App label 147.6; Open API ver 1476 is not newer than 150."
     },
     {
@@ -42,8 +69,28 @@
       "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20260331/VNSEE3-0_app_0148_0331_093751.bin",
       "buildStamp": "Mar 31 2026 09:36:17",
       "banner": "VNSE3-0 v148",
-      "vectorTable": { "sp": "0x2001f328", "reset": "0x08004a71" },
+      "vectorTable": {
+        "sp": "0x2001f328",
+        "reset": "0x08004a71"
+      },
       "remark": "Data backup, meter disconnect/phase detection, MQTT Ethernet flags, DOD discharge fix."
+    },
+    {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 149,
+      "controlGeneration": 149,
+      "filename": "VNSEE3-0_app_0149_0528_3_101940.bin",
+      "size": 370688,
+      "sha256": "35a3fbd83bd8725d3868b7523f4874005d4ec822a63622eef3b62fa251345e24",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260528/VNSEE3-0_app_0149_0528_3_101940.bin",
+      "buildStamp": "May 28 2026 10:17:23",
+      "banner": "VNSE3-0 v149",
+      "vectorTable": {
+        "sp": "0x2001f568",
+        "reset": "0x08004a71"
+      },
+      "remark": "Adds Set.Ver / Reset.Factory strings and further Open API methods. SYS/UPS stay gated at generation 150."
     },
     {
       "deviceType": "VNSE3-0",
@@ -56,8 +103,181 @@
       "url": "https://static-eu.marstekenergy.com/uploads/ota/20260804/VNSEE3-0_app_0150_0804_151249.bin",
       "buildStamp": "Aug  4 2026 15:11:03",
       "banner": "VNSE3-0 v150",
-      "vectorTable": { "sp": "0x2001f5e0", "reset": "0x08004a71" },
+      "vectorTable": {
+        "sp": "0x2001f5e0",
+        "reset": "0x08004a71"
+      },
       "remark": "Optimized Local API send anomaly on Ethernet; HTTP OTA on Ethernet; Peak-shaving; HTTP payload length; CT_TYPE meter."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 148,
+      "controlGeneration": 148,
+      "filename": "VNSA-0_app_0148_0330_104509.bin",
+      "size": 376832,
+      "sha256": "02b5088cc9cf7c78ceaf905828d840d6f45ac5800cb39e25ebaac7384a5d255a",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260330/VNSA-0_app_0148_0330_104509.bin",
+      "buildStamp": "Mar 30 2026 10:43:44",
+      "banner": "VNSA-0 v148",
+      "vectorTable": {
+        "sp": "0x2001f530",
+        "reset": "0x08004a6d"
+      },
+      "remark": "Venus A monthly 148. Solar energy still Wh; PV1 deciwatts; SYS gated at 150."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 1487,
+      "controlGeneration": 148,
+      "filename": "VNSA-0_app_1487_0511_1_155731.bin",
+      "size": 382976,
+      "sha256": "338151c19b98e42415f48b9ea4d8c1894dd401e2c9a7347a0ffc2db12ecab1d9",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260511/VNSA-0_app_1487_0511_1_155731.bin",
+      "buildStamp": "May 11 2026 15:56:48",
+      "banner": "VNSA-0 v1487",
+      "vectorTable": {
+        "sp": "0x2001f768",
+        "reset": "0x08004a71"
+      },
+      "remark": "App 148.7. Adds Set.Ver / Reset.Factory. Open API ver 1487 folds to generation 148."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 149,
+      "controlGeneration": 149,
+      "filename": "VNSA-0_app_0149_0528_102448.bin",
+      "size": 382976,
+      "sha256": "f14fede53a07462ecbba7c37c0c1b24ac910a5962206a54f2ab21c62034ea07e",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260528/VNSA-0_app_0149_0528_102448.bin",
+      "buildStamp": "May 28 2026 10:23:00",
+      "banner": "VNSA-0 v149",
+      "vectorTable": {
+        "sp": "0x2001f778",
+        "reset": "0x08004a71"
+      },
+      "remark": "Venus A 149 solar 0.01 kWh encoding (issue #35). PV1 still deciwatts. No SYS."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 150,
+      "controlGeneration": 150,
+      "filename": "VNSA-0_app_0150_0811_114724.bin",
+      "size": 387072,
+      "sha256": "7dbff622f394a8262f9f545fbdabff2e815aa73122ce37f5b9412ca631702560",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260811/VNSA-0_app_0150_0811_114724.bin",
+      "buildStamp": "Aug 11 2026 11:46:45",
+      "banner": "VNSA-0 v150",
+      "vectorTable": {
+        "sp": "0x2001f7e8",
+        "reset": "0x08004a71"
+      },
+      "remark": "Fixed faulty Local API transmission in Ethernet mode (same class of fix as VNSE3-0 150)."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 1508,
+      "controlGeneration": 150,
+      "filename": "VNSA-0_app_1508_0819_182932.bin",
+      "size": 387072,
+      "sha256": "664623dd130c9ded1225ed7e9223db65b73a4c51add6e53fb66c1014ab3b1e4f",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260819/VNSA-0_app_1508_0819_182932.bin",
+      "buildStamp": "Aug 19 2026 18:29:09",
+      "banner": "VEPRO-0 v1508",
+      "vectorTable": {
+        "sp": "0x2001f7e8",
+        "reset": "0x08004a71"
+      },
+      "remark": "OTA listed under VNSA-0 but banners VEPRO-0 / GetDevice VenusE Pro. Unknown family; not Venus A. Vendor note: for testing only."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 1509,
+      "controlGeneration": 150,
+      "filename": "VNSA-0_ems_app_1509_0908_093804.bin",
+      "size": 391168,
+      "sha256": "a8c58127189e19937cf179195e714492f890a6a829b03b8e218380042f8d9f23",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260908/VNSA-0_ems_app_1509_0908_093804.bin",
+      "buildStamp": "Sep  8 2026 09:34:19",
+      "banner": "VNSA-0 v1509",
+      "vectorTable": {
+        "sp": "0x20022010",
+        "reset": "0x08004a71"
+      },
+      "remark": "App 150.9. Open API ver 1509 folds to generation 150. PV dropout and CT stability fixes."
+    },
+    {
+      "deviceType": "VNSD-0",
+      "firmwareType": "Control",
+      "version": 147,
+      "controlGeneration": 147,
+      "filename": "202601281721320b2053125.bin",
+      "size": 372736,
+      "sha256": "3435e0b98067b9ee5891c0ee31956079822729d70ba0bdc2983b6d3a397e20f3",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260128/202601281721320b2053125.bin",
+      "buildStamp": "Jan 28 2026 17:21:01",
+      "banner": "VNSD-0 v147",
+      "vectorTable": {
+        "sp": "0x2001f3e0",
+        "reset": "0x08004a71"
+      },
+      "remark": "Venus D 147. Solar energy still Wh; PV1 deciwatts; SYS gated at 150."
+    },
+    {
+      "deviceType": "VNSD-0",
+      "firmwareType": "Control",
+      "version": 149,
+      "controlGeneration": 149,
+      "filename": "VNSD-0_app_0149_0521_094621.bin",
+      "size": 385024,
+      "sha256": "a8e5e9285e6ca5a327444d1bd942ece22a7955159e729b0dab0106f2bc8f8ace",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260521/VNSD-0_app_0149_0521_094621.bin",
+      "buildStamp": "May 21 2026 09:44:46",
+      "banner": "VNSD-0 v149",
+      "vectorTable": {
+        "sp": "0x2001f778",
+        "reset": "0x08004a71"
+      },
+      "remark": "Venus D 149. Unlike Venus A 149, solar energy stays unscaled until generation 150."
+    },
+    {
+      "deviceType": "VNSD-0",
+      "firmwareType": "Control",
+      "version": 1492,
+      "controlGeneration": 149,
+      "filename": "VNSD-0_app_1492_0702_142136.bin",
+      "size": 385024,
+      "sha256": "9b24db59c4dbde6c17e1666a778c8f44618558ef2760268a4be95570fc450796",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260702/VNSD-0_app_1492_0702_142136.bin",
+      "buildStamp": "Jul  2 2026 14:20:03",
+      "banner": "VNSD-0 v1492",
+      "vectorTable": {
+        "sp": "0x2001f7d8",
+        "reset": "0x08004a71"
+      },
+      "remark": "App 149.2. Open API ver 1492 folds to generation 149."
+    },
+    {
+      "deviceType": "VNSD-0",
+      "firmwareType": "Control",
+      "version": 150,
+      "controlGeneration": 150,
+      "filename": "VNSD-0_app_0150_0805_115146.bin",
+      "size": 389120,
+      "sha256": "4140e7a6d38ac90c8ceb6a5682f7704fd3ad4a45c2cb3fc1f05c95bfc1b71447",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260805/VNSD-0_app_0150_0805_115146.bin",
+      "buildStamp": "Aug  5 2026 11:51:21",
+      "banner": "VNSD-0 v150",
+      "vectorTable": {
+        "sp": "0x2001f7e8",
+        "reset": "0x08004a71"
+      },
+      "remark": "Fixed faulty Local API transmission in Ethernet mode."
     },
     {
       "deviceType": "HMG-50",
@@ -68,8 +288,26 @@
       "size": 227328,
       "sha256": "9fe4fcdfe0a8498f1f9332134b56ee57cf4914f9fac7e8ccd5acee9e65c1b2e7",
       "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20250530/202505301136007a5b57023.bin",
-      "vectorTable": { "sp": "0x20016a98", "reset": "0x08002aad" },
-      "remark": "Venus E 2.x / HMG-50. First Control image with Marstek.GetDevice. GetDevice device string is VenusE (src VenusE-%s), not VenusE 3.0."
+      "vectorTable": {
+        "sp": "0x20016a98",
+        "reset": "0x08002aad"
+      },
+      "remark": "Venus E 2.x / HMG-50. First Control image with Marstek.GetDevice. GetDevice device string is VenusE or VenusC (src VenusE-%s / VenusC-%s). Recv list has no EM.GetStatus server method and no SYS."
+    },
+    {
+      "deviceType": "HMG-50",
+      "firmwareType": "Control",
+      "version": 155,
+      "controlGeneration": 155,
+      "filename": "202509161548003ff722863.bin",
+      "size": 237568,
+      "sha256": "cc7a526cee6c2e651f4988c13c3c0950f29422c692756244b11deead2bc5f940",
+      "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20250916/202509161548003ff722863.bin",
+      "vectorTable": {
+        "sp": "0x20016cb0",
+        "reset": "0x08002aad"
+      },
+      "remark": "Adds Open API server method EM.GetStatus to the recv list. Still no SYS/UPS. Same VenusE/VenusC identity as 153."
     },
     {
       "deviceType": "HMG-50",
@@ -80,8 +318,11 @@
       "size": 241664,
       "sha256": "17eb3a10bfadf3fd1808dd45e0563c39ed5e766ef72814375491b21192c05243",
       "url": "https://eu-central-1-s3-common-bucket.s3.dualstack.eu-central-1.amazonaws.com/uploads/ota/20251118/20251118172129117290445.bin",
-      "vectorTable": { "sp": "0x20017180", "reset": "0x08002ab1" },
-      "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / HMG-50)."
+      "vectorTable": {
+        "sp": "0x20017180",
+        "reset": "0x08002ab1"
+      },
+      "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / VenusC / HMG-50). Still no SYS/UPS."
     }
   ]
 }

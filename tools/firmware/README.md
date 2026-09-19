@@ -5,8 +5,10 @@ Local API disable / settings wipe while Home Assistant polls) is a **Control
 firmware** defect. Venus E 3.0 Control **150** is the vendor fix
 (“Optimized Local API send anomaly on Ethernet”), confirmed on the issue.
 
-This directory stores **analysis and hashes only**. The `.bin` images are
-Marstek/Hamedata copyright and are not checked into git.
+`catalog.json` now lists every Control image hashed from
+[rweijnen/marstek-firmware-archive](https://github.com/rweijnen/marstek-firmware-archive)
+and [sphings79/marstek-firmware-archiv](https://github.com/sphings79/marstek-firmware-archiv).
+Blobs stay local-only. Use `fetch_firmware.py` to download them.
 
 | File | Purpose |
 |------|---------|

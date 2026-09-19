@@ -75,6 +75,8 @@ python -m mock_device --device "VenusA" --ver 148
 python -m mock_device --device "VenusA" --ver 149
 python -m mock_device --device "VenusA" --ver 150
 python -m mock_device --device "VenusC" --ver 153
+python -m mock_device --device "VenusC" --ver 156
+python -m mock_device --device "VenusA" --ver 1487
 python -m mock_device --device "Venus E mini" --ver 145
 ```
 
@@ -84,7 +86,7 @@ Backwards-compatible shim (still works):
 python tools/mock_device/mock_marstek.py
 ```
 
-Devcontainer compose runs nine mocks with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
+Devcontainer compose runs the archived Control mock matrix with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
 
 ## Protocol reference
 

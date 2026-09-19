@@ -265,6 +265,87 @@ class TestDeviceDiscovery:
         assert "wifi_mac" not in response["result"]
         assert "wifi_name" not in response["result"]
         assert "ip" in response["result"]
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+        dod = device.build_response(3, "DOD.SET", {"value": 80})
+        ups = device.build_response(
+            4,
+            "ES.SetMode",
+            {"id": 0, "config": {"mode": "UPS", "ups_cfg": {"enable": 1}}},
+        )
+        unknown = device.build_response(5, "Set.Ver", {"ver": 153})
+        assert em is not None
+        assert em["error"]["code"] == -32601
+        assert dod is not None
+        assert dod["error"]["code"] == -32601
+        assert ups is not None
+        assert ups["error"]["code"] == -32601
+        assert unknown is not None
+        assert unknown["error"]["code"] == -32601
+        assert unknown["error"]["message"] == "Method not found"
+        assert device.profile.hmg50_control is True
+        assert device.profile.supports_em_status is False
+        assert device.profile.openapi_reset_prone is True
+
+    def test_venus_c_155_serves_em_without_sys(self) -> None:
+        """HMG-50 Control 155 added Open API EM.GetStatus; SYS stays absent."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusC",
+                "ver": 155,
+                "ble_mac": "aabbccddeeff",
+                "wifi_mac": "112233445566",
+            },
+        )
+
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+        dod = device.build_response(3, "DOD.SET", {"value": 80})
+        discovery = device.build_response(1, "Marstek.GetDevice", {})
+
+        assert em is not None
+        assert "result" in em
+        assert dod is not None
+        assert dod["error"]["code"] == -32601
+        assert discovery is not None
+        assert "ble_mac" not in discovery["result"]
+        assert device.profile.openapi_reset_prone is True
+
+    def test_hmg50_155_serves_em_get_status(self) -> None:
+        """HMG-50 Control 155 recv list includes EM.GetStatus as a server method."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusE",
+                "ver": 155,
+                "ble_mac": "02deadbeef09",
+                "wifi_mac": "02cafebabe09",
+            },
+        )
+
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+
+        assert em is not None
+        assert "result" in em
+        assert "error" not in em
+        assert device.profile.openapi_reset_prone is True
+
+    def test_unknown_method_returns_method_not_found(self) -> None:
+        """Control firmware answers unknown methods with JSON-RPC -32601."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={"device": "VenusE 3.0", "ver": 150},
+        )
+
+        response = device.build_response(1, "Wifi.SetConfig", {"ssid": "x"})
+
+        assert response is not None
+        assert response["error"] == {
+            "code": -32601,
+            "message": "Method not found",
+        }
 
     def test_hmg50_getdevice_uses_venuse_identity(self) -> None:
         """HMG-50 Control 153 GetDevice reports device=VenusE, src VenusE-mac."""
@@ -306,7 +387,7 @@ class TestDeviceDiscovery:
         assert status["result"]["bat_soc"] == 50
 
     def test_hmg50_156_serves_em_get_status(self) -> None:
-        """HMG-50 Control 156 added Open API EM.GetStatus; 153 does not."""
+        """HMG-50 Control 156 keeps Open API EM.GetStatus and is not reset-prone."""
         device = MockMarstekDevice(
             port=30005,
             simulate=False,
@@ -1146,6 +1227,35 @@ class TestFirmwareUdpQuirks:
     def test_firmware_150_sends_single_reply(self) -> None:
         """Control 150's Local API ethernet send anomaly fix is a single reply."""
         device = self._device_with_socket(ver=150)
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 1),
+        )
+
+        device._handle_request()
+
+        assert device.profile.openapi_reset_prone is False
+        assert device.sock.sendto.call_count == 1
+
+    def test_venus_c_153_duplicates_udp_reply(self) -> None:
+        """HMG-50 Control 153 is reset-prone; mock duplicates Local API replies."""
+        device = self._device_with_socket(ver=153, device="VenusC")
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 1),
+        )
+
+        device._handle_request()
+
+        assert device.profile.hmg50_control is True
+        assert device.profile.openapi_reset_prone is True
+        assert device.sock.sendto.call_count == 2
+
+    def test_venus_c_156_sends_single_reply(self) -> None:
+        """HMG-50 Control 156 Open API stability fix is a single UDP reply."""
+        device = self._device_with_socket(ver=156, device="VenusC")
         assert device.sock is not None
         device.sock.recvfrom.return_value = (
             b'{"id":1,"method":"ES.GetStatus","params":{}}',

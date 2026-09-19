@@ -70,6 +70,7 @@
       'supports_sys_dod': False,
       'supports_sys_led': False,
       'supports_ups': False,
+      'supports_em_status': False,
     }),
     'last_exception': None,
     'polling_config': dict({

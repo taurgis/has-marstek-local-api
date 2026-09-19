@@ -11,7 +11,6 @@ from typing import Any
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     FirmwareProfile,
-    is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
 from custom_components.marstek.pymarstek.const import (
@@ -122,19 +121,6 @@ class MockMarstekDevice:
         # Control firmware freezes Open API after a 0-byte UDP datagram
         # (VNSE3-0 json_data.c / CH395 recv path).
         self._openapi_frozen = False
-
-    def _hmg50_lacks_em_status(self) -> bool:
-        """Return whether this HMG-50 Open API build has no EM.GetStatus.
-
-        Control 153 (``202505301136007a5b57023.bin``) lists GetDevice, ES.*,
-        BLE.GetStatus, PV.GetStatus, Wifi.*, and Bat.GetStatus. ``EM.GetStatus``
-        is only a meter *client* request on that image. Control 156 added the
-        Open API server method (``20251118172129117290445.bin``).
-        """
-        if not is_unsupported_venus_e2(self.config.get("device")):
-            return False
-        generation = self.profile.control_generation
-        return generation is None or generation < 156
 
     def start(self) -> None:
         """Start the mock device server."""
@@ -280,7 +266,7 @@ class MockMarstekDevice:
             self._send_openapi_datagram(response, addr)
             print(f"   -> Sent response: {method}")
         else:
-            print("   -> Unknown method, no response")
+            print("   -> Method not found")
 
         print()
 
@@ -406,8 +392,7 @@ class MockMarstekDevice:
         if method == "Marstek.GetDevice":
             omit_result_macs = (
                 self.profile.family is DeviceFamily.VENUS_C
-                and self.profile.firmware_version is not None
-                and self.profile.firmware_version >= 153
+                and self.profile.hmg50_control
             )
             return handle_get_device(
                 request_id,
@@ -467,7 +452,7 @@ class MockMarstekDevice:
             return handle_wifi_get_status(request_id, src, self.config, self.ip, state)
 
         elif method == "EM.GetStatus":
-            if self._hmg50_lacks_em_status():
+            if not self.profile.supports_em_status:
                 return handle_method_not_found(request_id, src)
             return handle_em_get_status(
                 request_id, src, state, profile=self.profile
@@ -530,7 +515,9 @@ class MockMarstekDevice:
                 return handle_method_not_found(request_id, src)
             return handle_sys_write(request_id, src)
 
-        return None
+        # Control firmware replies JSON-RPC -32601 ("unknow method" in
+        # HMG-50 / VNSE3-0 strings) instead of dropping the datagram.
+        return handle_method_not_found(request_id, src)
 
     def _build_response(
         self, request_id: int, method: str, params: dict[str, Any]

@@ -332,5 +332,9 @@ def test_issue_60_venus_c_153_getdevice_mac_from_src() -> None:
     assert info["wifi_mac"] == ""
     profile = resolve_firmware_profile(info["device_type"], info["version"])
     assert profile.supports_pv is False
-    assert profile.supports_ups is True
-    assert profile.supports_sys_dod is True
+    assert profile.hmg50_control is True
+    assert profile.supports_ups is False
+    assert profile.supports_sys_dod is False
+    assert profile.supports_em_status is False
+    assert profile.supports_em_energy is False
+    assert profile.openapi_reset_prone is True
