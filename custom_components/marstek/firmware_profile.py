@@ -254,7 +254,7 @@ def resolve_firmware_profile(
     hmg50_control = _is_hmg50_control_image(device_type, family, generation)
     # HMG-50 Control has no Open API SYS/UPS in 153/155/156 (recv list is
     # GetDevice, ES.*, BLE, Wifi, Bat, PV stub, and EM from 155). Do not
-    # unlock SYS from string presence in VNSE3-0 147–149 either: HA keeps
+    # unlock SYS from string presence in VNSE3-0 147-149 either: HA keeps
     # the Rev 3.1 ``ver >= 150`` gate (PDF + issue #15).
     supports_sys = (
         regular_family and firmware_150 and not hmg50_control

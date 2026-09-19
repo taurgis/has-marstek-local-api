@@ -167,7 +167,7 @@ async def test_coordinator_successful_update(
     assert data["device_mode"] == "auto"
     mock_udp_client.get_device_status.assert_called_once()
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
-    assert kwargs["include_em"] is True
+    assert kwargs["include_em"] is coordinator.profile.supports_em_status
 
 
 @pytest.mark.asyncio
@@ -195,6 +195,7 @@ async def test_coordinator_uses_current_profile_for_pv_polling(
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_pv"] is False
+    assert kwargs["include_em"] is True
     assert kwargs["profile"].family == "Venus E mini"
     assert kwargs["profile"].firmware_version == 150
 
