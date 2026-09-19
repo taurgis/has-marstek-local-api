@@ -289,6 +289,41 @@ class TestDeviceDiscovery:
         assert device.profile.family is DeviceFamily.UNKNOWN
         assert device.profile.supports_ups is False
         assert device.profile.supports_sys_dod is False
+        assert response["result"]["ble_mac"] == "02deadbeef09"
+        assert response["result"]["wifi_mac"] == "02cafebabe09"
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+        pv = device.build_response(3, "PV.GetStatus", {})
+        dod = device.build_response(4, "DOD.SET", {"value": 80})
+        status = device.build_response(5, "ES.GetStatus", {"id": 0})
+        assert em is not None
+        assert em["error"]["code"] == -32601
+        assert pv is not None
+        assert pv["error"]["code"] == -32601
+        assert dod is not None
+        assert dod["error"]["code"] == -32601
+        assert status is not None
+        assert "bat_power" not in status["result"]
+        assert status["result"]["bat_soc"] == 50
+
+    def test_hmg50_156_serves_em_get_status(self) -> None:
+        """HMG-50 Control 156 added Open API EM.GetStatus; 153 does not."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={
+                "device": "VenusE",
+                "ver": 156,
+                "ble_mac": "02deadbeef09",
+                "wifi_mac": "02cafebabe09",
+            },
+        )
+
+        em = device.build_response(2, "EM.GetStatus", {"id": 0})
+
+        assert em is not None
+        assert "result" in em
+        assert "error" not in em
+        assert em["src"] == "VenusE-02deadbeef09"
 
     def test_venus_a_147_getmode_includes_zero_ct_keys(self) -> None:
         """Issue #11: Venus A 147 GetMode includes CT/energy keys as zeros."""

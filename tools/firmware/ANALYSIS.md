@@ -143,6 +143,13 @@ Matching only `Venus E2.0` / `VNSE2-0` would accept a real E2 as Venus E 3.x.
 The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as unsupported.
 Venus E 3.x requires `VenusE 3.0` / `VNSE3`.
 
+HMG-50 Control **153** Open API methods in the binary: `Marstek.GetDevice`,
+`ES.GetMode`, `ES.SetMode`, `Wifi.SetConfig`, `BLE.GetStatus`, `ES.GetStatus`,
+`PV.GetStatus`, `Wifi.GetStatus`, `Bat.GetStatus`. `EM.GetStatus` appears only
+as a meter *client* request on 153 (`{"id":%d,"method":"EM.GetStatus"...}`).
+Control **156** adds the Open API server method `EM.GetStatus`. The Docker mock
+at `172.28.0.29` (`--device VenusE --ver 153`) follows the 153 image.
+
 Venus A/D reports on issue #15 used the same Local API stack symptoms. This
 integration treats every **known family** below Control generation 150 as
 reset-prone. Venus E 3.0 **150** is the build with a published Local API
