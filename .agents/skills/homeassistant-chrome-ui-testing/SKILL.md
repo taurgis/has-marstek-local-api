@@ -511,6 +511,8 @@ python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_live_campaign.
 
 HA 2026 `config_entries/get_single` wraps `{config_entry: {...}}` and omits `data.host`. The campaign binds loaded entries to compose mocks by BLE-MAC (device registry identifiers / unique_id) and by the host recorded at add time. Do not look for `data.host` on the HTTP list or `get_single`. Login uses REST `/auth/login_flow` + `localStorage.hassTokens`, not `ha_cdp fill` on the authorize form.
 
+The campaign enables Marstek **debug** logging (`logger/integration_log_level`) for the run, then writes `/opt/cursor/artifacts/ha_live_campaign_ha.log` and a method/host/timeout summary in the JSON (`ha_logs`). It flags `Invalid device response` plus a second `UDP socket bound` on 30000 (reuseport collision). Restore the log level to warning afterwards.
+
 Manual CDP leftovers (when recording, not when running `campaign`):
 
 1. `entries` / `flows` / `states --prefix venus` — inventory.

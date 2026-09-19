@@ -19,6 +19,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -40,6 +41,7 @@ MANUAL_DEVICE_OPTION = "__manual__"
 DEFAULT_UDP_PORT = 30000
 # argparse default in tools/mock_device/__main__.py when compose omits --ble-mac.
 DEFAULT_MOCK_BLE_MAC = "009b08a5aa39"
+HA_CONTAINER = "marstek-ha-dev"
 BAT_ENTITY_KEYS = frozenset(
     {
         "bat_temp",
@@ -384,6 +386,140 @@ def docker_container(action: str, name: str) -> dict[str, Any]:
     }
 
 
+def ha_container_logs(since: str) -> str:
+    """Return Home Assistant container logs since an RFC3339 or relative stamp."""
+    proc = subprocess.run(
+        ["sudo", "docker", "logs", "--since", since, HA_CONTAINER],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    return combined
+
+
+def marstek_log_lines(log_text: str) -> list[str]:
+    """Keep Marstek / Open API lines from a docker log dump."""
+    kept: list[str] = []
+    for raw in log_text.splitlines():
+        if (
+            "custom_components.marstek" in raw
+            or "pymarstek" in raw
+            or "UDP socket bound" in raw
+            or "via pooled UDP client" in raw
+            or "Querying device info" in raw
+            or "Request timeout" in raw
+            or "No valid response from device" in raw
+            or "Invalid device response" in raw
+            or "Start polling device" in raw
+            or "Polling paused" in raw
+        ):
+            kept.append(raw)
+    return kept
+
+
+def analyze_ha_logs(log_text: str) -> dict[str, Any]:
+    """Summarize Open API traffic and known wire issues from HA debug logs."""
+    send_re = re.compile(r"Send: (\S+):(\d+) \|")
+    recv_re = re.compile(r"Recv: (\S+):(\d+) \|")
+    method_re = re.compile(r'"method"\s*:\s*"([^"]+)"')
+    timeout_re = re.compile(r"Request timeout: (\S+):(\d+)")
+    bound_re = re.compile(r"UDP socket bound to (\S+):(\S+)")
+    pooled_re = re.compile(
+        r"Querying device info from (\S+):(\d+) via pooled UDP client"
+    )
+    query_re = re.compile(r"Querying device info from (\S+):(\d+)\b")
+    no_resp_re = re.compile(r"No valid response from device at (\S+):(\d+)")
+    invalid_re = re.compile(r"Invalid device response from (\S+)")
+    ts_re = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+
+    methods: dict[str, int] = {}
+    send_hosts: dict[str, int] = {}
+    recv_hosts: dict[str, int] = {}
+    timeouts: list[str] = []
+    binds: list[str] = []
+    pooled: list[str] = []
+    unpooled: list[str] = []
+    no_response: list[str] = []
+    invalid: list[str] = []
+    send_times: dict[str, list[float]] = {}
+    paused = 0
+    errors = 0
+    warnings = 0
+
+    for line in log_text.splitlines():
+        if " ERROR " in line and "marstek" in line.lower():
+            errors += 1
+        if " WARNING " in line and "marstek" in line.lower():
+            warnings += 1
+        if "Polling paused" in line:
+            paused += 1
+        send = send_re.search(line)
+        if send:
+            host = send.group(1)
+            send_hosts[host] = send_hosts.get(host, 0) + 1
+            method_match = method_re.search(line)
+            method = method_match.group(1) if method_match else "unknown"
+            methods[method] = methods.get(method, 0) + 1
+            ts = ts_re.search(line)
+            if ts:
+                try:
+                    stamp = datetime.fromisoformat(ts.group(1)).timestamp()
+                except ValueError:
+                    stamp = None
+                if stamp is not None:
+                    send_times.setdefault(host, []).append(stamp)
+        recv = recv_re.search(line)
+        if recv:
+            recv_hosts[recv.group(1)] = recv_hosts.get(recv.group(1), 0) + 1
+        timeout = timeout_re.search(line)
+        if timeout:
+            timeouts.append(f"{timeout.group(1)}:{timeout.group(2)}")
+        bound = bound_re.search(line)
+        if bound:
+            binds.append(f"{bound.group(1)}:{bound.group(2)}")
+        pooled_m = pooled_re.search(line)
+        if pooled_m:
+            pooled.append(f"{pooled_m.group(1)}:{pooled_m.group(2)}")
+        elif "Querying device info from" in line:
+            query = query_re.search(line)
+            if query:
+                unpooled.append(f"{query.group(1)}:{query.group(2)}")
+        no_resp = no_resp_re.search(line)
+        if no_resp:
+            no_response.append(f"{no_resp.group(1)}:{no_resp.group(2)}")
+        invalid_m = invalid_re.search(line)
+        if invalid_m:
+            invalid.append(invalid_m.group(1))
+
+    min_interval: float | None = None
+    for stamps in send_times.values():
+        ordered = sorted(stamps)
+        for prev, nxt in pairwise(ordered):
+            gap = nxt - prev
+            if min_interval is None or gap < min_interval:
+                min_interval = gap
+
+    return {
+        "send_count": sum(send_hosts.values()),
+        "recv_count": sum(recv_hosts.values()),
+        "methods": dict(sorted(methods.items())),
+        "send_hosts": dict(sorted(send_hosts.items())),
+        "recv_hosts": dict(sorted(recv_hosts.items())),
+        "timeouts": timeouts,
+        "timeout_count": len(timeouts),
+        "socket_binds": binds,
+        "getdevice_pooled": pooled,
+        "getdevice_unpooled": unpooled,
+        "no_response": no_response,
+        "invalid_response": invalid,
+        "paused_polls": paused,
+        "error_lines": errors,
+        "warning_lines": warnings,
+        "min_send_interval_s": min_interval,
+    }
+
+
 def _flow_errors(result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {}
@@ -549,6 +685,9 @@ class Campaign:
         self.checks: list[Check] = []
         self.entry_by_host: dict[str, dict[str, Any]] = {}
         self.remembered_hosts: dict[str, str] = {}
+        self.log_since = datetime.now(UTC).isoformat()
+        self.log_analysis: dict[str, Any] = {}
+        self.log_path: str | None = None
 
     def record(self, name: str, ok: bool, detail: Any = None) -> Check:
         check = Check(name=name, ok=ok, detail=detail)
@@ -1674,11 +1813,61 @@ class Campaign:
         await asyncio.sleep(2)
         await ha_cdp.cmd_screenshot(self.cdp, self.page, path)
 
+    async def enable_debug_logging(self) -> None:
+        result = await ha_cdp.cmd_debug_logging(
+            self.cdp, self.page, "marstek", "debug", "none"
+        )
+        ok = not (isinstance(result, dict) and result.get("error") == "ws_error")
+        self.record("debug-logging", ok, result if not ok else None)
+
+    async def collect_ha_logs(self) -> dict[str, Any]:
+        raw = ha_container_logs(self.log_since)
+        lines = marstek_log_lines(raw)
+        analysis = analyze_ha_logs("\n".join(lines) if lines else raw)
+        dest = Path("/opt/cursor/artifacts")
+        if not dest.is_dir():
+            dest = Path("/tmp")
+        path = dest / "ha_live_campaign_ha.log"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        self.log_path = str(path)
+        self.log_analysis = analysis
+        invalid = analysis.get("invalid_response") or []
+        self.record(
+            "log-invalid-response",
+            not invalid,
+            invalid[:8] if invalid else None,
+        )
+        classic = bool(invalid) and any(
+            str(bind).endswith(":30000") for bind in analysis.get("socket_binds") or []
+        )
+        self.record("udp-reuseport-collision", not classic, analysis.get("socket_binds"))
+        self.record(
+            "log-api-traffic",
+            int(analysis.get("send_count") or 0) > 0,
+            {
+                "send_count": analysis.get("send_count"),
+                "recv_count": analysis.get("recv_count"),
+                "methods": analysis.get("methods"),
+                "timeout_count": analysis.get("timeout_count"),
+                "min_send_interval_s": analysis.get("min_send_interval_s"),
+                "getdevice_pooled": len(analysis.get("getdevice_pooled") or []),
+                "getdevice_unpooled": analysis.get("getdevice_unpooled"),
+            },
+        )
+        return analysis
+
+    async def disable_debug_logging(self) -> None:
+        await ha_cdp.cmd_debug_logging(
+            self.cdp, self.page, "marstek", "warning", "none"
+        )
+
     async def run(self) -> dict[str, Any]:
         token = await self.login_ui()
         self.record("login", bool(token.get("ok")), None if token.get("ok") else token)
         if not token.get("ok"):
             return self.summary()
+        self.log_since = datetime.now(UTC).isoformat()
+        await self.enable_debug_logging()
         await self.phase_reject()
         await self.phase_add()
         await self.phase_smoke()
@@ -1690,6 +1879,14 @@ class Campaign:
             await self.screenshot("ha_live_campaign_integrations.png")
         except Exception as err:
             self.record("screenshot", False, str(err))
+        try:
+            await self.collect_ha_logs()
+        except Exception as err:
+            self.record("ha-logs", False, str(err))
+        try:
+            await self.disable_debug_logging()
+        except Exception as err:
+            self.record("debug-logging-reset", False, str(err))
         return self.summary()
 
     def summary(self) -> dict[str, Any]:
@@ -1701,6 +1898,8 @@ class Campaign:
             "failures": failed,
             "checks": [asdict(c) for c in self.checks],
             "entries": list(self.entry_by_host),
+            "ha_logs": self.log_analysis,
+            "ha_log_path": self.log_path,
         }
 
 

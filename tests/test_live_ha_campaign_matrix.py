@@ -118,3 +118,31 @@ def test_resolve_entry_host_uses_ble_mac_when_get_single_omits_data() -> None:
     assert wrapped["entry_id"] == "abc"
     assert campaign.campaign_mac("02deadbeef02") == "02:de:ad:be:ef:02"
     assert campaign.campaign_mac("not-a-mac") is None
+
+
+def test_analyze_ha_logs_counts_methods_and_pooled_getdevice() -> None:
+    """Debug-log analysis extracts method frequency and reuseport collision cues."""
+    campaign = _load_campaign()
+    sample = "\n".join(
+        [
+            "2026-09-19 14:00:00.000 DEBUG (MainThread) "
+            "[custom_components.marstek.pymarstek.udp] "
+            'Send: 172.28.0.20:30000 | {"id": 1, "method": "ES.GetStatus"}',
+            "2026-09-19 14:00:05.100 DEBUG (MainThread) "
+            "[custom_components.marstek.pymarstek.udp] "
+            'Recv: 172.28.0.20:30000 | {"id": 1}',
+            "2026-09-19 14:00:05.200 DEBUG (MainThread) "
+            "[custom_components.marstek.discovery] "
+            "Querying device info from 172.28.0.25:30000 via pooled UDP client",
+            "2026-09-19 14:00:06.000 WARNING (MainThread) "
+            "[custom_components.marstek.pymarstek.udp] "
+            "Request timeout: 172.28.0.22:30001",
+        ]
+    )
+    analysis = campaign.analyze_ha_logs(sample)
+    assert analysis["send_count"] == 1
+    assert analysis["recv_count"] == 1
+    assert analysis["methods"]["ES.GetStatus"] == 1
+    assert analysis["getdevice_pooled"] == ["172.28.0.25:30000"]
+    assert analysis["timeout_count"] == 1
+    assert analysis["invalid_response"] == []
