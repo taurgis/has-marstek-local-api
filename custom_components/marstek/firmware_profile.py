@@ -34,6 +34,12 @@ _PV_FAMILIES = frozenset({DeviceFamily.VENUS_A, DeviceFamily.VENUS_D})
 # names with a plausible Control generation below 150 still get the reset
 # warning (mis-parsed Venus). Placeholders such as ``version: 3`` do not.
 _UNKNOWN_CONTROL_GENERATION_MIN = 100
+# HMG-50 Control images in the community archives (153 / 155 / 156). The
+# same binaries can GetDevice as ``VenusE`` (unsupported E 2.x) or
+# ``VenusC`` (issue #60). Recv-list and OTA notes are shared.
+_HMG50_CONTROL_GENERATIONS = frozenset({153, 155, 156})
+_HMG50_EM_SERVER_GENERATION = 155
+_HMG50_OPENAPI_STABLE_GENERATION = 156
 # Venus E 2.x / HMG-50 is not Venus E 3.x. HMG-50 Control 153+ Open API
 # GetDevice reports ``device: "VenusE"`` (src ``VenusE-%s``), not
 # ``Venus E2.0`` / ``VNSE2``. Bare ``VenusE`` without 3.x must not unlock
@@ -65,6 +71,8 @@ class FirmwareProfile:
     pv_channel_1_power_scale: float = 0.1
     em_energy_scale: float = 1.0
     supports_em_energy: bool = False
+    supports_em_status: bool = False
+    hmg50_control: bool = False
 
     @property
     def firmware_known(self) -> bool:
@@ -107,8 +115,16 @@ class FirmwareProfile:
         settings under sustained UDP traffic. Unknown ``ver`` on a known
         family stays conservative. Unknown model names with a Control-like
         generation below 150 are also treated as reset-prone.
+
+        HMG-50 Control (Venus C 153/155/156 and bare ``VenusE`` at those
+        generations) publishes an Open API stability fix at **156**, not 150.
         """
         generation = self.control_generation
+        if self.hmg50_control:
+            return (
+                generation is None
+                or generation < _HMG50_OPENAPI_STABLE_GENERATION
+            )
         if self.family not in _KNOWN_FAMILIES:
             return (
                 generation is not None
@@ -206,6 +222,17 @@ def _control_generation(version: int | None) -> int | None:
     return version
 
 
+def _is_hmg50_control_image(
+    device_type: str | None,
+    family: DeviceFamily,
+    generation: int | None,
+) -> bool:
+    """Return whether this discovery matches an archived HMG-50 Control image."""
+    if generation not in _HMG50_CONTROL_GENERATIONS:
+        return False
+    return family is DeviceFamily.VENUS_C or is_unsupported_venus_e2(device_type)
+
+
 def resolve_firmware_profile_from_metadata(data: Mapping[str, Any]) -> FirmwareProfile:
     """Resolve capabilities from config-entry or discovery metadata."""
     return resolve_firmware_profile(data.get("device_type"), data.get("version"))
@@ -224,8 +251,18 @@ def resolve_firmware_profile(
     firmware_150 = generation is not None and generation >= 150
     known_family = family in _KNOWN_FAMILIES
     regular_family = family in _REGULAR_FAMILIES
-    supports_sys = (regular_family and firmware_150) or (
-        family is DeviceFamily.VENUS_E_MINI and firmware_known
+    hmg50_control = _is_hmg50_control_image(device_type, family, generation)
+    # HMG-50 Control has no Open API SYS/UPS in 153/155/156 (recv list is
+    # GetDevice, ES.*, BLE, Wifi, Bat, PV stub, and EM from 155). Do not
+    # unlock SYS from string presence in VNSE3-0 147-149 either: HA keeps
+    # the Rev 3.1 ``ver >= 150`` gate (PDF + issue #15).
+    supports_sys = (
+        regular_family and firmware_150 and not hmg50_control
+    ) or (family is DeviceFamily.VENUS_E_MINI and firmware_known)
+    supports_ups = (
+        (regular_family or family is DeviceFamily.VENUS_E_MINI)
+        and firmware_150
+        and not hmg50_control
     )
     # Solar energy (#35) and PV1 power (#57) are independent encodings.
     # The Rev 3.1 PDF labels PV as watts; observed firmware does not.
@@ -241,11 +278,20 @@ def resolve_firmware_profile(
     #   Venus E 147/148 (#9, #14, #15, #25): legacy — no SYS/UPS (LED at 148
     #   is app-only until Open API ver >= 150).
     #   Venus E 150 (LAN capture / #34): SYS/UPS; GetMode CT keys zeros.
-    #   Venus C 153 (#60): SYS/UPS, no PV; GetDevice may omit result MACs.
+    #   Venus C 153 (#60): HMG-50 reporting VenusC; no SYS/UPS; GetDevice
+    #   may omit result MACs; EM.GetStatus is meter-client only until 155.
     scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )
-    supports_em_energy = known_family and firmware_150
+    if is_unsupported_venus_e2(device_type) or (
+        family is DeviceFamily.VENUS_C and hmg50_control
+    ):
+        supports_em_status = (
+            generation is not None and generation >= _HMG50_EM_SERVER_GENERATION
+        )
+    else:
+        supports_em_status = known_family
+    supports_em_energy = supports_em_status and firmware_150
 
     return FirmwareProfile(
         family=family,
@@ -254,8 +300,7 @@ def resolve_firmware_profile(
         supports_sys_dod=supports_sys,
         supports_sys_ble_advertising=supports_sys,
         supports_sys_led=supports_sys,
-        supports_ups=(regular_family or family is DeviceFamily.VENUS_E_MINI)
-        and firmware_150,
+        supports_ups=supports_ups,
         max_manual_schedule_slot=5
         if family is DeviceFamily.VENUS_E_MINI
         else 9,
@@ -263,6 +308,8 @@ def resolve_firmware_profile(
         pv_channel_1_power_scale=0.1,
         em_energy_scale=0.1 if supports_em_energy else 1.0,
         supports_em_energy=supports_em_energy,
+        supports_em_status=supports_em_status,
+        hmg50_control=hmg50_control,
     )
 
 
@@ -277,6 +324,7 @@ def firmware_profile_diagnostics(profile: FirmwareProfile) -> dict[str, Any]:
         "supports_sys_ble_advertising": profile.supports_sys_ble_advertising,
         "supports_sys_led": profile.supports_sys_led,
         "supports_ups": profile.supports_ups,
+        "supports_em_status": profile.supports_em_status,
         "max_manual_schedule_slot": profile.max_manual_schedule_slot,
         "control_generation": profile.control_generation,
         "openapi_reset_prone": profile.openapi_reset_prone,

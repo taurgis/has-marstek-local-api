@@ -93,8 +93,9 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.24", "--port", "30003", "--device", "VenusA", "--ver", "149", "--ble-mac", "02deadbeef05", "--wifi-mac", "02cafebabe05", "--soc", "65", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
 
   # Mock device 6 - Venus C, default UDP port 30000
-  # Firmware 153 (issue #60): SYS + UPS; no PV. Same-port-reply firmware on the
-  # default Open API port, sharing 30000 with the Venus E mocks.
+  # Firmware 153 (issue #60): HMG-50 reporting VenusC. No SYS/UPS; no
+  # EM.GetStatus server method; GetDevice omits result MACs. Reset-prone
+  # until HMG-50 Control 156.
   mock-marstek-6:
     build:
       context: ..
@@ -152,6 +153,217 @@ services:
       marstek_net:
         ipv4_address: 172.28.0.29
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.29", "--device", "VenusE", "--ver", "153", "--ble-mac", "02deadbeef09", "--wifi-mac", "02cafebabe09", "--soc", "40"]
+
+  # Remaining archived Control versions (see tools/firmware/catalog.json).
+  # Existing .20–.29 stay as the issue-log / custom-port set.
+
+  # VNSE3-0 Control 144 (oldest archived Venus E 3.0 Open API image)
+  mock-marstek-10:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-10
+    environment:
+      - MOCK_IP=172.28.0.30
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.30
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.30", "--device", "VenusE 3.0", "--ver", "144", "--ble-mac", "02deadbeef0a", "--wifi-mac", "02cafebabe0a", "--soc", "44"]
+
+  mock-marstek-11:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-11
+    environment:
+      - MOCK_IP=172.28.0.31
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.31
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.31", "--device", "VenusE 3.0", "--ver", "147", "--ble-mac", "02deadbeef0b", "--wifi-mac", "02cafebabe0b", "--soc", "47"]
+
+  mock-marstek-12:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-12
+    environment:
+      - MOCK_IP=172.28.0.32
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.32
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.32", "--device", "VenusE 3.0", "--ver", "1476", "--ble-mac", "02deadbeef0c", "--wifi-mac", "02cafebabe0c", "--soc", "46"]
+
+  mock-marstek-13:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-13
+    environment:
+      - MOCK_IP=172.28.0.33
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.33
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.33", "--device", "VenusE 3.0", "--ver", "148", "--ble-mac", "02deadbeef0d", "--wifi-mac", "02cafebabe0d", "--soc", "48"]
+
+  mock-marstek-14:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-14
+    environment:
+      - MOCK_IP=172.28.0.34
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.34
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.34", "--device", "VenusE 3.0", "--ver", "149", "--ble-mac", "02deadbeef0e", "--wifi-mac", "02cafebabe0e", "--soc", "49"]
+
+  # VNSA-0 1487 (app 148.7; folds to generation 148)
+  mock-marstek-15:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-15
+    environment:
+      - MOCK_IP=172.28.0.35
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.35
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.35", "--device", "VenusA", "--ver", "1487", "--ble-mac", "02deadbeef0f", "--wifi-mac", "02cafebabe0f", "--soc", "38", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
+
+  # VNSA-0 1508 banners VEPRO-0 / VenusE Pro — unknown family, not Venus A
+  mock-marstek-16:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-16
+    environment:
+      - MOCK_IP=172.28.0.36
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.36
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.36", "--device", "VenusE Pro", "--ver", "1508", "--ble-mac", "02deadbeef10", "--wifi-mac", "02cafebabe10", "--soc", "42"]
+
+  # VNSA-0 1509 (app 150.9; Open API ver 1509 folds to generation 150)
+  mock-marstek-17:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-17
+    environment:
+      - MOCK_IP=172.28.0.37
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.37
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.37", "--device", "VenusA", "--ver", "1509", "--ble-mac", "02deadbeef11", "--wifi-mac", "02cafebabe11", "--soc", "71", "--pv-channels", "400:45:8.8,310:42:7.4,250:40:6.2,190:38:5.0"]
+
+  mock-marstek-18:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-18
+    environment:
+      - MOCK_IP=172.28.0.38
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.38
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.38", "--device", "VenusD", "--ver", "147", "--ble-mac", "02deadbeef12", "--wifi-mac", "02cafebabe12", "--soc", "61", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
+
+  mock-marstek-19:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-19
+    environment:
+      - MOCK_IP=172.28.0.39
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.39
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.39", "--device", "VenusD", "--ver", "149", "--ble-mac", "02deadbeef13", "--wifi-mac", "02cafebabe13", "--soc", "62", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
+
+  mock-marstek-20:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-20
+    environment:
+      - MOCK_IP=172.28.0.40
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.40
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.40", "--device", "VenusD", "--ver", "1492", "--ble-mac", "02deadbeef14", "--wifi-mac", "02cafebabe14", "--soc", "63", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
+
+  mock-marstek-21:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-21
+    environment:
+      - MOCK_IP=172.28.0.41
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.41
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.41", "--device", "VenusD", "--ver", "150", "--ble-mac", "02deadbeef15", "--wifi-mac", "02cafebabe15", "--soc", "64", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
+
+  mock-marstek-22:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-22
+    environment:
+      - MOCK_IP=172.28.0.42
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.42
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.42", "--device", "VenusC", "--ver", "155", "--ble-mac", "02deadbeef16", "--wifi-mac", "02cafebabe16", "--soc", "51"]
+
+  mock-marstek-23:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-23
+    environment:
+      - MOCK_IP=172.28.0.43
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.43
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.43", "--device", "VenusC", "--ver", "156", "--ble-mac", "02deadbeef17", "--wifi-mac", "02cafebabe17", "--soc", "53"]
+
+  mock-marstek-24:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-24
+    environment:
+      - MOCK_IP=172.28.0.44
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.44
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.44", "--device", "VenusE", "--ver", "155", "--ble-mac", "02deadbeef18", "--wifi-mac", "02cafebabe18", "--soc", "41"]
+
+  mock-marstek-25:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-25
+    environment:
+      - MOCK_IP=172.28.0.45
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.45
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.45", "--device", "VenusE", "--ver", "156", "--ble-mac", "02deadbeef19", "--wifi-mac", "02cafebabe19", "--soc", "43"]
+
+  mock-marstek-26:
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-26
+    environment:
+      - MOCK_IP=172.28.0.46
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.46
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.46", "--device", "Venus E mini", "--ver", "150", "--ble-mac", "02deadbeef1a", "--wifi-mac", "02cafebabe1a", "--soc", "56"]
 
 networks:
   marstek_net:

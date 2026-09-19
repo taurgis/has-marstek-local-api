@@ -167,7 +167,7 @@ async def test_coordinator_successful_update(
     assert data["device_mode"] == "auto"
     mock_udp_client.get_device_status.assert_called_once()
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
-    assert kwargs["include_em"] is True
+    assert kwargs["include_em"] is coordinator.profile.supports_em_status
 
 
 @pytest.mark.asyncio
@@ -195,8 +195,38 @@ async def test_coordinator_uses_current_profile_for_pv_polling(
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_pv"] is False
+    assert kwargs["include_em"] is True
     assert kwargs["profile"].family == "Venus E mini"
     assert kwargs["profile"].firmware_version == 150
+
+
+@pytest.mark.asyncio
+async def test_coordinator_skips_em_status_on_venus_c_153(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """HMG-50 Control 153 has no Open API EM.GetStatus server method."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusC",
+            "version": 153,
+        },
+    )
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["include_em"] is False
+    assert kwargs["profile"].hmg50_control is True
+    assert kwargs["profile"].supports_em_status is False
 
 
 @pytest.mark.asyncio

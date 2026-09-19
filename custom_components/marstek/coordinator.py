@@ -321,7 +321,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data using library's get_device_status method with tiered polling.
 
         Tiered polling intervals (configurable per device):
-        - Fast (base interval): ES.GetMode, ES.GetStatus, EM.GetStatus - real-time power
+        - Fast (base interval): ES.GetMode, ES.GetStatus, and EM.GetStatus
+          when the firmware profile serves it (HMG-50 / Venus C 153 does not)
         - Medium: PV.GetStatus - solar data
         - Slow: Wifi.GetStatus, Bat.GetStatus - rarely changes
 
@@ -378,7 +379,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timeout=request_timeout,
                 include_pv=include_pv,
                 include_wifi=include_wifi,
-                include_em=True,  # Always fetch - fast tier
+                include_em=self.profile.supports_em_status,
                 include_bat=include_bat,
                 parallel_requests=parallel_requests,
                 delay_between_requests=request_delay,

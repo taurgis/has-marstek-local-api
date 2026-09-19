@@ -131,7 +131,8 @@ Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseabl
 |--------|--------|-------|
 | Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149** ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); firmware **148 or older** stays Wh. PV channel 1 stays deciwatts (÷10) through **150.9** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). SYS/UPS from 150 |
 | Venus D 3.0 | Supported (PV) | SYS/UPS from firmware 150; PV channel 1 stays deciwatts |
-| Venus C / Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
+| Venus C | Supported (no PV) | HMG-50 Control **153/155/156**: no SYS/UPS. `EM.GetStatus` from **155**. Open API reset-prone until **156**. GetDevice may omit result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)) |
+| Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
 | Venus E mini | Supported (no PV) | SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |
 | Venus E 2.0 | **Not compatible** | May disconnect the device from CT003 |
 | Other OPEN API devices | May work (untested) | Treated as unknown family (legacy-safe) |

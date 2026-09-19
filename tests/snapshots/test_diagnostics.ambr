@@ -65,6 +65,7 @@
       'max_manual_schedule_slot': 9,
       'openapi_reset_prone': False,
       'parallel_requests_safe': True,
+      'supports_em_status': False,
       'supports_pv': False,
       'supports_sys_ble_advertising': False,
       'supports_sys_dod': False,

@@ -77,8 +77,8 @@ def handle_es_get_status(
         state: Battery simulator state
         device_type: Device type string (currently unused for bat_power decision)
         include_bat_power: If True, include bat_power in response. Default False
-            since real Venus E devices do NOT return bat_power, and we have no
-            evidence other devices do either. Enable for testing purposes only.
+            because Venus E 3.0 and later HMG-50 images omit it. HMG-50 Control
+            153 includes the field; the mock passes True for that profile.
     """
     # Negate power: internal +discharge/-charge → API +charge/-discharge
     bat_power = -state["power"]
@@ -104,10 +104,9 @@ def handle_es_get_status(
         },
     }
 
-    # By default, NO device returns bat_power in ES.GetStatus response
-    # Real Venus E 3.0 confirmed: bat_power is NOT in the response
-    # Integration uses fallback calculation: pv_power - ongrid_power
-    # Enable include_bat_power=True only for testing the direct path
+    # HMG-50 Control 153 includes bat_power in the ES.GetStatus field table.
+    # Venus E 3.0 and HMG-50 155/156 omit it; the integration then uses
+    # pv_power - ongrid_power. Enable include_bat_power to test the direct path.
     if include_bat_power:
         result["result"]["bat_power"] = bat_power
 
@@ -159,7 +158,7 @@ def handle_es_get_mode(
         "bat_soc": state["soc"],
     }
     if profile.supports_em_energy:
-        if profile.family is DeviceFamily.VENUS_E:
+        if profile.family in {DeviceFamily.VENUS_E, DeviceFamily.VENUS_C}:
             result.update(_unpopulated_getmode_meter_template())
         else:
             result.update(
@@ -363,7 +362,7 @@ def handle_es_set_mode(request_id: int, src: str) -> dict[str, Any]:
 
 
 def handle_sys_write(request_id: int, src: str) -> dict[str, Any]:
-    """Handle DOD.SET, Ble.Adv, and Led.Ctrl success per Open API Rev 3.1."""
+    """Handle DOD.SET, Ble.Adv, Led.Ctrl, and other set_result writes."""
     return {
         "id": request_id,
         "src": src,
@@ -371,6 +370,29 @@ def handle_sys_write(request_id: int, src: str) -> dict[str, Any]:
             "set_result": True,
         },
     }
+
+
+def handle_invalid_params(request_id: int, src: str) -> dict[str, Any]:
+    """Return JSON-RPC invalid-params for malformed Open API writes."""
+    return {
+        "id": request_id,
+        "src": src,
+        "error": {
+            "code": -32602,
+            "message": "Invalid params",
+        },
+    }
+
+
+def handle_wifi_set_config(
+    request_id: int, src: str, params: dict[str, Any], config: dict[str, Any]
+) -> dict[str, Any]:
+    """Handle HMG-50 ``Wifi.SetConfig`` (ssid + optional pass)."""
+    ssid = params.get("ssid")
+    if not isinstance(ssid, str) or not ssid:
+        return handle_invalid_params(request_id, src)
+    config["wifi_name"] = ssid
+    return handle_sys_write(request_id, src)
 
 
 def handle_method_not_found(

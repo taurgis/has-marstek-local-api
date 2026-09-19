@@ -11,7 +11,6 @@ from typing import Any
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     FirmwareProfile,
-    is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
 from custom_components.marstek.pymarstek.const import (
@@ -31,6 +30,12 @@ from .const import (
     MODE_PASSIVE,
     MODE_UPS,
 )
+from .firmware_quirks import (
+    pv_method_not_found_extra_data,
+    reports_es_bat_power,
+    supports_set_ver_and_factory_reset,
+    supports_wifi_set_config,
+)
 from .handlers import (
     get_static_state,
     handle_bat_get_status,
@@ -40,10 +45,12 @@ from .handlers import (
     handle_es_get_status,
     handle_es_set_mode,
     handle_get_device,
+    handle_invalid_params,
     handle_method_not_found,
     handle_pv_get_status,
     handle_sys_write,
     handle_wifi_get_status,
+    handle_wifi_set_config,
 )
 from .simulators import BatterySimulator
 from .utils import (
@@ -122,19 +129,6 @@ class MockMarstekDevice:
         # Control firmware freezes Open API after a 0-byte UDP datagram
         # (VNSE3-0 json_data.c / CH395 recv path).
         self._openapi_frozen = False
-
-    def _hmg50_lacks_em_status(self) -> bool:
-        """Return whether this HMG-50 Open API build has no EM.GetStatus.
-
-        Control 153 (``202505301136007a5b57023.bin``) lists GetDevice, ES.*,
-        BLE.GetStatus, PV.GetStatus, Wifi.*, and Bat.GetStatus. ``EM.GetStatus``
-        is only a meter *client* request on that image. Control 156 added the
-        Open API server method (``20251118172129117290445.bin``).
-        """
-        if not is_unsupported_venus_e2(self.config.get("device")):
-            return False
-        generation = self.profile.control_generation
-        return generation is None or generation < 156
 
     def start(self) -> None:
         """Start the mock device server."""
@@ -280,7 +274,7 @@ class MockMarstekDevice:
             self._send_openapi_datagram(response, addr)
             print(f"   -> Sent response: {method}")
         else:
-            print("   -> Unknown method, no response")
+            print("   -> Method not found")
 
         print()
 
@@ -406,8 +400,7 @@ class MockMarstekDevice:
         if method == "Marstek.GetDevice":
             omit_result_macs = (
                 self.profile.family is DeviceFamily.VENUS_C
-                and self.profile.firmware_version is not None
-                and self.profile.firmware_version >= 153
+                and self.profile.hmg50_control
             )
             return handle_get_device(
                 request_id,
@@ -431,7 +424,8 @@ class MockMarstekDevice:
                 state_with_capacity,
                 self.config.get("device", ""),
                 profile=self.profile,
-                include_bat_power=self.include_bat_power,
+                include_bat_power=self.include_bat_power
+                or reports_es_bat_power(self.profile),
             )
 
         elif method == "ES.GetMode":
@@ -441,14 +435,10 @@ class MockMarstekDevice:
 
         elif method == "PV.GetStatus":
             if not self.profile.supports_pv:
-                extra_data = (
-                    424
-                    if self.profile.firmware_version is not None
-                    and self.profile.firmware_version >= 150
-                    else None
-                )
                 return handle_method_not_found(
-                    request_id, src, extra_data=extra_data
+                    request_id,
+                    src,
+                    extra_data=pv_method_not_found_extra_data(self.profile),
                 )
             pv_channels = self.config.get("pv_channels")
             if isinstance(pv_channels, list) and pv_channels:
@@ -467,7 +457,7 @@ class MockMarstekDevice:
             return handle_wifi_get_status(request_id, src, self.config, self.ip, state)
 
         elif method == "EM.GetStatus":
-            if self._hmg50_lacks_em_status():
+            if not self.profile.supports_em_status:
                 return handle_method_not_found(request_id, src)
             return handle_em_get_status(
                 request_id, src, state, profile=self.profile
@@ -496,14 +486,7 @@ class MockMarstekDevice:
                     or schedule_slot < 0
                     or schedule_slot > self.profile.max_manual_schedule_slot
                 ):
-                    return {
-                        "id": request_id,
-                        "src": src,
-                        "error": {
-                            "code": -32602,
-                            "message": "Invalid params",
-                        },
-                    }
+                    return handle_invalid_params(request_id, src)
 
             if self.simulate:
                 if mode == MODE_PASSIVE:
@@ -520,6 +503,18 @@ class MockMarstekDevice:
             print(f"   Mode changed to: {mode}")
             return handle_es_set_mode(request_id, src)
 
+        elif method == "Wifi.SetConfig":
+            if not supports_wifi_set_config(self.profile):
+                return handle_method_not_found(request_id, src)
+            return handle_wifi_set_config(request_id, src, params, self.config)
+
+        elif method in {"Set.Ver", "Reset.Factory"}:
+            if not supports_set_ver_and_factory_reset(self.profile):
+                return handle_method_not_found(request_id, src)
+            if method == "Reset.Factory" and params.get("type") == 1:
+                self.set_energy_totals()
+            return handle_sys_write(request_id, src)
+
         sys_supported = {
             CMD_DOD_SET: self.profile.supports_sys_dod,
             CMD_BLE_ADV: self.profile.supports_sys_ble_advertising,
@@ -530,7 +525,9 @@ class MockMarstekDevice:
                 return handle_method_not_found(request_id, src)
             return handle_sys_write(request_id, src)
 
-        return None
+        # Control firmware replies JSON-RPC -32601 ("unknow method" in
+        # HMG-50 / VNSE3-0 strings) instead of dropping the datagram.
+        return handle_method_not_found(request_id, src)
 
     def _build_response(
         self, request_id: int, method: str, params: dict[str, Any]

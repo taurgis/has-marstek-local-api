@@ -221,7 +221,9 @@ def test_dotted_app_firmware_labels_use_leading_open_api_integer(
         ("VenusE 3.0", 147, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
         ("VenusE 3.0", 148, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
         ("VenusE 3.0", 150, DeviceFamily.VENUS_E, 10.0, True, True, True, False, 9),
-        ("VenusC", 153, DeviceFamily.VENUS_C, 10.0, True, True, True, False, 9),
+        ("VenusC", 153, DeviceFamily.VENUS_C, 10.0, False, False, False, False, 9),
+        ("VenusC", 155, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),
+        ("VenusC", 156, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),
         ("Venus E mini", 145, DeviceFamily.VENUS_E_MINI, 1.0, True, False, False, False, 5),
         ("VenusD", 145, DeviceFamily.VENUS_D, 1.0, False, False, False, True, 9),
     ],
@@ -392,9 +394,13 @@ def test_vnse3_1476_is_legacy_reset_prone() -> None:
         ("VenusE 3.0", "147.6", True),
         ("Venus E2.0", 150, False),
         ("Venus E2.0", 144, True),
-        ("VenusE", 153, False),
+        ("VenusE", 153, True),
+        ("VenusE", 155, True),
         ("HMG-50", 156, False),
         ("HMG-50", 146, True),
+        ("VenusC", 153, True),
+        ("VenusC", 155, True),
+        ("VenusC", 156, False),
     ],
 )
 def test_openapi_reset_prone_follows_control_generation(
@@ -463,3 +469,65 @@ def test_venus_e3_is_not_classified_as_e2(device_type: str) -> None:
     """Venus E 3.x discovery names stay on the supported Venus E family."""
     assert is_unsupported_venus_e2(device_type) is False
     assert resolve_firmware_profile(device_type, 150).family is DeviceFamily.VENUS_E
+
+
+def test_venus_c_153_matches_hmg50_control_153() -> None:
+    """Issue #60 Venus C 153 is HMG-50: no SYS/UPS, no EM server, reset-prone."""
+    profile = resolve_firmware_profile("VenusC", 153)
+
+    assert profile.family is DeviceFamily.VENUS_C
+    assert profile.hmg50_control is True
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+    assert profile.supports_em_status is False
+    assert profile.supports_em_energy is False
+    assert profile.openapi_reset_prone is True
+    assert profile.parallel_requests_safe is False
+
+
+@pytest.mark.parametrize("version", [155, 156])
+def test_venus_c_155_plus_serves_em_without_sys(version: int) -> None:
+    """HMG-50 155 added EM.GetStatus; SYS/UPS stay absent through 156."""
+    profile = resolve_firmware_profile("VenusC", version)
+
+    assert profile.hmg50_control is True
+    assert profile.supports_em_status is True
+    assert profile.supports_em_energy is True
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+    assert profile.openapi_reset_prone is (version < 156)
+
+
+def test_hmg50_venuse_153_is_reset_prone_without_em_server() -> None:
+    """Bare VenusE Control 153 is unsupported HMG-50 with the 153 recv list."""
+    profile = resolve_firmware_profile("VenusE", 153)
+
+    assert profile.family is DeviceFamily.UNKNOWN
+    assert profile.hmg50_control is True
+    assert profile.supports_em_status is False
+    assert profile.openapi_reset_prone is True
+
+
+def test_venuse_pro_1508_is_unknown_not_venus_a() -> None:
+    """VNSA-0 1508 banners VEPRO-0 / VenusE Pro; do not invent that family."""
+    profile = resolve_firmware_profile("VenusE Pro", 1508)
+
+    assert profile.family is DeviceFamily.UNKNOWN
+    assert profile.hmg50_control is False
+    assert profile.control_generation == 150
+    assert profile.supports_pv is False
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+
+
+def test_venus_a_1487_folds_to_legacy_148_generation() -> None:
+    """Open API ver 1487 is app 148.7 and must not unlock SYS/UPS."""
+    profile = resolve_firmware_profile("VenusA", 1487)
+
+    assert profile.firmware_version == 1487
+    assert profile.control_generation == 148
+    assert profile.supports_sys_dod is False
+    assert profile.supports_ups is False
+    assert profile.pv_energy_scale == 1.0
+    assert profile.openapi_reset_prone is True
+

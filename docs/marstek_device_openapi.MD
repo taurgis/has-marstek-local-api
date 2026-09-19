@@ -479,6 +479,11 @@ Exact family matching matters. **Venus E mini is not Venus E.**
 
 Venus **E2.0 is not supported** by this integration.
 
+Observed HMG-50 Control **153/155/156** can GetDevice as `VenusC` (issue #60) or
+`VenusE`. Those images have **no** Open API SYS/UPS. `EM.GetStatus` is a
+server method from **155**. The PDF row above remains the vendor chapter-4
+matrix; shipped profile behavior for those generations is in 4.2.
+
 Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `VenusE 3.0`) **or** vendor SKUs (`VNSA-0`, `VNSD-0`, `VNSE3-0`). Both map to the same families. Venus E 2.x is **HMG-50**: Open API GetDevice reports `device: "VenusE"` (not `VenusE 3.0`). Bare `VenusE`, `HMG-50`, and `VNSE2` are rejected.
 
 ### 4.2 Integration firmware-profile behavior (shipped)
@@ -493,8 +498,11 @@ Inputs: device family + integer discovery `ver`. App labels such as `148.3` and 
 | Venus A | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | deciwatt → W | 0.1 Wh → Wh |
 | Venus D | < 150 or unknown | yes | no | no | 0–9 | unscaled unless profile says otherwise | deciwatt → W | none |
 | Venus D | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | deciwatt → W | 0.1 Wh → Wh |
-| Venus C / Venus E | < 150 or unknown | no | no | no | 0–9 | n/a (no PV) | n/a | none |
-| Venus C / Venus E | >= 150 | no | yes | yes | 0–9 | n/a | n/a | 0.1 Wh → Wh |
+| Venus C | 153 (HMG-50) | no | no | no | 0–9 | n/a | n/a | no (`EM.GetStatus` is not a server method) |
+| Venus C | 155 | no | no | no | 0–9 | n/a | n/a | 0.1 Wh → Wh |
+| Venus C | 156 | no | no | no | 0–9 | n/a | n/a | 0.1 Wh → Wh (Open API stable) |
+| Venus E | < 150 or unknown | no | no | no | 0–9 | n/a (no PV) | n/a | none |
+| Venus E | >= 150 | no | yes | yes | 0–9 | n/a | n/a | 0.1 Wh → Wh |
 | Venus E mini | known integer, `< 150` | no | **yes** (no 150 gate) | no | **0–5** | n/a | n/a | none |
 | Venus E mini | >= 150 | no | yes | yes | **0–5** | n/a | n/a | 0.1 Wh → Wh |
 | Unknown family | any | no | no | no | 0–9 | no invented scaling | deciwatt fallback unused without PV | no |
@@ -521,7 +529,7 @@ Firmware profile this integration applies: family **Venus E**, no PV, SYS DOD/BL
 
 `ES.GetStatus` still reports `pv_power` / `total_pv_energy` as zero on this non-PV family; those keys are not treated as a PV array.
 
-The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile. `mock-marstek-6` (`172.28.0.26`, `--device VenusC --ver 153`) covers Venus C Rev 3.1 (SYS/UPS, no PV) including the issue #60 GetDevice shape that omits `result` MACs. Venus A energy encodings are the Docker pair `mock-marstek-3` (`172.28.0.22`, `--device VenusA --ver 148`, solar Wh, PV1 deciwatts) and `mock-marstek-5` (`172.28.0.24`, `--device VenusA --ver 149`, solar 0.01 kWh with channel-1 still deciwatts). `mock-marstek-7` (`172.28.0.27:30004`, `--device VenusA --ver 150`) is firmware **150.9** from [#57](https://github.com/taurgis/has-marstek-local-api/issues/57): scaled solar, PV1 still deciwatts, SYS/UPS. `mock-marstek-8` (`172.28.0.28`, `--device "Venus E mini" --ver 145`) is SYS without the 150 gate and slots 0–5. `mock-marstek-9` (`172.28.0.29`, `--device VenusE --ver 153`) is Venus E 2.0 / HMG-50 (GetDevice `VenusE`; the integration rejects it).
+The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wire shape. `mock-marstek` (`172.28.0.20`, `--ver 145`) stays on the older Venus E profile. `mock-marstek-6` (`172.28.0.26`, `--device VenusC --ver 153`) covers issue #60: HMG-50 reporting VenusC, no SYS/UPS, no EM server, omitted `result` MACs. Venus A energy encodings are the Docker pair `mock-marstek-3` (`172.28.0.22`, `--device VenusA --ver 148`, solar Wh, PV1 deciwatts) and `mock-marstek-5` (`172.28.0.24`, `--device VenusA --ver 149`, solar 0.01 kWh with channel-1 still deciwatts). `mock-marstek-7` (`172.28.0.27:30004`, `--device VenusA --ver 150`) is firmware **150.9** from [#57](https://github.com/taurgis/has-marstek-local-api/issues/57): scaled solar, PV1 still deciwatts, SYS/UPS. `mock-marstek-8` (`172.28.0.28`, `--device "Venus E mini" --ver 145`) is SYS without the 150 gate and slots 0–5. `mock-marstek-9` (`172.28.0.29`, `--device VenusE --ver 153`) is Venus E 2.0 / HMG-50 (GetDevice `VenusE`; the integration rejects it). Additional archived Control images occupy `172.28.0.30`–`172.28.0.46`.
 
 ---
 
@@ -532,3 +540,4 @@ The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wi
 - **2026-09-15** Reads accept integer `ES.GetMode` values `0–4` and fall back to instance id `1` when `id=0` fails. Writes, battery-power math, BLE-MAC unique IDs, and the `id=0` default stay this integration's contract. Vendor SKUs `VNSA-0` / `VNSD-0` / `VNSE3-0` map onto existing Venus families.
 - **2026-09-18** Venus A Docker mocks: firmware **148** (solar Wh, channel-1 deciwatts; 148 or older) beside firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). App firmware labels such as `148.3` use the leading Open API integer.
 - **2026-09-19** Docker mocks: Venus A firmware **150** / **150.9** (SYS/UPS, scaled solar, PV1 deciwatts) and Venus E mini firmware **145** (SYS without the 150 gate, slots 0–5). Venus C **153** GetDevice omits result MAC fields (issue #60). Venus A **147** GetMode CT zeros and legacy EM energy keys match GitHub issue logs. Venus E 2.0 / HMG-50 **153** (`172.28.0.29`, GetDevice `VenusE`) is present so discovery cannot treat it as Venus E 3.x.
+- **2026-09-19** Community Control firmware matrix: Venus C 153/155/156 follow HMG-50 (no SYS/UPS; EM server from 155; Open API stable at 156). Docker mocks cover every archived VNSE3-0 / VNSA-0 / VNSD-0 / HMG-50 Control `ver`. `VenusE Pro` 1508 stays an unknown family.

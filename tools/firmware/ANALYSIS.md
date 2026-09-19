@@ -119,6 +119,13 @@ calls stay disabled on generation &lt; 150 and remain optional on 150+.
 - parse-error reply `id=0`, code `-32700`
 - Open API freeze after a 0-byte datagram
 - duplicate UDP replies on reset-prone firmware; a single reply on 150+
+  (HMG-50 / Venus C uses 156 for that single-reply gate)
+- JSON-RPC `-32601 Method not found` for unknown methods
+- HMG-50 / Venus C 153: no `EM.GetStatus` server method; 155+ serves it
+- HMG-50 153 `ES.GetStatus` includes `bat_power`; 155/156 omit it
+- HMG-50 `Wifi.SetConfig`; VNSE3-0 `PV.GetStatus` `-32601` with `data: 424` on generation ≥150
+- HMG-50 153 `ES.GetStatus` includes `bat_power`; 155/156 omit it
+- HMG-50 `Wifi.SetConfig`; VNSE3-0 `PV.GetStatus` `-32601` with `data: 424` on generation ≥150
 
 ## Related vendor notes (other SKUs)
 
@@ -143,14 +150,64 @@ Matching only `Venus E2.0` / `VNSE2-0` would accept a real E2 as Venus E 3.x.
 The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as unsupported.
 Venus E 3.x requires `VenusE 3.0` / `VNSE3`.
 
-HMG-50 Control **153** Open API methods in the binary: `Marstek.GetDevice`,
-`ES.GetMode`, `ES.SetMode`, `Wifi.SetConfig`, `BLE.GetStatus`, `ES.GetStatus`,
-`PV.GetStatus`, `Wifi.GetStatus`, `Bat.GetStatus`. `EM.GetStatus` appears only
-as a meter *client* request on 153 (`{"id":%d,"method":"EM.GetStatus"...}`).
-Control **156** adds the Open API server method `EM.GetStatus`. The Docker mock
-at `172.28.0.29` (`--device VenusE --ver 153`) follows the 153 image.
+HMG-50 Control **153** Open API methods in the binary recv list:
+`Marstek.GetDevice`, `ES.GetMode`, `ES.SetMode`, `Wifi.SetConfig`,
+`BLE.GetStatus`, `ES.GetStatus`, `PV.GetStatus`, `Wifi.GetStatus`,
+`Bat.GetStatus`. `EM.GetStatus` appears only as a meter *client* request
+on 153 (`{"id":%d,"method":"EM.GetStatus"...}`). Control **155** adds the
+Open API **server** method `EM.GetStatus` to that recv list. Control **156**
+OTA is “Improved OpenAPI interface stability”. None of 153/155/156 contain
+`DOD.SET` / `Ble.Adv` / `Led.Ctrl`. GetDevice identity strings include both
+`VenusE` / `VenusE-%s` and `VenusC` / `VenusC-%s`.
+
+Issue [#60](https://github.com/taurgis/has-marstek-local-api/issues/60) is
+HMG-50 reporting `device: "VenusC"` and omitting GetDevice result MACs. The
+firmware profile therefore treats Venus C **153/155/156** as HMG-50 Control:
+no SYS/UPS, EM server from **155**, reset-prone until **156**. Bare
+`VenusE` at those generations stays an unsupported E 2.x identity.
+
+Docker mocks:
+
+- `172.28.0.26` Venus C 153 (issue #60)
+- `172.28.0.42` / `.43` Venus C 155 / 156
+- `172.28.0.29` / `.44` / `.45` unsupported `VenusE` 153 / 155 / 156
+
+## Archived Control matrix (community OTA)
+
+`catalog.json` now lists every Control image hashed from
+[rweijnen/marstek-firmware-archive](https://github.com/rweijnen/marstek-firmware-archive)
+and [sphings79/marstek-firmware-archiv](https://github.com/sphings79/marstek-firmware-archiv).
+Blobs stay local-only.
+
+| SKU | Open API `ver` | Generation | Notes |
+|-----|----------------|------------|-------|
+| VNSE3-0 | 144, 147, 1476, 148, 149, 150 | 144–150 | 1476 is app 147.6. SYS/UPS at 150. Live 150 `PV.GetStatus` is `-32601`. |
+| VNSA-0 | 148, 1487, 149, 150, 1508, 1509 | 148–150 | 1487→148, 1508/1509→150. 1508 banners `VEPRO-0` / `VenusE Pro` (unknown family). |
+| VNSD-0 | 147, 149, 1492, 150 | 147–150 | 1492→149. Venus D 149 does **not** use the Venus A 149 solar `×10` scale. |
+| HMG-50 | 153, 155, 156 | 153–156 | No SYS. EM server from 155. Open API stable at 156. |
+
+String presence of `DOD.SET` / `Ble.Adv` / `Led.Ctrl` on VNSE3-0 **147–149**
+and VNSA-0 **148** does **not** unlock Home Assistant SYS entities. The
+Rev 3.1 PDF plus issue #15 keep the generation ≥ 150 gate.
+
+`tools/mock_device` now reproduces, per firmware profile:
+
+- uint16 JSON-RPC id truncation
+- parse-error reply `id=0`, code `-32700`
+- Open API freeze after a 0-byte datagram
+- duplicate UDP replies on reset-prone firmware (VNSE3-0 &lt; 150, HMG-50 &lt; 156)
+- JSON-RPC `-32601` for unknown methods (Control `unknow method` path)
+- HMG-50 153: no `EM.GetStatus` server method; 155+ serves it
+- HMG-50 153 `ES.GetStatus` includes `bat_power`; 155/156 omit it
+- HMG-50 `Wifi.SetConfig` (ssid required); VNSE3-0 / VNSA-0 / VNSD-0 `-32601`
+- `Set.Ver` / `Reset.Factory` acknowledged from VNSA-0 1487 and generation 149+
+  (not HMG-50). Home Assistant still does not expose those writes.
+- Venus C GetDevice omits result MACs (issue #60)
+- Venus E 3.0 generation ≥150 `PV.GetStatus` `-32601` with `data: 424`;
+  `ver=1476` (app 147.6) does not copy that 150-only payload
 
 Venus A/D reports on issue #15 used the same Local API stack symptoms. This
 integration treats every **known family** below Control generation 150 as
-reset-prone. Venus E 3.0 **150** is the build with a published Local API
+reset-prone, except HMG-50 Venus C which uses the 156 Open API stability
+gate. Venus E 3.0 **150** is the VNSE3-0 build with a published Local API
 Ethernet fix plus a user confirmation.

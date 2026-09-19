@@ -50,14 +50,18 @@ Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be co
 
 ## Firmware UDP quirks
 
-The mock reproduces Control firmware behavior found in VNSE3-0 binaries
-(see [tools/firmware/ANALYSIS.md](../firmware/ANALYSIS.md)):
+The mock reproduces Control firmware behavior found in VNSE3-0 / HMG-50
+binaries (see [tools/firmware/ANALYSIS.md](../firmware/ANALYSIS.md)):
 
 - JSON-RPC `id` is stored as uint16 (`65536` replies as `0`)
 - Invalid JSON replies with parse error `id=0`, code `-32700`
 - A 0-byte UDP datagram freezes later Open API replies
-- Firmware below Control 150 duplicates each UDP reply (WiFi + Ethernet send
-  anomaly). Firmware **150+** sends a single reply.
+- Reset-prone firmware duplicates each UDP reply (WiFi + Ethernet send
+  anomaly). VNSE3-0 **150+** and HMG-50 **156** send a single reply
+- HMG-50 Control **153** includes `bat_power` in `ES.GetStatus`; **155/156** omit it
+- HMG-50 accepts `Wifi.SetConfig`; Venus E/A/D return Method not found
+- `Set.Ver` / `Reset.Factory` succeed on firmware whose recv list includes them
+  (1487 and 149+). They stay unimplemented in Home Assistant
 
 ## Usage
 
@@ -102,7 +106,7 @@ python -m mock_device --device VenusA --ver 148
 # Venus A firmware 149: scaled solar energy, still deciwatt PV, no SYS/UPS
 python -m mock_device --device VenusA --ver 149
 
-# Venus C firmware 153: SYS/UPS, no PV (issue #60 wire shape)
+# Venus C firmware 153: HMG-50 reporting VenusC; no SYS/UPS; no EM server
 python -m mock_device --device VenusC --ver 153
 
 # Venus A firmware 150 / 150.9: scaled solar, deciwatt PV1, SYS + UPS
@@ -117,7 +121,9 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs **these nine** mock devices.
+The devcontainer runs **these twenty-six** mock devices. `.20`–`.29` are the
+issue-log / custom-port set. `.30`–`.46` are the remaining archived Control
+images from `tools/firmware/catalog.json`.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
@@ -126,10 +132,23 @@ The devcontainer runs **these nine** mock devices.
 | mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 148 | 148 or older | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS. Stands in for Venus A **147** (#11) and **148.3** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)); GetMode CT keys are zeros |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
 | mock-marstek-5 | 172.28.0.24 | 30003 | VenusA | 149 | Venus A 149 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; no SYS, no UPS ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)) |
-| mock-marstek-6 | 172.28.0.26 | 30000 | VenusC | 153 | Rev 3.1 | n/a (no PV) | SYS + UPS; no PV; GetDevice omits result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)) |
+| mock-marstek-6 | 172.28.0.26 | 30000 | VenusC | 153 | HMG-50 | n/a (no PV) | No SYS/UPS; no EM.GetStatus server; GetDevice omits result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)); `bat_power` present; `Wifi.SetConfig` accepted; reset-prone |
 | mock-marstek-7 | 172.28.0.27 | 30004 | VenusA | 150 | Rev 3.1 | Channel 1 **deciwatt**, others watts; solar 0.01 kWh | PV yes; SYS + UPS ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57) firmware **150.9**) |
 | mock-marstek-8 | 172.28.0.28 | 30000 | Venus E mini | 145 | E mini | n/a (no PV) | SYS without the 150 gate; no UPS; slots 0–5 |
-| mock-marstek-9 | 172.28.0.29 | 30000 | VenusE (HMG-50 / E2.0) | 153 | Unsupported E2 | n/a (no PV) | GetDevice `device=VenusE`, `src VenusE-%s`, result MACs present; no `EM.GetStatus` until Control 156; integration must reject, not add as Venus E 3.x |
+| mock-marstek-9 | 172.28.0.29 | 30000 | VenusE (HMG-50 / E2.0) | 153 | Unsupported E2 | n/a (no PV) | GetDevice `device=VenusE`, `src VenusE-%s`, result MACs present; `bat_power` in ES.GetStatus; no `EM.GetStatus` until Control 155; integration must reject, not add as Venus E 3.x |
+
+Archived Control extras (default UDP 30000):
+
+| Service | IP | Model | `ver` | What it proves |
+|---------|-----|-------|-------|----------------|
+| mock-marstek-10–14 | 172.28.0.30–.34 | VenusE 3.0 | 144, 147, 1476, 148, 149 | Distinct VNSE3-0 Control images (1476 is app 147.6) |
+| mock-marstek-15 | 172.28.0.35 | VenusA | 1487 | Dotted 148.7; no SYS |
+| mock-marstek-16 | 172.28.0.36 | VenusE Pro | 1508 | VEPRO-0 banners; unknown family, not Venus A |
+| mock-marstek-17 | 172.28.0.37 | VenusA | 1509 | App 150.9 as Open API `ver` 1509 |
+| mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
+| mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
+| mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
+| mock-marstek-26 | 172.28.0.46 | Venus E mini | 150 | E mini with UPS + ten-slot exception still 0–5 |
 
 Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. Venus A @ 150 is the SYS/UPS PV device; do not replace the 148/149 pair with it.
 
@@ -148,6 +167,7 @@ To add devices in Home Assistant:
     - `172.28.0.27:30004`
     - `172.28.0.28:30000`
     - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
+    - `172.28.0.30`–`172.28.0.46` archived Control variants (see table above)
 
 ## Simulation Behavior
 
@@ -181,9 +201,12 @@ Accepted only when the firmware profile reports `supports_ups` (typically `ver >
 | `ES.SetMode` | Change mode; UPS rejected on legacy |
 | `PV.GetStatus` | PV panel readings (Venus A/D); power encoded per profile |
 | `Wifi.GetStatus` | WiFi signal and network info |
-| `EM.GetStatus` | CT clamp / energy meter (lifetime energy encoded on Rev 3.1) |
+| `Wifi.SetConfig` | HMG-50 only (`ssid` required); Method not found on VNSE3-0 / VNSA-0 / VNSD-0 |
+| `EM.GetStatus` | CT clamp / energy meter (lifetime energy encoded on Rev 3.1). HMG-50 / Venus C 153 replies `-32601`. |
 | `Bat.GetStatus` | Battery temperature and flags |
 | `DOD.SET` / `Ble.Adv` / `Led.Ctrl` | SYS writes on capable firmware; Method not found on legacy |
+| `Set.Ver` / `Reset.Factory` | Recv-list firmware (1487 and 149+); not exposed in Home Assistant |
+| Anything else | JSON-RPC `-32601 Method not found` (Control unknown-method path) |
 
 ## Testing Discovery
 

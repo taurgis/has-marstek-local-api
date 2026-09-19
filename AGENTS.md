@@ -273,7 +273,7 @@ Cloud Agents must use **Python 3.14.2+**. Home Assistant Core 2026.9 and `pytest
 After start:
 
 - Home Assistant: `http://127.0.0.1:8123` (onboarding, then username `admin` / password `marstek-dev`)
-- Mock devices: `172.28.0.20`–`172.28.0.26` as documented in the Chrome UI testing skill
+- Mock devices: `172.28.0.20`–`172.28.0.46` as documented in the Chrome UI testing skill
 - Nested Docker uses `fuse-overlayfs` and `iptables-legacy`. If HA cannot ping a mock, `start.sh` already sets `FORWARD ACCEPT`.
 
 Use `python3 -m ruff`, `python3 -m mypy --strict`, and `pytest` from that venv (same commands as in Verification after changes). Drive the HA UI with `.agents/skills/homeassistant-chrome-ui-testing` (`ha_cdp.py`), not screenshot clicks.
@@ -437,7 +437,7 @@ python -m mock_device --device VenusA --ver 149
 python -m mock_device --device VenusA --ver 150
 ```
 
-**In devcontainer:** Nine mock devices run automatically. `172.28.0.20` is Venus E 3.0 firmware **145** (legacy). `172.28.0.25` is Venus E 3.0 firmware **150** (Rev 3.1, matching the LAN capture). `172.28.0.26` is Venus C firmware **153** (SYS/UPS, no PV; GetDevice omits result MACs). `172.28.0.22` is Venus A firmware **148** (solar Wh, channel-1 deciwatts; 148 or older). `172.28.0.24` is Venus A firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). `172.28.0.27:30004` is Venus A firmware **150** / **150.9** (scaled solar, PV1 deciwatts, SYS/UPS). `172.28.0.28` is Venus E mini firmware **145** (SYS without the 150 gate, slots 0–5). `172.28.0.29` is Venus E 2.0 / HMG-50 firmware **153** (GetDevice `VenusE`; unsupported). Venus D @ 145 remains the other PV family on legacy encoding. Custom ports 30001/30002/30003/30004 exercise the per-port UDP pool. See `tools/mock_device/README.md`.
+**In devcontainer:** Twenty-six mock devices run automatically. `172.28.0.20`–`.29` are the issue-log / custom-port set: Venus E 145 and 150, Venus A 148/149/150, Venus D 145, Venus C 153 (HMG-50 reporting VenusC: no SYS/UPS, no EM server, omitted GetDevice MACs), Venus E mini 145, and unsupported VenusE 153. `172.28.0.30`–`.46` add the remaining archived Control images (VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini 150). `VenusE Pro` 1508 is an unknown family. Custom ports 30001/30002/30003/30004 exercise the per-port UDP pool. See `tools/mock_device/README.md`.
 
 ### Tool selection guide
 
