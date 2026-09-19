@@ -9,6 +9,10 @@
 
 ## Running tests
 
+Pytest uses `pytest-homeassistant-custom-component`, which tracks current
+Home Assistant Core and requires **Python 3.14.2+** (Core 2026.9). The
+integration itself still supports Home Assistant **2025.10+**.
+
 From repo root:
 
 ```
@@ -20,6 +24,16 @@ python3 -m mypy --strict custom_components/marstek/
 
 # Tests with coverage
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
+```
+
+## Devcontainer Home Assistant image
+
+`.devcontainer/docker-compose.yml` pins `ghcr.io/home-assistant/home-assistant:2026.9.3`. After changing the tag:
+
+```
+cd .devcontainer
+docker compose pull homeassistant
+docker compose up -d homeassistant
 ```
 
 ## Releases

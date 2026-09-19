@@ -112,7 +112,7 @@ async def test_coordinator_successful_update(
 
     assert data["battery_soc"] == 55
     assert data["battery_power"] == -250
-    assert data["device_mode"] == "Auto"
+    assert data["device_mode"] == "auto"
     mock_udp_client.get_device_status.assert_called_once()
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_em"] is True

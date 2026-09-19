@@ -135,6 +135,20 @@ def normalize_operating_mode(raw: object) -> str | None:
     return None
 
 
+def ha_operating_mode(raw: object) -> str | None:
+    """Return a Core enum option for a device-reported mode, or None.
+
+    Open API wire values use PascalCase (``Auto``). Home Assistant 2026.9
+    rejects enum sensor and select states that are not in ``options``, so map
+    known names onto ``OPERATING_MODES`` and drop unknown values. Older Core
+    still accepts the same lowercase options.
+    """
+    mode = normalize_operating_mode(raw)
+    if mode is None or mode not in OPERATING_MODES:
+        return None
+    return mode
+
+
 # Weekday bitmask mapping for manual schedules
 # mon=1, tue=2, wed=4, thu=8, fri=16, sat=32, sun=64
 WEEKDAY_MAP: Final[dict[str, int]] = {

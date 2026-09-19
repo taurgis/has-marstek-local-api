@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek import _async_update_listener
 from custom_components.marstek.const import DATA_SUPPRESS_RELOADS, DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 
 from tests.conftest import (
     create_mock_client,
@@ -885,17 +886,13 @@ async def test_remove_entry_cleans_stale_device(
 
     device_registry = dr.async_get(hass)
     formatted_mac = format_mac(mock_config_entry.data["ble_mac"])
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, formatted_mac)}
-    )
+    device = async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac))
     assert device is not None
 
     await hass.config_entries.async_remove(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     assert (
-        device_registry.async_get_device(
-            identifiers={(DOMAIN, formatted_mac)}
-        )
+        async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac))
         is None
     )

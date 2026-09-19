@@ -12,7 +12,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.const import (
+    DOMAIN,
+    MODE_AUTO,
+    MODE_UPS,
+    OPERATING_MODES,
+    ha_operating_mode,
+)
 from custom_components.marstek.device_info import get_device_identifier
 from custom_components.marstek.helpers.sensor_descriptions import _api_success_rate_sensor
 from custom_components.marstek.helpers.sensor_stats import (
@@ -25,6 +31,17 @@ from custom_components.marstek.pymarstek.data_parser import merge_device_status
 from custom_components.marstek.sensor import MarstekSensor
 
 from tests.conftest import create_mock_client, patch_marstek_integration
+
+
+def test_ha_operating_mode_maps_open_api_wire_names() -> None:
+    """HA 2026.9 enum sensors only accept OPERATING_MODES values."""
+    assert ha_operating_mode("Auto") == MODE_AUTO
+    assert ha_operating_mode("auto") == MODE_AUTO
+    assert ha_operating_mode("UPS") == MODE_UPS
+    assert ha_operating_mode(0) == MODE_AUTO
+    assert ha_operating_mode("SelfUse") is None
+    assert ha_operating_mode("selfuse") is None
+    assert ha_operating_mode(None) is None
 
 
 async def test_coordinator_success_creates_entities(
@@ -56,8 +73,6 @@ async def test_device_mode_enum_accepts_ups(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
     """The device-mode enum includes ups rather than treating it as unknown."""
-    from custom_components.marstek.const import MODE_UPS, OPERATING_MODES
-
     mock_config_entry.add_to_hass(hass)
     client = create_mock_client(
         status={"device_mode": MODE_UPS, "battery_soc": 55, "battery_power": 0}
@@ -72,6 +87,44 @@ async def test_device_mode_enum_accepts_ups(
     assert state.state == MODE_UPS
     assert state.attributes.get("options") == OPERATING_MODES
     assert MODE_UPS in state.attributes["options"]
+
+
+async def test_device_mode_enum_normalizes_open_api_auto(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Wire casing like Auto must not raise on HA 2026.9 enum sensors."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "Auto", "battery_soc": 55, "battery_power": 0}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        assert mock_config_entry.state == ConfigEntryState.LOADED
+
+    state = hass.states.get("sensor.venus_device_mode")
+    assert state is not None
+    assert state.state == MODE_AUTO
+
+
+async def test_device_mode_enum_unknown_mode_is_unknown(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Unrecognized modes become unknown instead of crashing Core 2026.9."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "SelfUse", "battery_soc": 55, "battery_power": 0}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        assert mock_config_entry.state == ConfigEntryState.LOADED
+
+    state = hass.states.get("sensor.venus_device_mode")
+    assert state is not None
+    assert state.state == "unknown"
 
 
 async def test_coordinator_failure_marks_entities_unavailable(

@@ -5,8 +5,8 @@ Thanks for contributing! Please keep changes focused and follow the existing sty
 ## Development setup
 
 ```bash
-# Create a virtual environment
-python3 -m venv venv
+# Create a virtual environment (Python 3.14.2+ — required by current HA Core tests)
+python3.14 -m venv venv
 source venv/bin/activate
 
 # Install dependencies

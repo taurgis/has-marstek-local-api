@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.components.select import SelectEntityDescription
 
-from ..const import selectable_operating_modes
+from ..const import ha_operating_mode, selectable_operating_modes
 from ..firmware_profile import FirmwareProfile
 
 
@@ -25,6 +25,6 @@ SELECT_ENTITIES: tuple[MarstekSelectEntityDescription, ...] = (
         key="operating_mode",
         translation_key="operating_mode",
         options_fn=selectable_operating_modes,
-        value_fn=lambda data: data.get("device_mode"),
+        value_fn=lambda data: ha_operating_mode(data.get("device_mode")),
     ),
 )

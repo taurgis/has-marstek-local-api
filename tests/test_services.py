@@ -32,6 +32,7 @@ from custom_components.marstek.services import (
     SERVICE_SET_MANUAL_SCHEDULES,
     SERVICE_SET_PASSIVE_MODE,
 )
+from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
 from custom_components.marstek.helpers.service_helpers import calculate_week_set
 from custom_components.marstek.pymarstek.validators import (
     ValidationError,
@@ -96,9 +97,7 @@ async def test_set_passive_mode_service(
 
         # Get device ID from registry
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         # Call service
@@ -139,9 +138,7 @@ async def test_set_passive_mode_power_out_of_range_socket_limit_default(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(ServiceValidationError, match="Requested power"):
@@ -180,9 +177,7 @@ async def test_set_passive_mode_power_allowed_when_socket_limit_disabled(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         await hass.services.async_call(
@@ -219,9 +214,7 @@ async def test_set_passive_mode_charge_ignores_socket_limit_default(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         await hass.services.async_call(
@@ -261,9 +254,7 @@ async def test_set_passive_mode_charge_ignores_socket_limit_explicit_true(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         await hass.services.async_call(
@@ -300,9 +291,7 @@ async def test_set_passive_mode_venus_a_allows_1500w_charge(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         await hass.services.async_call(
@@ -335,9 +324,7 @@ async def test_set_manual_schedule_service(
 
         # Get device ID
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         # Call service
@@ -378,8 +365,8 @@ async def test_e_mini_single_schedule_rejects_slot_six_before_udp(
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        device = async_lookup_device_by_identifier(
+            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
         )
         assert device is not None
         client.send_request.reset_mock()
@@ -425,9 +412,7 @@ async def test_clear_manual_schedules_service(
 
         # Get device ID
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         # Call service
@@ -465,8 +450,8 @@ async def test_e_mini_clear_sends_six_commands_with_single_pause(
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        device = async_lookup_device_by_identifier(
+            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
         )
         assert device is not None
         client.send_request.reset_mock()
@@ -533,9 +518,7 @@ async def test_service_command_failure_retries(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         # Should succeed after retries
@@ -578,9 +561,7 @@ async def test_service_command_all_retries_fail(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(HomeAssistantError, match="command_failed|Failed to send"):
@@ -611,9 +592,7 @@ async def test_set_manual_schedules_service(
 
         # Get device ID
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         # Call service with multiple schedules
@@ -668,8 +647,8 @@ async def test_e_mini_batch_rejects_before_pause_or_udp(
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
+        device = async_lookup_device_by_identifier(
+            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
         )
         assert device is not None
         client.send_request.reset_mock()
@@ -716,9 +695,7 @@ async def test_set_manual_schedules_invalid_time_format(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(HomeAssistantError) as err:
@@ -757,9 +734,7 @@ async def test_set_manual_schedules_invalid_time_range(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(HomeAssistantError) as err:
@@ -805,9 +780,7 @@ async def test_set_manual_schedules_power_out_of_range(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(ServiceValidationError, match="Requested power"):
@@ -851,9 +824,7 @@ async def test_set_manual_schedules_mixed_invalid_entry(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(ServiceValidationError, match="Requested power"):
@@ -908,9 +879,7 @@ async def test_set_passive_mode_unknown_device_type_out_of_range(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         with pytest.raises(ServiceValidationError, match="Requested power"):
@@ -942,9 +911,7 @@ async def test_request_data_sync_service_single_device(
 
         # Get device ID
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         # Mock the coordinator's async_request_refresh to verify it's called
@@ -1067,9 +1034,7 @@ async def test_set_passive_mode_accepts_truncated_device_id(
         await hass.async_block_till_done()
 
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, DEVICE_IDENTIFIER)}
-        )
+        device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
         client.send_request.reset_mock()
 

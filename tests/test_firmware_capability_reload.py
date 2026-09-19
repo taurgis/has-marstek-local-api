@@ -17,6 +17,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.const import DOMAIN, MODE_UPS, SELECTABLE_BASE_MODES
 from custom_components.marstek.diagnostics import async_get_config_entry_diagnostics
+from custom_components.marstek.helpers.device_lookup import (
+    async_lookup_device_by_identifier,
+    iter_device_config_entry_ids,
+)
 from custom_components.marstek.scanner import MarstekScanner
 from tests.conftest import create_mock_client, patch_marstek_integration
 
@@ -166,11 +170,13 @@ def _operating_mode_options(hass: HomeAssistant) -> list[str]:
 
 
 def _device(hass: HomeAssistant, entry: MockConfigEntry) -> dr.DeviceEntry:
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, format_mac(BLE_MAC))}
+    device = async_lookup_device_by_identifier(
+        dr.async_get(hass),
+        (DOMAIN, format_mac(BLE_MAC)),
+        config_entry_id=entry.entry_id,
     )
     assert device is not None
-    assert entry.entry_id in device.config_entries
+    assert entry.entry_id in iter_device_config_entry_ids(device)
     return device
 
 
