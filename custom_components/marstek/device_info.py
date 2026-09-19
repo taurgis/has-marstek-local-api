@@ -5,21 +5,19 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from homeassistant.helpers.device_registry import DeviceInfo, format_mac
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN
+from .helpers.flow_helpers import formatted_mac_or_none
 
 
 def get_device_identifier(device_info: dict[str, Any]) -> str:
     """Return a stable device identifier based on MAC addresses."""
-    device_identifier_raw = (
-        device_info.get("ble_mac")
-        or device_info.get("mac")
-        or device_info.get("wifi_mac")
-    )
-    if not device_identifier_raw:
-        raise ValueError("Marstek device identifier (MAC) is required for stable entities")
-    return format_mac(device_identifier_raw)
+    for key in ("ble_mac", "mac", "wifi_mac"):
+        formatted = formatted_mac_or_none(device_info.get(key))
+        if formatted is not None:
+            return formatted
+    raise ValueError("Marstek device identifier (MAC) is required for stable entities")
 
 
 def _format_device_type(device_type: str | None) -> str:

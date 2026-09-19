@@ -9,9 +9,10 @@ from custom_components.marstek.const import DOMAIN
 from custom_components.marstek.helpers.flow_helpers import (
     collect_configured_macs,
     formatted_mac_or_none,
+    get_unique_id_from_device_info,
+    identities_overlap,
     identity_macs_from_entry,
     identity_macs_from_mapping,
-    identities_overlap,
     split_devices_by_configured,
 )
 
@@ -19,9 +20,23 @@ from custom_components.marstek.helpers.flow_helpers import (
 def test_formatted_mac_or_none_rejects_invalid() -> None:
     """Non-MAC strings must not be treated as device identity."""
     assert formatted_mac_or_none("AA:BB:CC:DD:EE:FF") == "aa:bb:cc:dd:ee:ff"
+    assert formatted_mac_or_none("aabbccddeeff") == "aa:bb:cc:dd:ee:ff"
+    assert formatted_mac_or_none("aa-bb-cc-dd-ee-ff") == "aa:bb:cc:dd:ee:ff"
     assert formatted_mac_or_none("test-no-ble-mac") is None
+    assert formatted_mac_or_none("not-a-mac") is None
     assert formatted_mac_or_none(123) is None
     assert formatted_mac_or_none("") is None
+
+
+def test_get_unique_id_prefers_valid_ble_mac() -> None:
+    """Garbage BLE values must not become unique IDs when Wi-Fi is valid."""
+    assert (
+        get_unique_id_from_device_info(
+            {"ble_mac": "test-no-ble-mac", "wifi_mac": "11:22:33:44:55:66"}
+        )
+        == "11:22:33:44:55:66"
+    )
+    assert get_unique_id_from_device_info({"ble_mac": "not-a-mac"}) is None
 
 
 def test_identity_macs_from_mapping_collects_all_fields() -> None:

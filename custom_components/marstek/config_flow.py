@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.data_entry_flow import section
+from homeassistant.data_entry_flow import AbortFlow, section
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 
@@ -114,8 +114,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if is_unsupported_venus_e2(device.get("device_type")):
                 return self.async_abort(reason="unsupported_device")
 
+            self._discovered_identity_macs = identity_macs_from_mapping(device)
             await self.async_set_unique_id(formatted_unique_id)
-            self._abort_if_unique_id_configured()
+            self._abort_if_identity_configured()
 
             return self.async_create_entry(
                 title=format_device_name(device),
@@ -235,8 +236,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors={"base": "unsupported_device"},
                     )
 
+                self._discovered_identity_macs = identity_macs_from_mapping(
+                    device_info
+                )
                 await self.async_set_unique_id(formatted_unique_id)
-                self._abort_if_unique_id_configured()
+                self._abort_if_identity_configured()
 
                 return self.async_create_entry(
                     title=format_device_name(device_info),
@@ -418,11 +422,18 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     elif is_unsupported_venus_e2(device_info.get("device_type")):
                         errors["base"] = "unsupported_device"
                     else:
-                        if self.unique_id and self.unique_id != formatted_unique_id:
+                        device_macs = identity_macs_from_mapping(device_info)
+                        flow_mac = formatted_mac_or_none(self.unique_id)
+                        if (
+                            self.unique_id
+                            and formatted_unique_id != self.unique_id
+                            and (flow_mac is None or flow_mac not in device_macs)
+                        ):
                             errors["base"] = "unique_id_mismatch"
                         else:
+                            self._discovered_identity_macs = device_macs
                             await self.async_set_unique_id(formatted_unique_id)
-                            self._abort_if_unique_id_configured()
+                            self._abort_if_identity_configured()
 
                             return self.async_create_entry(
                                 title=f"Marstek {device_info.get('device_type', 'Device')}",
@@ -627,8 +638,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not formatted_unique_id:
                 return None, "invalid_discovery_info"
 
-            await self.async_set_unique_id(formatted_unique_id)
-            self._abort_if_unique_id_mismatch()
+            device_macs = identity_macs_from_mapping(device_info)
+            if not identities_overlap(identity_macs_from_entry(entry), device_macs):
+                return None, "unique_id_mismatch"
 
             data_updates: dict[str, Any] = {
                 CONF_HOST: host,
@@ -677,6 +689,17 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._discovered_metadata:
             discovered.update(identity_macs_from_mapping(self._discovered_metadata))
         return identities_overlap(entry_macs, discovered)
+
+    def _abort_if_identity_configured(self) -> None:
+        """Abort when this hardware is already configured.
+
+        Unique IDs stay as originally assigned. Match BLE, Wi-Fi, and stored
+        MAC identities so a later discovery view cannot create a second entry.
+        """
+        self._abort_if_unique_id_configured()
+        for entry in self._async_current_entries(include_ignore=False):
+            if self._entry_matches_unique_id(entry):
+                raise AbortFlow("already_configured")
 
     @staticmethod
     def async_get_options_flow(

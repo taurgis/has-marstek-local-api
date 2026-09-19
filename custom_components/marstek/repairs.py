@@ -14,6 +14,9 @@ from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import get_device_info
 from .helpers.flow_helpers import (
     get_unique_id_from_device_info,
+    identities_overlap,
+    identity_macs_from_entry,
+    identity_macs_from_mapping,
     metadata_from_device_info,
 )
 from .helpers.udp_clients import bind_port_for_host, get_udp_client
@@ -58,7 +61,10 @@ class CannotConnectRepairFlow(RepairsFlow):
                         unique_id_mac = get_unique_id_from_device_info(device_info)
                         if not unique_id_mac:
                             errors["base"] = "invalid_discovery_info"
-                        elif unique_id_mac != entry.unique_id:
+                        elif not identities_overlap(
+                            identity_macs_from_entry(entry),
+                            identity_macs_from_mapping(device_info),
+                        ):
                             errors["base"] = "unique_id_mismatch"
                         else:
                             # Update the config entry with the new host/port

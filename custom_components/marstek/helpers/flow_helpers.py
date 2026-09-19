@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -10,6 +11,9 @@ from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT
 from homeassistant.helpers.device_registry import format_mac
 
 _IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
+# Home Assistant ``format_mac`` lowercases; it does not validate. Only a
+# 6-octet hex MAC is a stable Marstek identity.
+_FORMATTED_MAC = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
 
 
 def formatted_mac_or_none(value: Any) -> str | None:
@@ -17,9 +21,12 @@ def formatted_mac_or_none(value: Any) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        return format_mac(value)
+        formatted = format_mac(value.strip())
     except (TypeError, ValueError):
         return None
+    if _FORMATTED_MAC.fullmatch(formatted) is None:
+        return None
+    return formatted
 
 
 def identity_macs_from_mapping(
@@ -122,17 +129,11 @@ def metadata_from_device_info(device_info: dict[str, Any]) -> dict[str, Any]:
 
 def get_unique_id_from_device_info(device_info: dict[str, Any]) -> str | None:
     """Return formatted unique id from device info, if available."""
-    unique_id_mac = (
-        device_info.get("ble_mac")
-        or device_info.get("mac")
-        or device_info.get("wifi_mac")
-    )
-    if not unique_id_mac:
-        return None
-    try:
-        return format_mac(unique_id_mac)
-    except (TypeError, ValueError):
-        return None
+    for key in ("ble_mac", "mac", "wifi_mac"):
+        formatted = formatted_mac_or_none(device_info.get(key))
+        if formatted is not None:
+            return formatted
+    return None
 
 
 def build_entry_data(host: str, port: int, device_info: dict[str, Any]) -> dict[str, Any]:

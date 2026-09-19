@@ -181,10 +181,10 @@ async def test_repair_flow_unique_id_mismatch(
     flow.issue_id = f"cannot_connect_{mock_config_entry.entry_id}"
     flow.data = {"entry_id": mock_config_entry.entry_id}
 
-    # Return a device with different MAC
+    # Return a device with a MAC that is not this entry's BLE or Wi-Fi identity
     device_info = {
         "ip": "192.168.1.100",
-        "ble_mac": "11:22:33:44:55:66",  # Different MAC
+        "ble_mac": "22:22:33:44:55:66",
         "device_type": "Venus",
     }
 
@@ -196,6 +196,51 @@ async def test_repair_flow_unique_id_mismatch(
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "unique_id_mismatch"
+
+
+async def test_repair_flow_accepts_wifi_unique_id_when_ble_present(
+    hass: HomeAssistant,
+) -> None:
+    """Repair must match the stored Wi-Fi identity without rewriting unique_id."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="11:22:33:44:55:66",
+        data={
+            "host": "1.2.3.4",
+            "wifi_mac": "11:22:33:44:55:66",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    flow = CannotConnectRepairFlow()
+    flow.hass = hass
+    flow.issue_id = f"cannot_connect_{entry.entry_id}"
+    flow.data = {"entry_id": entry.entry_id}
+
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "wifi_mac": "11:22:33:44:55:66",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    with (
+        patch(
+            "custom_components.marstek.repairs.get_device_info",
+            return_value=device_info,
+        ),
+        patch.object(
+            hass.config_entries, "async_reload", new_callable=AsyncMock
+        ),
+    ):
+        result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
+
+    assert result["type"] == "create_entry"
+    assert entry.unique_id == "11:22:33:44:55:66"
+    assert entry.data["host"] == "192.168.1.100"
 
 
 async def test_repair_flow_reuses_pooled_udp_client(
