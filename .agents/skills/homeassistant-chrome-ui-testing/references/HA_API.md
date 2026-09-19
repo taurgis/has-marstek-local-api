@@ -49,6 +49,9 @@ Official REST reference: [developers.home-assistant.io/docs/api/rest](https://de
 | `ha_cdp.py history ENTITY` / `logbook` | GET `/api/history/period/{ts}` / `/api/logbook/{ts}` | Official REST ([REST](https://developers.home-assistant.io/docs/api/rest/)). |
 | `ha_cdp.py debug-logging --level debug` | WS `logger/integration_log_level` | UI **Enable debug logging**. Levels are uppercase (`DEBUG`). Persistence: `none` / `once` / `permanent`. |
 | `ha_cdp.py energy-prefs` / `energy-validate` | WS `energy/get_prefs` / `energy/validate` | ENERGY + TOTAL_INCREASING sensors ([energy](https://www.home-assistant.io/docs/energy/)). |
+| `ha_cdp.py start-user-flow` | POST `/api/config/config_entries/flow` `handler=marstek` | Starts `async_step_user` (broadcast picker or manual). |
+| `ha_cdp.py add-device HOST --port PORT` | user flow → `{device: __manual__}` → `{host, port}` | Manual add used by the live campaign. |
+| `ha_cdp.py campaign` | orchestrates add/edit/remove/modes/automations | See `ha_live_campaign.py`. JSON report under `/opt/cursor/artifacts`. |
 | `ha_cdp.py upsert-automation ID JSON` | POST `/api/config/automation/config/{id}` | **Not** on the official REST page. Body may include `id`. |
 | `ha_cdp.py notifications` | WS `persistent_notification/get` | HA 2026 **does not** expose persistent notifications as `persistent_notification.*` entity states. Gap tests must use this WS type (or automation `last_triggered`). |
 

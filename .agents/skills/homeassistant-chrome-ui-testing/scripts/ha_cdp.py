@@ -1201,6 +1201,16 @@ async def cmd_diagnostics(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any
     )
 
 
+async def cmd_start_user_flow(cdp: Cdp, _page: dict[str, Any]) -> Any:
+    return await cmd_api(
+        cdp,
+        _page,
+        "POST",
+        "config/config_entries/flow",
+        {"handler": "marstek", "show_advanced_options": False},
+    )
+
+
 async def cmd_start_reconfigure(
     cdp: Cdp, _page: dict[str, Any], entry_id: str
 ) -> Any:
@@ -1777,6 +1787,26 @@ def build_parser() -> argparse.ArgumentParser:
     dcond.add_argument("device_id")
     diag = sub.add_parser("diagnostics", help="GET diagnostics for a config entry")
     diag.add_argument("entry_id")
+    sub.add_parser("start-user-flow", help="POST a new Marstek user config flow")
+    add_dev = sub.add_parser(
+        "add-device", help="User flow → Enter IP/port manually → host/port"
+    )
+    add_dev.add_argument("host")
+    add_dev.add_argument("--port", type=int, default=30000)
+    camp = sub.add_parser(
+        "campaign",
+        help="Extensive live HA campaign against every Docker mock",
+    )
+    camp.add_argument("--skip-compose", action="store_true")
+    camp.add_argument("--skip-remove", action="store_true")
+    camp.add_argument("--skip-lifecycle", action="store_true")
+    camp.add_argument(
+        "--only",
+        action="append",
+        default=None,
+        help="Limit to this mock IP (repeatable)",
+    )
+    camp.add_argument("--output", default=None, help="Write JSON report path")
     recfg = sub.add_parser("start-reconfigure", help="Start reconfigure flow")
     recfg.add_argument("entry_id")
     opts = sub.add_parser("start-options", help="Start options flow")
@@ -1936,6 +1966,11 @@ async def async_main(args: argparse.Namespace) -> int:
         data = ensure_chrome(args.url, restart=args.restart)
         _print(data, True)
         return 0 if data.get("ok") else 1
+    if args.cmd == "campaign":
+        chrome = ensure_chrome(DEFAULT_URL)
+        if not chrome.get("ok"):
+            _print({"ok": False, "error": "chrome", "detail": chrome}, True)
+            return 1
 
     async def run(cdp: Cdp, page: dict[str, Any]) -> Any:
         if args.cmd == "dump":
@@ -2007,6 +2042,30 @@ async def async_main(args: argparse.Namespace) -> int:
             return await cmd_device_conditions(cdp, page, args.device_id)
         if args.cmd == "diagnostics":
             return await cmd_diagnostics(cdp, page, args.entry_id)
+        if args.cmd == "start-user-flow":
+            return await cmd_start_user_flow(cdp, page)
+        if args.cmd == "add-device":
+            from ha_live_campaign import cmd_add_device
+
+            return await cmd_add_device(cdp, page, args.host, args.port)
+        if args.cmd == "campaign":
+            from ha_live_campaign import _write_report, run_campaign
+
+            result = await run_campaign(
+                cdp,
+                page,
+                skip_compose=args.skip_compose,
+                skip_remove=args.skip_remove,
+                skip_lifecycle=args.skip_lifecycle,
+                only_hosts=args.only,
+            )
+            report = _write_report(result, args.output)
+            if report:
+                result = {**result, "report": report}
+                Path(report).write_text(
+                    json.dumps(result, indent=2, default=str), encoding="utf-8"
+                )
+            return result
         if args.cmd == "start-reconfigure":
             return await cmd_start_reconfigure(cdp, page, args.entry_id)
         if args.cmd == "start-options":
@@ -2157,6 +2216,9 @@ async def async_main(args: argparse.Namespace) -> int:
             "device-triggers",
             "device-conditions",
             "diagnostics",
+            "start-user-flow",
+            "add-device",
+            "campaign",
             "start-reconfigure",
             "start-options",
             "flow-next",
