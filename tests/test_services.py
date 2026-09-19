@@ -128,7 +128,7 @@ async def test_set_passive_mode_power_out_of_range_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
     )
 
@@ -164,7 +164,7 @@ async def test_set_passive_mode_power_allowed_when_socket_limit_disabled(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             "socket_limit": False,
@@ -204,7 +204,7 @@ async def test_set_passive_mode_charge_ignores_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
     )
 
@@ -241,7 +241,7 @@ async def test_set_passive_mode_charge_ignores_socket_limit_explicit_true(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             "socket_limit": True,

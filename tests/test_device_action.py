@@ -159,7 +159,7 @@ async def test_device_action_power_out_of_range_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_DISCHARGE_POWER: 2500,
@@ -229,7 +229,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_default(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_CHARGE_POWER: -2000,  # Above 800W socket limit
@@ -265,7 +265,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_explicit_true
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_CHARGE_POWER: -2000,  # Above 800W socket limit
@@ -302,7 +302,7 @@ async def test_device_action_charge_allows_high_power_without_socket_limit(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
         options={
             CONF_ACTION_CHARGE_POWER: -2000,  # Above 800W but allowed without socket limit
@@ -502,7 +502,7 @@ async def test_validate_action_config_power_out_of_range(
         mock_config_entry,
         data={
             **mock_config_entry.data,
-            "device_type": "Venus E",
+            "device_type": "Venus E 3.0",
         },
     )
 
