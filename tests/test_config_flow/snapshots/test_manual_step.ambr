@@ -1,0 +1,19 @@
+# serializer version: 1
+# name: test_manual_flow_form_snapshot
+  dict({
+    'errors': dict({
+    }),
+    'fields': dict({
+      'host': dict({
+        'default': None,
+        'required': False,
+      }),
+      'port': dict({
+        'default': 'default_factory.<locals>.<lambda>()',
+        'required': False,
+      }),
+    }),
+    'step_id': 'manual',
+    'type': <FlowResultType.FORM: 'form'>,
+  })
+# ---
