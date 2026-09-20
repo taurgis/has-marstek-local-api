@@ -167,7 +167,7 @@ def create_mock_scanner() -> MagicMock:
 def patch_marstek_integration(
     client: MagicMock | None = None,
     scanner: MagicMock | None = None,
-) -> Generator[tuple[MagicMock, MagicMock], None, None]:
+) -> Generator[tuple[MagicMock, MagicMock]]:
     """Patch MarstekUDPClient and MarstekScanner for integration tests.
 
     Args:

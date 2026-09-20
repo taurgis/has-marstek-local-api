@@ -15,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
+from . import MarstekConfigEntry
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
@@ -81,9 +82,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not formatted_unique_id:
                 return await self.async_step_manual(errors={"base": "invalid_discovery_info"})
 
-            if is_unsupported_venus_e2(device.get("device_type")):
-                return self.async_abort(reason="unsupported_device")
-
+            # No Venus E2 check here: the discovery sweep below already drops
+            # those before they reach self.discovered_devices.
             self._discovered_identity_macs = identity_macs_from_mapping(device)
             await self.async_set_unique_id(formatted_unique_id)
             self._abort_if_identity_configured()
@@ -313,22 +313,21 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Handle discovery from Scanner (integration discovery)."""
         discovered_ip = discovery_info.get("ip")
-        identity_macs = identity_macs_from_mapping(discovery_info)
+        # One identity check, not two: get_unique_id_from_device_info returns
+        # the first MAC identity_macs_from_mapping would collect, so a None
+        # here is exactly an empty identity set.
+        preferred_unique_id = get_unique_id_from_device_info(discovery_info)
 
-        if not identity_macs or not discovered_ip:
+        if preferred_unique_id is None or not discovered_ip:
             return self.async_abort(reason="invalid_discovery_info")
 
         if is_unsupported_venus_e2(discovery_info.get("device_type")):
             return self.async_abort(reason="unsupported_device")
 
-        preferred_unique_id = get_unique_id_from_device_info(discovery_info)
-        if preferred_unique_id is None:
-            return self.async_abort(reason="invalid_discovery_info")
-
         await self.async_set_unique_id(preferred_unique_id)
         self._discovered_ip = discovered_ip
         self._discovered_metadata = metadata_from_device_info(discovery_info)
-        self._discovered_identity_macs = identity_macs
+        self._discovered_identity_macs = identity_macs_from_mapping(discovery_info)
         discovered_port = discovery_info.get("port")
         try:
             self._discovered_port = int(discovered_port) if discovered_port is not None else None
@@ -621,7 +620,13 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
+        config_entry: MarstekConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Return the options flow."""
+        """Return the options flow.
+
+        The annotation is the integration's own typed entry alias on purpose:
+        Home Assistant's runtime-data rule checks this signature once
+        strict-typing is claimed.
+        https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/runtime-data
+        """
         return MarstekOptionsFlow()

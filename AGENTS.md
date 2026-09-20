@@ -250,6 +250,10 @@ python3 -m mypy --strict custom_components/marstek/
 # 3. Run all tests with coverage check (>95% required)
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
+# 3b. The config flow is held to 100% (bronze config-flow-test-coverage).
+# Reads the .coverage file step 3 just wrote.
+python3 -m coverage report --include="custom_components/marstek/config_flow.py" --fail-under=100
+
 # 4. Static quality gates (blocking in the Code Quality workflow)
 python3 -m ruff check custom_components tests tools scripts
 python3 -m ruff format --check custom_components tests tools scripts
@@ -282,12 +286,15 @@ harness, so they run on any Python version.
 
 ## Testing and QA expectations
 
-- **Quality Scale**: Aim for **Gold** level standards (>95% code coverage).
+- **Quality Scale**: The manifest claims **Platinum**, tracked rule by rule in
+  `custom_components/marstek/quality_scale.yaml`. Keep that file honest: a rule
+  is `done` only when the thing it asks for exists, otherwise `exempt` with the
+  reason. Coverage floors are >95% overall and **100% for `config_flow.py`**.
 - Test structure: `tests/` mirrors platforms (`test_config_flow/`, `test_init/`, `test_sensor/`, etc.) with shared fixtures in `tests/conftest.py`. A platform's tests are a package once they outgrow the 1000-line ceiling: themed `test_*.py` modules, module-level helpers in `_helpers.py`, and package-scoped fixtures in that package's `conftest.py`.
 - Use `pytest-homeassistant-custom-component` with pinned versions in `requirements_test.txt`; mock UDP I/O—no live devices.
 - Cover failures: cannot_connect, invalid_auth/invalid_discovery_info, already_configured, coordinator timeouts, action retries.
 - Mark coordinator failures with `UpdateFailed` to surface entity unavailability.
-- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (**coverage >95%**) on latest supported Python versions, plus the blocking `Code Quality` workflow (complexity, size limits, dead code, duplication).
+- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (**coverage >95%**, **100% on `config_flow.py`**) on latest supported Python versions, plus the blocking `Code Quality` workflow (complexity, size limits, dead code, duplication).
 - Mock device available in `tools/mock_device/` for local testing.
 
 ### Type checking requirements

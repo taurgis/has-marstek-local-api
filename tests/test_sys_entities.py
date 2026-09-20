@@ -18,7 +18,7 @@ from homeassistant.const import (
     EntityCategory,
 )
 from homeassistant.core import HomeAssistant, State
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import (
@@ -301,7 +301,7 @@ async def test_dod_rejects_out_of_range_values(hass: HomeAssistant, value: int) 
         assert entity_id is not None
         setup_calls = client.send_request.call_count
 
-        with pytest.raises(HomeAssistantError):
+        with pytest.raises(ServiceValidationError):
             await hass.services.async_call(
                 "number",
                 "set_value",

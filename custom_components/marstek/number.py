@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.components.number import RestoreNumber
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MarstekConfigEntry
@@ -38,12 +38,17 @@ def _parse_dod_int(value: Any, description: MarstekNumberEntityDescription) -> i
 
 
 def _coerce_dod_int(value: float, description: MarstekNumberEntityDescription) -> int:
-    """Convert a Home Assistant number value into a valid DOD integer."""
+    """Convert a Home Assistant number value into a valid DOD integer.
+
+    An out-of-range or fractional value came from the caller, not the device,
+    so this is a ServiceValidationError rather than a HomeAssistantError.
+    https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/action-exceptions
+    """
     int_value = _parse_dod_int(value, description)
     if int_value is None:
         min_value = int(description.native_min_value or 0)
         max_value = int(description.native_max_value or 0)
-        raise HomeAssistantError(
+        raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="sys_write_invalid",
             translation_placeholders={

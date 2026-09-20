@@ -24,7 +24,7 @@ addopts = ["--import-mode=importlib"]
 pythonpath = ["."]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 extend-exclude = ["tools/firmware/blobs"]
 
@@ -93,6 +93,10 @@ ignore_names = ["kwargs", "entry_data", "variables", "device_type"]
 sort_by_size = true
 
 [tool.mypy]
+# 3.14 is the dev floor, not the runtime floor: the pinned Home Assistant
+# Core in requirements_test.txt is itself 3.14-only, so mypy cannot parse it
+# under an older version. The integration source stays on the 3.13 syntax
+# Home Assistant 2025.10 runs, which is what ruff's target-version enforces.
 python_version = "3.14"
 strict = true
 ignore_missing_imports = false

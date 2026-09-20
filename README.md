@@ -307,7 +307,7 @@ python3 -m ruff check custom_components/marstek/
 # Type checking
 python3 -m mypy --strict custom_components/marstek/
 
-# Tests with coverage
+# Tests with coverage (>95% overall; config_flow.py must be 100%)
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
 # Run one platform's tests
