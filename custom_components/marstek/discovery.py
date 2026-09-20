@@ -66,8 +66,15 @@ def _build_device_info(
     return build_device_info(result, ip=device_ip, port=device_port, src=src)
 
 
-def _is_echo_response(response: dict[str, Any]) -> bool:
-    """Check if a response is an echo of our request (not a valid device response)."""
+def _is_echo_response(response: Any) -> bool:
+    """Check if a response is an echo of our request (not a valid device response).
+
+    A datagram is whatever landed on the port, so the payload may be any JSON
+    value. ``5``, ``null`` and ``true`` decode to objects that ``in`` cannot
+    look inside, and the sweep must treat them as noise rather than raise.
+    """
+    if not isinstance(response, dict):
+        return False
     # Valid device response must have 'result' key
     # Echo/request has 'method' and 'params' but no 'result'
     return "result" not in response and "method" in response and "params" in response
@@ -141,8 +148,14 @@ def _device_info_from_response(
     )
 
 
-def _is_valid_device_response(response: dict[str, Any]) -> bool:
-    """Check if response contains valid device info."""
+def _is_valid_device_response(response: Any) -> bool:
+    """Check if response contains valid device info.
+
+    Total for the same reason as :func:`_is_echo_response`: the sweep hands
+    this whatever the datagram decoded to, not only JSON objects.
+    """
+    if not isinstance(response, dict):
+        return False
     if "result" not in response:
         return False
     result = response["result"]

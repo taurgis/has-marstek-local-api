@@ -698,3 +698,60 @@ class TestDeviceSupportsP:
         assert device_supports_pv(None) is False
         assert device_supports_pv("") is False
         assert device_supports_pv("Unknown") is False
+
+
+class TestMergeWithUnreadablePVChannel:
+    """One channel the firmware cannot read must not cost the whole poll.
+
+    Firmware reports a field it has no value for as the literal string
+    ``"unknown"``, and the PV parser keeps a value it cannot scale exactly as
+    the wire sent it. Summing the channels used to add that string, raising
+    ``TypeError`` out of the merge. Nothing between the merge and the
+    coordinator catches it, so the cycle was logged as an unexpected error and
+    every entity went unavailable over one unreadable channel.
+    """
+
+    @pytest.mark.parametrize(
+        "unreadable",
+        ["unknown", None, [1, 2], {"a": 1}, "", True],
+    )
+    def test_unreadable_channel_is_skipped(self, unreadable):
+        """The readable channels still drive the recalculation."""
+        status = merge_device_status(
+            es_status_data={
+                "battery_soc": 55,
+                "pv_power": 0,
+                "ongrid_power": 400,
+            },
+            pv_status_data={
+                "pv1_power": 1000,
+                "pv2_power": unreadable,
+                "pv3_power": 200,
+            },
+            device_ip="192.168.1.10",
+            last_update=1.0,
+        )
+
+        # 1000 + 200 generated, 400 exported: 800 W is going into the battery,
+        # which is negative in Home Assistant's convention.
+        assert status["pv_power"] == 1200
+        assert status["battery_power"] == -800
+        assert status["battery_status"] == "charging"
+
+    def test_all_channels_unreadable_leaves_es_status_alone(self):
+        """With nothing numeric to add, ES.GetStatus keeps the last word."""
+        status = merge_device_status(
+            es_status_data={
+                "battery_soc": 55,
+                "battery_power": -250,
+                "battery_status": "charging",
+                "pv_power": 0,
+                "ongrid_power": 400,
+            },
+            pv_status_data={"pv1_power": "unknown", "pv2_power": "unknown"},
+            device_ip="192.168.1.10",
+            last_update=1.0,
+        )
+
+        assert status["pv_power"] == 0
+        assert status["battery_power"] == -250

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -217,11 +218,20 @@ def _normalize_version(version: Any) -> int | None:
 
     Discovery `ver` is an integer. App labels such as ``148.3`` share that
     integer as a dotted prefix; only the leading number selects the profile.
+    A build that puts that label on the wire as a JSON *number* rather than a
+    string means the same thing, so ``150.9`` resolves like ``"150.9"``.
+    Rejecting it instead would silently downgrade a Rev 3.1 device: unknown
+    ``ver`` counts as reset-prone, which drops the SYS/UPS entities, forces
+    serialized polling, and raises the firmware-reset repair warning.
     """
     if isinstance(version, bool):
         return None
     if isinstance(version, int):
         return version if version >= 0 else None
+    if isinstance(version, float):
+        if not math.isfinite(version) or version < 0:
+            return None
+        return int(version)
     if isinstance(version, str):
         stripped = version.strip()
         if not stripped or not stripped.isascii():

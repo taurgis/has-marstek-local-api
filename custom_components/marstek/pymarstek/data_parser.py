@@ -412,6 +412,28 @@ def _is_unusable_value(value: Any) -> bool:
     return False
 
 
+def _total_pv_channel_power(pv_status_data: dict[str, Any]) -> float:
+    """Sum the PV channel powers that are usable numbers.
+
+    The parsers keep a value they cannot scale exactly as the wire sent it, so
+    a channel the firmware cannot read yet arrives here as the literal string
+    ``"unknown"`` (see :func:`_is_unusable_value`), and a glitched datagram can
+    put a list or a bool there. Adding one of those to the running total
+    raises, and nothing between here and the coordinator catches ``TypeError``,
+    so the whole poll cycle would fail over one unreadable channel. Skip them
+    instead; the channels that did report still carry the sum.
+    """
+    total = 0.0
+    for channel in range(1, 5):
+        value = pv_status_data.get(f"pv{channel}_power")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if not math.isfinite(value):
+            continue
+        total += float(value)
+    return total
+
+
 def _recalculate_battery_from_pv(
     status: dict[str, Any],
     pv_status_data: dict[str, Any],
@@ -419,9 +441,7 @@ def _recalculate_battery_from_pv(
 ) -> None:
     """Recalculate battery power using PV channel data when ES.GetStatus is wrong."""
     es_pv_power = es_status_data.get("pv_power")
-    total_pv_from_channels = sum(
-        pv_status_data.get(f"pv{ch}_power", 0) or 0 for ch in range(1, 5)
-    )
+    total_pv_from_channels = _total_pv_channel_power(pv_status_data)
     # If ES.GetStatus pv_power is 0 but channels have real power, override
     if (es_pv_power in (None, 0)) and total_pv_from_channels > 0:
         status["pv_power"] = total_pv_from_channels
