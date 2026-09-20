@@ -9,7 +9,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MarstekConfigEntry
@@ -92,15 +92,21 @@ class MarstekOperatingModeSelect(MarstekEntity, SelectEntity):
         return None
 
     async def async_select_option(self, option: str) -> None:
-        """Change the operating mode."""
+        """Change the operating mode.
+
+        A mode this device cannot take is the caller's mistake, so it raises
+        ServiceValidationError; only a failed exchange with the device is a
+        HomeAssistantError.
+        https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/action-exceptions
+        """
         if option not in OPERATING_MODES:
-            raise HomeAssistantError(
+            raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="invalid_mode",
                 translation_placeholders={"mode": option},
             )
         if option not in self.options:
-            raise HomeAssistantError(
+            raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="mode_not_supported",
                 translation_placeholders={"mode": option},
@@ -108,12 +114,12 @@ class MarstekOperatingModeSelect(MarstekEntity, SelectEntity):
 
         # Block Passive/Manual selection - these require parameters via services
         if option == MODE_PASSIVE:
-            raise HomeAssistantError(
+            raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="passive_mode_requires_service",
             )
         if option == MODE_MANUAL:
-            raise HomeAssistantError(
+            raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="manual_mode_requires_service",
             )

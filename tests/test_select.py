@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.marstek.const import (
     MODE_AI,
@@ -263,7 +263,7 @@ async def test_select_invalid_mode(hass: HomeAssistant, mock_config_entry):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        with pytest.raises(HomeAssistantError, match="invalid_mode"):
+        with pytest.raises(ServiceValidationError, match="invalid_mode"):
             await hass.services.async_call(
                 "select",
                 "select_option",
@@ -293,7 +293,7 @@ async def test_select_passive_manual_blocked(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        with pytest.raises(HomeAssistantError, match=expected_message_part):
+        with pytest.raises(ServiceValidationError, match=expected_message_part):
             await hass.services.async_call(
                 "select",
                 "select_option",
@@ -519,7 +519,7 @@ async def test_unsupported_direct_ups_selection_sends_no_request() -> None:
     """A profile without UPS cannot transmit UPS even if invoked directly."""
     entity, client = _make_select_entity(device_type="VenusE 3.0", version=145)
 
-    with pytest.raises(HomeAssistantError, match="mode_not_supported"):
+    with pytest.raises(ServiceValidationError, match="mode_not_supported"):
         await entity.async_select_option(MODE_UPS)
 
     client.send_request.assert_not_called()
@@ -531,7 +531,7 @@ async def test_unknown_profile_direct_ups_selection_sends_no_request() -> None:
     """Unknown family firmware cannot transmit UPS."""
     entity, client = _make_select_entity(device_type="Marstek Energy Storage", version=150)
 
-    with pytest.raises(HomeAssistantError, match="mode_not_supported"):
+    with pytest.raises(ServiceValidationError, match="mode_not_supported"):
         await entity.async_select_option(MODE_UPS)
 
     client.send_request.assert_not_called()
@@ -595,7 +595,7 @@ async def test_manual_and_passive_remain_blocked_on_ups_capable_profile(
         assert MODE_PASSIVE in options.attributes["options"]
         assert MODE_UPS in options.attributes["options"]
 
-        with pytest.raises(HomeAssistantError, match=expected_message_part):
+        with pytest.raises(ServiceValidationError, match=expected_message_part):
             await hass.services.async_call(
                 "select",
                 "select_option",

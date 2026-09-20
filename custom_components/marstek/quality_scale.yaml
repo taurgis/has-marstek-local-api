@@ -13,7 +13,12 @@ rules:
     comment: >-
       Coordinator in coordinator.py, shared entity wiring in entity.py
       (MarstekEntity, plus MarstekSysEntity for the write-only SYS platforms).
-  config-flow-test-coverage: done
+  config-flow-test-coverage:
+    status: done
+    comment: >-
+      config_flow.py is at 100%, and CI fails below that
+      (coverage report --include=.../config_flow.py --fail-under=100),
+      separately from the 95% floor the rest of the integration carries.
   config-flow: done
   dependency-transparency:
     status: exempt
@@ -22,11 +27,17 @@ rules:
       custom_components/marstek/pymarstek and manifest.json requirements is
       empty, so there is no PyPI package to hold to the rule.
   docs-actions: done
+  docs-conditions:
+    status: exempt
+    comment: Integration provides no condition platform.
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions:
     status: done
     comment: README "Removing the integration" covers per-entry deletion, HACS/manual uninstall, and what happens to the device's own OPEN API setting.
+  docs-triggers:
+    status: exempt
+    comment: Integration provides no trigger platform.
   entity-event-setup:
     status: exempt
     comment: Integration does not emit events
