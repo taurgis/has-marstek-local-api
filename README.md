@@ -17,11 +17,13 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 - **Battery Status** - Current operational status
 - **Operating Mode** - Current device mode (Auto, AI, Manual, Passive, and UPS on capable firmware)
 - **PV Metrics** - Solar panel power, voltage, current, and state (up to 4 channels; Venus A/D only)
-- **On-grid Power** - Total grid power from energy meter (3-phase support)
+- **On-grid / Off-grid Power** - Grid and off-grid power, plus per-phase meter power (3-phase support)
+- **Lifetime Energy Totals** - Solar, grid import/export, and load totals for the Energy Dashboard
+- **Meter lifetime energy** - EM input/output totals when the firmware reports them
 - **WiFi Signal Strength** - RSSI for connectivity diagnostics
 - **CT Connection Status** - Current transformer connection state
-- **Meter lifetime energy** - EM input/output totals when the firmware reports them
 - **Device Information** - IP address, firmware version, MAC addresses
+- **Diagnostics & Repairs** - Downloadable diagnostics plus Repairs flows for connection and firmware issues
 
 ### Control
 - **Operating Mode Selection** - Auto and AI (and UPS when the firmware profile allows it). Manual and Passive still require parameterized services.
@@ -29,6 +31,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 - **Manual Scheduling** - Time-based charge/discharge slots: **0–9** on Venus A/C/D/E, **0–5** on Venus E mini
 - **Bulk Schedule Management** - Set multiple schedules via YAML or clear all schedules
 - **SYS settings** - Depth of discharge, Bluetooth advertising, and panel LED on capable firmware (write-only; restored last value)
+- **Device Actions** - Charge, discharge, and stop actions for the automation editor
 - **Data Sync** - Trigger immediate device refresh on demand
 
 ### Architecture
@@ -40,11 +43,16 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 
 ## Comparison with other community integrations
 
-| Integration | Repository | Summary | Strengths | Tradeoffs |
+Last reviewed **2026-09-20**. Activity and release facts were taken from each repository on that date.
+
+| Integration | Transport | Summary | Strengths | Tradeoffs |
 |---|---|---|---|---|
-| **This integration** | https://github.com/taurgis/has-marstek-local-api | Local UDP with centralized polling, scanner-based IP updates, strong HA patterns. | Per-port UDP sockets, tiered polling, robust config flow/options/services, strict validation & typing. | Focused on per-device setup (no multi-device aggregation). |
-| **Marstek Local API** | https://github.com/jaapp/ha-marstek-local-api | Feature-rich local API integration with multi-device aggregation. | Multi-device support, aggregate sensors, extensive diagnostics. | Heavier complexity; discovery may pause active clients. |
-| **MarstekEnergy reference** | https://github.com/marstekEnergy/ha_marstek | Vendor reference implementation. | Simple setup, uses upstream py-marstek. | Less robust networking (per-entry sockets), fewer HA best-practice patterns. |
+| **This integration** ([taurgis/has-marstek-local-api](https://github.com/taurgis/has-marstek-local-api)) | Local UDP (Open API Rev 3.1) | Firmware-profile-driven local polling with a scanner that tracks IP and firmware changes. | Per-bind-port UDP sockets, tiered polling, firmware-gated capabilities and energy scaling, device actions, diagnostics and Repairs, `mypy --strict` with a 95% coverage gate. | One config entry per device — no fleet-wide aggregate sensors. Custom HACS repository only. |
+| **Marstek Local API** ([jaapp/ha-marstek-local-api](https://github.com/jaapp/ha-marstek-local-api)) | Local UDP (Open API) | Multi-battery integration with a virtual **Marstek System** device that aggregates fleet metrics. | Fleet aggregation under one config entry, wide sensor set, diagnostics, standalone CLI test tool. | No commits since **Nov 2025** and still published as a release candidate (`1.2.0.rc7`). Its README lists per-firmware quirks (energy units, unresponsive `ES.GetStatus`, CT state) as known issues to fix by updating the device rather than decoding per firmware version. |
+| **MarstekEnergy (vendor)** ([marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek)) | Local UDP via `aiomarstek` | No longer a standalone component: since Sep 2026 this repo is **synced from Home Assistant Core** as the staging copy of the vendor's in-review core integration. | Vendor-authored; would ship built in if merged. | Core PR [#156012](https://github.com/home-assistant/core/pull/156012) was closed unmerged (Jul 2026); replacement PR [#179635](https://github.com/home-assistant/core/pull/179635) is still open and under review. No releases, no HACS listing, `quality_scale: bronze`, sensors only (no mode control or schedules). |
+| **Omnibattery** ([ffunes/Omnibattery](https://github.com/ffunes/Omnibattery)) | Modbus TCP/RTU (no Open API) | Multi-brand battery *manager* (Marstek, Zendure, Anker SOLIX, Sessy, …) focused on control strategies rather than plain telemetry. | Peak shaving, predictive grid charging, time slots; actively maintained; supports Venus E v2, which the Open API does not. | Needs an Elfin-EW11 RS485-to-TCP bridge on models without native Ethernet Modbus; GPL-3.0; not a local Open API client. Succeeds the discontinued [ffunes/Marstek-Venus-Energy-Manager](https://github.com/ffunes/Marstek-Venus-Energy-Manager), which is the only Marstek entry in the HACS default store. |
+
+> **Heads-up on the `marstek` domain**: Home Assistant Core PR [#179635](https://github.com/home-assistant/core/pull/179635) adds `homeassistant/components/marstek`, the same domain this custom component uses. Custom components take precedence over built-in ones, so an installed copy of this integration keeps working if that PR merges — but you would need to remove it to try the built-in one.
 
 ## Requirements
 
@@ -53,7 +61,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 | Home Assistant | Core 2025.10.0+ |
 | Network | Same LAN segment as Marstek devices |
 | Device Config | **OPEN API must be enabled** in the Marstek app |
-| UDP Port | 30000 (default, must be reachable) |
+| UDP Port | 30000 by default; the Open API port is configurable per device in the Marstek app. Discovery also probes 30001–30004 and 30030 |
 
 > **Warning**: This integration is currently **not compatible with Venus E2.0** devices. Using this integration with Venus E2.0 may cause disconnection between the device and CT003.
 
@@ -77,7 +85,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 # Example for Home Assistant OS/Supervised
 cd /config
 mkdir -p custom_components
-cp -r /path/to/ha_marstek/custom_components/marstek custom_components/
+cp -r /path/to/has-marstek-local-api/custom_components/marstek custom_components/
 ```
 
 ## Configuration
@@ -101,8 +109,10 @@ After setup, you can adjust polling and request behavior in **Device → Configu
 - **Request delay** (default: 5s): Delay between consecutive UDP requests in sequential mode (ignored when parallel API requests is enabled)
 - **Request timeout** (default: 10s): Per-request timeout before retry/fail
 - **Failures before unavailable** (default: 3): Consecutive failures before entities become unavailable
+- **Default charge power** (default: -1300 W) and **Default discharge power** (default: 800 W): Power used by the Charge/Discharge device actions when the automation leaves the field empty
+- **Socket limit** (default: on for Venus C/D/E and Venus E mini, off for Venus A): Caps validated discharge power at 800 W for plug-connected installs. With it off, the limit is the per-family maximum (Venus A 1500 W, Venus D 2200 W, Venus C/E/E mini 2500 W)
 
-These values can be tuned to reduce network traffic or improve responsiveness.
+These values can be tuned to reduce network traffic or improve responsiveness. See [Options](docs/options.md) for the full reference.
 
 ### Data updates
 
@@ -121,6 +131,7 @@ Extended documentation (with screenshots) lives in `docs/`:
 - [Services](docs/services.md)
 - [Repairs](docs/repairs.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Development](docs/development.md)
 - [Open API Rev 3.1 reference](docs/marstek_device_openapi.MD)
 
 ## Supported Devices
@@ -141,10 +152,12 @@ Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseabl
 
 The integration provides several services for advanced control:
 
+Every service targets a device through a required `device_id` (except `request_data_sync`, where it is optional and omitting it refreshes every device).
+
 ### marstek.set_passive_mode
 Set the device to passive mode with specified power and duration.
-- **power**: Target power in watts (-5000 to 5000). Negative charges, positive discharges.
-- **duration**: Duration in seconds (default: 3600)
+- **power**: Target power in watts. The UI accepts -5000 to 5000; the effective limit is validated per family and by the **Socket limit** option. Negative charges, positive discharges.
+- **duration**: Duration in seconds (default: 3600, range 0–86400)
 
 ### marstek.set_manual_schedule
 Configure a single manual schedule slot.
@@ -178,37 +191,61 @@ data:
 Clear all manual schedule slots on the device.
 
 ### marstek.request_data_sync
-Trigger an immediate data refresh from the device.
+Trigger an immediate data refresh from the device. `device_id` is optional; when omitted, all Marstek devices refresh.
+
+The integration also exposes **device actions** (Charge, Discharge, Stop) for the automation editor — see [Services](docs/services.md#device-actions).
 
 ## Project Structure
 
 ```
-ha_marstek/
+has-marstek-local-api/
 ├── custom_components/marstek/
-│   ├── __init__.py           # Integration setup and teardown
-│   ├── config_flow.py        # Config flow, discovery, reauth
-│   ├── const.py              # Constants and configuration
-│   ├── coordinator.py        # Data update coordinator
-│   ├── device_action.py      # Device automation actions
-│   ├── discovery.py          # UDP discovery helpers
-│   ├── scanner.py            # Background IP change detection
-│   ├── select.py             # Operating mode select entity
-│   ├── sensor.py             # All sensor entities
-│   ├── services.py           # Service implementations
-│   ├── services.yaml         # Service definitions
-│   ├── strings.json          # UI strings
-│   ├── translations/         # Localization files
-│   └── pymarstek/            # UDP client library
-│       ├── udp.py            # UDP client implementation
-│       ├── command_builder.py# Protocol command builder
-│       ├── data_parser.py    # Response parser
-│       └── const.py          # Protocol constants
-├── tests/                    # Test suite
-├── tools/                    # Development utilities
-│   ├── mock_device/          # Mock device for testing
-│   ├── capture_device.py     # Traffic capture tool
-│   └── query_device.py       # Device query tool
-└── docs/                     # Documentation
+│   ├── __init__.py            # Integration setup and teardown
+│   ├── config_flow.py         # Config flow, discovery, reauth, reconfigure
+│   ├── options_flow.py        # Polling/network/power options
+│   ├── const.py               # Constants and per-family limits
+│   ├── coordinator.py         # Tiered data update coordinator
+│   ├── firmware_profile.py    # Family + `ver` → capability/scaling profile
+│   ├── device_info.py         # Device registry metadata
+│   ├── mode_config.py         # ES.SetMode payload construction
+│   ├── power.py               # Power-limit validation
+│   ├── device_action.py       # Charge / discharge / stop device actions
+│   ├── discovery.py           # UDP discovery helpers
+│   ├── scanner.py             # Background IP/firmware change detection
+│   ├── diagnostics.py         # Downloadable diagnostics
+│   ├── repairs.py             # Repair issues and fix flows
+│   ├── binary_sensor.py       # CT/permission binary sensors
+│   ├── number.py              # Depth of discharge
+│   ├── select.py              # Operating mode select entity
+│   ├── sensor.py              # All sensor entities
+│   ├── switch.py              # Bluetooth advertising, panel LED
+│   ├── services.py            # Service implementations
+│   ├── services.yaml          # Service definitions
+│   ├── icons.json             # Entity icons
+│   ├── quality_scale.yaml     # Home Assistant quality scale checklist
+│   ├── strings.json           # UI strings
+│   ├── translations/          # Localization files
+│   ├── helpers/               # Entity descriptions and shared plumbing
+│   │   ├── sensor_descriptions.py, binary_sensor_descriptions.py, …
+│   │   ├── udp_clients.py     # Per-bind-port UDP client pool
+│   │   ├── ports.py           # Open API port bookkeeping
+│   │   └── polling.py         # Poll pausing during writes
+│   └── pymarstek/             # UDP client library
+│       ├── udp.py             # UDP client implementation
+│       ├── udp_discovery.py   # Broadcast discovery sweep
+│       ├── command_builder.py # Protocol command builder
+│       ├── data_parser.py     # Response parsers
+│       ├── energy_guard.py    # Lifetime-energy sanity guards
+│       └── const.py           # Protocol constants
+├── tests/                     # Test suite
+├── tools/                     # Development utilities
+│   ├── mock_device/           # Mock device for testing
+│   ├── firmware/              # Control firmware notes and analysis
+│   ├── capture_device.py      # Traffic capture tool
+│   ├── query_device.py        # Device query tool
+│   └── debug_udp_discovery.py # Discovery troubleshooting tool
+├── scripts/                   # Release and code-limit tooling
+└── docs/                      # Documentation
     └── marstek_device_openapi.MD  # Protocol reference
 ```
 
@@ -218,11 +255,12 @@ ha_marstek/
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/ha_marstek.git
-cd ha_marstek
+git clone https://github.com/taurgis/has-marstek-local-api.git
+cd has-marstek-local-api
 
-# Create virtual environment
-python3 -m venv venv
+# Create virtual environment (Python 3.14.2+ — required by the current
+# Home Assistant Core test harness; the integration itself supports 2025.10+)
+python3.14 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
@@ -299,14 +337,14 @@ python -m mock_device --device VenusA --ver 149
 ## Troubleshooting
 
 ### LED Light Switch
-- Capable firmware (Venus A/C/D/E at firmware 150 or newer, and Venus E mini with a known firmware version) exposes a **Panel LED** switch.
+- Capable firmware (Venus A/D/E at firmware 150 or newer, and Venus E mini with a known firmware version) exposes a **Panel LED** switch. HMG-50 Control images that report as Venus C (generation 153 and up) never get it — those builds serve no SYS methods.
 - Older or unknown regular firmware does not get the switch, because those devices reject `Led.Ctrl`.
 - The Open API has no readable LED state. Home Assistant restores the last value it successfully wrote; changes made in the Marstek app or on the device itself may not be reflected.
 - Bluetooth advertising and depth of discharge use the same firmware gate and the same restored optimistic state.
 
 ### Missing UPS or SYS settings
 - UPS appears on the operating-mode select only for ES-capable firmware `ver >= 150`.
-- Depth of discharge, Bluetooth advertising, and panel LED use the SYS gate (Venus A/C/D/E at 150+, Venus E mini with a known integer `ver`).
+- Depth of discharge, Bluetooth advertising, and panel LED use the SYS gate (Venus A/D/E at 150+, Venus E mini with a known integer `ver`; never on HMG-50 Control images reporting as Venus C).
 - Download diagnostics and check `firmware_profile` if a control is missing. Unsupported features are omitted, not left unavailable.
 - See [docs/troubleshooting.md](docs/troubleshooting.md).
 

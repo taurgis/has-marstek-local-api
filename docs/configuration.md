@@ -9,6 +9,8 @@
 
 If discovery doesn’t find your device (or all discovered devices are already configured), Home Assistant will guide you to **manual entry** where you can enter the device **IP address** (and optionally a **port**, default `30000`).
 
+The Open API port is configurable per device in the Marstek app, and firmware answers only on the port it listens on. A broadcast scan therefore probes `30000`, the common custom ports `30001`–`30004` and `30030`, plus every port already stored on a config entry. A device on any other port needs manual entry.
+
 ### Discovery screen examples
 
 <img src="screenshots/device-discovery.png" alt="Device discovery" width="340" />
