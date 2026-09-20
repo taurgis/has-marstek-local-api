@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.sensor import RestoreSensor, SensorEntity
@@ -34,6 +35,27 @@ _LOGGER = logging.getLogger(__name__)
 # Home Assistant never has to serialize updates for these entities.
 # https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/parallel-updates
 PARALLEL_UPDATES = 0
+
+
+def _as_number(value: Any) -> int | float | None:
+    """Return *value* as a finite number, or None when it is not one.
+
+    ``bool`` is excluded on purpose: firmware that answers ``true`` where the
+    Open API documents a number has failed to take the reading, and publishing
+    that as 1 would invent one. A quoted number is accepted because Home
+    Assistant parsed those before this guard existed.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        return parsed if math.isfinite(parsed) else None
+    return None
 
 
 class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity):
@@ -116,13 +138,17 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSens
         sensor that carries a unit or a state class, which drops the reading
         *and* floods the log every poll, so publish ``unknown`` instead and say
         once per value what the device actually sent.
+
+        A quoted number (``"1234"``) is a reading, not a placeholder: Home
+        Assistant has always parsed those, so keep accepting them.
         """
         value = self.entity_description.value_fn(
             self.coordinator, self._device_info, self._config_entry
         )
         if value is None or not self._expects_a_number:
             return value
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        number = _as_number(value)
+        if number is None:
             if value != self._last_rejected_value:
                 self._last_rejected_value = value
                 _LOGGER.warning(
@@ -133,7 +159,7 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSens
                 )
             return None
         self._last_rejected_value = None
-        return value
+        return number
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

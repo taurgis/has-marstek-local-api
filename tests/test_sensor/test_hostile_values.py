@@ -121,3 +121,43 @@ async def test_non_numeric_reading_warns_once_per_value(
             record for record in caplog.records if "non-numeric battery_soc" in record.getMessage()
         ]
         assert warnings == []
+
+
+@pytest.mark.parametrize(
+    ("quoted", "expected"),
+    [("0", "0.0"), ("55", "55.0"), ("-250.5", "-250.5")],
+)
+async def test_quoted_numbers_are_still_readings(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    quoted: str,
+    expected: str,
+) -> None:
+    """A number the device quoted is published, as it was before the guard."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "Auto", "battery_soc": 55, "battery_power": quoted}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert _state_of(hass, mock_config_entry, "battery_power") == expected
+
+
+@pytest.mark.parametrize("hostile", ["nan", "inf", "-inf", "1e400"])
+async def test_quoted_non_finite_numbers_are_rejected(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, hostile: str
+) -> None:
+    """``float()`` parses "nan" and "inf", so the guard checks finiteness too."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "Auto", "battery_soc": 55, "battery_power": hostile}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert _state_of(hass, mock_config_entry, "battery_power") == "unknown"
