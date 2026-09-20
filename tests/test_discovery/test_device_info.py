@@ -688,3 +688,51 @@ def test_build_device_info_prefers_result_ble_mac() -> None:
     )
 
     assert info["ble_mac"] == "11:22:33:44:55:66"
+
+
+class TestUnusableClaimedIp:
+    """A reply that cannot supply a usable address falls back to the socket."""
+
+    @pytest.mark.parametrize(
+        "claimed",
+        [12345, None, ["192.168.1.7"], {"addr": "192.168.1.7"}, True, 1.5],
+    )
+    def test_non_string_ip_does_not_raise(self, claimed: object) -> None:
+        """A non-string ip used to raise AttributeError out of the config flow."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": claimed}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.1.9"
+
+    @pytest.mark.parametrize("claimed", ["0.0.0.0", "", "   "])
+    def test_placeholder_ip_falls_back_to_the_probed_host(self, claimed: str) -> None:
+        """A device without a lease reports 0.0.0.0; nothing can poll that."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": claimed}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.1.9"
+
+    def test_usable_claimed_ip_still_wins_and_is_normalized(self) -> None:
+        """The claimed address remains authoritative when it is usable."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.09.92"}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.9.92"

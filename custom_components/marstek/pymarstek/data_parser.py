@@ -277,9 +277,36 @@ def parse_pv_status_response(
             return raw_value
 
 
-    # Check for single-channel format (per API spec)
-    if "pv_power" in result:
-        # Single PV channel - map to pv1_* for consistency
+    # Multi-channel format - extract data for each PV channel (1-4). A reply
+    # that carries the per-channel breakdown is read as multi-channel even when
+    # it also carries the spec's aggregate ``pv_power``, because the breakdown
+    # is strictly more information. Branching on the aggregate's presence
+    # instead dropped channels 2-4 and rescaled the aggregate as if it were
+    # channel 1, which reports the array total at a tenth of its real value.
+    for channel in range(1, 5):
+        prefix = f"pv{channel}_"
+        channel_keys = (
+            f"{prefix}power",
+            f"{prefix}voltage",
+            f"{prefix}current",
+            f"{prefix}state",
+        )
+        if not any(key in result for key in channel_keys):
+            continue
+        if f"{prefix}power" in result:
+            pv_data[f"{prefix}power"] = _scale_pv_power(
+                result.get(f"{prefix}power"),
+                channel=channel,
+            )
+        if f"{prefix}voltage" in result:
+            pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage")
+        if f"{prefix}current" in result:
+            pv_data[f"{prefix}current"] = result.get(f"{prefix}current")
+        if f"{prefix}state" in result:
+            pv_data[f"{prefix}state"] = result.get(f"{prefix}state")
+
+    # Single-channel format (per API spec) - map to pv1_* for consistency.
+    if not pv_data and "pv_power" in result:
         pv_power = result.get("pv_power")
         pv_data["pv1_power"] = _scale_pv_power(pv_power)
         if "pv_voltage" in result:
@@ -288,29 +315,6 @@ def parse_pv_status_response(
             pv_data["pv1_current"] = result.get("pv_current")
         if isinstance(pv_power, (int, float)):
             pv_data["pv1_state"] = 1 if pv_power > 0 else 0
-    else:
-        # Multi-channel format - extract data for each PV channel (1-4)
-        for channel in range(1, 5):
-            prefix = f"pv{channel}_"
-            channel_keys = (
-                f"{prefix}power",
-                f"{prefix}voltage",
-                f"{prefix}current",
-                f"{prefix}state",
-            )
-            if not any(key in result for key in channel_keys):
-                continue
-            if f"{prefix}power" in result:
-                pv_data[f"{prefix}power"] = _scale_pv_power(
-                    result.get(f"{prefix}power"),
-                    channel=channel,
-                )
-            if f"{prefix}voltage" in result:
-                pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage")
-            if f"{prefix}current" in result:
-                pv_data[f"{prefix}current"] = result.get(f"{prefix}current")
-            if f"{prefix}state" in result:
-                pv_data[f"{prefix}state"] = result.get(f"{prefix}state")
 
     return pv_data
 
@@ -412,7 +416,7 @@ def _is_unusable_value(value: Any) -> bool:
     return False
 
 
-def _total_pv_channel_power(pv_status_data: dict[str, Any]) -> float:
+def total_pv_channel_power(pv_status_data: dict[str, Any]) -> float:
     """Sum the PV channel powers that are usable numbers.
 
     The parsers keep a value they cannot scale exactly as the wire sent it, so
@@ -441,7 +445,7 @@ def _recalculate_battery_from_pv(
 ) -> None:
     """Recalculate battery power using PV channel data when ES.GetStatus is wrong."""
     es_pv_power = es_status_data.get("pv_power")
-    total_pv_from_channels = _total_pv_channel_power(pv_status_data)
+    total_pv_from_channels = total_pv_channel_power(pv_status_data)
     # If ES.GetStatus pv_power is 0 but channels have real power, override
     if (es_pv_power in (None, 0)) and total_pv_from_channels > 0:
         status["pv_power"] = total_pv_from_channels

@@ -45,6 +45,32 @@ def _normalize_ip(ip: str) -> str:
         return ip
 
 
+def _resolve_device_ip(result: dict[str, Any], observed_ip: str) -> str:
+    """Pick the address to record for a device that just answered.
+
+    The reply carries the address the device believes it has, and the socket
+    carries the address the datagram actually came from. The claimed value wins
+    when it is usable, because it is what the rest of the integration has always
+    recorded and because it survives the leading-zero forms some builds emit.
+
+    It is not always usable. ``ip`` is absent on the trimmed GetDevice payloads
+    (issue #60), null while a device is still negotiating its lease, and a bare
+    number or list on a glitched datagram; ``.split`` on any of those raises
+    ``AttributeError`` out of the config flow, which only catches ``AbortFlow``.
+    An unconfigured device reports ``0.0.0.0``, which parses fine but is not a
+    host anything can be polled at. Fall back to the observed address in all of
+    those cases: a datagram arrived from it, so it is known to be reachable.
+    """
+    claimed = result.get("ip")
+    if not isinstance(claimed, str):
+        return observed_ip
+
+    normalized = _normalize_ip(claimed.strip())
+    if normalized in ("", "0.0.0.0"):
+        return observed_ip
+    return normalized
+
+
 def _build_discovery_message() -> bytes:
     """Build discovery request payload."""
     request = {
@@ -142,7 +168,7 @@ def _device_info_from_response(
         return None
     return _build_device_info(
         result,
-        _normalize_ip(result.get("ip", host)),
+        _resolve_device_ip(result, host),
         port,
         src=non_empty_str(response.get("src")),
     )
@@ -338,7 +364,7 @@ async def discover_devices(
                     continue
 
                 result = response["result"]
-                device_ip = _normalize_ip(result.get("ip", sender_ip))
+                device_ip = _resolve_device_ip(result, sender_ip)
                 if device_ip in seen_ips:
                     _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
                     continue

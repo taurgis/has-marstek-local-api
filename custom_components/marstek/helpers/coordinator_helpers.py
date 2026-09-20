@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..pymarstek.data_parser import total_pv_channel_power
+
 
 def has_valid_status_data(device_status: dict[str, Any]) -> bool:
     """Return True if device status contains meaningful values."""
@@ -12,10 +14,11 @@ def has_valid_status_data(device_status: dict[str, Any]) -> bool:
     battery_soc = device_status.get("battery_soc")
     battery_power = device_status.get("battery_power")
     battery_status = device_status.get("battery_status")
-    pv_power = sum(
-        device_status.get(key) or 0
-        for key in ("pv1_power", "pv2_power", "pv3_power", "pv4_power")
-    )
+    # Shares the parser's channel sum: a channel the firmware cannot read
+    # arrives as the literal string "unknown", and a glitched datagram can put
+    # a list there. Adding one of those raised TypeError here, and this runs
+    # before the coordinator can turn a bad poll into UpdateFailed.
+    pv_power = total_pv_channel_power(device_status)
     em_total_power = device_status.get("em_total_power")
     wifi_rssi = device_status.get("wifi_rssi")
     bat_temp = device_status.get("bat_temp")

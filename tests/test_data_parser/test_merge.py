@@ -755,3 +755,31 @@ class TestMergeWithUnreadablePVChannel:
 
         assert status["pv_power"] == 0
         assert status["battery_power"] == -250
+
+
+class TestValidityCheckSharesTheChannelSum:
+    """The coordinator's validity gate must survive the same channel values."""
+
+    @pytest.mark.parametrize("unreadable", ["unknown", None, [1, 2], {"a": 1}, True])
+    def test_unreadable_channel_does_not_raise(self, unreadable: object) -> None:
+        """This ran before UpdateFailed could contain a bad poll."""
+        from custom_components.marstek.helpers.coordinator_helpers import (
+            has_valid_status_data,
+        )
+
+        status = {
+            "pv1_power": 800.0,
+            "pv2_power": unreadable,
+            "pv3_power": None,
+            "pv4_power": 240,
+        }
+
+        assert has_valid_status_data(status) is True
+
+    def test_only_unreadable_channels_is_not_valid_data(self) -> None:
+        """Unusable channels carry no power, so they prove nothing arrived."""
+        from custom_components.marstek.helpers.coordinator_helpers import (
+            has_valid_status_data,
+        )
+
+        assert has_valid_status_data({"pv1_power": "unknown", "pv2_power": [1]}) is False
