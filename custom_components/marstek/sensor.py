@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.sensor import RestoreSensor, SensorEntity
@@ -36,6 +37,27 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
+def _as_number(value: Any) -> int | float | None:
+    """Return *value* as a finite number, or None when it is not one.
+
+    ``bool`` is excluded on purpose: firmware that answers ``true`` where the
+    Open API documents a number has failed to take the reading, and publishing
+    that as 1 would invent one. A quoted number is accepted because Home
+    Assistant parsed those before this guard existed.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        return parsed if math.isfinite(parsed) else None
+    return None
+
+
 class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
@@ -54,6 +76,9 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSens
         self.entity_description = description
         self._device_info = device_info
         self._config_entry = config_entry
+        # Last non-numeric reading already reported, so a device stuck on a
+        # placeholder warns once instead of once per poll.
+        self._last_rejected_value: Any = None
         device_identifier = get_device_identifier(device_info)
         self._attr_unique_id = f"{device_identifier}_{description.key}"
         self._attr_device_info = build_device_info(device_info)
@@ -90,11 +115,51 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSens
             self.coordinator.data[self.entity_description.key] = float(restored_value)
 
     @property
+    def _expects_a_number(self) -> bool:
+        """Return True when Home Assistant will read this state as a number.
+
+        A unit or a state class is what makes Home Assistant parse the state
+        as a float, so those two flags — not a hand-maintained key list —
+        decide which sensors may only publish numbers.
+        """
+        description = self.entity_description
+        return (
+            description.native_unit_of_measurement is not None
+            or description.state_class is not None
+        )
+
+    @property
     def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        return self.entity_description.value_fn(
+        """Return the state of the sensor.
+
+        Firmware that cannot read a field sometimes answers with a placeholder
+        string (``""``, ``"N/A"``, ``"--"``) or a bool where the Open API
+        documents a number. Home Assistant raises on a non-numeric state for a
+        sensor that carries a unit or a state class, which drops the reading
+        *and* floods the log every poll, so publish ``unknown`` instead and say
+        once per value what the device actually sent.
+
+        A quoted number (``"1234"``) is a reading, not a placeholder: Home
+        Assistant has always parsed those, so keep accepting them.
+        """
+        value = self.entity_description.value_fn(
             self.coordinator, self._device_info, self._config_entry
         )
+        if value is None or not self._expects_a_number:
+            return value
+        number = _as_number(value)
+        if number is None:
+            if value != self._last_rejected_value:
+                self._last_rejected_value = value
+                _LOGGER.warning(
+                    "Device %s sent a non-numeric %s reading (%r); reporting it as unknown",
+                    self._device_info.get("ip", "unknown"),
+                    self.entity_description.key,
+                    value,
+                )
+            return None
+        self._last_rejected_value = None
+        return number
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
+import importlib.util
 import json
 import os
 import re
@@ -61,19 +62,33 @@ def repo_root() -> Path:
     raise RuntimeError("cannot find repo root with .devcontainer/docker-compose.yml")
 
 
-def _ensure_custom_components_import() -> None:
-    root = str(repo_root())
-    if root not in sys.path:
-        sys.path.insert(0, root)
+def _load_firmware_profile_module() -> Any:
+    """Load ``firmware_profile`` without importing the Home Assistant package.
+
+    The campaign runs on the Docker *host*, which has no ``homeassistant``
+    installed -- it shells out to ``docker`` to stop and start mocks, so it
+    cannot run inside the HA container. Importing
+    ``custom_components.marstek.firmware_profile`` normally executes the
+    package ``__init__``, which imports Home Assistant and fails here.
+    ``firmware_profile`` itself is pure stdlib, so load the file directly.
+    """
+    root = repo_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    path = root / "custom_components" / "marstek" / "firmware_profile.py"
+    spec = importlib.util.spec_from_file_location("marstek_firmware_profile", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load firmware profile from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-_ensure_custom_components_import()
-
-from custom_components.marstek.firmware_profile import (  # noqa: E402
-    DeviceFamily,
-    is_unsupported_venus_e2,
-    resolve_firmware_profile,
-)
+_firmware_profile = _load_firmware_profile_module()
+DeviceFamily = _firmware_profile.DeviceFamily
+is_unsupported_venus_e2 = _firmware_profile.is_unsupported_venus_e2
+resolve_firmware_profile = _firmware_profile.resolve_firmware_profile
 
 
 def _log(message: str) -> None:
