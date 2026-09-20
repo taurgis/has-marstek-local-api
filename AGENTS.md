@@ -246,10 +246,16 @@ python3 -m mypy --strict custom_components/marstek/
 
 # 3. Run all tests with coverage check (>95% required)
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
+
+# 4. Static quality gates (blocking in the Code Quality workflow)
+python3 -m ruff check custom_components tests tools scripts
+python3 scripts/check_code_limits.py
+python3 -m vulture
+jscpd
 ```
 
-**Do not consider a change complete until all three commands pass.** If any fails:
-1. Fix the lint errors, type errors, or test failures
+**Do not consider a change complete until every command passes.** If any fails:
+1. Fix the lint errors, type errors, test failures, or quality violations
 2. Re-run verification
 3. Repeat until all pass
 
@@ -257,16 +263,23 @@ This ensures:
 - **Code quality**: Ruff catches unused imports, style issues, and common bugs
 - **Type safety**: The codebase uses `--strict` mypy; all functions need proper annotations
 - **No regressions**: Tests must pass to confirm existing functionality isn't broken
+- **Bounded complexity**: Complexity, dead code, duplication, and the 1000-line
+  file ceiling are enforced, not advisory — see
+  [Code quality gates](docs/development.md#code-quality-gates)
 - **CI alignment**: These are the same checks that run in GitHub Actions
+
+The step 4 tools install from `requirements_quality.txt`, which is deliberately
+separate from `requirements_test.txt`: they need no Home Assistant test
+harness, so they run on any Python version.
 
 ## Testing and QA expectations
 
 - **Quality Scale**: Aim for **Gold** level standards (>95% code coverage).
-- Test structure: `tests/` mirrors platforms (`test_config_flow.py`, `test_init.py`, `test_sensor.py`, etc.) with shared fixtures in `tests/conftest.py`.
+- Test structure: `tests/` mirrors platforms (`test_config_flow/`, `test_init/`, `test_sensor/`, etc.) with shared fixtures in `tests/conftest.py`. A platform's tests are a package once they outgrow the 1000-line ceiling: themed `test_*.py` modules, module-level helpers in `_helpers.py`, and package-scoped fixtures in that package's `conftest.py`.
 - Use `pytest-homeassistant-custom-component` with pinned versions in `requirements_test.txt`; mock UDP I/O—no live devices.
 - Cover failures: cannot_connect, invalid_auth/invalid_discovery_info, already_configured, coordinator timeouts, action retries.
 - Mark coordinator failures with `UpdateFailed` to surface entity unavailability.
-- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (**coverage >95%**) on latest supported Python versions.
+- CI: run hassfest + lint (ruff) + **mypy --strict** + pytest (**coverage >95%**) on latest supported Python versions, plus the blocking `Code Quality` workflow (complexity, size limits, dead code, duplication).
 - Mock device available in `tools/mock_device/` for local testing.
 
 ### Type checking requirements

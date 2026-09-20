@@ -27,6 +27,57 @@ python3 -m mypy --strict custom_components/marstek/
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 ```
 
+## Code quality gates
+
+The `Code Quality` workflow runs four static checks on every pull request and
+blocks the merge when any of them fails. All four are configured in
+`pyproject.toml` (plus `.jscpd.json`) so a local run and CI see the same rules.
+
+```bash
+# Install the quality tooling once (separate from requirements_test.txt, so
+# these checks run on any Python — no Home Assistant test harness needed)
+pip install -r requirements_quality.txt
+
+# 1. Complexity, dead code and commented-out code
+python3 -m ruff check custom_components tests tools scripts
+
+# 2. File and function length ceilings
+python3 scripts/check_code_limits.py
+
+# 3. Unused code the linter cannot see
+python3 -m vulture
+
+# 4. Copy-paste detection
+jscpd
+```
+
+What each one enforces:
+
+| Check | Catches | Threshold |
+| --- | --- | --- |
+| ruff `C901` | Over-complex functions | McCabe 25, matching Home Assistant Core |
+| ruff `PLR0911`–`PLR0915` | Too many returns / branches / arguments / statements | 10 / 25 / 12 / 90 |
+| ruff `ERA` | Commented-out code | any |
+| `scripts/check_code_limits.py` | Oversized modules and functions | 1000 lines per file, 200 per function |
+| vulture | Unreachable functions, unused attributes and variables | 80% confidence |
+| jscpd | Duplicated blocks | 0.5% of the codebase, 15 lines / 70 tokens per clone |
+
+`scripts/check_code_limits.py` exists because ruff has no module-length rule
+and its closest function rule (`PLR0915`) counts statements rather than lines.
+It is stdlib-only, reads its thresholds from `[tool.code-limits]`, and takes
+`--max-file-lines` / `--max-function-lines` overrides for a one-off run.
+
+When a module crosses 1000 lines, split it along a seam rather than raising the
+ceiling: `pymarstek/udp.py` moved its broadcast sweep into
+`pymarstek/udp_discovery.py` as a mixin, and the large test modules became
+packages of themed modules with shared setup in `_helpers.py` and `conftest.py`.
+
+Vulture and ruff both have escape hatches for code whose shape is not ours to
+choose. Home Assistant fixes the signatures of `async_setup_entry`,
+`async_turn_on` and friends, so unused-argument rules stay off and the
+parameters HA passes into those hooks are listed in `[tool.vulture]
+ignore_names`. Prefer a documented entry there over a blanket `# noqa`.
+
 ## Devcontainer Home Assistant image
 
 `.devcontainer/docker-compose.yml` pins `ghcr.io/home-assistant/home-assistant:2026.9.3`. After changing the tag:

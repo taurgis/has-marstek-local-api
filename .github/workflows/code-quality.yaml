@@ -1,0 +1,41 @@
+name: Code Quality
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  code-quality:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install quality tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_quality.txt
+
+      # Complexity (C901, PLR09xx) and dead code (F401, ERA001) across every
+      # Python file in the repository, not just the integration.
+      - name: Lint
+        run: python -m ruff check custom_components tests tools scripts
+
+      # Ruff has no module-length rule, so this covers the 1000 line ceiling
+      # and the per-function line ceiling.
+      - name: File and function size limits
+        run: python scripts/check_code_limits.py
+
+      - name: Dead code
+        run: python -m vulture
+
+      - name: Duplicate code
+        run: jscpd

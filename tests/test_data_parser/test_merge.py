@@ -1,0 +1,700 @@
+"""Merging per-command reads into one device status snapshot."""
+
+from __future__ import annotations
+
+import pytest
+
+from custom_components.marstek.pymarstek.data_parser import (
+    merge_device_status,
+)
+
+
+class TestMergeDeviceStatus:
+    """Tests for merge_device_status."""
+
+    def test_merge_all_data_sources(self):
+        """Test merging data from all API sources."""
+        es_mode_data = {
+            "device_mode": "auto",
+            "ongrid_power": 150,
+            "battery_soc": 55,
+        }
+        es_status_data = {
+            "battery_soc": 55,
+            "battery_power": -250,
+            "battery_status": "charging",
+            "pv_power": 400,  # Non-zero pv_power prevents recalculation
+            "ongrid_power": 150,
+        }
+        pv_status_data = {
+            "pv1_power": 300,
+            "pv1_voltage": 35,
+        }
+        wifi_status_data = {
+            "wifi_rssi": -58,
+            "wifi_ssid": "TestNetwork",
+        }
+        em_status_data = {
+            "ct_state": 1,
+            "ct_connected": True,
+            "em_total_power": 360,
+        }
+        bat_status_data = {
+            "bat_temp": 27.5,
+            "bat_charg_flag": 1,
+        }
+
+        result = merge_device_status(
+            es_mode_data=es_mode_data,
+            es_status_data=es_status_data,
+            pv_status_data=pv_status_data,
+            wifi_status_data=wifi_status_data,
+            em_status_data=em_status_data,
+            bat_status_data=bat_status_data,
+            device_ip="192.168.1.100",
+            last_update=1234567890.0,
+        )
+
+        # Check all merged fields
+        assert result["device_mode"] == "auto"
+        assert result["battery_soc"] == 55
+        assert result["battery_power"] == -250
+        assert result["battery_status"] == "charging"
+        assert result["pv1_power"] == 300
+        assert result["wifi_rssi"] == -58
+        assert result["ct_connected"] is True
+        assert result["em_total_power"] == 360
+        assert result["bat_temp"] == 27.5
+        assert result["device_ip"] == "192.168.1.100"
+        assert result["last_update"] == 1234567890.0
+
+    def test_merge_with_none_data_sources(self):
+        """Test merging when some data sources are None."""
+        es_mode_data = {
+            "device_mode": "auto",
+            "ongrid_power": 150,
+        }
+
+        result = merge_device_status(
+            es_mode_data=es_mode_data,
+            es_status_data=None,
+            pv_status_data=None,
+            wifi_status_data=None,
+            em_status_data=None,
+            bat_status_data=None,
+        )
+
+        # Should have defaults for missing data
+        assert result["device_mode"] == "auto"
+        assert result["battery_soc"] is None  # Default
+        assert result["wifi_rssi"] is None  # Default for optional field
+        assert result["ct_connected"] is None  # Default for optional field
+        assert result["bat_temp"] is None  # Default for optional field
+        assert result["bat_capacity"] is None  # Default for optional field
+        assert result["bat_rated_capacity"] is None  # Default for optional field
+
+    def test_es_status_priority_over_es_mode(self):
+        """Test that ES.GetStatus battery_soc takes priority over ES.GetMode."""
+        es_mode_data = {
+            "battery_soc": 50,  # Lower priority
+        }
+        es_status_data = {
+            "battery_soc": 55,  # Higher priority
+        }
+
+        result = merge_device_status(
+            es_mode_data=es_mode_data,
+            es_status_data=es_status_data,
+        )
+
+        # ES.GetStatus should win
+        assert result["battery_soc"] == 55
+
+    def test_previous_status_preserves_values_on_partial_failure(self):
+        """Test that previous_status values are preserved when individual requests fail.
+
+        This prevents intermittent "Unknown" states when a single API endpoint
+        times out but others succeed.
+        """
+        previous_status = {
+            "device_mode": "auto",
+            "battery_status": "discharging",
+            "battery_soc": 60,
+            "battery_power": -300,
+            "ct_state": 1,
+            "ct_connected": True,
+            "em_total_power": 500,
+            "wifi_rssi": -55,
+            "bat_temp": 25.0,
+            "offgrid_power": 120,
+            "bat_cap": 5120,
+            "total_pv_energy": 10000,
+            "total_grid_output_energy": 20000,
+            "total_grid_input_energy": 15000,
+            "total_load_energy": 18000,
+        }
+
+        # Simulate: ES.GetMode succeeded, but EM.GetStatus and Bat.GetStatus failed
+        es_mode_data = {
+            "device_mode": "auto",
+            "ongrid_power": 150,
+        }
+        es_status_data = {
+            "battery_soc": 58,  # Updated value
+            "battery_power": -280,
+            "battery_status": "discharging",
+        }
+
+        result = merge_device_status(
+            es_mode_data=es_mode_data,
+            es_status_data=es_status_data,
+            pv_status_data=None,  # Failed
+            wifi_status_data=None,  # Failed
+            em_status_data=None,  # Failed - would normally set ct_state to None
+            bat_status_data=None,  # Failed - would normally set bat_temp to None
+            previous_status=previous_status,
+        )
+
+        # Fresh data from successful requests
+        assert result["device_mode"] == "auto"
+        assert result["battery_soc"] == 58  # Updated
+        assert result["battery_power"] == -280  # Updated
+        assert result["battery_status"] == "discharging"
+
+        # Preserved values from previous_status (requests failed)
+        assert result["ct_state"] == 1  # Preserved
+        assert result["ct_connected"] is True  # Preserved
+        assert result["wifi_rssi"] == -55  # Preserved
+        assert result["bat_temp"] == 25.0  # Preserved
+        assert result["offgrid_power"] == 120  # Preserved
+        assert result["bat_cap"] == 5120  # Preserved
+        assert result["total_pv_energy"] == 10000  # Preserved
+        assert result["total_grid_output_energy"] == 20000  # Preserved
+        assert result["total_grid_input_energy"] == 15000  # Preserved
+        assert result["total_load_energy"] == 18000  # Preserved
+
+    def test_previous_status_unknown_values_replaced(self):
+        """Test that 'Unknown' default values are replaced by previous_status."""
+        previous_status = {
+            "device_mode": "auto",
+            "battery_status": "idle",
+        }
+
+        # Simulate all requests failed - merge_device_status would use defaults
+        result = merge_device_status(
+            es_mode_data=None,
+            es_status_data=None,
+            previous_status=previous_status,
+        )
+
+        # Should use previous values instead of defaults
+        assert result["device_mode"] == "auto"  # Preserved from previous
+        assert result["battery_status"] == "idle"  # Preserved from previous
+
+    @pytest.mark.parametrize(
+        "poison", [float("nan"), float("inf"), float("-inf")]
+    )
+    def test_non_finite_values_never_enter_status(self, poison: float) -> None:
+        """A non-finite reading must be dropped, not merged.
+
+        Merged once it would be carried forward by previous_status on every
+        later cycle where EM.GetStatus fails or is skipped, so the entity would
+        stay poisoned long after the glitch that produced it.
+        """
+        result = merge_device_status(
+            em_status_data={"em_total_power": poison, "ct_connected": True},
+            previous_status={"em_total_power": 120},
+        )
+
+        assert result["em_total_power"] == 120
+        assert result["ct_connected"] is True
+
+    @pytest.mark.parametrize(
+        "poison", [float("nan"), float("inf"), float("-inf")]
+    )
+    def test_non_finite_values_are_not_carried_forward(
+        self, poison: float
+    ) -> None:
+        """A poisoned previous_status must not survive into the next cycle."""
+        result = merge_device_status(
+            em_status_data=None,
+            previous_status={"em_total_power": poison, "battery_soc": 55},
+        )
+
+        assert result["em_total_power"] is None
+        assert result["battery_soc"] == 55
+
+    def test_fresh_data_overrides_previous_status(self):
+        """Test that fresh data always overrides previous_status values."""
+        previous_status = {
+            "battery_soc": 60,
+            "battery_power": 300,
+            "ct_connected": True,
+        }
+
+        es_status_data = {
+            "battery_soc": 55,  # New value
+            "battery_power": 0,  # New value (idle)
+        }
+        em_status_data = {
+            "ct_connected": False,  # CT disconnected now
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            em_status_data=em_status_data,
+            previous_status=previous_status,
+        )
+
+        # Fresh data wins
+        assert result["battery_soc"] == 55
+        assert result["battery_power"] == 0
+        assert result["ct_connected"] is False
+
+    def test_grid_input_total_uses_fallback_when_counter_is_stuck(self):
+        """Test grid import total keeps increasing when firmware counters stall."""
+        previous_status = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+            "last_update": 100.0,
+        }
+
+        es_status_data = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            last_update=160.0,
+            previous_status=previous_status,
+        )
+
+        assert result["total_grid_input_energy"] == 1006.0
+        assert result["total_grid_output_energy"] == 500.0
+
+    def test_grid_output_total_uses_fallback_when_counter_is_stuck(self):
+        """Test grid export total keeps increasing when firmware counters stall."""
+        previous_status = {
+            "ongrid_power": 600,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+            "last_update": 200.0,
+        }
+
+        es_status_data = {
+            "ongrid_power": 600,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            last_update=260.0,
+            previous_status=previous_status,
+        )
+
+        assert result["total_grid_input_energy"] == 1000.0
+        assert result["total_grid_output_energy"] == 510.0
+
+    def test_grid_totals_trust_advancing_device_counter(self):
+        """Test advancing firmware counters are used as-is."""
+        previous_status = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 500.0,
+            "last_update": 300.0,
+        }
+
+        es_status_data = {
+            "ongrid_power": -360,
+            "total_grid_input_energy": 1015.0,
+            "total_grid_output_energy": 500.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            last_update=360.0,
+            previous_status=previous_status,
+        )
+
+        assert result["total_grid_input_energy"] == 1015.0
+        assert result["total_grid_output_energy"] == 500.0
+
+    def test_total_pv_energy_zero_is_kept_without_contradicting_pv_activity(self):
+        """Test a legitimate zero PV lifetime total is preserved."""
+        es_status_data = {
+            "total_pv_energy": 0,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_pv_energy"] == 0
+
+    def test_total_pv_energy_zero_with_active_pv_is_suppressed(self):
+        """Test bogus zero PV total is hidden when PV generation is active."""
+        es_status_data = {
+            "total_pv_energy": 0,
+            "pv_power": 0,
+            "ongrid_power": 169,
+            "battery_power": 169,
+        }
+        pv_status_data = {
+            "pv1_power": 41.5,
+            "pv2_power": 52.0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            pv_status_data=pv_status_data,
+        )
+
+        assert result["pv_power"] == 93.5
+        assert result["total_pv_energy"] is None
+
+    def test_total_pv_energy_zero_does_not_reset_previous_nonzero(self):
+        """Test zero PV totals do not overwrite a previous non-zero lifetime total."""
+        previous_status = {
+            "total_pv_energy": 12345,
+        }
+        es_status_data = {
+            "total_pv_energy": 0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            previous_status=previous_status,
+        )
+
+        assert result["total_pv_energy"] == 12345
+
+    def test_total_load_energy_zero_is_kept_without_previous_total(self):
+        """Test a zero load total remains available when there is no contradiction."""
+        es_status_data = {
+            "total_load_energy": 0,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_load_energy"] == 0
+
+    def test_total_load_energy_zero_does_not_reset_previous_nonzero(self):
+        """Test zero load totals do not overwrite a previous non-zero lifetime total."""
+        previous_status = {
+            "total_load_energy": 67890,
+        }
+        es_status_data = {
+            "total_load_energy": 0,
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            previous_status=previous_status,
+        )
+
+        assert result["total_load_energy"] == 67890
+
+    def test_total_pv_and_load_energy_nonzero_are_applied(self):
+        """Test genuine non-zero lifetime PV/load totals are still used."""
+        es_status_data = {
+            "total_pv_energy": 4321,
+            "total_load_energy": 8765,
+        }
+
+        result = merge_device_status(es_status_data=es_status_data)
+
+        assert result["total_pv_energy"] == 4321
+        assert result["total_load_energy"] == 8765
+
+    def test_battery_power_recalculated_from_pv_channels(self):
+        """Test battery power and pv_power are recalculated when ES.GetStatus pv_power is 0.
+
+        Venus A devices report pv_power=0 in ES.GetStatus but individual
+        channels from PV.GetStatus have correct values. The merge function
+        should override pv_power with the calculated sum and recalculate
+        battery power using PV channels.
+
+        Example from issue #3/#5:
+        - pv1=41.5W, pv2=52W, pv3=58W, pv4=33W (total 184.5W)
+        - ES.GetStatus returns pv_power=0 (incorrect)
+        - ongrid_power=169W (exporting to grid)
+        - Battery should be: 184.5 - 169 = 15.5W charging (API convention)
+        - HA: -15.5W (negative = charging)
+        """
+        pv_status_data = {
+            "pv1_power": 41.5,
+            "pv2_power": 52.0,
+            "pv3_power": 58.0,
+            "pv4_power": 33.0,
+        }
+        es_status_data = {
+            "battery_soc": 27,
+            "pv_power": 0,  # ES.GetStatus returns incorrect 0
+            "ongrid_power": 169,  # Exporting to grid
+            "battery_power": 169,  # Wrong calculation: -(0 - 169) = 169
+            "battery_status": "discharging",  # Wrong!
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            pv_status_data=pv_status_data,
+        )
+
+        # Total PV: 41.5 + 52 + 58 + 33 = 184.5W
+        # pv_power should be overridden with calculated sum
+        assert result["pv_power"] == 184.5
+        # Battery: -(184.5 - 169) = -15.5W (HA: negative = charging)
+        assert result["battery_power"] == -15.5
+        assert result["battery_status"] == "charging"
+
+    def test_battery_power_not_recalculated_when_pv_power_correct(self):
+        """Test battery/pv_power are NOT recalculated when ES.GetStatus pv_power is non-zero."""
+        pv_status_data = {
+            "pv1_power": 100.0,
+            "pv2_power": 84.5,
+        }
+        es_status_data = {
+            "battery_soc": 55,
+            "pv_power": 184.5,  # ES.GetStatus returns correct value
+            "ongrid_power": 100,
+            "battery_power": -84.5,  # Correct: -(184.5 - 100) = -84.5
+            "battery_status": "charging",
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            pv_status_data=pv_status_data,
+        )
+
+        # Should use the original ES.GetStatus values (not recalculated)
+        assert result["pv_power"] == 184.5
+        assert result["battery_power"] == -84.5
+        assert result["battery_status"] == "charging"
+
+    def test_battery_power_not_recalculated_when_no_pv_channels(self):
+        """Test battery power is NOT recalculated when no PV channel data."""
+        es_status_data = {
+            "battery_soc": 55,
+            "pv_power": 0,
+            "ongrid_power": 500,
+            "battery_power": 500,  # -(0 - 500) = 500
+            "battery_status": "discharging",
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            pv_status_data=None,  # No PV data available
+        )
+
+        # Should use original value (no recalculation without PV channels)
+        assert result["battery_power"] == 500
+        assert result["battery_status"] == "discharging"
+
+    def test_battery_power_recalculated_discharging(self):
+        """Test battery power recalculation when discharging with PV.
+
+        Example: PV generating 50W, exporting 200W to grid
+        -> Battery discharging: 50 - 200 = -150 (API convention: discharging)
+        -> HA: +150 (positive = discharging)
+        """
+        pv_status_data = {
+            "pv1_power": 50.0,
+        }
+        es_status_data = {
+            "battery_soc": 80,
+            "pv_power": 0,  # Wrong
+            "ongrid_power": 200,  # Exporting more than PV produces
+            "battery_power": 200,  # Wrong: -(0 - 200) = 200
+            "battery_status": "discharging",
+        }
+
+        result = merge_device_status(
+            es_status_data=es_status_data,
+            pv_status_data=pv_status_data,
+        )
+
+        # Total PV: 50W
+        # Battery: -(50 - 200) = -(-150) = 150W (HA: positive = discharging)
+        assert result["battery_power"] == 150
+        assert result["battery_status"] == "discharging"
+
+
+class TestMergeDeviceStatusNoPV:
+    """Tests for merge_device_status without PV data (Venus C/E devices)."""
+
+    def test_no_pv_keys_when_no_pv_data(self):
+        """Test that PV keys are NOT included when no PV data is provided.
+
+        Venus A and Venus D support PV; Venus C/E do NOT.
+        When pv_status_data is None, no PV keys should be in the result.
+        """
+        result = merge_device_status(
+            es_mode_data={"device_mode": "auto"},
+            es_status_data={"battery_soc": 55},
+            pv_status_data=None,  # No PV data - simulates Venus C/E
+            wifi_status_data=None,
+            em_status_data=None,
+            bat_status_data=None,
+        )
+
+        # PV keys should NOT be present when no PV data provided
+        assert "pv1_power" not in result
+        assert "pv2_power" not in result
+        assert "pv3_power" not in result
+        assert "pv4_power" not in result
+
+    def test_pv_keys_included_when_pv_data_provided(self):
+        """Test that PV keys ARE included when PV data is provided (Venus A/D)."""
+        pv_data = {
+            "pv1_power": 300,
+            "pv1_voltage": 40,
+            "pv1_current": 7.5,
+            "pv1_state": 1,
+        }
+
+        result = merge_device_status(
+            es_mode_data={"device_mode": "auto"},
+            es_status_data=None,
+            pv_status_data=pv_data,  # Venus A/D with PV data
+            wifi_status_data=None,
+            em_status_data=None,
+            bat_status_data=None,
+        )
+
+        # PV keys should be present when PV data provided
+        assert result["pv1_power"] == 300
+        assert result["pv1_voltage"] == 40
+        assert result["pv1_current"] == 7.5
+        assert result["pv1_state"] == 1
+        # Only channels with data should be present
+        assert "pv2_power" not in result
+
+
+class TestMergeStatusPreviousStatusHandling:
+    """Tests for previous status handling in merge_device_status."""
+
+    def test_pv_keys_preserved_from_previous_when_missing(self):
+        """Test that PV keys from previous status are preserved when not in current."""
+        previous = {
+            "pv1_power": 200,
+            "pv1_voltage": 35,
+            "pv1_current": 5.7,
+            "battery_soc": 60,
+        }
+
+        result = merge_device_status(
+            es_mode_data={"device_mode": "auto"},
+            es_status_data={"battery_soc": 65},
+            pv_status_data=None,  # No PV data this time
+            previous_status=previous,
+        )
+
+        # PV keys should be preserved from previous status
+        assert result["pv1_power"] == 200
+        assert result["pv1_voltage"] == 35
+        assert result["pv1_current"] == 5.7
+        # Fresh data should override
+        assert result["battery_soc"] == 65
+
+    def test_previous_pv_none_not_preserved(self):
+        """Test that None PV values from previous are not preserved."""
+        previous = {
+            "pv1_power": None,
+            "pv1_voltage": 35,
+        }
+
+        result = merge_device_status(
+            es_mode_data={"device_mode": "auto"},
+            es_status_data=None,
+            pv_status_data=None,
+            previous_status=previous,
+        )
+
+        # None values should not be preserved
+        assert "pv1_power" not in result
+        # Non-None values should be preserved
+        assert result["pv1_voltage"] == 35
+
+    def test_previous_none_values_preserved_in_status(self):
+        """Test that previous non-None values replace None in status dict."""
+        previous = {
+            "battery_soc": 75,
+            "battery_power": 500,
+            "wifi_rssi": -55,
+        }
+
+        result = merge_device_status(
+            es_mode_data=None,  # No mode data - status[battery_soc] stays None
+            es_status_data=None,  # No status data
+            pv_status_data=None,
+            wifi_status_data=None,
+            previous_status=previous,
+        )
+
+        # Previous values should fill in None values in status
+        assert result["battery_soc"] == 75
+        assert result["battery_power"] == 500
+        assert result["wifi_rssi"] == -55
+
+    def test_unknown_values_do_not_override_previous(self):
+        """Test that placeholder values from partial responses do not overwrite prior data."""
+        previous = {
+            "device_mode": "auto",
+            "battery_status": "charging",
+            "wifi_rssi": -40,
+        }
+
+        result = merge_device_status(
+            es_mode_data={"device_mode": "Unknown"},
+            es_status_data={"battery_status": "unknown"},
+            wifi_status_data={"wifi_rssi": None},
+            previous_status=previous,
+        )
+
+        assert result["device_mode"] == "auto"
+        assert result["battery_status"] == "charging"
+        assert result["wifi_rssi"] == -40
+
+
+class TestDeviceSupportsP:
+    """Tests for device_supports_pv function."""
+
+    def test_venus_a_supports_pv(self):
+        """Test Venus A variants are correctly identified as PV capable."""
+        from custom_components.marstek.const import device_supports_pv
+
+        assert device_supports_pv("VenusA") is True
+        assert device_supports_pv("Venus A") is True
+        assert device_supports_pv("venusa") is True
+        assert device_supports_pv("VenusA 3.0") is True
+        assert device_supports_pv("Venus A 3.0") is True
+
+    def test_venus_d_supports_pv(self):
+        """Test Venus D variants are correctly identified as PV capable."""
+        from custom_components.marstek.const import device_supports_pv
+
+        assert device_supports_pv("VenusD") is True
+        assert device_supports_pv("Venus D") is True
+        assert device_supports_pv("venusd") is True
+        assert device_supports_pv("VenusD 3.0") is True
+        assert device_supports_pv("Venus D 3.0") is True
+
+    def test_venus_c_e_no_pv_support(self):
+        """Test Venus C/E variants are correctly identified as NOT PV capable."""
+        from custom_components.marstek.const import device_supports_pv
+
+        assert device_supports_pv("VenusC") is False
+        assert device_supports_pv("VenusE 3.0") is False
+        assert device_supports_pv("Venus C") is False
+        assert device_supports_pv("venusc") is False
+        assert device_supports_pv("venuse") is False
+
+    def test_none_or_empty_no_pv_support(self):
+        """Test None or empty device type returns False."""
+        from custom_components.marstek.const import device_supports_pv
+
+        assert device_supports_pv(None) is False
+        assert device_supports_pv("") is False
+        assert device_supports_pv("Unknown") is False

@@ -28,6 +28,27 @@ python3 -m mypy --strict custom_components/marstek/
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 ```
 
+The `Code Quality` workflow adds four blocking static checks. They need only
+`pip install -r requirements_quality.txt`, so you can run them without the Home
+Assistant test harness:
+
+```bash
+# Complexity, dead code and commented-out code across the whole repo
+python3 -m ruff check custom_components tests tools scripts
+
+# 1000 lines per file, 200 lines per function
+python3 scripts/check_code_limits.py
+
+# Unused code
+python3 -m vulture
+
+# Copy-paste detection
+jscpd
+```
+
+See [Code quality gates](docs/development.md#code-quality-gates) for what each
+threshold means and how to handle a file that outgrows the limit.
+
 ## Releases
 
 Changesets now handles release preparation for this repository.
@@ -54,3 +75,4 @@ npm run changeset:pre:exit
 - Add or update tests for changes in behavior.
 - Keep user-facing strings in sync with translations.
 - Prefer small, well-scoped commits for easier review.
+- Keep modules under 1000 lines; split along a seam instead of raising the limit.

@@ -241,8 +241,15 @@ python3 -m mypy --strict custom_components/marstek/
 # Tests with coverage
 pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
-# Run specific test file
-pytest tests/test_config_flow.py -v
+# Run one platform's tests
+pytest tests/test_config_flow -v
+
+# Static quality gates (complexity, size limits, dead code, duplication)
+pip install -r requirements_quality.txt
+python3 -m ruff check custom_components tests tools scripts
+python3 scripts/check_code_limits.py
+python3 -m vulture
+jscpd
 ```
 
 ### Release workflow

@@ -20,7 +20,7 @@ async def query_es_status(host: str = "192.168.0.152", port: int = 30000) -> Non
 
     loop = asyncio.get_running_loop()
     try:
-        data, addr = await asyncio.wait_for(loop.sock_recvfrom(sock, 4096), timeout=5)
+        data, _addr = await asyncio.wait_for(loop.sock_recvfrom(sock, 4096), timeout=5)
         response = json.loads(data.decode())
         result = response.get("result", {})
 
@@ -105,7 +105,7 @@ async def query_es_status(host: str = "192.168.0.152", port: int = 30000) -> Non
         else:
             print("ongrid_power=0 -> No grid exchange")
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print("Timeout - no response from device")
     finally:
         sock.close()

@@ -692,7 +692,9 @@ class TestStrictMode:
         validate_power_value(high_power)  # Should not raise but should warn
         assert "Strict mode" in caplog.text or "90%" in caplog.text
 
-    def test_short_schedule_valid_without_strict_mode(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_short_schedule_valid_without_strict_mode(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Test short schedules are valid without strict mode warnings."""
         config = {
             "time_num": 0,

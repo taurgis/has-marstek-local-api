@@ -23,6 +23,7 @@ pythonpath = ["."]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+extend-exclude = ["tools/firmware/blobs"]
 
 [tool.ruff.lint]
 select = [
@@ -35,7 +36,58 @@ select = [
 	"C4",
 	"SIM",
 	"RUF",
+	# Complexity gates: mccabe plus the Pylint "too many ..." family.
+	"C90",
+	"PLR0911",
+	"PLR0912",
+	"PLR0913",
+	"PLR0915",
+	# Commented-out code is dead code.
+	"ERA",
 ]
+# Unused arguments (ARG) stay off: Home Assistant fixes the signatures of
+# `async_setup_entry`, `async_create_fix_flow`, `async_turn_on` and friends,
+# so the unused parameters they hand us are contract, not waste. Vulture
+# covers the dead code that actually matters.
+
+[tool.ruff.lint.mccabe]
+# Matches Home Assistant Core. Integration code branches on firmware quirks
+# far more than ruff's default of 10 allows for.
+max-complexity = 25
+
+[tool.ruff.lint.pylint]
+max-args = 12
+max-branches = 25
+max-returns = 10
+max-statements = 90
+
+[tool.ruff.lint.per-file-ignores]
+# The mock device and the debug scripts are single-purpose developer tools
+# whose long dispatch tables read better flat than split across helpers.
+"tools/**" = ["C901", "PLR0911", "PLR0912", "PLR0915"]
+# Backwards-compatible re-export shim: the sys.path fix has to run before the
+# imports, and the imports exist purely to be re-exported.
+"tools/mock_device/mock_marstek.py" = ["E402", "F401"]
+# Stacked `patch()` blocks stay nested: one context manager per line shows at a
+# glance what a test replaces, and ruff offers no safe automatic rewrite.
+"tests/**" = ["SIM117"]
+
+[tool.code-limits]
+# Ruff has no module-length rule and its closest function-size rule counts
+# statements rather than lines, so scripts/check_code_limits.py enforces both.
+max-file-lines = 1000
+max-function-lines = 200
+paths = ["custom_components", "tests", "tools", "scripts"]
+exclude = ["tools/firmware/blobs"]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["custom_components/marstek", "tools", "scripts"]
+exclude = ["tools/firmware/blobs"]
+# Parameters Home Assistant passes into hooks whose signatures we do not own,
+# plus the argument that keeps the mock handler table uniform.
+ignore_names = ["kwargs", "entry_data", "variables", "device_type"]
+sort_by_size = true
 
 [tool.mypy]
 python_version = "3.14"
