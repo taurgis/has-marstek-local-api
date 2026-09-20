@@ -16,7 +16,6 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import discovery_flow
-from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
@@ -28,10 +27,12 @@ from .firmware_profile import (
 from .helpers.device_lookup import async_lookup_device_by_identifier
 from .helpers.flow_helpers import (
     formatted_mac_or_none,
+    get_unique_id_from_device_info,
     identities_overlap,
     identity_macs_from_entry,
     identity_macs_from_mapping,
 )
+from .helpers.ports import discovery_scan_ports
 from .helpers.udp_clients import async_paused_udp_receivers
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,9 +55,6 @@ _DEVICE_METADATA_FIELDS: tuple[str, ...] = (
     "model",
     "firmware",
 )
-
-_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30004, 30030)
-
 
 def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
     """Build discovery flow data from device info."""
@@ -327,22 +325,8 @@ class MarstekScanner:
         )
 
     def _build_scan_ports(self) -> list[int]:
-        """Build the UDP port list for discovery scans.
-
-        Includes the default API port, common custom demo ports, and any ports
-        already configured in existing entries.
-        """
-        ports: set[int] = {DEFAULT_UDP_PORT, *_COMMON_CUSTOM_PORTS}
-
-        for entry in self._hass.config_entries.async_entries(DOMAIN):
-            try:
-                configured_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
-            except (TypeError, ValueError):
-                continue
-            if 1 <= configured_port <= 65535:
-                ports.add(configured_port)
-
-        return sorted(ports)
+        """Build the UDP port list for discovery scans."""
+        return discovery_scan_ports(self._hass.config_entries.async_entries(DOMAIN))
 
     def _maybe_update_entry_metadata(
         self,
@@ -412,17 +396,8 @@ class MarstekScanner:
         updates: dict[str, Any],
     ) -> None:
         """Update device registry metadata when version/model changes."""
-        device_identifier_raw = (
-            entry.data.get("ble_mac")
-            or entry.data.get("mac")
-            or entry.data.get("wifi_mac")
-        )
-        if not device_identifier_raw:
-            return
-
-        try:
-            device_identifier = format_mac(device_identifier_raw)
-        except (TypeError, ValueError):
+        device_identifier = get_unique_id_from_device_info(entry.data)
+        if device_identifier is None:
             return
 
         device_registry = dr.async_get(self._hass)
@@ -463,13 +438,6 @@ class MarstekScanner:
             )
             return device
         return None
-
-    def _find_device_by_ble_mac(
-        self, devices: list[dict[str, Any]], stored_ble_mac: str, entry_title: str
-    ) -> dict[str, Any] | None:
-        """Find device by a stored MAC, matching any discovered identity field."""
-        stored = identity_macs_from_mapping({"ble_mac": stored_ble_mac})
-        return self._find_device_by_identity(devices, stored, entry_title)
 
     def _get_configured_macs(self) -> set[str]:
         """Collect all configured MACs for this integration."""

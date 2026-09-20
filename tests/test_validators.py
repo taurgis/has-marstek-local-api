@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -18,6 +19,7 @@ from custom_components.marstek.pymarstek.validators import (
     ValidationError,
     enable_strict_mode,
     is_strict_mode,
+    json_loads_strict,
     json_rpc_wire_id,
     normalize_json_rpc_wire_message,
     validate_command,
@@ -823,3 +825,62 @@ class TestSysWriteCommands:
                 validate_method(method)
             assert exc_info.value.field == "method"
 
+
+
+class TestJsonLoadsStrict:
+    """Tests for the wire-boundary JSON decoder."""
+
+    def test_accepts_ordinary_open_api_payloads(self) -> None:
+        """Finite numbers, strings, nulls and nesting decode unchanged."""
+        payload = (
+            '{"id": 1, "result": {"total_power": -1234.5, "ct_state": 1, '
+            '"wifi_ssid": "net", "bat_temp": null, "pv": [0, 1.5]}}'
+        )
+        assert json_loads_strict(payload) == {
+            "id": 1,
+            "result": {
+                "total_power": -1234.5,
+                "ct_state": 1,
+                "wifi_ssid": "net",
+                "bat_temp": None,
+                "pv": [0, 1.5],
+            },
+        }
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            '{"a": NaN}',
+            '{"a": Infinity}',
+            '{"a": -Infinity}',
+            '{"a": 1e400}',
+            '{"a": -1e400}',
+            '{"a": [1, NaN]}',
+            '{"a": {"b": Infinity}}',
+            '{"a": ' + "1" + "0" * 400 + "}",
+        ],
+    )
+    def test_rejects_numbers_that_are_not_finite(self, payload: str) -> None:
+        """Bare NaN/Infinity and overflowing literals are not usable JSON."""
+        with pytest.raises(json.JSONDecodeError):
+            json_loads_strict(payload)
+
+    def test_stdlib_would_have_accepted_those_payloads(self) -> None:
+        """Pin why the strict decoder exists: json.loads does not reject them."""
+        assert math.isnan(json.loads('{"a": NaN}')["a"])
+        assert math.isinf(json.loads('{"a": Infinity}')["a"])
+        assert math.isinf(json.loads('{"a": 1e400}')["a"])
+
+    def test_outbound_validation_rejects_a_non_finite_power(self) -> None:
+        """json.dumps writes NaN, so the outbound check must reject it too."""
+        message = json.dumps(
+            {
+                "id": 1,
+                "method": "ES.SetMode",
+                "params": {"id": 0, "config": {"mode": "Passive"}},
+                "power": float("nan"),
+            }
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_json_message(message)
+        assert exc_info.value.field == "message"

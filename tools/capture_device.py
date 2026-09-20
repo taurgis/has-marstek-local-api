@@ -23,7 +23,6 @@ from custom_components.marstek.firmware_profile import (  # noqa: E402
     resolve_firmware_profile,
 )
 
-
 # Methods to capture from the device
 # Note: ES.* and PV.* methods use {"id": 0} as params
 # Important: Device needs ~10 seconds between requests for stability

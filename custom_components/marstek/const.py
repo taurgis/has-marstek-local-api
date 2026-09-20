@@ -49,6 +49,18 @@ BAT_STATUS_KEYS: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Entity keys backed by EM.GetStatus. Firmware that is not an Open API meter
+# client never answers the call, so these entities would sit at "unknown" for
+# the life of the entry; the sensor platform skips them on such a profile.
+EM_STATUS_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "em_total_power",
+        "em_a_power",
+        "em_b_power",
+        "em_c_power",
+    }
+)
+
 # UDP Configuration
 DEFAULT_UDP_PORT: Final = 30000  # Default UDP port for Marstek devices
 DISCOVERY_TIMEOUT: Final = 10.0  # Wait 10s for each broadcast

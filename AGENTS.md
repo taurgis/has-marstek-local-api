@@ -64,18 +64,23 @@ If you add/modify device control:
 |---|---|---|
 | Setup / teardown | `__init__.py` | Creates per-port UDP clients + coordinator; starts `MarstekScanner`; forwards platforms; uses `entry.async_on_unload()` |
 | UDP client pool | `helpers/udp_clients.py` | One `MarstekUDPClient` per Open API bind port; loopback uses ephemeral |
-| Config flow | `config_flow.py` | Broadcast discovery UI, DHCP updates, reauth, reconfigure, options flow with sections |
+| Config flow | `config_flow.py` | Broadcast discovery UI, DHCP updates, reauth, reconfigure |
+| Options flow | `options_flow.py` | Polling, network and power option sections |
 | Polling + error handling | `coordinator.py` | Single source of truth; tiered polling (fast/medium/slow); returns previous data on connectivity issues |
 | IP change detection | `scanner.py` | Periodic broadcast discovery (60s); triggers discovery flow to update config entries |
 | Firmware profile | `firmware_profile.py` | Family + `ver` → capabilities and wire-to-SI scales |
 | Sensors | `sensor.py` | EntityDescription pattern; coordinator-backed; stable unique IDs; `suggested_display_precision` |
 | Binary sensors | `binary_sensor.py` | EntityDescription pattern; CT connection status |
 | Number | `number.py` | Firmware-gated SYS DOD; RestoreNumber; writes pause polling |
+| SYS entity base | `helpers/sys_entity.py` | Shared wiring for the optimistic number/switch SYS entities |
+| SYS writes | `helpers/sys_write.py` | Builds the write, requires `set_result`, maps errors to translations |
 | Switch | `switch.py` | Firmware-gated SYS BLE/LED; RestoreEntity; writes pause polling |
 | Select entities | `select.py` | Operating mode selection (Auto/AI/Manual/Passive; UPS when the profile allows it) |
 | Services | `services.py` | Idempotent registration; passive mode, manual schedules, data sync |
 | Device actions | `device_action.py` | Automation actions using `ES.SetMode` with retries + verification; pauses polling |
 | Device info helper | `device_info.py` | Shared `build_device_info()` + identifier utilities |
+| Polling pause | `helpers/polling.py` | `polling_paused()` context manager wrapped around every write |
+| Write retries | `helpers/command_retry.py`, `helpers/service_retry.py` | One retry loop; the service layer adds the pause and the error mapping |
 | Diagnostics | `diagnostics.py` | Config entry diagnostics with redaction |
 | Mode configuration | `mode_config.py` | Mode parameter building helpers |
 | Text/translations | `strings.json`, `translations/en.json` | Keep in sync; use translation keys in entities |
@@ -83,6 +88,14 @@ If you add/modify device control:
 | Local API reference | `docs/marstek_device_openapi.MD` | UDP protocol + method list |
 | UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators. Each unique Open API port binds its own socket (devices reply there, not to an ephemeral source port). |
 | Request validation | `pymarstek/validators.py` | Validates methods, params, power/time ranges before transmission |
+| Poll composition | `pymarstek/device_status.py` | One table of the reads a poll performs, shared by the serial and parallel paths |
+| Reply routing | `pymarstek/response_router.py` | Pending waiters and the short-lived cache, keyed `(source_ip, id)` with a bare-id fallback |
+| Pacing | `pymarstek/throttle.py` | Per-IP minimum interval, per-device I/O locks, stale-IP pruning |
+| Poll gating | `pymarstek/poll_gate.py` | Reference-counted pause/resume plus poll-cycle leases |
+| Firmware marks | `pymarstek/openapi_marks.py` | Per-IP reset-prone and retransmit-safe flags learned at runtime |
+| Command stats | `pymarstek/command_stats.py` | Per-method, per-IP outcome counters behind the diagnostic sensors |
+| Device identity | `pymarstek/device_info.py` | `Marstek.GetDevice` parsing and MAC extraction |
+| Energy guards | `pymarstek/energy_guard.py` | Rejects implausible lifetime-energy jumps from firmware glitches |
 
 ## Platforms & Entities
 
@@ -161,6 +174,7 @@ The `pymarstek/validators.py` module provides a **validation layer** that protec
 |------------|-------|-------|
 | Method names | Only known API methods (`ES.GetStatus`, `ES.SetMode`, etc.) are allowed | |
 | Device ID | Must be 0-255 | `MAX_DEVICE_ID = 255` |
+| JSON-RPC id | Wire ids stay in the uint16 range firmware echoes back | `MAX_JSON_RPC_ID = 65535` |
 | Power values | Prevents obviously invalid commands | `MAX_POWER_VALUE = 5000` |
 | Time format | HH:MM pattern enforced | |
 | Time range | End must be after start for enabled schedules | |
@@ -168,14 +182,24 @@ The `pymarstek/validators.py` module provides a **validation layer** that protec
 | Passive duration | Maximum 24 hours | `MAX_PASSIVE_DURATION = 86400` |
 | Schedule slots | Venus A/C/D/E: 0-9; Venus E mini: 0-5 | Profile `max_manual_schedule_slot`; validator still lists `MAX_TIME_SLOTS = 10` as the schema ceiling |
 | Mode configs | Required fields checked per mode (manual_cfg, passive_cfg) | |
+| Wire numbers | Every number in a decoded payload must be a finite JSON number | `json_loads_strict()` |
 
 ### Where validation happens
 
 1. **`command_builder.build_command()`** – validates before building JSON
 2. **`MarstekUDPClient.send_request()`** – validates before UDP transmission
 3. **`MarstekUDPClient.send_broadcast_request()`** – same protection for broadcasts
+4. **`json_loads_strict()`** – decodes every inbound datagram (`udp.py`, `discovery.py`)
 
 Invalid requests raise `ValidationError` with a clear message indicating the field.
+
+Inbound payloads are decoded with `json_loads_strict()` instead of `json.loads()`.
+Python's decoder accepts the non-standard `NaN`/`Infinity`/`-Infinity` literals and
+overflows `1e400` to `inf`, so one glitched datagram could otherwise write a
+non-finite value into coordinator state that no later poll overwrites. A datagram
+carrying such a number raises `json.JSONDecodeError` and is ignored, exactly like a
+syntactically broken one, and the device is retried. `merge_device_status()` drops
+non-finite values a second time, for values arithmetic inside the parsers produces.
 
 ### Rate limiting
 
@@ -409,7 +433,12 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 | `--ble-mac` | random | BLE MAC address (unique ID) |
 | `--wifi-mac` | random | WiFi MAC address |
 | `--soc` | 50 | Initial battery SOC percentage |
+| `--pv-channels` | none | VenusD PV channels as `power:voltage:current, ...` (up to 4) |
 | `--no-simulate` | false | Disable dynamic simulation |
+| `--state-dir` | see `utils.py` | Directory holding persisted mock state |
+| `--reset-state` | false | Discard this device's persisted state on start |
+| `--quiet` | false | Drop the per-request log line (drop summaries still print) |
+| `--status-interval` | 30 | Seconds between simulator status lines; `0` disables them |
 
 **Use when:**
 - Running tests (pytest uses mock device fixtures)

@@ -419,6 +419,39 @@ class TestMergeDeviceStatus:
         assert result["device_mode"] == "auto"  # Preserved from previous
         assert result["battery_status"] == "idle"  # Preserved from previous
 
+    @pytest.mark.parametrize(
+        "poison", [float("nan"), float("inf"), float("-inf")]
+    )
+    def test_non_finite_values_never_enter_status(self, poison: float) -> None:
+        """A non-finite reading must be dropped, not merged.
+
+        Merged once it would be carried forward by previous_status on every
+        later cycle where EM.GetStatus fails or is skipped, so the entity would
+        stay poisoned long after the glitch that produced it.
+        """
+        result = merge_device_status(
+            em_status_data={"em_total_power": poison, "ct_connected": True},
+            previous_status={"em_total_power": 120},
+        )
+
+        assert result["em_total_power"] == 120
+        assert result["ct_connected"] is True
+
+    @pytest.mark.parametrize(
+        "poison", [float("nan"), float("inf"), float("-inf")]
+    )
+    def test_non_finite_values_are_not_carried_forward(
+        self, poison: float
+    ) -> None:
+        """A poisoned previous_status must not survive into the next cycle."""
+        result = merge_device_status(
+            em_status_data=None,
+            previous_status={"em_total_power": poison, "battery_soc": 55},
+        )
+
+        assert result["em_total_power"] is None
+        assert result["battery_soc"] == 55
+
     def test_fresh_data_overrides_previous_status(self):
         """Test that fresh data always overrides previous_status values."""
         previous_status = {
@@ -1581,3 +1614,53 @@ class TestFirmwareProfileDecoding:
         assert merged["total_grid_input_energy"] == 1167238
         assert merged["bat_temp"] == 31.0
         assert merged["bat_soc_detailed"] == 51
+
+
+class TestParsersToleratePayloadsFirmwareShouldNotSend:
+    """Every parser must return defaults instead of raising.
+
+    The three call sites already refuse a reply whose ``result`` is missing or
+    not an object, but that contract belongs with the parsers: a payload shape
+    nobody anticipated must degrade a single reading, not take down the poll.
+    """
+
+    PARSERS = (
+        parse_es_mode_response,
+        parse_es_status_response,
+        parse_pv_status_response,
+        parse_wifi_status_response,
+        parse_em_status_response,
+        parse_bat_status_response,
+    )
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            {},
+            {"id": 1},
+            {"id": 1, "result": None},
+            {"id": 1, "result": "OK"},
+            {"id": 1, "result": []},
+            {"id": 1, "result": 0},
+            {"id": 1, "error": {"code": -32601, "message": "Method not found"}},
+            [],
+            "OK",
+            None,
+        ],
+    )
+    def test_no_parser_raises(self, response: object) -> None:
+        """A malformed payload yields defaults, never an exception."""
+        for parser in self.PARSERS:
+            parsed = parser(response)  # type: ignore[arg-type]
+            assert isinstance(parsed, dict)
+            assert all(value is None for value in parsed.values())
+
+    def test_integer_too_large_to_scale_is_dropped(self) -> None:
+        """A wire integer beyond float range must not raise OverflowError."""
+        parsed = parse_em_status_response(
+            {"id": 1, "result": {"input_energy": 10**400, "total_power": 5}},
+            resolve_firmware_profile("VenusE 3.0", 150),
+        )
+
+        assert parsed["em_input_energy"] is None
+        assert parsed["em_total_power"] == 5

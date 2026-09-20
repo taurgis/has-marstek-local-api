@@ -13,7 +13,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
-from .const import BAT_STATUS_KEYS
+from .const import BAT_STATUS_KEYS, EM_STATUS_KEYS
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
 from .helpers.sensor_descriptions import (
@@ -29,8 +29,6 @@ from .pymarstek.energy_guard import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-_RESTORED_ENERGY_TOTAL_KEYS = ENERGY_TOTAL_KEYS
 
 
 class MarstekSensor(
@@ -61,7 +59,7 @@ class MarstekSensor(
         """Restore last good energy totals so total_increasing stays monotonic."""
         await super().async_added_to_hass()
 
-        if self.entity_description.key not in _RESTORED_ENERGY_TOTAL_KEYS:
+        if self.entity_description.key not in ENERGY_TOTAL_KEYS:
             return
 
         restored_data = await self.async_get_last_sensor_data()
@@ -134,6 +132,11 @@ async def async_setup_entry(
         if (
             description.key in BAT_STATUS_KEYS
             and coordinator.profile.openapi_reset_prone
+        ):
+            continue
+        if (
+            description.key in EM_STATUS_KEYS
+            and not coordinator.profile.supports_em_status
         ):
             continue
         if description.exists_fn(data_for_exists):

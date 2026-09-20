@@ -125,10 +125,16 @@ python -m mock_device [OPTIONS]
 --port PORT        UDP port (default: 30000)
 --ip IP            Reported IP (must match container IP)
 --device TYPE      Device type (default: "VenusE 3.0")
+--ver N            Firmware integer selecting the profile (default: 145)
 --ble-mac MAC      BLE MAC, 12 hex chars
 --wifi-mac MAC     WiFi MAC, 12 hex chars
 --soc PERCENT      Initial SOC 0-100 (default: 50)
+--pv-channels SPEC VenusD PV channels, 'power:voltage:current, ...' (max 4)
 --no-simulate      Disable dynamic simulation
+--state-dir DIR    Where persisted mock state is stored
+--reset-state      Discard this device's persisted state on start
+--quiet            Drop the per-request log line (drops still summarised)
+--status-interval  Seconds between status lines (default: 30; 0 disables)
 ```
 
 ## Adding New API Methods

@@ -9,6 +9,12 @@ from __future__ import annotations
 
 from custom_components.marstek.firmware_profile import DeviceFamily, FirmwareProfile
 
+# ``Set.Ver`` / ``Reset.Factory`` join the recv list at Control generation 149.
+_SET_VER_MIN_GENERATION = 149
+# The archived VNSA-0 blob ``ver=1487`` (app 148.7) already ships them, one
+# generation before the rest of the catalog. Plain 148 does not.
+_VNSA_EARLY_SET_VER_VERSION = 1487
+
 
 def reports_es_bat_power(profile: FirmwareProfile) -> bool:
     """Return whether ES.GetStatus includes ``bat_power``.
@@ -31,16 +37,24 @@ def supports_wifi_set_config(profile: FirmwareProfile) -> bool:
 def supports_set_ver_and_factory_reset(profile: FirmwareProfile) -> bool:
     """Return whether ``Set.Ver`` / ``Reset.Factory`` are on the recv list.
 
-    Present from VNSA-0 **1487** and from generation **149** on VNSE3-0 /
-    VNSA-0 / VNSD-0 (including VenusE Pro **1508**). HMG-50 never has them.
-    Venus E mini is not in the Control catalog; do not invent the methods.
+    Present from generation **149** on VNSE3-0 / VNSA-0 / VNSD-0, which
+    covers VenusE Pro **1508** (app 150.8), plus the archived VNSA-0 **1487**
+    (app 148.7) that carries them one generation early. HMG-50 never has
+    them. Venus E mini is not in the Control catalog; do not invent the
+    methods.
+
+    Gate on the Control generation, not the raw ``ver``: ``1476`` (app 147.6)
+    is generation 147 and a plain ``>= 149`` on the raw integer would wrongly
+    accept it.
     """
     if profile.hmg50_control or profile.family is DeviceFamily.VENUS_E_MINI:
         return False
-    version = profile.firmware_version
-    if version is None:
+    if profile.firmware_version == _VNSA_EARLY_SET_VER_VERSION:
+        return True
+    generation = profile.control_generation
+    if generation is None:
         return False
-    return version >= 149 or version == 1487
+    return generation >= _SET_VER_MIN_GENERATION
 
 
 def pv_method_not_found_extra_data(profile: FirmwareProfile) -> int | None:

@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 
 from ..const import (
@@ -24,15 +23,42 @@ from ..const import (
     DATA_UDP_CLIENT_OWNERS,
     DATA_UDP_CLIENTS,
     DATA_UDP_CLIENTS_LOCK,
-    DEFAULT_UDP_PORT,
     DOMAIN,
 )
 from ..pymarstek import MarstekUDPClient
-from ..pymarstek.network import is_loopback_host
+
+# Re-exported so callers that already reach for the pool keep one import.
+from .ports import bind_port_for_host, configured_device_port, entry_bind_port
+
+__all__ = [
+    "ACTIVE_ENTRY_STATES",
+    "acquire_udp_client_lease",
+    "async_cleanup_all_udp_clients",
+    "async_pause_udp_receivers",
+    "async_paused_udp_receivers",
+    "async_release_udp_client_for_entry",
+    "async_resume_udp_receivers",
+    "bind_port_for_host",
+    "clear_reset_prone_owner_from_pool",
+    "configured_device_port",
+    "discovery_lock",
+    "domain_has_udp_leases",
+    "entry_bind_port",
+    "get_udp_client",
+    "get_udp_client_for_entry",
+    "iter_udp_clients",
+    "store_udp_client",
+    "transfer_reset_prone_mark_for_entry",
+    "udp_client_lock",
+    "udp_client_pool",
+]
 
 _LOGGER = logging.getLogger(__name__)
 
-_ACTIVE_RESOURCE_STATES = frozenset(
+# A config entry in one of these states still owns its runtime resources: the
+# pooled UDP socket, the domain services and the scanner. Anything asking
+# "is this the last live entry?" must use this set.
+ACTIVE_ENTRY_STATES = frozenset(
     {
         ConfigEntryState.LOADED,
         ConfigEntryState.SETUP_RETRY,
@@ -41,88 +67,58 @@ _ACTIVE_RESOURCE_STATES = frozenset(
 )
 
 
-def bind_port_for_host(host: str, port: int) -> int:
-    """Return the local UDP bind port for a device endpoint.
+def _domain_singleton[T](
+    hass: HomeAssistant, key: str, kind: type[T], factory: Callable[[], T]
+) -> T:
+    """Return ``hass.data[DOMAIN][key]``, creating it when absent or wrong.
 
-    Loopback devices already occupy their Open API port, so bind ephemeral.
+    Everything the integration keeps in ``hass.data`` is fetched this way, so
+    a value left behind by an older version (or by a test) is replaced rather
+    than used at the wrong type.
     """
-    if is_loopback_host(host):
-        return 0
-    return port
-
-
-def configured_device_port(entry: ConfigEntry) -> int:
-    """Return the Open API port stored on a config entry."""
-    raw = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
-    try:
-        port = int(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_UDP_PORT
-    if not 1 <= port <= 65535:
-        return DEFAULT_UDP_PORT
-    return port
-
-
-def entry_bind_port(entry: ConfigEntry) -> int:
-    """Return the pool key for a config entry's UDP client."""
-    host = entry.data.get(CONF_HOST)
-    port = configured_device_port(entry)
-    if not isinstance(host, str) or not host:
-        return port
-    return bind_port_for_host(host, port)
+    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
+    existing = domain_data.get(key)
+    if isinstance(existing, kind):
+        return existing
+    created = factory()
+    domain_data[key] = created
+    return created
 
 
 def udp_client_pool(hass: HomeAssistant) -> dict[int, MarstekUDPClient]:
     """Return the per-bind-port UDP client pool, creating it if needed."""
-    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
-    pool = domain_data.get(DATA_UDP_CLIENTS)
-    if not isinstance(pool, dict):
-        typed_pool: dict[int, MarstekUDPClient] = {}
-        domain_data[DATA_UDP_CLIENTS] = typed_pool
-        return typed_pool
-    return cast(dict[int, MarstekUDPClient], pool)
+    return cast(
+        "dict[int, MarstekUDPClient]",
+        _domain_singleton(hass, DATA_UDP_CLIENTS, dict, dict),
+    )
 
 
 def udp_client_lock(hass: HomeAssistant) -> asyncio.Lock:
     """Return the lock that serializes pool mutations."""
-    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
-    lock = domain_data.get(DATA_UDP_CLIENTS_LOCK)
-    if not isinstance(lock, asyncio.Lock):
-        lock = asyncio.Lock()
-        domain_data[DATA_UDP_CLIENTS_LOCK] = lock
-    return lock
+    return _domain_singleton(
+        hass, DATA_UDP_CLIENTS_LOCK, asyncio.Lock, asyncio.Lock
+    )
 
 
 def discovery_lock(hass: HomeAssistant) -> asyncio.Lock:
     """Return the lock that serializes broadcast discovery vs pool changes."""
-    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
-    lock = domain_data.get(DATA_DISCOVERY_LOCK)
-    if not isinstance(lock, asyncio.Lock):
-        lock = asyncio.Lock()
-        domain_data[DATA_DISCOVERY_LOCK] = lock
-    return lock
+    return _domain_singleton(hass, DATA_DISCOVERY_LOCK, asyncio.Lock, asyncio.Lock)
 
 
 def _udp_client_owners(hass: HomeAssistant) -> dict[int, set[str]]:
     """Return bind-port → config-entry owner ids."""
-    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
-    owners = domain_data.get(DATA_UDP_CLIENT_OWNERS)
-    if not isinstance(owners, dict):
-        typed_owners: dict[int, set[str]] = {}
-        domain_data[DATA_UDP_CLIENT_OWNERS] = typed_owners
-        return typed_owners
-    return cast(dict[int, set[str]], owners)
+    return cast(
+        "dict[int, set[str]]",
+        _domain_singleton(hass, DATA_UDP_CLIENT_OWNERS, dict, dict),
+    )
 
 
 def _entry_bind_ports(hass: HomeAssistant) -> dict[str, int]:
     """Return config-entry id → leased bind port."""
-    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
-    leased = domain_data.get(DATA_ENTRY_BIND_PORTS)
-    if not isinstance(leased, dict):
-        typed_leased: dict[str, int] = {}
-        domain_data[DATA_ENTRY_BIND_PORTS] = typed_leased
-        return typed_leased
-    return cast(dict[str, int], leased)
+    return cast(
+        "dict[str, int]",
+        _domain_singleton(hass, DATA_ENTRY_BIND_PORTS, dict, dict),
+    )
 
 
 def domain_has_udp_leases(hass: HomeAssistant) -> bool:
@@ -212,10 +208,7 @@ def transfer_reset_prone_mark_for_entry(
     new_bind_port = bind_port_for_host(new_host, target_port)
     new_client = get_udp_client(hass, new_bind_port)
     owner = entry.entry_id
-    is_marked = getattr(old_client, "is_openapi_reset_prone", None)
-    marked = (
-        bool(is_marked(old_host, owner=owner)) if callable(is_marked) else True
-    )
+    marked = old_client.is_openapi_reset_prone(old_host, owner=owner)
 
     if new_client is old_client:
         if old_host != new_host:
@@ -232,9 +225,7 @@ def transfer_reset_prone_mark_for_entry(
 def clear_reset_prone_owner_from_pool(hass: HomeAssistant, owner: str) -> None:
     """Drop *owner*'s reset-prone marks from every pooled UDP client."""
     for client in iter_udp_clients(hass):
-        clear_owner = getattr(client, "clear_openapi_reset_prone_owner", None)
-        if callable(clear_owner):
-            clear_owner(owner)
+        client.clear_openapi_reset_prone_owner(owner)
 
 
 def store_udp_client(
@@ -254,7 +245,7 @@ def _bind_port_in_use(
     for other in hass.config_entries.async_entries(DOMAIN):
         if other.entry_id == excluding_entry_id:
             continue
-        if other.state not in _ACTIVE_RESOURCE_STATES:
+        if other.state not in ACTIVE_ENTRY_STATES:
             continue
         if entry_bind_port(other) == bind_port:
             return True
@@ -277,7 +268,7 @@ async def async_release_udp_client_for_entry(
                 if not port_owners:
                     owners.pop(bind_port, None)
         elif client is not None:
-            runtime_port = getattr(client, "bind_port", None)
+            runtime_port = client.bind_port
             bind_port = (
                 runtime_port
                 if isinstance(runtime_port, int)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from ..const import normalize_operating_mode
@@ -35,11 +36,35 @@ def _get_logger() -> logging.Logger:
     return _LOGGER
 
 
+def _result_fields(response: Any) -> dict[str, Any]:
+    """Return the JSON-RPC ``result`` object, or an empty one.
+
+    Callers already refuse a reply whose ``result`` is missing or not an
+    object, but firmware is inconsistent enough that the parsers must not
+    depend on that check living somewhere else: a ``"result": "OK"`` would
+    otherwise raise AttributeError deep inside a poll.
+    """
+    if not isinstance(response, dict):
+        return {}
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return {}
+    return result
+
+
 def _scale_numeric(value: Any, scale: float) -> Any:
-    """Scale a numeric wire value; leave missing and non-numeric values unchanged."""
-    if isinstance(value, (int, float)):
+    """Scale a numeric wire value; leave missing and non-numeric values unchanged.
+
+    An integer too large to convert to a float is dropped rather than raised:
+    the wire decoder already refuses one, and a parser that raises would take
+    the whole poll cycle down with it.
+    """
+    if not isinstance(value, (int, float)):
+        return value
+    try:
         return value * scale
-    return value
+    except OverflowError:
+        return None
 
 
 def _add_scaled_meter_energy(
@@ -72,7 +97,7 @@ def parse_es_mode_response(
     Returns:
         Dictionary with parsed mode and optional fallback meter data
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     battery_soc = result.get("bat_soc")
@@ -129,7 +154,7 @@ def parse_es_status_response(
     Returns:
         Dictionary with parsed battery data (battery_power, battery_status, etc.)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
@@ -231,7 +256,7 @@ def parse_pv_status_response(
     Returns:
         Dictionary with parsed PV channel data (pv1-pv4 or single pv_)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     pv_data: dict[str, Any] = {}
@@ -301,7 +326,7 @@ def parse_wifi_status_response(response: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary with WiFi data (wifi_rssi, wifi_ssid, etc.)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
 
     return {
         "wifi_rssi": result.get("rssi"),  # Signal strength in dBm
@@ -329,7 +354,7 @@ def parse_em_status_response(
     Returns:
         Dictionary with energy meter data (ct_state, phase powers, total_power)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     ct_state_raw = result.get("ct_state")
@@ -359,7 +384,7 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary with battery data (bat_temp, charge flags, capacity)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
 
     return {
         "bat_temp": result.get("bat_temp"),  # Battery temperature [°C]
@@ -371,9 +396,20 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _is_unknown_value(value: Any) -> bool:
-    """Check if value is an 'unknown' placeholder."""
-    return isinstance(value, str) and value.lower() == "unknown"
+def _is_unusable_value(value: Any) -> bool:
+    """Check whether a value must not be merged into device status.
+
+    Two shapes qualify. Firmware sends the literal string ``"unknown"`` for a
+    field it cannot read yet. And a non-finite float — decoded from a glitched
+    datagram, or produced by arithmetic over one — would be carried forward by
+    ``previous_status`` on every later cycle where its read fails or is
+    skipped, so it would outlive the glitch that created it.
+    """
+    if isinstance(value, str):
+        return value.lower() == "unknown"
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    return False
 
 
 def _recalculate_battery_from_pv(
@@ -613,7 +649,7 @@ def merge_device_status(
 
     def _apply_updates(updates: dict[str, Any]) -> None:
         for key, value in updates.items():
-            if value is None or _is_unknown_value(value):
+            if value is None or _is_unusable_value(value):
                 continue
             status[key] = value
 
@@ -628,13 +664,13 @@ def merge_device_status(
             )
             if (
                 value is not None
-                and not _is_unknown_value(value)
+                and not _is_unusable_value(value)
                 and key in status
                 and status[key] is None
             ) or (
                 extra_key
                 and value is not None
-                and not _is_unknown_value(value)
+                and not _is_unusable_value(value)
             ):
                 status[key] = value
 
@@ -656,7 +692,7 @@ def merge_device_status(
         for key, value in es_mode_data.items():
             if key not in _GETMODE_EM_FALLBACK_KEYS:
                 continue
-            if value is None or _is_unknown_value(value):
+            if value is None or _is_unusable_value(value):
                 continue
             if status.get(key) is None:
                 status[key] = value

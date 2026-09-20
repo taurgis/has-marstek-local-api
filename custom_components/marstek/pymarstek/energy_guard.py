@@ -34,7 +34,9 @@ ENERGY_TOTAL_KEYS: Final[frozenset[str]] = frozenset(
 MAX_PLAUSIBLE_ENERGY_WH: Final[float] = 1_000_000_000.0
 
 # 5 MWh in one update is not a home-storage increment (5 kW for 41 days).
-# The firmware-149 solar encoding correction is about 0.23 MWh.
+# The firmware-149 solar encoding correction is about 0.23 MWh, and a scale
+# change reloads the entry anyway (FirmwareProfile.setup_reload_signature), so
+# the rescaled total arrives with no previous reading to be measured against.
 MAX_PLAUSIBLE_ENERGY_JUMP_WH: Final[float] = 5_000_000.0
 
 
@@ -51,7 +53,14 @@ def energy_total_is_plausible(value: Any) -> bool:
 def without_implausible_energy_totals(
     status: Mapping[str, Any] | None,
 ) -> dict[str, Any] | None:
-    """Return a copy with implausible lifetime energy totals cleared."""
+    """Return a sanitized copy of a *previous* status snapshot.
+
+    The previous snapshot belongs to the coordinator, so this copies rather
+    than mutating. Clearing its garbage first stops a bad reading from
+    becoming the baseline the new reading is judged against. The companion
+    ``apply_energy_total_guard`` does mutate, because the status it fixes up
+    is the one being built.
+    """
     if status is None:
         return None
     cleaned = dict(status)

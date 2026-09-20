@@ -1084,6 +1084,114 @@ async def test_reconfigure_wifi_unique_id_matches_ble_device(
     assert updated.data["host"] == "192.168.1.201"
 
 
+async def test_reconfigure_unchanged_entry_still_schedules_a_reload(
+    hass: HomeAssistant,
+) -> None:
+    """Resubmitting the same host means "retry this device", so reload it.
+
+    The reload is scheduled by the entry's update listener when the data
+    changes. An unchanged entry never reaches that listener, so the flow has
+    to schedule the reload itself.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="AA:BB:CC:DD:EE:FF",
+        data={
+            "host": "192.168.1.201",
+            "port": 30000,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+        data=None,
+    )
+
+    device_info = {
+        "ip": "192.168.1.201",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    with (
+        patch_manual_connection(device_info=device_info),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_schedule_reload"
+        ) as schedule_reload,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "192.168.1.201", "port": 30000},
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    schedule_reload.assert_called_once_with(entry.entry_id)
+
+
+async def test_reconfigure_changed_entry_leaves_the_reload_to_the_listener(
+    hass: HomeAssistant,
+) -> None:
+    """A changed entry must not be reloaded twice.
+
+    async_update_entry notifies the update listener, which reloads. Asking
+    Home Assistant to schedule a second reload is what it reports as
+    deprecated and stops honouring in 2026.12.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="AA:BB:CC:DD:EE:FF",
+        data={
+            "host": "192.168.1.200",
+            "port": 30000,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+        data=None,
+    )
+
+    device_info = {
+        "ip": "192.168.1.201",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    with (
+        patch_manual_connection(device_info=device_info),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_schedule_reload"
+        ) as schedule_reload,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "192.168.1.201", "port": 30000},
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == (
+        "192.168.1.201"
+    )
+    schedule_reload.assert_not_called()
+
+
 async def test_reconfigure_confirm_form_snapshot(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, snapshot
 ) -> None:

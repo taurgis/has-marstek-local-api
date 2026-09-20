@@ -725,6 +725,131 @@ async def test_battery_detail_sensors_omitted_on_reset_prone_firmware(
         assert entity_registry.async_get_entity_id(domain, DOMAIN, unique_id) is None
 
 
+async def test_em_sensors_omitted_when_firmware_is_not_a_meter_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """HMG-50 below 155 never answers EM.GetStatus, so it gets no EM entities.
+
+    The power entities are skipped by the profile gate; the energy counters
+    fall out of their own exists_fn, because a call that never runs cannot
+    report them.
+    """
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusC",
+            "version": 153,
+        },
+    )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 55, "battery_power": 120}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    device_identifier = get_device_identifier(mock_config_entry.data)
+    for key in (
+        "em_total_power",
+        "em_a_power",
+        "em_b_power",
+        "em_c_power",
+        "em_input_energy",
+        "em_output_energy",
+    ):
+        unique_id = f"{device_identifier}_{key}"
+        assert (
+            entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
+        ), f"{key} must not be created on a non-meter firmware"
+
+
+async def test_em_power_sensors_created_when_firmware_is_a_meter_client(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A meter-client firmware still gets its EM power entities."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+
+    client = create_mock_client(
+        status={
+            "device_mode": "auto",
+            "battery_soc": 55,
+            "battery_power": 120,
+            "em_total_power": -230,
+            "em_a_power": -230,
+            "em_b_power": 0,
+            "em_c_power": 0,
+        }
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    device_identifier = get_device_identifier(mock_config_entry.data)
+    for key in ("em_total_power", "em_a_power", "em_b_power", "em_c_power"):
+        unique_id = f"{device_identifier}_{key}"
+        assert (
+            entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+            is not None
+        ), f"{key} must exist on a meter-client firmware"
+
+
+async def test_meter_energy_sensors_survive_pre_150_firmware(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """supports_em_energy picks the wire scale; it must not hide the counters.
+
+    Venus E 144/145 report the EM lifetime counters unscaled, so gating the
+    entities on that flag would drop sensors those devices really have.
+    """
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 145,
+        },
+    )
+
+    client = create_mock_client(
+        status={
+            "device_mode": "auto",
+            "battery_soc": 55,
+            "battery_power": 120,
+            "em_input_energy": 0.0,
+            "em_output_energy": 0.0,
+        }
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    device_identifier = get_device_identifier(mock_config_entry.data)
+    for key in ("em_input_energy", "em_output_energy"):
+        unique_id = f"{device_identifier}_{key}"
+        assert (
+            entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+            is not None
+        ), f"{key} must survive on firmware that reports it unscaled"
+
+
 async def test_battery_detail_sensor_states_when_enabled(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -771,11 +896,39 @@ async def test_battery_detail_sensor_states_when_enabled(
             assert state.state == expected
 
 
+def _as_meter_client(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Make the entry a firmware that answers EM.GetStatus.
+
+    The shared fixture is an unknown family, and the coordinator does not
+    send EM.GetStatus to one, so EM entities are not created for it either.
+    """
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, "device_type": "VenusE 3.0", "version": 150},
+    )
+
+
+def _em_state(
+    hass: HomeAssistant, entry: MockConfigEntry, key: str
+) -> str | None:
+    """Return the state of the EM sensor with this description key."""
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{get_device_identifier(entry.data)}_{key}"
+    )
+    assert entity_id is not None, f"{key} sensor was not created"
+    state = hass.states.get(entity_id)
+    assert state is not None
+    return state.state
+
+
 async def test_grid_total_power_sensor_created(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
     """Test grid total power sensor is created when EM data is available."""
     mock_config_entry.add_to_hass(hass)
+    _as_meter_client(hass, mock_config_entry)
 
     status = {
         "device_mode": "auto",
@@ -794,9 +947,7 @@ async def test_grid_total_power_sensor_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        state = hass.states.get("sensor.venus_total_power")
-        assert state is not None
-        assert state.state == "360"
+        assert _em_state(hass, mock_config_entry, "em_total_power") == "360"
 
 
 async def test_phase_power_sensors_created(
@@ -804,6 +955,7 @@ async def test_phase_power_sensors_created(
 ) -> None:
     """Test phase power sensors are created for 3-phase systems."""
     mock_config_entry.add_to_hass(hass)
+    _as_meter_client(hass, mock_config_entry)
 
     status = {
         "device_mode": "auto",
@@ -821,19 +973,9 @@ async def test_phase_power_sensors_created(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        
-        # Check all three phase sensors (entity_id uses sensor_type em_X_power)
-        state_a = hass.states.get("sensor.venus_phase_a_power")
-        assert state_a is not None
-        assert state_a.state == "120"
-        
-        state_b = hass.states.get("sensor.venus_phase_b_power")
-        assert state_b is not None
-        assert state_b.state == "115"
-        
-        state_c = hass.states.get("sensor.venus_phase_c_power")
-        assert state_c is not None
-        assert state_c.state == "125"
+        assert _em_state(hass, mock_config_entry, "em_a_power") == "120"
+        assert _em_state(hass, mock_config_entry, "em_b_power") == "115"
+        assert _em_state(hass, mock_config_entry, "em_c_power") == "125"
 
 
 async def test_all_new_sensors_with_full_status(

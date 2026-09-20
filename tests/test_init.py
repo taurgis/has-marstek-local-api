@@ -305,14 +305,20 @@ async def test_reconfigure_flow_reloads_and_keeps_services(
             "firmware": "3.0",
         }
 
-        original_schedule_reload = hass.config_entries.async_schedule_reload
+        # The reload is the update listener's, because the flow changes the
+        # entry data; the flow itself no longer schedules a second one.
+        original_reload = hass.config_entries.async_reload
+
+        async def _reload(entry_id: str) -> bool:
+            return await original_reload(entry_id)
+
         with (
             patch_manual_connection(device_info=device_info),
             patch.object(
                 hass.config_entries,
-                "async_schedule_reload",
-                wraps=original_schedule_reload,
-            ) as mock_schedule_reload,
+                "async_reload",
+                AsyncMock(side_effect=_reload),
+            ) as mock_reload,
         ):
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
@@ -323,7 +329,7 @@ async def test_reconfigure_flow_reloads_and_keeps_services(
             assert result["reason"] == "reconfigure_successful"
             await hass.async_block_till_done()
 
-        mock_schedule_reload.assert_called_once_with(mock_config_entry.entry_id)
+        mock_reload.assert_called_once_with(mock_config_entry.entry_id)
         assert (
             hass.config_entries.async_get_entry(mock_config_entry.entry_id).data["host"]
             == "192.168.1.200"
@@ -1047,6 +1053,97 @@ async def test_reset_prone_setup_removes_bat_status_entities(
 
     assert entry.state == ConfigEntryState.LOADED
     assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
+
+
+async def test_non_meter_firmware_removes_em_status_entities(
+    hass: HomeAssistant,
+) -> None:
+    """EM entities left by an older release are dropped, not left unavailable.
+
+    The sensor platform stops adding them on firmware that is not an Open API
+    meter client, so a registry entry that survives the upgrade would be
+    restored as permanently unavailable.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusC",
+            "version": 153,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    em_unique_id = "aa:bb:cc:dd:ee:ff_em_total_power"
+    kept_unique_id = "aa:bb:cc:dd:ee:ff_battery_soc"
+    for unique_id in (em_unique_id, kept_unique_id):
+        entity_registry.async_get_or_create(
+            domain="sensor",
+            platform=DOMAIN,
+            unique_id=unique_id,
+            config_entry=entry,
+        )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.LOADED
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is None
+    assert (
+        entity_registry.async_get_entity_id("sensor", DOMAIN, kept_unique_id)
+        is not None
+    )
+
+
+async def test_meter_firmware_keeps_em_status_entities(
+    hass: HomeAssistant,
+) -> None:
+    """Firmware that does answer EM.GetStatus keeps its meter entities."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 150,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    em_unique_id = "aa:bb:cc:dd:ee:ff_em_total_power"
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=em_unique_id,
+        config_entry=entry,
+    )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.LOADED
+    assert (
+        entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is not None
+    )
 
 
 async def test_remove_entry_cleans_stale_device(

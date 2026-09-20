@@ -10,34 +10,11 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.data_entry_flow import AbortFlow, section
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 
-from .const import (
-    CONF_ACTION_CHARGE_POWER,
-    CONF_ACTION_DISCHARGE_POWER,
-    CONF_FAILURE_THRESHOLD,
-    CONF_PARALLEL_API_REQUESTS,
-    CONF_POLL_INTERVAL_FAST,
-    CONF_POLL_INTERVAL_MEDIUM,
-    CONF_POLL_INTERVAL_SLOW,
-    CONF_REQUEST_DELAY,
-    CONF_REQUEST_TIMEOUT,
-    CONF_SOCKET_LIMIT,
-    DEFAULT_ACTION_CHARGE_POWER,
-    DEFAULT_ACTION_DISCHARGE_POWER,
-    DEFAULT_FAILURE_THRESHOLD,
-    DEFAULT_PARALLEL_API_REQUESTS,
-    DEFAULT_POLL_INTERVAL_FAST,
-    DEFAULT_POLL_INTERVAL_MEDIUM,
-    DEFAULT_POLL_INTERVAL_SLOW,
-    DEFAULT_REQUEST_DELAY,
-    DEFAULT_REQUEST_TIMEOUT,
-    DEFAULT_UDP_PORT,
-    DOMAIN,
-    device_default_socket_limit,
-)
+from .const import DEFAULT_UDP_PORT, DOMAIN
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
 from .firmware_profile import is_unsupported_venus_e2
@@ -54,11 +31,10 @@ from .helpers.flow_helpers import (
     split_devices_by_configured,
 )
 from .helpers.flow_schemas import (
+    build_host_port_schema,
     build_manual_entry_schema,
-    build_network_schema,
-    build_polling_schema,
-    build_power_schema,
 )
+from .helpers.ports import discovery_scan_ports
 from .helpers.udp_clients import (
     async_paused_udp_receivers,
     bind_port_for_host,
@@ -66,6 +42,7 @@ from .helpers.udp_clients import (
     get_udp_client,
     transfer_reset_prone_mark_for_entry,
 )
+from .options_flow import MarstekOptionsFlow
 
 
 class DhcpServiceInfoLike(Protocol):
@@ -77,7 +54,6 @@ class DhcpServiceInfoLike(Protocol):
 
 _LOGGER = logging.getLogger(__name__)
 
-_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30004, 30030)
 _MANUAL_DEVICE_OPTION = "__manual__"
 
 
@@ -304,17 +280,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _build_discovery_ports(self) -> list[int]:
         """Build UDP ports to probe during initial config flow discovery."""
-        ports: set[int] = {DEFAULT_UDP_PORT, *_COMMON_CUSTOM_PORTS}
-
-        for entry in self._async_current_entries(include_ignore=False):
-            try:
-                configured_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
-            except (TypeError, ValueError):
-                continue
-            if 1 <= configured_port <= 65535:
-                ports.add(configured_port)
-
-        return sorted(ports)
+        return discovery_scan_ports(
+            self._async_current_entries(include_ignore=False)
+        )
 
     async def _async_get_device_info(
         self, host: str, port: int
@@ -450,13 +418,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=form_host): cv.string,
-                    vol.Required(CONF_PORT, default=form_port): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=65535)
-                    ),
-                }
+            data_schema=build_host_port_schema(
+                default_host=form_host, default_port=form_port
             ),
             errors=errors,
             description_placeholders={"host": self._discovered_ip},
@@ -490,7 +453,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 host,
                 port,
                 update_port=False,
-                reason=None,
+                reason="reauth_successful",
             )
             if result is not None:
                 return result
@@ -539,13 +502,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure_confirm",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=form_host): cv.string,
-                    vol.Required(CONF_PORT, default=form_port): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=65535)
-                    ),
-                }
+            data_schema=build_host_port_schema(
+                default_host=form_host, default_port=form_port
             ),
             errors=errors,
             description_placeholders={
@@ -562,7 +520,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         for entry in self._async_current_entries(include_ignore=False):
             # Check if unique_id matches
-            if not self._entry_matches_unique_id(entry):
+            if not self._entry_matches_flow_identity(entry):
                 continue
 
             reload = entry.state == ConfigEntryState.SETUP_RETRY
@@ -626,7 +584,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         port: int,
         *,
         update_port: bool,
-        reason: str | None,
+        reason: str,
     ) -> tuple[config_entries.ConfigFlowResult | None, str | None]:
         """Validate host and update the entry if the device matches."""
         if not host:
@@ -662,28 +620,30 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     new_port=port if update_port else None,
                 )
 
-            if reason is None:
-                return (
-                    self.async_update_reload_and_abort(
-                        entry,
-                        data_updates=data_updates,
-                    ),
-                    None,
-                )
-
-            return (
-                self.async_update_reload_and_abort(
-                    entry,
-                    data_updates=data_updates,
-                    reason=reason,
-                ),
-                None,
+            # The entry carries an update listener that reloads on every
+            # data change, so let it own the reload. async_update_reload_and_abort
+            # would schedule a second one, which Home Assistant reports as
+            # deprecated and stops doing in 2026.12. An unchanged entry never
+            # reaches the listener, so a resubmit that only means "try this
+            # device again" still has to schedule its own reload.
+            changed = self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, **data_updates}
             )
+            if not changed:
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_abort(reason=reason), None
         except (OSError, TimeoutError, ValueError):
             return None, "cannot_connect"
 
-    def _entry_matches_unique_id(self, entry: config_entries.ConfigEntry) -> bool:
-        """Return True if entry shares any stable MAC with this flow."""
+    def _entry_matches_flow_identity(
+        self, entry: config_entries.ConfigEntry
+    ) -> bool:
+        """Return True if entry shares any stable MAC with this flow.
+
+        Wider than the unique id alone: the entry's BLE, Wi-Fi and legacy MACs
+        are all compared against everything this flow has learned, so the same
+        hardware is recognised whichever field the firmware filled in.
+        """
         entry_macs = identity_macs_from_entry(entry)
         discovered = set(self._discovered_identity_macs or ())
         unique_id_mac = formatted_mac_or_none(self.unique_id)
@@ -701,7 +661,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         self._abort_if_unique_id_configured()
         for entry in self._async_current_entries(include_ignore=False):
-            if self._entry_matches_unique_id(entry):
+            if self._entry_matches_flow_identity(entry):
                 raise AbortFlow("already_configured")
 
     @staticmethod
@@ -711,92 +671,3 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Return the options flow."""
         return MarstekOptionsFlow()
 
-
-class MarstekOptionsFlow(config_entries.OptionsFlow):
-    """Handle Marstek options."""
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Manage the Marstek options."""
-        if user_input is not None:
-            # Flatten section data for storage
-            flat_data: dict[str, Any] = {}
-            for section_data in user_input.values():
-                if isinstance(section_data, dict):
-                    flat_data.update(section_data)
-            return self.async_create_entry(title="", data=flat_data)
-
-        # Get current values from options, falling back to defaults
-        current_fast = self.config_entry.options.get(
-            CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST
-        )
-        current_medium = self.config_entry.options.get(
-            CONF_POLL_INTERVAL_MEDIUM, DEFAULT_POLL_INTERVAL_MEDIUM
-        )
-        current_slow = self.config_entry.options.get(
-            CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
-        )
-        current_parallel_requests = self.config_entry.options.get(
-            CONF_PARALLEL_API_REQUESTS,
-            DEFAULT_PARALLEL_API_REQUESTS,
-        )
-        current_delay = self.config_entry.options.get(
-            CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
-        )
-        current_timeout = self.config_entry.options.get(
-            CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-        )
-        current_failure_threshold = self.config_entry.options.get(
-            CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD
-        )
-        current_charge_power = self.config_entry.options.get(
-            CONF_ACTION_CHARGE_POWER, DEFAULT_ACTION_CHARGE_POWER
-        )
-        current_discharge_power = self.config_entry.options.get(
-            CONF_ACTION_DISCHARGE_POWER, DEFAULT_ACTION_DISCHARGE_POWER
-        )
-        current_socket_limit = self.config_entry.options.get(
-            CONF_SOCKET_LIMIT,
-            device_default_socket_limit(self.config_entry.data.get("device_type")),
-        )
-
-        # Build schema with collapsible sections for better UX
-        polling_schema = build_polling_schema(
-            current_fast=current_fast,
-            current_medium=current_medium,
-            current_slow=current_slow,
-        )
-
-        network_schema = build_network_schema(
-            current_parallel_requests=current_parallel_requests,
-            current_delay=current_delay,
-            current_timeout=current_timeout,
-            current_failure_threshold=current_failure_threshold,
-        )
-
-        power_schema = build_power_schema(
-            current_charge_power=current_charge_power,
-            current_discharge_power=current_discharge_power,
-            current_socket_limit=current_socket_limit,
-        )
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("polling_settings"): section(
-                        polling_schema,
-                        {"collapsed": False},
-                    ),
-                    vol.Required("network_settings"): section(
-                        network_schema,
-                        {"collapsed": True},
-                    ),
-                    vol.Required("power_settings"): section(
-                        power_schema,
-                        {"collapsed": True},
-                    ),
-                }
-            ),
-        )

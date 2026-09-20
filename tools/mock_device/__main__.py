@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .const import DEFAULT_CONFIG, DEFAULT_UDP_PORT
-from .device import MockMarstekDevice
+from .device import DEFAULT_STATUS_INTERVAL, MockMarstekDevice
 from .utils import DEFAULT_STATE_DIR
 
 
@@ -76,6 +76,20 @@ def main() -> None:
         action="store_true",
         help="Reset persisted state for this device",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Do not log a line per handled request (drops are still summarised)",
+    )
+    parser.add_argument(
+        "--status-interval",
+        type=float,
+        default=DEFAULT_STATUS_INTERVAL,
+        help=(
+            "Seconds between simulator status lines "
+            f"(default: {DEFAULT_STATUS_INTERVAL:g}; 0 disables them)"
+        ),
+    )
     args = parser.parse_args()
 
     config = {
@@ -120,6 +134,8 @@ def main() -> None:
         simulate=not args.no_simulate,
         state_dir=args.state_dir,
         reset_state=args.reset_state,
+        verbose=not args.quiet,
+        status_interval=args.status_interval,
     )
     device.start()
 

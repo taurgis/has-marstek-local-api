@@ -53,12 +53,20 @@ DEFAULT_SCHEDULE_DAYS: tuple[str, ...] = (
     "sun",
 )
 
+# Field validators shared by the service schemas below. Voluptuous validators
+# are stateless, so one instance can serve every schema that needs the field.
+_POWER_VALIDATOR = vol.All(
+    vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
+)
+_SCHEDULE_SLOT_VALIDATOR = vol.All(
+    vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
+)
+_DAYS_VALIDATOR = vol.All(cv.ensure_list, [vol.In(WEEKDAY_MAP.keys())])
+
 SERVICE_SET_PASSIVE_MODE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_DEVICE_ID): coerce_device_id,
-        vol.Required(ATTR_POWER): vol.All(
-            vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
-        ),
+        vol.Required(ATTR_POWER): _POWER_VALIDATOR,
         vol.Optional(ATTR_DURATION, default=3600): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=MAX_PASSIVE_DURATION)
         ),
@@ -68,36 +76,22 @@ SERVICE_SET_PASSIVE_MODE_SCHEMA = vol.Schema(
 SERVICE_SET_MANUAL_SCHEDULE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_DEVICE_ID): coerce_device_id,
-        vol.Optional(ATTR_SCHEDULE_SLOT, default=0): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
-        ),
+        vol.Optional(ATTR_SCHEDULE_SLOT, default=0): _SCHEDULE_SLOT_VALIDATOR,
         vol.Required(ATTR_START_TIME): cv.time,
         vol.Required(ATTR_END_TIME): cv.time,
-        vol.Required(ATTR_POWER): vol.All(
-            vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
-        ),
-        vol.Optional(ATTR_DAYS, default=list(DEFAULT_SCHEDULE_DAYS)): vol.All(
-            cv.ensure_list,
-            [vol.In(WEEKDAY_MAP.keys())],
-        ),
+        vol.Required(ATTR_POWER): _POWER_VALIDATOR,
+        vol.Optional(ATTR_DAYS, default=list(DEFAULT_SCHEDULE_DAYS)): _DAYS_VALIDATOR,
         vol.Optional(ATTR_ENABLE, default=True): cv.boolean,
     }
 )
 
 SCHEDULE_ITEM_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_SCHEDULE_SLOT): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
-        ),
+        vol.Required(ATTR_SCHEDULE_SLOT): _SCHEDULE_SLOT_VALIDATOR,
         vol.Required(ATTR_START_TIME): cv.string,
         vol.Required(ATTR_END_TIME): cv.string,
-        vol.Optional(ATTR_POWER, default=0): vol.All(
-            vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
-        ),
-        vol.Optional(ATTR_DAYS, default=list(DEFAULT_SCHEDULE_DAYS)): vol.All(
-            cv.ensure_list,
-            [vol.In(WEEKDAY_MAP.keys())],
-        ),
+        vol.Optional(ATTR_POWER, default=0): _POWER_VALIDATOR,
+        vol.Optional(ATTR_DAYS, default=list(DEFAULT_SCHEDULE_DAYS)): _DAYS_VALIDATOR,
         vol.Optional(ATTR_ENABLE, default=True): cv.boolean,
     }
 )

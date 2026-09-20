@@ -10,7 +10,10 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT
 from homeassistant.helpers.device_registry import format_mac
 
-_IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
+# Preference order for a stable device identity: the BLE MAC is the unique id
+# Marstek firmware keeps across IP and Wi-Fi changes. Anything reading a MAC
+# out of a device dict or an entry must walk these in this order.
+IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
 # Home Assistant ``format_mac`` lowercases; it does not validate. Only a
 # 6-octet hex MAC is a stable Marstek identity.
 _FORMATTED_MAC = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
@@ -36,7 +39,7 @@ def identity_macs_from_mapping(
 ) -> set[str]:
     """Collect formatted BLE, Wi-Fi, and legacy MAC identities from a mapping."""
     macs: set[str] = set()
-    for key in _IDENTITY_MAC_KEYS:
+    for key in IDENTITY_MAC_KEYS:
         formatted = formatted_mac_or_none(data.get(key))
         if formatted is not None:
             macs.add(formatted)
@@ -127,9 +130,14 @@ def metadata_from_device_info(device_info: dict[str, Any]) -> dict[str, Any]:
     return updates
 
 
-def get_unique_id_from_device_info(device_info: dict[str, Any]) -> str | None:
-    """Return formatted unique id from device info, if available."""
-    for key in ("ble_mac", "mac", "wifi_mac"):
+def get_unique_id_from_device_info(device_info: Mapping[str, Any]) -> str | None:
+    """Return the stable identity MAC from a device dict or entry data.
+
+    This is the one place the identity preference order is applied, so a
+    device-registry identifier and a config-entry unique id can never drift
+    apart. Returns None when no field holds a valid 6-octet MAC.
+    """
+    for key in IDENTITY_MAC_KEYS:
         formatted = formatted_mac_or_none(device_info.get(key))
         if formatted is not None:
             return formatted
