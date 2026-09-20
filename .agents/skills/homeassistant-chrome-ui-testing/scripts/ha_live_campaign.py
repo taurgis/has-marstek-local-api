@@ -439,9 +439,7 @@ def analyze_ha_logs(log_text: str) -> dict[str, Any]:
     method_re = re.compile(r'"method"\s*:\s*"([^"]+)"')
     timeout_re = re.compile(r"Request timeout: (\S+):(\d+)")
     bound_re = re.compile(r"UDP socket bound to (\S+):(\S+)")
-    pooled_re = re.compile(
-        r"Querying device info from (\S+):(\d+) via pooled UDP client"
-    )
+    pooled_re = re.compile(r"Querying device info from (\S+):(\d+) via pooled UDP client")
     query_re = re.compile(r"Querying device info from (\S+):(\d+)\b")
     no_resp_re = re.compile(r"No valid response from device at (\S+):(\d+)")
     invalid_re = re.compile(r"Invalid device response from (\S+)")
@@ -858,9 +856,7 @@ class Campaign:
             await asyncio.sleep(2)
         return {"ok": False, "last": last, "entity_id": entity_id}
 
-    async def wait_equals(
-        self, entity_id: str, expected: str, timeout: float
-    ) -> dict[str, Any]:
+    async def wait_equals(self, entity_id: str, expected: str, timeout: float) -> dict[str, Any]:
         deadline = time.time() + timeout
         last: Any = None
         while time.time() < deadline:
@@ -892,9 +888,7 @@ class Campaign:
         for _ in range(6):
             try:
                 await self.cdp.evaluate(
-                    "window.localStorage.setItem('hassTokens', "
-                    + json.dumps(payload)
-                    + ")"
+                    "window.localStorage.setItem('hassTokens', " + json.dumps(payload) + ")"
                 )
                 stored = True
                 break
@@ -979,9 +973,7 @@ class Campaign:
                     await asyncio.sleep(2)
             if entry_id:
                 self.remember_entry(mock.host, entry_id)
-                loaded = await ha_cdp.cmd_wait_entry(
-                    self.cdp, self.page, entry_id, "loaded", 90
-                )
+                loaded = await ha_cdp.cmd_wait_entry(self.cdp, self.page, entry_id, "loaded", 90)
                 self.record(f"loaded:{mock.host}", bool(loaded.get("ok")), loaded)
         await self.refresh_entry_map()
 
@@ -1015,9 +1007,7 @@ class Campaign:
                 bool(numeric.get("ok")),
                 numeric.get("last") or numeric.get("state"),
             )
-            sync = await self.service(
-                "marstek", "request_data_sync", {"device_id": device_id}
-            )
+            sync = await self.service("marstek", "request_data_sync", {"device_id": device_id})
             sync_ok = not (isinstance(sync, dict) and sync.get("ok") is False)
             self.record(f"sync:{mock.host}", sync_ok, sync if not sync_ok else None)
             if power:
@@ -1032,11 +1022,7 @@ class Campaign:
                     live.get("error") or live.get("last") or live.get("state"),
                 )
             actions = await ha_cdp.cmd_device_actions(self.cdp, self.page, device_id)
-            types = {
-                str(item.get("type"))
-                for item in (actions or [])
-                if isinstance(item, dict)
-            }
+            types = {str(item.get("type")) for item in (actions or []) if isinstance(item, dict)}
             self.record(
                 f"device-actions:{mock.host}",
                 {"charge", "discharge", "stop"}.issubset(types),
@@ -1047,9 +1033,7 @@ class Campaign:
             self.record(
                 f"diagnostics:{mock.host}",
                 profile_ok,
-                None
-                if profile_ok
-                else (list(diag)[:8] if isinstance(diag, dict) else diag),
+                None if profile_ok else (list(diag)[:8] if isinstance(diag, dict) else diag),
             )
             sys_ent = entity_by_key(entities, "depth_of_discharge")
             self.record(
@@ -1137,24 +1121,16 @@ class Campaign:
                 led = entity_by_key(entities, "panel_led")
                 ble = entity_by_key(entities, "bluetooth_advertising")
                 if led:
-                    await self.service(
-                        "switch", "turn_off", {"entity_id": led["entity_id"]}
-                    )
+                    await self.service("switch", "turn_off", {"entity_id": led["entity_id"]})
                     off = await self.wait_equals(str(led["entity_id"]), "off", 60)
-                    await self.service(
-                        "switch", "turn_on", {"entity_id": led["entity_id"]}
-                    )
+                    await self.service("switch", "turn_on", {"entity_id": led["entity_id"]})
                     self.record(f"sys-led:{mock.host}", bool(off.get("ok")), off.get("error"))
                 if ble:
-                    await self.service(
-                        "switch", "turn_on", {"entity_id": ble["entity_id"]}
-                    )
+                    await self.service("switch", "turn_on", {"entity_id": ble["entity_id"]})
                     on = await self.wait_equals(str(ble["entity_id"]), "on", 60)
                     self.record(f"sys-ble:{mock.host}", bool(on.get("ok")), on.get("error"))
             if mock.supports_pv and pv1:
-                await self.service(
-                    "marstek", "request_data_sync", {"device_id": device_id}
-                )
+                await self.service("marstek", "request_data_sync", {"device_id": device_id})
                 pv_live = await self.wait_numeric(str(pv1["entity_id"]), 90)
                 if not pv_live.get("ok"):
                     pv_live = await ha_cdp.cmd_wait_state(
@@ -1261,9 +1237,7 @@ class Campaign:
             )
             await self.wait_equals(str(mode["entity_id"]), "ai", 60)
             # DOD.SET range is 30-88; 90 is rejected by the number entity.
-            await self.service(
-                "number", "set_value", {"entity_id": dod["entity_id"], "value": 80}
-            )
+            await self.service("number", "set_value", {"entity_id": dod["entity_id"], "value": 80})
             await self.wait_equals(str(dod["entity_id"]), "80", 60)
             num_auto = {
                 "alias": "Marstek campaign DOD",
@@ -1286,9 +1260,7 @@ class Campaign:
                 self.cdp, self.page, "marstek_campaign_dod", num_auto
             )
             await asyncio.sleep(3)
-            await self.service(
-                "number", "set_value", {"entity_id": dod["entity_id"], "value": 35}
-            )
+            await self.service("number", "set_value", {"entity_id": dod["entity_id"], "value": 35})
             crossed = await self.wait_equals(str(mode["entity_id"]), "auto", 90)
             self.record("automation-numeric-dod", bool(crossed.get("ok")), crossed.get("error"))
         passive = await self.service(
@@ -1408,11 +1380,7 @@ class Campaign:
         if confirm and (unique is None or confirm.host != unique.host):
             await self._lifecycle_discovery_confirm(confirm)
         mini = next(
-            (
-                m
-                for m in self.mocks
-                if m.device == "Venus E mini" and m.host in self.entry_by_host
-            ),
+            (m for m in self.mocks if m.device == "Venus E mini" and m.host in self.entry_by_host),
             None,
         )
         if mini:
@@ -1425,25 +1393,17 @@ class Campaign:
         row, entities = bound
         dod = entity_by_key(entities, "depth_of_discharge")
         if dod:
-            await self.service(
-                "number", "set_value", {"entity_id": dod["entity_id"], "value": 73}
-            )
+            await self.service("number", "set_value", {"entity_id": dod["entity_id"], "value": 73})
             await self.wait_equals(str(dod["entity_id"]), "73", 60)
-            reload = await ha_cdp.cmd_reload_entry(
-                self.cdp, self.page, str(row["entry_id"])
-            )
-            await ha_cdp.cmd_wait_entry(
-                self.cdp, self.page, str(row["entry_id"]), "loaded", 90
-            )
+            reload = await ha_cdp.cmd_reload_entry(self.cdp, self.page, str(row["entry_id"]))
+            await ha_cdp.cmd_wait_entry(self.cdp, self.page, str(row["entry_id"]), "loaded", 90)
             restored = await self.wait_equals(str(dod["entity_id"]), "73", 60)
             self.record(
                 "restore-number",
                 bool(restored.get("ok")),
                 restored.get("error") or reload,
             )
-        started = await ha_cdp.cmd_start_options(
-            self.cdp, self.page, str(row["entry_id"])
-        )
+        started = await ha_cdp.cmd_start_options(self.cdp, self.page, str(row["entry_id"]))
         flow_id = _flow_id(started)
         if flow_id:
             nxt = await ha_cdp.cmd_options_next(
@@ -1454,9 +1414,7 @@ class Campaign:
                 _flow_type(nxt) in {"create_entry", "abort"} or nxt.get("type") == "create_entry",
                 {"type": _flow_type(nxt)},
             )
-            await ha_cdp.cmd_wait_entry(
-                self.cdp, self.page, str(row["entry_id"]), "loaded", 90
-            )
+            await ha_cdp.cmd_wait_entry(self.cdp, self.page, str(row["entry_id"]), "loaded", 90)
         renamed = await ha_cdp.cmd_rename_device(
             self.cdp, self.page, str(row["device_id"]), "Campaign SYS"
         )
@@ -1468,17 +1426,13 @@ class Campaign:
         await ha_cdp.cmd_rename_device(self.cdp, self.page, str(row["device_id"]), None)
         soc = entity_by_key(entities, "battery_soc")
         if soc:
-            hidden = await ha_cdp.cmd_hide_entity(
-                self.cdp, self.page, str(soc["entity_id"]), True
-            )
+            hidden = await ha_cdp.cmd_hide_entity(self.cdp, self.page, str(soc["entity_id"]), True)
             self.record(
                 "hide-entity",
                 not (isinstance(hidden, dict) and hidden.get("error") == "ws_error"),
                 None,
             )
-            await ha_cdp.cmd_hide_entity(
-                self.cdp, self.page, str(soc["entity_id"]), False
-            )
+            await ha_cdp.cmd_hide_entity(self.cdp, self.page, str(soc["entity_id"]), False)
             hist = await ha_cdp.cmd_history(self.cdp, self.page, str(soc["entity_id"]), 2)
             self.record("history", isinstance(hist, (list, dict)), None)
             await ha_cdp.cmd_expose_entity(
@@ -1489,9 +1443,7 @@ class Campaign:
 
     async def _lifecycle_reconfigure(self, mock: ComposeMock) -> None:
         row = self.entry_by_host[mock.host]
-        started = await ha_cdp.cmd_start_reconfigure(
-            self.cdp, self.page, str(row["entry_id"])
-        )
+        started = await ha_cdp.cmd_start_reconfigure(self.cdp, self.page, str(row["entry_id"]))
         flow_id = _flow_id(started)
         if not flow_id:
             self.record("reconfigure-start", False, started)
@@ -1539,8 +1491,7 @@ class Campaign:
         reason = _flow_reason(ok)
         self.record(
             "reconfigure-success",
-            _flow_type(ok) in {"create_entry", "abort"}
-            or reason == "reconfigure_successful",
+            _flow_type(ok) in {"create_entry", "abort"} or reason == "reconfigure_successful",
             {"type": _flow_type(ok), "reason": reason},
         )
 
@@ -1591,9 +1542,7 @@ class Campaign:
             not (isinstance(device_off, dict) and device_off.get("error") == "ws_error"),
             device_off if isinstance(device_off, dict) and device_off.get("error") else None,
         )
-        await ha_cdp.cmd_set_device_disabled(
-            self.cdp, self.page, str(row["device_id"]), False
-        )
+        await ha_cdp.cmd_set_device_disabled(self.cdp, self.page, str(row["device_id"]), False)
         wifi = entity_by_key(entities, "wifi_rssi")
         if wifi and wifi.get("disabled_by"):
             enabled_ent = await ha_cdp.cmd_enable_entity(
@@ -1604,24 +1553,18 @@ class Campaign:
                 delay = int(enabled_ent.get("reload_delay") or 30)
             _log(f"waiting {delay}s after enabling wifi rssi")
             await asyncio.sleep(delay)
-            await ha_cdp.cmd_wait_entry(
-                self.cdp, self.page, str(row["entry_id"]), "loaded", 90
-            )
+            await ha_cdp.cmd_wait_entry(self.cdp, self.page, str(row["entry_id"]), "loaded", 90)
             rssi = await self.wait_numeric(str(wifi["entity_id"]), 90)
             self.record("wifi-rssi", bool(rssi.get("ok")), rssi.get("last") or rssi.get("state"))
         ct = entity_by_key(entities, "ct_connection")
         if ct and ct.get("disabled_by"):
-            enabled_ct = await ha_cdp.cmd_enable_entity(
-                self.cdp, self.page, str(ct["entity_id"])
-            )
+            enabled_ct = await ha_cdp.cmd_enable_entity(self.cdp, self.page, str(ct["entity_id"]))
             delay = 30
             if isinstance(enabled_ct, dict):
                 delay = int(enabled_ct.get("reload_delay") or 30)
             _log(f"waiting {delay}s after enabling ct connection")
             await asyncio.sleep(delay)
-            await ha_cdp.cmd_wait_entry(
-                self.cdp, self.page, str(row["entry_id"]), "loaded", 90
-            )
+            await ha_cdp.cmd_wait_entry(self.cdp, self.page, str(row["entry_id"]), "loaded", 90)
             deadline = time.time() + 90
             ct_state: Any = None
             while time.time() < deadline:
@@ -1644,28 +1587,20 @@ class Campaign:
         row = self.entry_by_host.get(mock.host)
         if not row:
             return
-        started = await ha_cdp.cmd_start_options(
-            self.cdp, self.page, str(row["entry_id"])
-        )
+        started = await ha_cdp.cmd_start_options(self.cdp, self.page, str(row["entry_id"]))
         flow_id = _flow_id(started)
         if flow_id:
             await ha_cdp.cmd_options_next(
                 self.cdp, self.page, flow_id, await self._options_payload(1)
             )
-            await ha_cdp.cmd_wait_entry(
-                self.cdp, self.page, str(row["entry_id"]), "loaded", 90
-            )
+            await ha_cdp.cmd_wait_entry(self.cdp, self.page, str(row["entry_id"]), "loaded", 90)
         stopped = docker_container("stop", mock.container)
         self.record("stop-unique-port-mock", bool(stopped.get("ok")), stopped.get("stderr"))
         await self.service("marstek", "request_data_sync", {"device_id": str(row["device_id"])})
         issue_id = f"cannot_connect_{row['entry_id']}"
-        present = await ha_cdp.cmd_wait_issue(
-            self.cdp, self.page, issue_id, "marstek", 180, False
-        )
+        present = await ha_cdp.cmd_wait_issue(self.cdp, self.page, issue_id, "marstek", 180, False)
         self.record("repair-issue", bool(present.get("ok")), present.get("error"))
-        repair = await ha_cdp.cmd_start_repair(
-            self.cdp, self.page, issue_id, "marstek"
-        )
+        repair = await ha_cdp.cmd_start_repair(self.cdp, self.page, issue_id, "marstek")
         repair_id = _flow_id(repair)
         if repair_id:
             cannot = await ha_cdp.cmd_repair_next(
@@ -1706,14 +1641,10 @@ class Campaign:
                 or _flow_reason(success) in {None, "reconfigure_successful"},
                 {"type": _flow_type(success), "reason": _flow_reason(success)},
             )
-        gone = await ha_cdp.cmd_wait_issue(
-            self.cdp, self.page, issue_id, "marstek", 180, True
-        )
+        gone = await ha_cdp.cmd_wait_issue(self.cdp, self.page, issue_id, "marstek", 180, True)
         self.record("repair-cleared", bool(gone.get("ok")), gone.get("error"))
         docker_container("stop", mock.container)
-        reload = await ha_cdp.cmd_reload_entry(
-            self.cdp, self.page, str(row["entry_id"])
-        )
+        reload = await ha_cdp.cmd_reload_entry(self.cdp, self.page, str(row["entry_id"]))
         retry = await ha_cdp.cmd_wait_entry(
             self.cdp, self.page, str(row["entry_id"]), "setup_retry", 90
         )
@@ -1727,9 +1658,7 @@ class Campaign:
             self.cdp, self.page, str(row["entry_id"]), "loaded", 180
         )
         self.record("setup-retry-recovered", bool(loaded.get("ok")), loaded.get("error"))
-        started = await ha_cdp.cmd_start_options(
-            self.cdp, self.page, str(row["entry_id"])
-        )
+        started = await ha_cdp.cmd_start_options(self.cdp, self.page, str(row["entry_id"]))
         flow_id = _flow_id(started)
         if flow_id:
             await ha_cdp.cmd_options_next(
@@ -1753,9 +1682,7 @@ class Campaign:
             not (isinstance(deleted, dict) and deleted.get("ok") is False),
             None,
         )
-        waited = await ha_cdp.cmd_wait_flow(
-            self.cdp, self.page, unique_id, "marstek", 700
-        )
+        waited = await ha_cdp.cmd_wait_flow(self.cdp, self.page, unique_id, "marstek", 700)
         if waited.get("ok"):
             flows = waited.get("flows") or []
             flow_id = flows[0].get("flow_id") if flows else None
@@ -1851,14 +1778,10 @@ class Campaign:
                 continue
             row, entities = bound
             before_ids = sorted(
-                str(ent.get("entity_id"))
-                for ent in entities
-                if ent.get("entity_id")
+                str(ent.get("entity_id")) for ent in entities if ent.get("entity_id")
             )
             before_unique = sorted(
-                str(ent.get("unique_id"))
-                for ent in entities
-                if ent.get("unique_id")
+                str(ent.get("unique_id")) for ent in entities if ent.get("unique_id")
             )
             _log(f"delete {mock.host} {row['entry_id']}")
             deleted = await ha_cdp.cmd_api(
@@ -1884,18 +1807,12 @@ class Campaign:
                 continue
             row, entities = rebound
             after_ids = sorted(
-                str(ent.get("entity_id"))
-                for ent in entities
-                if ent.get("entity_id")
+                str(ent.get("entity_id")) for ent in entities if ent.get("entity_id")
             )
             after_unique = sorted(
-                str(ent.get("unique_id"))
-                for ent in entities
-                if ent.get("unique_id")
+                str(ent.get("unique_id")) for ent in entities if ent.get("unique_id")
             )
-            grew = not unique_ids_stable(
-                before_unique, after_unique, before_ids, after_ids
-            )
+            grew = not unique_ids_stable(before_unique, after_unique, before_ids, after_ids)
             self.record(
                 f"unique-ids:{mock.host}",
                 not grew,
@@ -1924,9 +1841,7 @@ class Campaign:
         await ha_cdp.cmd_screenshot(self.cdp, self.page, path)
 
     async def enable_debug_logging(self) -> None:
-        result = await ha_cdp.cmd_debug_logging(
-            self.cdp, self.page, "marstek", "debug", "none"
-        )
+        result = await ha_cdp.cmd_debug_logging(self.cdp, self.page, "marstek", "debug", "none")
         ok = not (isinstance(result, dict) and result.get("error") == "ws_error")
         self.record("debug-logging", ok, result if not ok else None)
 
@@ -1967,9 +1882,7 @@ class Campaign:
         return analysis
 
     async def disable_debug_logging(self) -> None:
-        await ha_cdp.cmd_debug_logging(
-            self.cdp, self.page, "marstek", "warning", "none"
-        )
+        await ha_cdp.cmd_debug_logging(self.cdp, self.page, "marstek", "warning", "none")
 
     async def run(self) -> dict[str, Any]:
         token = await self.login_ui()
@@ -1978,13 +1891,20 @@ class Campaign:
             return self.summary()
         self.log_since = datetime.now(UTC).isoformat()
         await self.enable_debug_logging()
-        await self.phase_reject()
-        await self.phase_add()
-        await self.phase_smoke()
-        await self.phase_automations()
-        await self.phase_edit_and_lifecycle()
-        await self.phase_already_configured()
-        await self.phase_remove_readd()
+        try:
+            await self.phase_reject()
+            await self.phase_add()
+            await self.phase_smoke()
+            await self.phase_automations()
+            await self.phase_edit_and_lifecycle()
+            await self.phase_already_configured()
+            await self.phase_remove_readd()
+        except Exception as err:
+            # A crash partway through still has value: every check recorded
+            # before it says what passed. Letting the exception escape would
+            # throw all of it away and cost another full run to learn
+            # nothing new.
+            self.record("campaign-crashed", False, f"{type(err).__name__}: {err}")
         try:
             await self.screenshot("ha_live_campaign_integrations.png")
         except Exception as err:
@@ -2077,9 +1997,7 @@ async def run_campaign(
 
 async def cmd_add_device(cdp: ha_cdp.Cdp, page: dict[str, Any], host: str, port: int) -> Any:
     """Start a user flow and submit manual host/port."""
-    campaign = Campaign(
-        cdp, page, [], skip_remove=True, skip_lifecycle=True
-    )
+    campaign = Campaign(cdp, page, [], skip_remove=True, skip_lifecycle=True)
     await campaign.abort_open_flows()
     return await campaign.add_manual(host, port)
 

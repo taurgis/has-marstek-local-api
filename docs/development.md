@@ -21,7 +21,7 @@ From repo root:
 python3 -m ruff check custom_components/marstek/
 
 # Formatting (ruff is pinned, so this matches CI exactly)
-python3 -m ruff format --check custom_components tests tools scripts
+python3 -m ruff format --check custom_components tests tools scripts .agents
 
 # Type checking
 python3 -m mypy --strict custom_components/marstek/
@@ -37,7 +37,9 @@ blocks the merge when any of them fails. All five are configured in
 `pyproject.toml` (plus `.jscpd.json`) so a local run and CI see the same rules.
 `requirements_quality.txt` pins every tool, ruff included, because `ruff format`
 output changes between releases — a floating version would make the formatting
-gate disagree with a local run.
+gate disagree with a local run. The formatting check also covers `.agents`,
+which the lint check does not: the agent tooling there predates the complexity
+gates.
 
 ```bash
 # Install the quality tooling once (separate from requirements_test.txt, so
@@ -48,7 +50,7 @@ pip install -r requirements_quality.txt
 python3 -m ruff check custom_components tests tools scripts
 
 # 2. Formatting (drop --check to rewrite the files in place)
-python3 -m ruff format --check custom_components tests tools scripts
+python3 -m ruff format --check custom_components tests tools scripts .agents
 
 # 3. File and function length ceilings
 python3 scripts/check_code_limits.py

@@ -23,7 +23,12 @@ pythonpath = ["."]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["tools/firmware/blobs"]
+# Markdown is documentation, not source. Ruff formats the Python blocks
+# inside `.md` files when handed a directory, which rewrites the
+# deliberately-wrong "# Wrong" examples in `.agents/skills/**` into correct
+# code and destroys the point of the example. Ruff governs `.py` here;
+# prose stays as written.
+extend-exclude = ["tools/firmware/blobs", "*.md"]
 
 [tool.ruff.lint]
 select = [

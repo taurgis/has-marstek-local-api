@@ -242,7 +242,7 @@ from .pymarstek import MAX_POWER_VALUE, MAX_PASSIVE_DURATION, MAX_TIME_SLOTS
 python3 -m ruff check custom_components/marstek/
 
 # 1b. Formatting (ruff is pinned, so this matches CI exactly)
-python3 -m ruff format --check custom_components tests tools scripts
+python3 -m ruff format --check custom_components tests tools scripts .agents
 
 # 2. Type checking (strict mode enabled)
 python3 -m mypy --strict custom_components/marstek/
@@ -252,7 +252,7 @@ pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
 # 4. Static quality gates (blocking in the Code Quality workflow)
 python3 -m ruff check custom_components tests tools scripts
-python3 -m ruff format --check custom_components tests tools scripts
+python3 -m ruff format --check custom_components tests tools scripts .agents
 python3 scripts/check_code_limits.py
 python3 -m vulture
 jscpd

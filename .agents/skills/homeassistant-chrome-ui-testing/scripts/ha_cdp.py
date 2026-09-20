@@ -30,9 +30,7 @@ import aiohttp
 CDP_HOST = os.environ.get("HA_CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("HA_CDP_PORT", "9222"))
 USER_DATA_DIR = os.environ.get("HA_CHROME_USER_DATA_DIR", "/tmp/chrome-ha-debug")
-DEFAULT_URL = os.environ.get(
-    "HA_URL", "http://127.0.0.1:8123/config/integrations/dashboard"
-)
+DEFAULT_URL = os.environ.get("HA_URL", "http://127.0.0.1:8123/config/integrations/dashboard")
 CHROME_BIN = os.environ.get("HA_CHROME_BIN", "/opt/google/chrome/chrome")
 DISPLAY = os.environ.get("DISPLAY", ":1")
 
@@ -688,6 +686,33 @@ def pick_page(pages: list[dict[str, Any]], url_substr: str | None) -> dict[str, 
     return candidates[0]
 
 
+class CdpCallError(RuntimeError):
+    """A CDP method answered with an error object instead of a result."""
+
+    def __init__(self, method: str, error: dict[str, Any]) -> None:
+        self.method = method
+        self.code = error.get("code")
+        self.message = str(error.get("message") or "")
+        super().__init__(f"{method}: {error}")
+
+
+# V8 reports these when the realm holding a pending promise goes away: the
+# page navigated, the renderer reclaimed a promise nothing was holding, or
+# the target was replaced. None of them says anything about the integration
+# under test, so a long campaign should not die on one.
+LOST_CONTEXT_MESSAGES = (
+    "Promise was collected",
+    "Execution context was destroyed",
+    "Cannot find context with specified id",
+    "Inspected target navigated or closed",
+)
+
+
+def is_lost_context(err: CdpCallError) -> bool:
+    """Say whether a CDP error is a lost execution context, not a real failure."""
+    return any(marker in err.message for marker in LOST_CONTEXT_MESSAGES)
+
+
 class Cdp:
     def __init__(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         self.ws = ws
@@ -710,10 +735,11 @@ class Cdp:
             if data.get("id") != msg_id:
                 continue
             if "error" in data:
-                raise RuntimeError(f"{method}: {data['error']}")
+                raise CdpCallError(method, data["error"])
             return data.get("result") or {}
 
-    async def evaluate(self, expression: str) -> Any:
+    async def evaluate_once(self, expression: str) -> Any:
+        """Evaluate ``expression`` in the page exactly once."""
         result = await self.call(
             "Runtime.evaluate",
             {
@@ -731,8 +757,29 @@ class Cdp:
         remote = result.get("result") or {}
         return remote.get("value")
 
+    async def evaluate(self, expression: str, *, retry_on_lost_context: bool = False) -> Any:
+        """Evaluate ``expression`` in the page and return its value.
+
+        ``retry_on_lost_context`` re-injects the helper and runs the
+        expression a second time when the first attempt lost its execution
+        context. Pass it for reads only: a write may already have reached
+        Home Assistant before the promise was collected, and replaying it
+        would apply the change twice.
+        """
+        try:
+            return await self.evaluate_once(expression)
+        except CdpCallError as err:
+            if not retry_on_lost_context or not is_lost_context(err):
+                raise
+        await self.call("Runtime.enable")
+        if not await self.evaluate_once(HELPER_JS):
+            raise RuntimeError("Failed to re-inject HA CDP helper after a lost context")
+        return await self.evaluate_once(expression)
+
     async def inject(self) -> None:
-        ok = await self.evaluate(HELPER_JS)
+        # Defining the helper is idempotent, so this one is always safe to
+        # replay after a lost context.
+        ok = await self.evaluate(HELPER_JS, retry_on_lost_context=True)
         if not ok:
             raise RuntimeError("Failed to inject HA CDP helper")
 
@@ -741,8 +788,7 @@ async def with_page(url_substr: str | None, fn: Any) -> Any:
     status = devtools_status()
     if not status.get("ok"):
         raise RuntimeError(
-            "DevTools is down (GET /json/version failed). "
-            "Run: python3 scripts/ha_cdp.py ensure"
+            "DevTools is down (GET /json/version failed). Run: python3 scripts/ha_cdp.py ensure"
         )
     page = pick_page(status["pages"], url_substr)
     ws_url = page["webSocketDebuggerUrl"]
@@ -786,9 +832,7 @@ async def cmd_click(
     await cdp.inject()
     near_js = json.dumps(near)
     nth_js = "null" if nth is None else str(nth)
-    return await cdp.evaluate(
-        f"window.__haCdp.click({json.dumps(text)}, {near_js}, {nth_js})"
-    )
+    return await cdp.evaluate(f"window.__haCdp.click({json.dumps(text)}, {near_js}, {nth_js})")
 
 
 async def cmd_fill(
@@ -925,13 +969,12 @@ async def cmd_api(
     path_js = json.dumps(path.lstrip("/"))
     body_js = "undefined" if body is None else json.dumps(body)
     return await cdp.evaluate(
-        f"window.__haCdp.api({method_js}, {path_js}, {body_js})"
+        f"window.__haCdp.api({method_js}, {path_js}, {body_js})",
+        retry_on_lost_context=method.upper() == "GET",
     )
 
 
-async def cmd_ws(
-    cdp: Cdp, _page: dict[str, Any], message: dict[str, Any]
-) -> Any:
+async def cmd_ws(cdp: Cdp, _page: dict[str, Any], message: dict[str, Any]) -> Any:
     await cdp.inject()
     return await cdp.evaluate(f"window.__haCdp.ws({json.dumps(message)})")
 
@@ -941,8 +984,14 @@ async def cmd_states(
 ) -> Any:
     await cdp.inject()
     if entity:
-        return await cdp.evaluate(f"window.__haCdp.state({json.dumps(entity)})")
-    return await cdp.evaluate(f"window.__haCdp.states({json.dumps(prefix or '')})")
+        return await cdp.evaluate(
+            f"window.__haCdp.state({json.dumps(entity)})",
+            retry_on_lost_context=True,
+        )
+    return await cdp.evaluate(
+        f"window.__haCdp.states({json.dumps(prefix or '')})",
+        retry_on_lost_context=True,
+    )
 
 
 async def cmd_wait_state(
@@ -1005,11 +1054,7 @@ async def cmd_entries(cdp: Cdp, _page: dict[str, Any], domain: str) -> Any:
     for entry in entries:
         entry_id = str(entry.get("entry_id") or "")
         dev = by_entry.get(entry_id) or {}
-        macs = [
-            ident[1]
-            for ident in (dev.get("identifiers") or [])
-            if ident and len(ident) > 1
-        ]
+        macs = [ident[1] for ident in (dev.get("identifiers") or []) if ident and len(ident) > 1]
         slim.append(
             {
                 "entry_id": entry_id,
@@ -1042,9 +1087,7 @@ async def cmd_devices(cdp: Cdp, _page: dict[str, Any], integration: str) -> Any:
         if dev.get("parent_device_id"):
             continue
         idents = dev.get("identifiers") or []
-        if integration and not any(
-            ident and ident[0] == integration for ident in idents
-        ):
+        if integration and not any(ident and ident[0] == integration for ident in idents):
             continue
         entries = list(dev.get("config_entries") or [])
         entry_id = dev.get("config_entry_id")
@@ -1068,9 +1111,7 @@ async def cmd_devices(cdp: Cdp, _page: dict[str, Any], integration: str) -> Any:
     return out
 
 
-async def cmd_flows(
-    cdp: Cdp, _page: dict[str, Any], handler: str | None
-) -> list[dict[str, Any]]:
+async def cmd_flows(cdp: Cdp, _page: dict[str, Any], handler: str | None) -> list[dict[str, Any]]:
     flows = await cmd_ws(cdp, _page, {"type": "config_entries/flow/progress"})
     out: list[dict[str, Any]] = []
     for flow in flows or []:
@@ -1101,11 +1142,7 @@ async def cmd_wait_flow(
     last: list[dict[str, Any]] = []
     while time.time() < deadline:
         last = await cmd_flows(cdp, _page, handler)
-        matches = [
-            flow
-            for flow in last
-            if needle in str(flow.get("unique_id") or "").lower()
-        ]
+        matches = [flow for flow in last if needle in str(flow.get("unique_id") or "").lower()]
         if matches:
             return {"ok": True, "flows": matches}
         await asyncio.sleep(2)
@@ -1113,9 +1150,7 @@ async def cmd_wait_flow(
 
 
 async def cmd_abort_flow(cdp: Cdp, _page: dict[str, Any], flow_id: str) -> Any:
-    return await cmd_api(
-        cdp, _page, "DELETE", f"config/config_entries/flow/{flow_id}", None
-    )
+    return await cmd_api(cdp, _page, "DELETE", f"config/config_entries/flow/{flow_id}", None)
 
 
 async def cmd_reload_entry(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
@@ -1207,9 +1242,7 @@ async def cmd_device_conditions(cdp: Cdp, _page: dict[str, Any], device_id: str)
 
 
 async def cmd_diagnostics(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
-    return await cmd_api(
-        cdp, _page, "GET", f"diagnostics/config_entry/{entry_id}", None
-    )
+    return await cmd_api(cdp, _page, "GET", f"diagnostics/config_entry/{entry_id}", None)
 
 
 async def cmd_start_user_flow(cdp: Cdp, _page: dict[str, Any]) -> Any:
@@ -1222,9 +1255,7 @@ async def cmd_start_user_flow(cdp: Cdp, _page: dict[str, Any]) -> Any:
     )
 
 
-async def cmd_start_reconfigure(
-    cdp: Cdp, _page: dict[str, Any], entry_id: str
-) -> Any:
+async def cmd_start_reconfigure(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> Any:
     return await cmd_api(
         cdp,
         _page,
@@ -1244,20 +1275,14 @@ async def cmd_start_options(cdp: Cdp, _page: dict[str, Any], entry_id: str) -> A
     )
 
 
-async def cmd_flow_next(
-    cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]
-) -> Any:
-    return await cmd_api(
-        cdp, _page, "POST", f"config/config_entries/flow/{flow_id}", data
-    )
+async def cmd_flow_next(cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]) -> Any:
+    return await cmd_api(cdp, _page, "POST", f"config/config_entries/flow/{flow_id}", data)
 
 
 async def cmd_options_next(
     cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]
 ) -> Any:
-    return await cmd_api(
-        cdp, _page, "POST", f"config/config_entries/options/flow/{flow_id}", data
-    )
+    return await cmd_api(cdp, _page, "POST", f"config/config_entries/options/flow/{flow_id}", data)
 
 
 async def cmd_upsert_automation(
@@ -1282,9 +1307,7 @@ async def cmd_upsert_script(
     payload = dict(config)
     payload.pop("id", None)
     payload["alias"] = config.get("alias") or script_id
-    return await cmd_api(
-        cdp, _page, "POST", f"config/script/config/{script_id}", payload
-    )
+    return await cmd_api(cdp, _page, "POST", f"config/script/config/{script_id}", payload)
 
 
 async def cmd_notifications(cdp: Cdp, _page: dict[str, Any]) -> Any:
@@ -1355,9 +1378,7 @@ def _issues_from_ws(result: Any) -> list[dict[str, Any]]:
     return []
 
 
-async def cmd_issues(
-    cdp: Cdp, _page: dict[str, Any], domain: str | None
-) -> list[dict[str, Any]]:
+async def cmd_issues(cdp: Cdp, _page: dict[str, Any], domain: str | None) -> list[dict[str, Any]]:
     result = await cmd_ws(cdp, _page, {"type": "repairs/list_issues"})
     issues = _issues_from_ws(result)
     if domain:
@@ -1387,9 +1408,7 @@ async def cmd_wait_issue(
         matches = last
         if needle:
             matches = [
-                issue
-                for issue in last
-                if needle in str(issue.get("issue_id") or "").lower()
+                issue for issue in last if needle in str(issue.get("issue_id") or "").lower()
             ]
         present = bool(matches)
         if gone and not present:
@@ -1406,9 +1425,7 @@ async def cmd_wait_issue(
     }
 
 
-async def cmd_start_repair(
-    cdp: Cdp, _page: dict[str, Any], issue_id: str, handler: str
-) -> Any:
+async def cmd_start_repair(cdp: Cdp, _page: dict[str, Any], issue_id: str, handler: str) -> Any:
     return await cmd_api(
         cdp,
         _page,
@@ -1421,15 +1438,11 @@ async def cmd_start_repair(
 async def cmd_repair_next(
     cdp: Cdp, _page: dict[str, Any], flow_id: str, data: dict[str, Any]
 ) -> Any:
-    return await cmd_api(
-        cdp, _page, "POST", f"repairs/issues/fix/{flow_id}", data
-    )
+    return await cmd_api(cdp, _page, "POST", f"repairs/issues/fix/{flow_id}", data)
 
 
 async def cmd_abort_repair(cdp: Cdp, _page: dict[str, Any], flow_id: str) -> Any:
-    return await cmd_api(
-        cdp, _page, "DELETE", f"repairs/issues/fix/{flow_id}", None
-    )
+    return await cmd_api(cdp, _page, "DELETE", f"repairs/issues/fix/{flow_id}", None)
 
 
 def _parse_bool(value: str) -> bool:
@@ -1506,9 +1519,7 @@ async def cmd_wait_entry(
     }
 
 
-async def cmd_ignore_flow(
-    cdp: Cdp, _page: dict[str, Any], flow_id: str, title: str
-) -> Any:
+async def cmd_ignore_flow(cdp: Cdp, _page: dict[str, Any], flow_id: str, title: str) -> Any:
     return await cmd_ws(
         cdp,
         _page,
@@ -1586,27 +1597,21 @@ async def cmd_areas(cdp: Cdp, _page: dict[str, Any]) -> Any:
 
 
 async def cmd_create_area(cdp: Cdp, _page: dict[str, Any], name: str) -> Any:
-    return await cmd_ws(
-        cdp, _page, {"type": "config/area_registry/create", "name": name}
-    )
+    return await cmd_ws(cdp, _page, {"type": "config/area_registry/create", "name": name})
 
 
 async def cmd_labels(cdp: Cdp, _page: dict[str, Any]) -> Any:
     return await cmd_ws(cdp, _page, {"type": "config/label_registry/list"})
 
 
-async def cmd_create_label(
-    cdp: Cdp, _page: dict[str, Any], name: str, color: str | None
-) -> Any:
+async def cmd_create_label(cdp: Cdp, _page: dict[str, Any], name: str, color: str | None) -> Any:
     message: dict[str, Any] = {"type": "config/label_registry/create", "name": name}
     if color:
         message["color"] = color
     return await cmd_ws(cdp, _page, message)
 
 
-async def cmd_hide_entity(
-    cdp: Cdp, _page: dict[str, Any], entity_id: str, hidden: bool
-) -> Any:
+async def cmd_hide_entity(cdp: Cdp, _page: dict[str, Any], entity_id: str, hidden: bool) -> Any:
     return await cmd_ws(
         cdp,
         _page,
@@ -1645,31 +1650,19 @@ async def cmd_exposed(cdp: Cdp, _page: dict[str, Any], prefix: str | None) -> An
     entities = result.get("exposed_entities") if isinstance(result, dict) else result
     if prefix and isinstance(entities, dict):
         needle = prefix.lower()
-        entities = {
-            key: value
-            for key, value in entities.items()
-            if needle in key.lower()
-        }
+        entities = {key: value for key, value in entities.items() if needle in key.lower()}
         return {"exposed_entities": entities}
     return result
 
 
-async def cmd_history(
-    cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float
-) -> Any:
-    start = (
-        datetime.now(timezone.utc) - timedelta(hours=hours)
-    ).isoformat(timespec="seconds")
+async def cmd_history(cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float) -> Any:
+    start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     path = f"history/period/{start}?filter_entity_id={entity_id}&minimal_response"
     return await cmd_api(cdp, _page, "GET", path, None)
 
 
-async def cmd_logbook(
-    cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float
-) -> Any:
-    start = (
-        datetime.now(timezone.utc) - timedelta(hours=hours)
-    ).isoformat(timespec="seconds")
+async def cmd_logbook(cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float) -> Any:
+    start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     path = f"logbook/{start}?entity={entity_id}"
     return await cmd_api(cdp, _page, "GET", path, None)
 
@@ -1696,11 +1689,7 @@ async def cmd_log_info(cdp: Cdp, _page: dict[str, Any], domain: str | None) -> A
         return err
     if domain and isinstance(result, list):
         needle = domain.lower()
-        return [
-            row
-            for row in result
-            if needle in str(row.get("domain") or "").lower()
-        ]
+        return [row for row in result if needle in str(row.get("domain") or "").lower()]
     return result
 
 
@@ -1792,16 +1781,12 @@ def build_parser() -> argparse.ArgumentParser:
     ents.add_argument("--prefix", default="")
     dtrig = sub.add_parser("device-triggers", help="WS device_automation/trigger/list")
     dtrig.add_argument("device_id")
-    dcond = sub.add_parser(
-        "device-conditions", help="WS device_automation/condition/list"
-    )
+    dcond = sub.add_parser("device-conditions", help="WS device_automation/condition/list")
     dcond.add_argument("device_id")
     diag = sub.add_parser("diagnostics", help="GET diagnostics for a config entry")
     diag.add_argument("entry_id")
     sub.add_parser("start-user-flow", help="POST a new Marstek user config flow")
-    add_dev = sub.add_parser(
-        "add-device", help="User flow → Enter IP/port manually → host/port"
-    )
+    add_dev = sub.add_parser("add-device", help="User flow → Enter IP/port manually → host/port")
     add_dev.add_argument("host")
     add_dev.add_argument("--port", type=int, default=30000)
     camp = sub.add_parser(
@@ -1838,21 +1823,13 @@ def build_parser() -> argparse.ArgumentParser:
     een.add_argument("entity_id")
     den = sub.add_parser("disable-entity", help="Set entity_registry disabled_by=user")
     den.add_argument("entity_id")
-    dent = sub.add_parser(
-        "disable-entry", help="WS config_entries/disable disabled_by=user"
-    )
+    dent = sub.add_parser("disable-entry", help="WS config_entries/disable disabled_by=user")
     dent.add_argument("entry_id")
-    eent = sub.add_parser(
-        "enable-entry", help="WS config_entries/disable disabled_by=null"
-    )
+    eent = sub.add_parser("enable-entry", help="WS config_entries/disable disabled_by=null")
     eent.add_argument("entry_id")
-    ddev = sub.add_parser(
-        "disable-device", help="WS device_registry/update disabled_by=user"
-    )
+    ddev = sub.add_parser("disable-device", help="WS device_registry/update disabled_by=user")
     ddev.add_argument("device_id")
-    edev = sub.add_parser(
-        "enable-device", help="WS device_registry/update disabled_by=null"
-    )
+    edev = sub.add_parser("enable-device", help="WS device_registry/update disabled_by=null")
     edev.add_argument("device_id")
     issues = sub.add_parser("issues", help="WS repairs/list_issues")
     issues.add_argument("--domain", default="marstek")
@@ -1903,9 +1880,7 @@ def build_parser() -> argparse.ArgumentParser:
     wait_e.add_argument("entry_id")
     wait_e.add_argument("--state", default=None)
     wait_e.add_argument("--timeout", type=float, default=180)
-    ign_f = sub.add_parser(
-        "ignore-flow", help="WS config_entries/ignore_flow (SOURCE_IGNORE)"
-    )
+    ign_f = sub.add_parser("ignore-flow", help="WS config_entries/ignore_flow (SOURCE_IGNORE)")
     ign_f.add_argument("flow_id")
     ign_f.add_argument("--title", default="Marstek")
     ign_i = sub.add_parser("ignore-issue", help="WS repairs/ignore_issue")
@@ -2034,9 +2009,7 @@ async def async_main(args: argparse.Namespace) -> int:
         if args.cmd == "flows":
             return await cmd_flows(cdp, page, args.handler)
         if args.cmd == "wait-flow":
-            return await cmd_wait_flow(
-                cdp, page, args.unique_id, args.handler, args.timeout
-            )
+            return await cmd_wait_flow(cdp, page, args.unique_id, args.handler, args.timeout)
         if args.cmd == "abort-flow":
             return await cmd_abort_flow(cdp, page, args.flow_id)
         if args.cmd == "device-actions":
@@ -2073,9 +2046,7 @@ async def async_main(args: argparse.Namespace) -> int:
             report = _write_report(result, args.output)
             if report:
                 result = {**result, "report": report}
-                Path(report).write_text(
-                    json.dumps(result, indent=2, default=str), encoding="utf-8"
-                )
+                Path(report).write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
             return result
         if args.cmd == "start-reconfigure":
             return await cmd_start_reconfigure(cdp, page, args.entry_id)
@@ -2090,9 +2061,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 cdp, page, args.automation_id, json.loads(args.config)
             )
         if args.cmd == "upsert-script":
-            return await cmd_upsert_script(
-                cdp, page, args.script_id, json.loads(args.config)
-            )
+            return await cmd_upsert_script(cdp, page, args.script_id, json.loads(args.config))
         if args.cmd == "enable-entity":
             return await cmd_enable_entity(cdp, page, args.entity_id)
         if args.cmd == "disable-entity":
@@ -2119,9 +2088,7 @@ async def async_main(args: argparse.Namespace) -> int:
         if args.cmd == "start-repair":
             return await cmd_start_repair(cdp, page, args.issue_id, args.handler)
         if args.cmd == "repair-next":
-            return await cmd_repair_next(
-                cdp, page, args.flow_id, json.loads(args.data)
-            )
+            return await cmd_repair_next(cdp, page, args.flow_id, json.loads(args.data))
         if args.cmd == "abort-repair":
             return await cmd_abort_repair(cdp, page, args.flow_id)
         if args.cmd == "notifications":
@@ -2138,15 +2105,11 @@ async def async_main(args: argparse.Namespace) -> int:
                 disable_polling=args.disable_polling,
             )
         if args.cmd == "wait-entry":
-            return await cmd_wait_entry(
-                cdp, page, args.entry_id, args.state, args.timeout
-            )
+            return await cmd_wait_entry(cdp, page, args.entry_id, args.state, args.timeout)
         if args.cmd == "ignore-flow":
             return await cmd_ignore_flow(cdp, page, args.flow_id, args.title)
         if args.cmd == "ignore-issue":
-            return await cmd_ignore_issue(
-                cdp, page, args.issue_id, args.domain, not args.unignore
-            )
+            return await cmd_ignore_issue(cdp, page, args.issue_id, args.domain, not args.unignore)
         if args.cmd == "rename-device":
             name = None if args.clear else args.name
             if name is None and not args.clear:
@@ -2158,9 +2121,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 area_id = None
             return await cmd_set_device_area(cdp, page, args.device_id, area_id)
         if args.cmd == "set-device-labels":
-            return await cmd_set_device_labels(
-                cdp, page, args.device_id, list(args.labels)
-            )
+            return await cmd_set_device_labels(cdp, page, args.device_id, list(args.labels))
         if args.cmd == "areas":
             return await cmd_areas(cdp, page)
         if args.cmd == "create-area":

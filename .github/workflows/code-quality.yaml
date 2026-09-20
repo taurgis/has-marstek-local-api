@@ -31,10 +31,11 @@ jobs:
 
       # Formatting is a gate, not a suggestion: ruff is pinned in
       # requirements_quality.txt so this and a local `ruff format` agree.
-      # Run `python -m ruff format custom_components tests tools scripts`
-      # to fix anything this reports.
+      # Wider than the lint step because it covers `.agents` too: the agent
+      # tooling there predates the complexity gates, but nothing stops it
+      # being formatted. Drop --check to fix anything this reports.
       - name: Format
-        run: python -m ruff format --check custom_components tests tools scripts
+        run: python -m ruff format --check custom_components tests tools scripts .agents
 
       # Ruff has no module-length rule, so this covers the 1000 line ceiling
       # and the per-function line ceiling.
