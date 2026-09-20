@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 from datetime import time as dt_time
-from typing import Any, Final
+from typing import Any, Final, NoReturn
 
 from .const import (
     BLE_ADV_DISABLED,
@@ -86,6 +87,51 @@ def json_rpc_wire_id(value: Any) -> int | None:
     return value & MAX_JSON_RPC_ID
 
 
+def _reject_json_number(token: str) -> NoReturn:
+    """Reject a number literal that is not a finite float.
+
+    ``json.loads`` accepts the non-standard ``NaN``/``Infinity``/``-Infinity``
+    literals, and turns an overflowing literal such as ``1e400`` into ``inf``,
+    so a single glitched datagram can put a non-finite value into coordinator
+    state that no later poll overwrites. The Open API carries plain JSON
+    numbers only, so treat anything else as a malformed datagram.
+    """
+    raise json.JSONDecodeError(f"{token} is not a finite JSON number", token, 0)
+
+
+def _finite_json_float(token: str) -> float:
+    """Parse a JSON float, rejecting one that overflows to infinity."""
+    value = float(token)
+    if not math.isfinite(value):
+        _reject_json_number(token)
+    return value
+
+
+def _finite_json_int(token: str) -> int:
+    """Parse a JSON integer, rejecting one too large to scale as a float."""
+    value = int(token)
+    try:
+        float(value)
+    except OverflowError:
+        _reject_json_number(token)
+    return value
+
+
+def json_loads_strict(text: str) -> Any:
+    """Decode a JSON payload, rejecting any number that is not finite.
+
+    Raises ``json.JSONDecodeError`` — the same error a syntactically broken
+    payload raises — so every caller already treats such a datagram as one
+    that cannot be used and retries the device.
+    """
+    return json.loads(
+        text,
+        parse_constant=_reject_json_number,
+        parse_float=_finite_json_float,
+        parse_int=_finite_json_int,
+    )
+
+
 def json_rpc_result_usable(response: dict[str, Any]) -> bool:
     """Return True when the payload carries a JSON-RPC result, not an error.
 
@@ -106,7 +152,7 @@ def normalize_json_rpc_wire_message(message: str) -> tuple[str, int, str]:
     send 0 or a value that wraps to 0 on the MCU.
     """
     try:
-        payload = json.loads(message)
+        payload = json_loads_strict(message)
     except json.JSONDecodeError as exc:
         raise ValueError("Invalid message: missing id") from exc
     if not isinstance(payload, dict) or "id" not in payload:
@@ -780,7 +826,7 @@ def validate_json_message(message: str) -> dict[str, Any]:
         )
 
     try:
-        command = json.loads(message)
+        command = json_loads_strict(message)
     except json.JSONDecodeError as err:
         raise ValidationError(f"Invalid JSON: {err}", "message") from err
 

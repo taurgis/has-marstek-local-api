@@ -1991,6 +1991,56 @@ class TestListenForResponses:
         assert future.done()
         assert future.result() == response
 
+    @pytest.mark.parametrize(
+        "poisoned",
+        [
+            b'{"id": 9, "result": {"total_power": NaN}}',
+            b'{"id": 9, "result": {"total_power": Infinity}}',
+            b'{"id": 9, "result": {"total_power": -Infinity}}',
+            b'{"id": 9, "result": {"total_power": 1e400}}',
+            b'{"id": 9, "result": {"input_energy": 1' + b"0" * 400 + b"}}",
+        ],
+    )
+    async def test_ignores_datagram_carrying_a_non_finite_number(
+        self, poisoned: bytes
+    ) -> None:
+        """A non-finite number is not JSON; such a reply must never resolve.
+
+        Python's decoder accepts bare NaN/Infinity and overflows 1e400 to inf,
+        so without the strict decoder one glitched datagram writes a value into
+        coordinator state that no later poll can overwrite.
+        """
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        loop = asyncio.get_event_loop()
+        client._loop = loop
+
+        good = {"id": 9, "result": {"total_power": 120}}
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        client._router.pending[9] = future
+
+        recv_calls = 0
+
+        async def mock_recvfrom(
+            sock: Any, bufsize: int
+        ) -> tuple[bytes, tuple[str, int]]:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                return (poisoned, ("192.168.1.100", 30000))
+            if recv_calls == 2:
+                return (json.dumps(good).encode(), ("192.168.1.100", 30000))
+            raise asyncio.CancelledError()
+
+        with patch.object(loop, "sock_recvfrom", mock_recvfrom):
+            await client._listen_for_responses()
+
+        # The poisoned datagram is dropped, and the retry that follows it is
+        # still delivered on the same pending id.
+        assert recv_calls == 3
+        assert future.done()
+        assert future.result() == good
+
     async def test_matches_uint16_truncated_response_id(self) -> None:
         """Control firmware stores JSON-RPC id as uint16 (65537 → 1)."""
         client = MarstekUDPClient()

@@ -43,6 +43,7 @@ from .response_router import ResponseRouter
 from .throttle import DeviceThrottle
 from .validators import (
     ValidationError,
+    json_loads_strict,
     json_rpc_result_usable,
     json_rpc_wire_id,
     normalize_json_rpc_wire_message,
@@ -803,7 +804,7 @@ class MarstekUDPClient:
                     )
                     continue
                 try:
-                    response = json.loads(response_text)
+                    response = json_loads_strict(response_text)
                 except json.JSONDecodeError:
                     response = {"raw": response_text}
                 raw_id = response.get("id") if isinstance(response, dict) else None

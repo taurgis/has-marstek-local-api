@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
-from .pymarstek import ValidationError, discover
+from .pymarstek import ValidationError, discover, json_loads_strict
 from .pymarstek.device_info import build_device_info, non_empty_str
 from .pymarstek.network import (
     async_resolve_host_ipv4,
@@ -274,7 +274,7 @@ async def discover_devices(
                 sender_port = int(addr[1])
 
                 try:
-                    response = json.loads(data.decode("utf-8"))
+                    response = json_loads_strict(data.decode("utf-8"))
                 except UnicodeDecodeError:
                     _LOGGER.debug(
                         "Invalid UTF-8 from %s:%d", sender_ip, sender_port
@@ -457,7 +457,7 @@ async def get_device_info(
                     continue
 
                 try:
-                    response = json.loads(data.decode("utf-8"))
+                    response = json_loads_strict(data.decode("utf-8"))
                 except UnicodeDecodeError:
                     _LOGGER.debug("Invalid UTF-8 from %s", sender_ip)
                     continue

@@ -588,6 +588,51 @@ class TestDiscoverDevices:
         assert result == []
 
     @pytest.mark.asyncio
+    async def test_discovery_skips_reply_with_a_non_finite_number(self) -> None:
+        """A GetDevice reply carrying NaN is not a device we can trust."""
+        from custom_components.marstek.discovery import discover_devices
+
+        mock_socket = MagicMock()
+        mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
+
+        poisoned = (
+            b'{"id": 0, "result": {"device": "VenusE 3.0", "ver": NaN, '
+            b'"ble_mac": "009b08a5aa39", "wifi_mac": "7483c2315cf8", '
+            b'"ip": "192.168.1.1"}}'
+        )
+
+        call_count = 0
+
+        async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (poisoned, ("192.168.1.1", 30000))
+            raise TimeoutError()
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=mock_socket):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                with patch(
+                    "custom_components.marstek.discovery._get_broadcast_addresses",
+                    return_value=["255.255.255.255"],
+                ):
+                    result = await discover_devices(timeout=1.0)
+
+        assert result == []
+
+    @pytest.mark.asyncio
     async def test_discovery_handles_invalid_json(self) -> None:
         """Test handling of invalid JSON responses."""
         from custom_components.marstek.discovery import discover_devices

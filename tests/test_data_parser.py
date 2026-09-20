@@ -419,6 +419,39 @@ class TestMergeDeviceStatus:
         assert result["device_mode"] == "auto"  # Preserved from previous
         assert result["battery_status"] == "idle"  # Preserved from previous
 
+    @pytest.mark.parametrize(
+        "poison", [float("nan"), float("inf"), float("-inf")]
+    )
+    def test_non_finite_values_never_enter_status(self, poison: float) -> None:
+        """A non-finite reading must be dropped, not merged.
+
+        Merged once it would be carried forward by previous_status on every
+        later cycle where EM.GetStatus fails or is skipped, so the entity would
+        stay poisoned long after the glitch that produced it.
+        """
+        result = merge_device_status(
+            em_status_data={"em_total_power": poison, "ct_connected": True},
+            previous_status={"em_total_power": 120},
+        )
+
+        assert result["em_total_power"] == 120
+        assert result["ct_connected"] is True
+
+    @pytest.mark.parametrize(
+        "poison", [float("nan"), float("inf"), float("-inf")]
+    )
+    def test_non_finite_values_are_not_carried_forward(
+        self, poison: float
+    ) -> None:
+        """A poisoned previous_status must not survive into the next cycle."""
+        result = merge_device_status(
+            em_status_data=None,
+            previous_status={"em_total_power": poison, "battery_soc": 55},
+        )
+
+        assert result["em_total_power"] is None
+        assert result["battery_soc"] == 55
+
     def test_fresh_data_overrides_previous_status(self):
         """Test that fresh data always overrides previous_status values."""
         previous_status = {

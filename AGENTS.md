@@ -182,14 +182,24 @@ The `pymarstek/validators.py` module provides a **validation layer** that protec
 | Passive duration | Maximum 24 hours | `MAX_PASSIVE_DURATION = 86400` |
 | Schedule slots | Venus A/C/D/E: 0-9; Venus E mini: 0-5 | Profile `max_manual_schedule_slot`; validator still lists `MAX_TIME_SLOTS = 10` as the schema ceiling |
 | Mode configs | Required fields checked per mode (manual_cfg, passive_cfg) | |
+| Wire numbers | Every number in a decoded payload must be a finite JSON number | `json_loads_strict()` |
 
 ### Where validation happens
 
 1. **`command_builder.build_command()`** – validates before building JSON
 2. **`MarstekUDPClient.send_request()`** – validates before UDP transmission
 3. **`MarstekUDPClient.send_broadcast_request()`** – same protection for broadcasts
+4. **`json_loads_strict()`** – decodes every inbound datagram (`udp.py`, `discovery.py`)
 
 Invalid requests raise `ValidationError` with a clear message indicating the field.
+
+Inbound payloads are decoded with `json_loads_strict()` instead of `json.loads()`.
+Python's decoder accepts the non-standard `NaN`/`Infinity`/`-Infinity` literals and
+overflows `1e400` to `inf`, so one glitched datagram could otherwise write a
+non-finite value into coordinator state that no later poll overwrites. A datagram
+carrying such a number raises `json.JSONDecodeError` and is ignored, exactly like a
+syntactically broken one, and the device is retried. `merge_device_status()` drops
+non-finite values a second time, for values arithmetic inside the parsers produces.
 
 ### Rate limiting
 

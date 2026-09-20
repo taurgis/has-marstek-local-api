@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from ..const import normalize_operating_mode
@@ -371,9 +372,20 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _is_unknown_value(value: Any) -> bool:
-    """Check if value is an 'unknown' placeholder."""
-    return isinstance(value, str) and value.lower() == "unknown"
+def _is_unusable_value(value: Any) -> bool:
+    """Check whether a value must not be merged into device status.
+
+    Two shapes qualify. Firmware sends the literal string ``"unknown"`` for a
+    field it cannot read yet. And a non-finite float — decoded from a glitched
+    datagram, or produced by arithmetic over one — would be carried forward by
+    ``previous_status`` on every later cycle where its read fails or is
+    skipped, so it would outlive the glitch that created it.
+    """
+    if isinstance(value, str):
+        return value.lower() == "unknown"
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    return False
 
 
 def _recalculate_battery_from_pv(
@@ -613,7 +625,7 @@ def merge_device_status(
 
     def _apply_updates(updates: dict[str, Any]) -> None:
         for key, value in updates.items():
-            if value is None or _is_unknown_value(value):
+            if value is None or _is_unusable_value(value):
                 continue
             status[key] = value
 
@@ -628,13 +640,13 @@ def merge_device_status(
             )
             if (
                 value is not None
-                and not _is_unknown_value(value)
+                and not _is_unusable_value(value)
                 and key in status
                 and status[key] is None
             ) or (
                 extra_key
                 and value is not None
-                and not _is_unknown_value(value)
+                and not _is_unusable_value(value)
             ):
                 status[key] = value
 
@@ -656,7 +668,7 @@ def merge_device_status(
         for key, value in es_mode_data.items():
             if key not in _GETMODE_EM_FALLBACK_KEYS:
                 continue
-            if value is None or _is_unknown_value(value):
+            if value is None or _is_unusable_value(value):
                 continue
             if status.get(key) is None:
                 status[key] = value
