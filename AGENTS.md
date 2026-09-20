@@ -72,7 +72,7 @@ If you add/modify device control:
 | Sensors | `sensor.py` | EntityDescription pattern; coordinator-backed; stable unique IDs; `suggested_display_precision` |
 | Binary sensors | `binary_sensor.py` | EntityDescription pattern; CT connection status |
 | Number | `number.py` | Firmware-gated SYS DOD; RestoreNumber; writes pause polling |
-| SYS entity base | `helpers/sys_entity.py` | Shared wiring for the optimistic number/switch SYS entities |
+| Entity bases | `entity.py` | `MarstekEntity` (identity/device wiring for every platform) and `MarstekSysEntity` (optimistic number/switch SYS entities) |
 | SYS writes | `helpers/sys_write.py` | Builds the write, requires `set_result`, maps errors to translations |
 | Switch | `switch.py` | Firmware-gated SYS BLE/LED; RestoreEntity; writes pause polling |
 | Select entities | `select.py` | Operating mode selection (Auto/AI/Manual/Passive; UPS when the profile allows it) |

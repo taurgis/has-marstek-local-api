@@ -69,7 +69,7 @@ def enable_strict_mode(enabled: bool = True) -> None:
     """
     global _strict_mode
     _strict_mode = enabled
-    _LOGGER.info("Strict validation mode %s", "enabled" if enabled else "disabled")
+    _LOGGER.debug("Strict validation mode %s", "enabled" if enabled else "disabled")
 
 
 def is_strict_mode() -> bool:

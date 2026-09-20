@@ -294,7 +294,7 @@ async def async_call_action_from_config(
             request_timeout=request_timeout,
             attempt_idx=attempt_idx,
         ):
-            _LOGGER.info(
+            _LOGGER.debug(
                 "ES.SetMode action '%s' confirmed after attempt %d/%d for device %s",
                 action_type,
                 attempt_idx,

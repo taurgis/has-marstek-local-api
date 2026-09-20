@@ -19,6 +19,5 @@ Small, focused modules used by the Marstek integration. Keep entity and flow fil
 - service_helpers.py: Service schemas and schedule helpers.
 - service_retry.py: Service mode command retries with pause and error mapping.
 - switch_descriptions.py: Switch EntityDescription definitions for SYS BLE/LED.
-- sys_entity.py: Shared base for the optimistic, write-only SYS entities.
 - sys_write.py: SYS write transport plus set_result acknowledgement.
 - udp_clients.py: Per-bind-port `MarstekUDPClient` pool stored on `hass.data`.

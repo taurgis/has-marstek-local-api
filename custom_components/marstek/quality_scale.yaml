@@ -2,15 +2,31 @@ rules:
   # Bronze
   action-setup: done
   appropriate-polling: done
-  brands: done
-  common-modules: done
+  brands:
+    status: exempt
+    comment: >-
+      home-assistant/brands serves Core's integration catalogue. A HACS-only
+      custom integration has no entry there; the repository carries its own
+      logo instead.
+  common-modules:
+    status: done
+    comment: >-
+      Coordinator in coordinator.py, shared entity wiring in entity.py
+      (MarstekEntity, plus MarstekSysEntity for the write-only SYS platforms).
   config-flow-test-coverage: done
   config-flow: done
-  dependency-transparency: done
+  dependency-transparency:
+    status: exempt
+    comment: >-
+      No third-party runtime dependencies. The Open API client is vendored at
+      custom_components/marstek/pymarstek and manifest.json requirements is
+      empty, so there is no PyPI package to hold to the rule.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done
-  docs-removal-instructions: done
+  docs-removal-instructions:
+    status: done
+    comment: README "Removing the integration" covers per-entry deletion, HACS/manual uninstall, and what happens to the device's own OPEN API setting.
   entity-event-setup:
     status: exempt
     comment: Integration does not emit events
@@ -38,10 +54,17 @@ rules:
   reauthentication-flow:
     status: exempt
     comment: Integration uses UDP with no authentication; reauth flow handles IP changes only
-  test-coverage: done
+  test-coverage:
+    status: done
+    comment: CI fails below 95% (--cov-fail-under=95).
 
   # Gold
-  devices: done
+  devices:
+    status: done
+    comment: >-
+      DeviceInfo carries identifiers, the Wi-Fi/Bluetooth MAC connections,
+      manufacturer, model, serial number and firmware version, so the device
+      matches what DHCP and router integrations see.
   diagnostics: done
   discovery-update-info:
     status: done
@@ -50,11 +73,21 @@ rules:
     status: done
     comment: Devices are discoverable via DHCP and integration discovery confirmation flow
   docs-data-update: done
-  docs-examples: done
-  docs-known-limitations: done
+  docs-examples:
+    status: done
+    comment: >-
+      docs/services.md carries copy-paste automation YAML for every action,
+      with screenshots of the visual editor. No blueprints are published yet;
+      the Core rule's blueprint repository is not open to custom integrations.
+  docs-known-limitations:
+    status: done
+    comment: README "Known limitations" covers the protocol constraints, the write-only SYS settings, and the per-firmware capability gaps.
   docs-supported-devices: done
   docs-supported-functions: done
   docs-troubleshooting: done
+  docs-use-cases:
+    status: done
+    comment: README "Use cases" covers tariff arbitrage, closed-loop power control, solar self-consumption, peak avoidance and monitoring.
   dynamic-devices:
     status: exempt
     comment: Integration represents single device per config entry; users add multiple devices via separate config entries
@@ -78,10 +111,18 @@ rules:
     comment: All exceptions use translation_domain, translation_key, and translation_placeholders
   icon-translations:
     status: done
-    comment: Created icons.json with icons for sensor, binary_sensor, select, number, and switch entities
+    comment: >-
+      icons.json covers every sensor, binary_sensor, select, number and switch
+      translation key that does not already inherit an icon from its device
+      class, plus one per action.
   reconfiguration-flow: done
   repair-issues: done
-  stale-devices: done
+  stale-devices:
+    status: done
+    comment: >-
+      async_remove_entry drops the device when its last entry goes away, and
+      async_remove_config_entry_device lets a user delete a device the entry no
+      longer represents (for example after a mainboard swap changes the MAC).
 
   # Platinum
   async-dependency: done

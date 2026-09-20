@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.number import RestoreNumber
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MarstekConfigEntry
 from .const import DOMAIN
 from .coordinator import MarstekDataUpdateCoordinator
+from .entity import MarstekSysEntity
 from .helpers.number_descriptions import (
     NUMBER_ENTITIES,
     MarstekNumberEntityDescription,
 )
-from .helpers.sys_entity import MarstekSysEntity
 from .pymarstek import MarstekUDPClient
-
-_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 
@@ -68,16 +65,12 @@ def _restored_dod_value(
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Marstek number entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
     udp_client = coordinator.udp_client
-    if udp_client is None:
-        _LOGGER.error("UDP client not found for number entity setup")
-        return
-
     profile = coordinator.profile
     async_add_entities(
         MarstekSysNumber(
