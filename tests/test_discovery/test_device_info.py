@@ -736,3 +736,62 @@ class TestUnusableClaimedIp:
 
         assert info is not None
         assert info["ip"] == "192.168.9.92"
+
+
+class TestOversizedReply:
+    """A reply longer than the read buffer is truncated and lost by the kernel."""
+
+    @pytest.mark.asyncio
+    async def test_read_buffer_fits_any_datagram_a_device_can_send(self) -> None:
+        """A 6 KB schedule reply used to decode as broken JSON and time out."""
+        from custom_components.marstek.discovery import get_device_info
+
+        slots = [
+            {"id": index, "start_time": 0, "end_time": 1440, "power": -2500,
+             "label": "x" * 380}
+            for index in range(12)
+        ]
+        device_response = {
+            "id": 0,
+            "result": {
+                "device": "VenusE 3.0",
+                "ver": 150,
+                "ip": "192.168.1.100",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+                "manual_cfg": slots,
+            },
+        }
+        payload = json.dumps(device_response).encode()
+        assert len(payload) > 4096
+
+        requested_sizes: list[int] = []
+        call_count = 0
+
+        async def mock_recvfrom(_sock: Any, size: int) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            requested_sizes.append(size)
+            call_count += 1
+            if call_count == 1:
+                return (payload, ("192.168.1.100", 30000))
+            raise TimeoutError
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=MagicMock()):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.run_in_executor = _run_in_executor
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                result = await get_device_info("192.168.1.100", timeout=0.5)
+
+        assert result is not None
+        assert result["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+        assert all(size >= len(payload) for size in requested_sizes)

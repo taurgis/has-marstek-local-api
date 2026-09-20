@@ -26,6 +26,7 @@ from .const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
     DEFAULT_UDP_PORT,
+    MAX_UDP_DATAGRAM_BYTES,
 )
 from .data_parser import parse_es_mode_response
 from .device_status import fetch_device_status
@@ -789,7 +790,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         cleanup_counter = 0
         while True:
             try:
-                data, addr = await loop.sock_recvfrom(self._socket, 4096)
+                data, addr = await loop.sock_recvfrom(self._socket, MAX_UDP_DATAGRAM_BYTES)
                 if not data:
                     _LOGGER.debug(
                         "Ignoring empty UDP datagram from %s:%d",

@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
 from .pymarstek import ValidationError, discover, json_loads_strict
+from .pymarstek.const import MAX_UDP_DATAGRAM_BYTES
 from .pymarstek.device_info import build_device_info, non_empty_str
 from .pymarstek.network import (
     async_resolve_host_ipv4,
@@ -297,7 +298,7 @@ async def discover_devices(
     # so a datagram delivered in that window was dropped -- UDP gives no
     # redelivery (RFC 768). ``asyncio.wait`` does not cancel.
     receivers: dict[asyncio.Task[Any], tuple[int, socket.socket]] = {
-        asyncio.ensure_future(loop.sock_recvfrom(sock, 4096)): (scan_port, sock)
+        asyncio.ensure_future(loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES)): (scan_port, sock)
         for scan_port, sock in sockets
     }
     deadline = start_time + timeout
@@ -330,10 +331,11 @@ async def discover_devices(
 
                 # Re-arm before parsing so a burst of replies is not missed
                 # while this one is decoded.
-                receivers[asyncio.ensure_future(loop.sock_recvfrom(sock, 4096))] = (
-                    scan_port,
-                    sock,
-                )
+                receivers[
+                    asyncio.ensure_future(
+                        loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES)
+                    )
+                ] = (scan_port, sock)
 
                 sender_ip: str = addr[0]
                 sender_port = int(addr[1])
@@ -506,7 +508,7 @@ async def get_device_info(
         while (loop.time() - start_time) < timeout:
             try:
                 data, addr = await asyncio.wait_for(
-                    loop.sock_recvfrom(sock, 4096),
+                    loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES),
                     timeout=min(0.5, timeout - (loop.time() - start_time)),
                 )
 
