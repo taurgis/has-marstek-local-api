@@ -10,34 +10,11 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.data_entry_flow import AbortFlow, section
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 
-from .const import (
-    CONF_ACTION_CHARGE_POWER,
-    CONF_ACTION_DISCHARGE_POWER,
-    CONF_FAILURE_THRESHOLD,
-    CONF_PARALLEL_API_REQUESTS,
-    CONF_POLL_INTERVAL_FAST,
-    CONF_POLL_INTERVAL_MEDIUM,
-    CONF_POLL_INTERVAL_SLOW,
-    CONF_REQUEST_DELAY,
-    CONF_REQUEST_TIMEOUT,
-    CONF_SOCKET_LIMIT,
-    DEFAULT_ACTION_CHARGE_POWER,
-    DEFAULT_ACTION_DISCHARGE_POWER,
-    DEFAULT_FAILURE_THRESHOLD,
-    DEFAULT_PARALLEL_API_REQUESTS,
-    DEFAULT_POLL_INTERVAL_FAST,
-    DEFAULT_POLL_INTERVAL_MEDIUM,
-    DEFAULT_POLL_INTERVAL_SLOW,
-    DEFAULT_REQUEST_DELAY,
-    DEFAULT_REQUEST_TIMEOUT,
-    DEFAULT_UDP_PORT,
-    DOMAIN,
-    device_default_socket_limit,
-)
+from .const import DEFAULT_UDP_PORT, DOMAIN
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
 from .firmware_profile import is_unsupported_venus_e2
@@ -54,10 +31,8 @@ from .helpers.flow_helpers import (
     split_devices_by_configured,
 )
 from .helpers.flow_schemas import (
+    build_host_port_schema,
     build_manual_entry_schema,
-    build_network_schema,
-    build_polling_schema,
-    build_power_schema,
 )
 from .helpers.ports import discovery_scan_ports
 from .helpers.udp_clients import (
@@ -67,6 +42,7 @@ from .helpers.udp_clients import (
     get_udp_client,
     transfer_reset_prone_mark_for_entry,
 )
+from .options_flow import MarstekOptionsFlow
 
 
 class DhcpServiceInfoLike(Protocol):
@@ -442,13 +418,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=form_host): cv.string,
-                    vol.Required(CONF_PORT, default=form_port): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=65535)
-                    ),
-                }
+            data_schema=build_host_port_schema(
+                default_host=form_host, default_port=form_port
             ),
             errors=errors,
             description_placeholders={"host": self._discovered_ip},
@@ -531,13 +502,8 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure_confirm",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=form_host): cv.string,
-                    vol.Required(CONF_PORT, default=form_port): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=65535)
-                    ),
-                }
+            data_schema=build_host_port_schema(
+                default_host=form_host, default_port=form_port
             ),
             errors=errors,
             description_placeholders={
@@ -710,92 +676,3 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Return the options flow."""
         return MarstekOptionsFlow()
 
-
-class MarstekOptionsFlow(config_entries.OptionsFlow):
-    """Handle Marstek options."""
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Manage the Marstek options."""
-        if user_input is not None:
-            # Flatten section data for storage
-            flat_data: dict[str, Any] = {}
-            for section_data in user_input.values():
-                if isinstance(section_data, dict):
-                    flat_data.update(section_data)
-            return self.async_create_entry(title="", data=flat_data)
-
-        # Get current values from options, falling back to defaults
-        current_fast = self.config_entry.options.get(
-            CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST
-        )
-        current_medium = self.config_entry.options.get(
-            CONF_POLL_INTERVAL_MEDIUM, DEFAULT_POLL_INTERVAL_MEDIUM
-        )
-        current_slow = self.config_entry.options.get(
-            CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
-        )
-        current_parallel_requests = self.config_entry.options.get(
-            CONF_PARALLEL_API_REQUESTS,
-            DEFAULT_PARALLEL_API_REQUESTS,
-        )
-        current_delay = self.config_entry.options.get(
-            CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
-        )
-        current_timeout = self.config_entry.options.get(
-            CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-        )
-        current_failure_threshold = self.config_entry.options.get(
-            CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD
-        )
-        current_charge_power = self.config_entry.options.get(
-            CONF_ACTION_CHARGE_POWER, DEFAULT_ACTION_CHARGE_POWER
-        )
-        current_discharge_power = self.config_entry.options.get(
-            CONF_ACTION_DISCHARGE_POWER, DEFAULT_ACTION_DISCHARGE_POWER
-        )
-        current_socket_limit = self.config_entry.options.get(
-            CONF_SOCKET_LIMIT,
-            device_default_socket_limit(self.config_entry.data.get("device_type")),
-        )
-
-        # Build schema with collapsible sections for better UX
-        polling_schema = build_polling_schema(
-            current_fast=current_fast,
-            current_medium=current_medium,
-            current_slow=current_slow,
-        )
-
-        network_schema = build_network_schema(
-            current_parallel_requests=current_parallel_requests,
-            current_delay=current_delay,
-            current_timeout=current_timeout,
-            current_failure_threshold=current_failure_threshold,
-        )
-
-        power_schema = build_power_schema(
-            current_charge_power=current_charge_power,
-            current_discharge_power=current_discharge_power,
-            current_socket_limit=current_socket_limit,
-        )
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("polling_settings"): section(
-                        polling_schema,
-                        {"collapsed": False},
-                    ),
-                    vol.Required("network_settings"): section(
-                        network_schema,
-                        {"collapsed": True},
-                    ),
-                    vol.Required("power_settings"): section(
-                        power_schema,
-                        {"collapsed": True},
-                    ),
-                }
-            ),
-        )

@@ -1125,37 +1125,6 @@ class TestPollingControl:
         assert not udp_client.is_polling_paused(device_ip)
 
 
-class TestSendRequestWithPollingControl:
-    """Tests for send_request_with_polling_control."""
-
-    async def test_pauses_during_request(self) -> None:
-        """Test that polling is paused during request."""
-        client = MarstekUDPClient()
-        client._socket = MagicMock()
-        client._loop = MagicMock()
-        client._loop.time.return_value = 0
-        
-        paused_states: list[bool] = []
-        
-        async def mock_send(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            paused_states.append(client.is_polling_paused("192.168.1.100"))
-            raise TimeoutError("Test timeout")
-        
-        with patch.object(client, "send_request", side_effect=mock_send):
-            with pytest.raises(TimeoutError):
-                await client.send_request_with_polling_control(
-                    '{"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}',
-                    "192.168.1.100",
-                    30000,
-                    validate=False,
-                )
-        
-        # Was paused during request
-        assert paused_states == [True]
-        # Now resumed
-        assert not client.is_polling_paused("192.168.1.100")
-
-
 class TestPollCycleLease:
     """Tests for coordinator poll-cycle leases used by pause_polling."""
 

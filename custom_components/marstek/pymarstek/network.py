@@ -7,7 +7,7 @@ import ipaddress
 import logging
 import re
 import socket
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from contextlib import suppress
 from typing import Any, Protocol
 
@@ -41,15 +41,16 @@ def mac_from_openapi_src(src: Any) -> str:
     return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
 
 
-async def async_resolve_host_ipv4(host: str) -> frozenset[str]:
+async def async_resolve_host_ipv4(host: str) -> tuple[str, ...]:
     """Resolve *host* to its IPv4 addresses without blocking the event loop.
 
     A numeric address resolves to itself. Anything else goes through the
     loop's threaded resolver, so callers can resolve once up front instead of
-    paying a DNS lookup per received datagram.
+    paying a DNS lookup per received datagram. Resolver order is preserved so
+    a caller that needs a single address can take the first.
     """
     try:
-        return frozenset({str(ipaddress.ip_address(host))})
+        return (str(ipaddress.ip_address(host)),)
     except ValueError:
         pass
     try:
@@ -60,12 +61,12 @@ async def async_resolve_host_ipv4(host: str) -> frozenset[str]:
             type=socket.SOCK_DGRAM,
         )
     except OSError:
-        return frozenset()
-    return frozenset(str(info[4][0]) for info in infos)
+        return ()
+    return tuple(str(info[4][0]) for info in infos)
 
 
 def udp_source_matches_host(
-    source_ip: str, host: str, *, resolved: frozenset[str] = frozenset()
+    source_ip: str, host: str, *, resolved: Collection[str] = ()
 ) -> bool:
     """Return True when a UDP sender is the host we queried.
 

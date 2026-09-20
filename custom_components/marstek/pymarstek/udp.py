@@ -7,7 +7,6 @@ from malformed requests. See validators.py for validation rules.
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import logging
 import socket
@@ -34,6 +33,7 @@ from .device_info import build_device_info, non_empty_str
 from .device_status import fetch_device_status
 from .network import (
     PsutilModule,
+    async_resolve_host_ipv4,
     create_udp_socket,
     get_broadcast_addresses,
 )
@@ -107,22 +107,6 @@ LIMITED_BROADCAST_ADDRESS = "255.255.255.255"
 _ES_MODE_INSTANCE_IDS: tuple[int, ...] = (0, 1)
 
 
-def _new_command_stats() -> dict[str, Any]:
-    """Create a new command stats bucket."""
-    return {
-        "total_attempts": 0,
-        "total_success": 0,
-        "total_timeouts": 0,
-        "total_failures": 0,
-        "total_retransmits": 0,
-        "last_success": None,
-        "last_latency": None,
-        "last_timeout": None,
-        "last_error": None,
-        "last_updated": None,
-    }
-
-
 
 class MarstekUDPClient:
     """UDP client for communicating with Marstek devices.
@@ -182,10 +166,6 @@ class MarstekUDPClient:
         """Return the local UDP port this client is bound to."""
         return self._bind_port
 
-    def get_command_stats(self) -> dict[str, dict[str, Any]]:
-        """Return snapshot of command stats for all methods."""
-        return self._command_stats.snapshot()
-
     def get_command_stats_for_ip(self, device_ip: str) -> dict[str, dict[str, Any]]:
         """Return snapshot of command stats for a specific device IP."""
         return self._command_stats.snapshot_for_ip(device_ip)
@@ -210,27 +190,14 @@ class MarstekUDPClient:
         return asyncio.get_running_loop()
 
     async def _resolve_unicast_ip(self, host: str) -> str:
-        """Return the IPv4 address firmware will source replies from."""
-        try:
-            ipaddress.ip_address(host)
-            return host
-        except ValueError:
-            pass
-        try:
-            infos = await self._event_loop().getaddrinfo(
-                host,
-                None,
-                family=socket.AF_INET,
-                type=socket.SOCK_DGRAM,
-            )
-        except OSError:
-            return host
-        if not infos:
-            return host
-        sockaddr = infos[0][4]
-        if sockaddr:
-            return str(sockaddr[0])
-        return host
+        """Return the IPv4 address firmware will source replies from.
+
+        Replies are matched on the sender's address, so a hostname has to be
+        resolved before the waiter is keyed. An unresolvable name falls back
+        to the host string and the exchange simply times out.
+        """
+        resolved = await async_resolve_host_ipv4(host)
+        return resolved[0] if resolved else host
 
     async def _enter_unicast_exchange(self) -> None:
         """Wait until discovery listeners are running, then count this exchange.
@@ -995,38 +962,6 @@ class MarstekUDPClient:
     def is_polling_paused(self, device_ip: str) -> bool:
         """Return True while a writer holds polling paused for a device."""
         return self._poll_gate.is_paused(device_ip)
-
-    async def send_request_with_polling_control(
-        self,
-        message: str,
-        target_ip: str,
-        target_port: int,
-        timeout: float = 5.0,
-        *,
-        validate: bool = True,
-    ) -> dict[str, Any]:
-        """Send request while pausing polling to avoid concurrent traffic.
-
-        Args:
-            message: JSON command string to send
-            target_ip: Target device IP address
-            target_port: Target device port
-            timeout: Response timeout in seconds
-            validate: If True, validate message before sending (default True)
-
-        Returns:
-            Response dictionary from device
-
-        Raises:
-            ValidationError: If message validation fails and validate=True
-        """
-        await self.pause_polling(target_ip)
-        try:
-            return await self.send_request(
-                message, target_ip, target_port, timeout, quiet_on_timeout=True, validate=validate
-            )
-        finally:
-            await self.resume_polling(target_ip)
 
     def _es_mode_instance_order(self, device_ip: str) -> tuple[int, ...]:
         """Return ES.GetMode instance ids, cached winner first."""

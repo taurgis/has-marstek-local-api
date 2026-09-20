@@ -25,15 +25,26 @@ from ..const import (
     CONF_SOCKET_LIMIT,
 )
 
+# Voluptuous validators are stateless, so one instance serves every schema.
+_PORT_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
+
 
 def build_manual_entry_schema(default_port: int) -> vol.Schema:
     """Build the manual entry schema."""
     return vol.Schema(
         {
             vol.Required(CONF_HOST): cv.string,
-            vol.Optional(CONF_PORT, default=default_port): vol.All(
-                vol.Coerce(int), vol.Range(min=1, max=65535)
-            ),
+            vol.Optional(CONF_PORT, default=default_port): _PORT_VALIDATOR,
+        }
+    )
+
+
+def build_host_port_schema(*, default_host: str, default_port: int) -> vol.Schema:
+    """Build the pre-filled host/port schema for confirm and reconfigure."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_HOST, default=default_host): cv.string,
+            vol.Required(CONF_PORT, default=default_port): _PORT_VALIDATOR,
         }
     )
 
