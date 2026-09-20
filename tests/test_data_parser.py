@@ -1614,3 +1614,53 @@ class TestFirmwareProfileDecoding:
         assert merged["total_grid_input_energy"] == 1167238
         assert merged["bat_temp"] == 31.0
         assert merged["bat_soc_detailed"] == 51
+
+
+class TestParsersToleratePayloadsFirmwareShouldNotSend:
+    """Every parser must return defaults instead of raising.
+
+    The three call sites already refuse a reply whose ``result`` is missing or
+    not an object, but that contract belongs with the parsers: a payload shape
+    nobody anticipated must degrade a single reading, not take down the poll.
+    """
+
+    PARSERS = (
+        parse_es_mode_response,
+        parse_es_status_response,
+        parse_pv_status_response,
+        parse_wifi_status_response,
+        parse_em_status_response,
+        parse_bat_status_response,
+    )
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            {},
+            {"id": 1},
+            {"id": 1, "result": None},
+            {"id": 1, "result": "OK"},
+            {"id": 1, "result": []},
+            {"id": 1, "result": 0},
+            {"id": 1, "error": {"code": -32601, "message": "Method not found"}},
+            [],
+            "OK",
+            None,
+        ],
+    )
+    def test_no_parser_raises(self, response: object) -> None:
+        """A malformed payload yields defaults, never an exception."""
+        for parser in self.PARSERS:
+            parsed = parser(response)  # type: ignore[arg-type]
+            assert isinstance(parsed, dict)
+            assert all(value is None for value in parsed.values())
+
+    def test_integer_too_large_to_scale_is_dropped(self) -> None:
+        """A wire integer beyond float range must not raise OverflowError."""
+        parsed = parse_em_status_response(
+            {"id": 1, "result": {"input_energy": 10**400, "total_power": 5}},
+            resolve_firmware_profile("VenusE 3.0", 150),
+        )
+
+        assert parsed["em_input_energy"] is None
+        assert parsed["em_total_power"] == 5

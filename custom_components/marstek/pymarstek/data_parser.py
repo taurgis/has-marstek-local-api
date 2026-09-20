@@ -36,11 +36,35 @@ def _get_logger() -> logging.Logger:
     return _LOGGER
 
 
+def _result_fields(response: Any) -> dict[str, Any]:
+    """Return the JSON-RPC ``result`` object, or an empty one.
+
+    Callers already refuse a reply whose ``result`` is missing or not an
+    object, but firmware is inconsistent enough that the parsers must not
+    depend on that check living somewhere else: a ``"result": "OK"`` would
+    otherwise raise AttributeError deep inside a poll.
+    """
+    if not isinstance(response, dict):
+        return {}
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return {}
+    return result
+
+
 def _scale_numeric(value: Any, scale: float) -> Any:
-    """Scale a numeric wire value; leave missing and non-numeric values unchanged."""
-    if isinstance(value, (int, float)):
+    """Scale a numeric wire value; leave missing and non-numeric values unchanged.
+
+    An integer too large to convert to a float is dropped rather than raised:
+    the wire decoder already refuses one, and a parser that raises would take
+    the whole poll cycle down with it.
+    """
+    if not isinstance(value, (int, float)):
+        return value
+    try:
         return value * scale
-    return value
+    except OverflowError:
+        return None
 
 
 def _add_scaled_meter_energy(
@@ -73,7 +97,7 @@ def parse_es_mode_response(
     Returns:
         Dictionary with parsed mode and optional fallback meter data
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     battery_soc = result.get("bat_soc")
@@ -130,7 +154,7 @@ def parse_es_status_response(
     Returns:
         Dictionary with parsed battery data (battery_power, battery_status, etc.)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
@@ -232,7 +256,7 @@ def parse_pv_status_response(
     Returns:
         Dictionary with parsed PV channel data (pv1-pv4 or single pv_)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     pv_data: dict[str, Any] = {}
@@ -302,7 +326,7 @@ def parse_wifi_status_response(response: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary with WiFi data (wifi_rssi, wifi_ssid, etc.)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
 
     return {
         "wifi_rssi": result.get("rssi"),  # Signal strength in dBm
@@ -330,7 +354,7 @@ def parse_em_status_response(
     Returns:
         Dictionary with energy meter data (ct_state, phase powers, total_power)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
     active_profile = profile or _LEGACY_PROFILE
 
     ct_state_raw = result.get("ct_state")
@@ -360,7 +384,7 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary with battery data (bat_temp, charge flags, capacity)
     """
-    result = response.get("result", {})
+    result = _result_fields(response)
 
     return {
         "bat_temp": result.get("bat_temp"),  # Battery temperature [°C]
