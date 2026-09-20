@@ -10,8 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MarstekConfigEntry
 from .const import (
@@ -23,7 +22,7 @@ from .const import (
     OPERATING_MODES,
 )
 from .coordinator import MarstekDataUpdateCoordinator
-from .device_info import build_device_info, get_device_identifier
+from .entity import MarstekEntity
 from .helpers.command_retry import send_command_with_retries
 from .helpers.polling import polling_paused
 from .helpers.select_descriptions import (
@@ -41,16 +40,12 @@ PARALLEL_UPDATES = 1
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Marstek select entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
     udp_client = coordinator.udp_client
-    if udp_client is None:
-        _LOGGER.error("UDP client not found for select entity setup")
-        return
-
     async_add_entities(
         MarstekOperatingModeSelect(
             coordinator=coordinator,
@@ -63,10 +58,9 @@ async def async_setup_entry(
     )
 
 
-class MarstekOperatingModeSelect(CoordinatorEntity[MarstekDataUpdateCoordinator], SelectEntity):
+class MarstekOperatingModeSelect(MarstekEntity, SelectEntity):
     """Select entity for Marstek operating mode."""
 
-    _attr_has_entity_name = True
     entity_description: MarstekSelectEntityDescription
 
     def __init__(
@@ -78,15 +72,9 @@ class MarstekOperatingModeSelect(CoordinatorEntity[MarstekDataUpdateCoordinator]
         config_entry: ConfigEntry,
     ) -> None:
         """Initialize the select entity."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._device_info_dict = device_info
+        super().__init__(coordinator, device_info, description)
         self._udp_client = udp_client
         self._config_entry = config_entry
-
-        self._device_identifier = get_device_identifier(device_info)
-        self._attr_unique_id = f"{self._device_identifier}_{description.key}"
-        self._attr_device_info = build_device_info(device_info)
 
     @property
     def options(self) -> list[str]:

@@ -11,6 +11,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.marstek import async_remove_config_entry_device
 from custom_components.marstek.const import (
     DOMAIN,
 )
@@ -207,3 +208,61 @@ async def test_remove_entry_cleans_stale_device(
     await hass.async_block_till_done()
 
     assert async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac)) is None
+
+
+async def test_remove_config_entry_device_refuses_live_device(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """The device the entry currently talks to must not be deletable."""
+    mock_config_entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    device_registry = dr.async_get(hass)
+    formatted_mac = format_mac(mock_config_entry.data["ble_mac"])
+    device = async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac))
+    assert device is not None
+
+    assert await async_remove_config_entry_device(hass, mock_config_entry, device) is False
+
+
+async def test_remove_config_entry_device_allows_stale_device(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A device the entry no longer represents should be deletable from the UI."""
+    mock_config_entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    device_registry = dr.async_get(hass)
+    stale_device = device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, "00:11:22:33:44:55")},
+    )
+
+    assert await async_remove_config_entry_device(hass, mock_config_entry, stale_device) is True
+
+
+async def test_remove_config_entry_device_allows_all_without_identity(
+    hass: HomeAssistant,
+) -> None:
+    """An entry with no usable MAC cannot claim any device, so deletion is allowed."""
+    entry = MockConfigEntry(domain=DOMAIN, data={"host": "1.2.3.4"})
+    entry.add_to_hass(hass)
+
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "aa:bb:cc:dd:ee:ff")},
+    )
+
+    assert await async_remove_config_entry_device(hass, entry, device) is True

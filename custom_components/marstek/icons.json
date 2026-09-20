@@ -48,6 +48,18 @@
       "wifi_mac": {
         "default": "mdi:wifi"
       },
+      "wifi_ip_address": {
+        "default": "mdi:ip-network"
+      },
+      "wifi_gateway": {
+        "default": "mdi:router-network"
+      },
+      "wifi_subnet_mask": {
+        "default": "mdi:ip-network-outline"
+      },
+      "wifi_dns": {
+        "default": "mdi:dns"
+      },
       "mac": {
         "default": "mdi:network"
       },

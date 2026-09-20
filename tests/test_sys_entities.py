@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -32,7 +30,6 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.marstek.const import DOMAIN, PLATFORMS
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
 from custom_components.marstek.helpers.sys_write import sys_write_target
-from custom_components.marstek.number import async_setup_entry as async_setup_number
 from custom_components.marstek.pymarstek.const import (
     BLE_ADV_DISABLED,
     BLE_ADV_ENABLED,
@@ -46,7 +43,6 @@ from custom_components.marstek.pymarstek.const import (
     LED_ON,
 )
 from custom_components.marstek.pymarstek.validators import VALID_METHODS, ValidationError
-from custom_components.marstek.switch import async_setup_entry as async_setup_switch
 from tests.conftest import create_mock_client, patch_marstek_integration
 
 SYS_NUMBER_KEY = "depth_of_discharge"
@@ -787,26 +783,3 @@ async def test_sys_entity_properties_do_not_perform_io(
             assert hass.states.get(entity_id) is not None
         assert client.send_request.call_count == send_count
         assert client.get_device_status.call_count == status_count
-
-
-async def test_number_and_switch_setup_missing_udp_client(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
-    """SYS platforms skip setup when the UDP client is missing."""
-    hass.data.pop(DOMAIN, None)
-    entry = _config_entry()
-    entry.add_to_hass(hass)
-    coordinator = MagicMock(profile=resolve_firmware_profile("VenusE 3.0", 150))
-    coordinator.udp_client = None
-    entry.runtime_data = SimpleNamespace(
-        coordinator=coordinator,
-        device_info={**entry.data, "ip": entry.data["host"]},
-    )
-    caplog.set_level(logging.ERROR)
-    async_add_entities = MagicMock()
-
-    await async_setup_number(hass, entry, async_add_entities)
-    await async_setup_switch(hass, entry, async_add_entities)
-
-    assert "UDP client not found" in caplog.text
-    async_add_entities.assert_not_called()

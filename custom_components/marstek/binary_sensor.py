@@ -7,13 +7,12 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MarstekConfigEntry
 from .const import BAT_STATUS_KEYS
 from .coordinator import MarstekDataUpdateCoordinator
-from .device_info import build_device_info, get_device_identifier
+from .entity import MarstekEntity
 from .helpers.binary_sensor_descriptions import (
     BINARY_SENSORS,
     MarstekBinarySensorEntityDescription,
@@ -25,10 +24,9 @@ from .helpers.binary_sensor_descriptions import (
 PARALLEL_UPDATES = 0
 
 
-class MarstekBinarySensor(CoordinatorEntity[MarstekDataUpdateCoordinator], BinarySensorEntity):
+class MarstekBinarySensor(MarstekEntity, BinarySensorEntity):
     """Representation of a Marstek binary sensor."""
 
-    _attr_has_entity_name = True
     entity_description: MarstekBinarySensorEntityDescription
 
     def __init__(
@@ -39,14 +37,8 @@ class MarstekBinarySensor(CoordinatorEntity[MarstekDataUpdateCoordinator], Binar
         config_entry: ConfigEntry | None = None,
     ) -> None:
         """Initialize the binary sensor."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._device_info = device_info
+        super().__init__(coordinator, device_info, description)
         self._config_entry = config_entry
-
-        device_identifier = get_device_identifier(device_info)
-        self._attr_unique_id = f"{device_identifier}_{description.key}"
-        self._attr_device_info = build_device_info(device_info)
 
     @property
     def is_on(self) -> bool | None:
@@ -59,7 +51,7 @@ class MarstekBinarySensor(CoordinatorEntity[MarstekDataUpdateCoordinator], Binar
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Marstek binary sensors based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator

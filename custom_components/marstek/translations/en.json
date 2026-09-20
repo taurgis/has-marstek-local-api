@@ -60,7 +60,6 @@
     },
     "error": {
       "cannot_connect": "Unable to connect to the device",
-      "device_not_found": "Device not found at the specified IP address",
       "discovery_failed": "Failed to discover devices. Please check your network connection and try again.",
       "invalid_discovery_info": "Invalid discovery information received from the device",
       "unique_id_mismatch": "The device at this address does not match the discovered device",

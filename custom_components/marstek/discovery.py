@@ -384,7 +384,7 @@ async def discover_devices(
 
                 seen_ips.add(device_ip)
                 devices.append(device)
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Discovered device: %s at %s (BLE MAC: %s)",
                     device["device_type"],
                     device["ip"],
@@ -445,7 +445,7 @@ async def _get_device_info_via_client(
         _LOGGER.warning("No valid response from device at %s:%d", host, port)
         return None
 
-    _LOGGER.info(
+    _LOGGER.debug(
         "Got device info: %s at %s (BLE MAC: %s)",
         device["device_type"],
         device["ip"],
@@ -541,7 +541,7 @@ async def get_device_info(
                 if device is None:
                     continue
 
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Got device info: %s at %s (BLE MAC: %s)",
                     device["device_type"],
                     device["ip"],

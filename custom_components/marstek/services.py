@@ -148,7 +148,7 @@ async def async_set_passive_mode(hass: HomeAssistant, call: ServiceCall) -> None
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
 
-    _LOGGER.info(
+    _LOGGER.debug(
         "Set passive mode: power=%dW, duration=%ds for device %s",
         power,
         duration,
@@ -192,7 +192,7 @@ async def async_set_manual_schedule(hass: HomeAssistant, call: ServiceCall) -> N
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
 
-    _LOGGER.info(
+    _LOGGER.debug(
         "Set manual schedule slot %d: %s-%s, power=%dW, days=%s, enabled=%s for device %s",
         schedule_slot,
         start_time_str,
@@ -216,7 +216,7 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
     entry, udp_client, host, port = _get_entry_and_client_from_device_id(hass, device_id)
 
     slot_count = entry.runtime_data.coordinator.profile.max_manual_schedule_slot + 1
-    _LOGGER.info(
+    _LOGGER.debug(
         "Clearing %d manual schedule slots for device %s...",
         slot_count,
         device_id,
@@ -253,7 +253,7 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
 
-    _LOGGER.info("Cleared all manual schedules for device %s", device_id)
+    _LOGGER.debug("Cleared all manual schedules for device %s", device_id)
 
 
 async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -308,7 +308,7 @@ async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> 
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
 
-    _LOGGER.info(
+    _LOGGER.debug(
         "Set %d manual schedules for device %s",
         len(schedules),
         device_id,
@@ -323,7 +323,7 @@ async def async_request_data_sync(hass: HomeAssistant, call: ServiceCall) -> Non
         # Refresh specific device
         entry, _, _, _ = _get_entry_and_client_from_device_id(hass, device_id)
         await entry.runtime_data.coordinator.async_request_refresh()
-        _LOGGER.info("Requested data sync for device %s", device_id)
+        _LOGGER.debug("Requested data sync for device %s", device_id)
     else:
         # Refresh all Marstek devices
         refreshed = 0
@@ -331,7 +331,7 @@ async def async_request_data_sync(hass: HomeAssistant, call: ServiceCall) -> Non
             if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data"):
                 await entry.runtime_data.coordinator.async_request_refresh()
                 refreshed += 1
-        _LOGGER.info("Requested data sync for %d Marstek devices", refreshed)
+        _LOGGER.debug("Requested data sync for %d Marstek devices", refreshed)
 
 
 async def async_setup_services(hass: HomeAssistant) -> None:

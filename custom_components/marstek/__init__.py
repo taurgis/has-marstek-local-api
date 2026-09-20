@@ -246,7 +246,7 @@ async def _async_verify_device_connection(
 ) -> None:
     """Verify device connectivity using a lightweight API request."""
     try:
-        _LOGGER.info("Attempting connection to %s:%s", host, port)
+        _LOGGER.debug("Attempting connection to %s:%s", host, port)
         parsed = await udp_client.fetch_es_mode(
             host,
             port,
@@ -254,7 +254,7 @@ async def _async_verify_device_connection(
         )
         if parsed is None:
             raise TimeoutError("ES.GetMode returned no usable result")
-        _LOGGER.info(
+        _LOGGER.debug(
             "Connection successful to device at %s - using config_entry data",
             host,
         )
@@ -344,7 +344,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> bool:
     """Set up Marstek from a config entry."""
-    _LOGGER.info("Setting up Marstek config entry: %s", entry.title)
+    _LOGGER.debug("Setting up Marstek config entry: %s", entry.title)
 
     if is_unsupported_venus_e2(entry.data.get("device_type")):
         raise ConfigEntryError(
@@ -381,7 +381,7 @@ async def _async_setup_entry_with_client(
     stored_ble_mac = entry.data.get("ble_mac")
     stored_wifi_mac = entry.data.get("wifi_mac")
 
-    _LOGGER.info(
+    _LOGGER.debug(
         "Starting setup: attempting to connect to device at IP %s (BLE-MAC: %s)",
         stored_ip,
         stored_ble_mac or stored_wifi_mac or "unknown",
@@ -487,7 +487,7 @@ async def _async_release_entry_resources(hass: HomeAssistant, entry: MarstekConf
 
 async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> bool:
     """Unload a config entry."""
-    _LOGGER.info("Unloading Marstek config entry: %s", entry.title)
+    _LOGGER.debug("Unloading Marstek config entry: %s", entry.title)
 
     coordinator = _entry_coordinator(entry)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -535,6 +535,28 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     if not remaining_entries:
         _LOGGER.info("Removing stale device registry entry: %s", device.name)
         device_registry.async_remove_device(device.id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: MarstekConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow deleting a device this entry no longer represents.
+
+    Marstek firmware can hand out a new identity MAC after a mainboard swap
+    or a factory reset, which leaves the old device stranded in the registry
+    with no way to clear it. Home Assistant only offers the delete button
+    when the integration implements this hook, so offer it for any device
+    that is not the one the entry currently talks to. Refusing the live
+    device is deliberate: deleting it would only make setup recreate it.
+
+    https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/stale-devices
+    """
+    current_identifier = get_unique_id_from_device_info(config_entry.data)
+    if current_identifier is None:
+        return True
+    return (DOMAIN, current_identifier) not in device_entry.identifiers
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:

@@ -123,7 +123,7 @@ class MarstekScanner:
         if self._track_interval is not None:
             _LOGGER.debug("Marstek scanner already initialized")
             return
-        _LOGGER.info("Initializing Marstek scanner")
+        _LOGGER.debug("Initializing Marstek scanner")
         # No need to create persistent UDP client - create new instance for each scan
         # This avoids state issues and conflicts with concurrent requests
 
@@ -191,7 +191,7 @@ class MarstekScanner:
                 )
                 return False
 
-        _LOGGER.info("Immediate scan requested (connection failure detected)")
+        _LOGGER.debug("Immediate scan requested (connection failure detected)")
         self.async_scan()
         return True
 
@@ -359,7 +359,7 @@ class MarstekScanner:
         new_profile = resolve_firmware_profile_from_metadata(merged)
         profile_changed = old_profile.setup_reload_signature != new_profile.setup_reload_signature
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Scanner: Updating device metadata for %s: %s",
             entry.title,
             ", ".join(f"{key}={value}" for key, value in updates.items()),
@@ -526,7 +526,7 @@ class MarstekScanner:
             if not self._should_trigger_unconfigured(device_macs):
                 continue
 
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Scanner discovered unconfigured device %s at %s",
                 device_macs,
                 device_ip,

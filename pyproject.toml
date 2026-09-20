@@ -6,8 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "marstek"
 version = "1.1.3"
 description = "Home Assistant Marstek integration"
-requires-python = ">=3.12"
-dependencies = ["pymarstek"]
+requires-python = ">=3.13"
+# No third-party runtime dependencies: the Open API client is vendored at
+# custom_components/marstek/pymarstek, which is why manifest.json declares
+# an empty "requirements" list.
+dependencies = []
 
 [tool.setuptools.packages.find]
 where = ["."]

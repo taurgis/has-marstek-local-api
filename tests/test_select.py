@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import logging
 from contextlib import contextmanager
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,7 +13,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.marstek.const import (
-    DOMAIN,
     MODE_AI,
     MODE_AUTO,
     MODE_MANUAL,
@@ -25,7 +22,7 @@ from custom_components.marstek.const import (
 )
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
 from custom_components.marstek.helpers.select_descriptions import SELECT_ENTITIES
-from custom_components.marstek.select import MarstekOperatingModeSelect, async_setup_entry
+from custom_components.marstek.select import MarstekOperatingModeSelect
 
 
 def _mock_client(status=None, setup_error=None):
@@ -121,33 +118,6 @@ async def test_select_entity_options(hass: HomeAssistant, mock_config_entry):
     assert options is not None
     assert options == SELECTABLE_BASE_MODES
     assert MODE_UPS not in options
-
-
-async def test_select_setup_missing_udp_client(
-    hass: HomeAssistant, mock_config_entry, caplog
-) -> None:
-    """Test select setup handles missing UDP client."""
-    hass.data.pop(DOMAIN, None)
-    mock_config_entry.add_to_hass(hass)
-
-    device_info = {
-        **mock_config_entry.data,
-        "ip": mock_config_entry.data["host"],
-    }
-    coordinator = MagicMock()
-    coordinator.udp_client = None
-    mock_config_entry.runtime_data = SimpleNamespace(
-        coordinator=coordinator,
-        device_info=device_info,
-    )
-
-    async_add_entities = MagicMock()
-
-    caplog.set_level(logging.ERROR)
-    await async_setup_entry(hass, mock_config_entry, async_add_entities)
-
-    assert "UDP client not found for select entity setup" in caplog.text
-    async_add_entities.assert_not_called()
 
 
 @pytest.mark.parametrize(

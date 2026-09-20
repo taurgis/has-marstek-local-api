@@ -9,14 +9,13 @@ from typing import Any
 from homeassistant.components.sensor import RestoreSensor, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
 from .const import BAT_STATUS_KEYS, EM_STATUS_KEYS
 from .coordinator import MarstekDataUpdateCoordinator
-from .device_info import build_device_info, get_device_identifier
+from .entity import MarstekEntity
 from .helpers.sensor_descriptions import (
     API_STABILITY_SENSORS,
     PV_SENSORS,
@@ -58,10 +57,9 @@ def _as_number(value: Any) -> int | float | None:
     return None
 
 
-class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity):
+class MarstekSensor(MarstekEntity, RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
-    _attr_has_entity_name = True
     entity_description: MarstekSensorEntityDescription
 
     def __init__(
@@ -72,16 +70,11 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSens
         config_entry: ConfigEntry | None = None,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._device_info = device_info
+        super().__init__(coordinator, device_info, description)
         self._config_entry = config_entry
         # Last non-numeric reading already reported, so a device stuck on a
         # placeholder warns once instead of once per poll.
         self._last_rejected_value: Any = None
-        device_identifier = get_device_identifier(device_info)
-        self._attr_unique_id = f"{device_identifier}_{description.key}"
-        self._attr_device_info = build_device_info(device_info)
 
     async def async_added_to_hass(self) -> None:
         """Restore last good energy totals so total_increasing stays monotonic."""
@@ -174,13 +167,13 @@ class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSens
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Marstek sensors based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
     device_ip = device_info["ip"]
-    _LOGGER.info("Setting up Marstek sensors: %s", device_ip)
+    _LOGGER.debug("Setting up Marstek sensors: %s", device_ip)
 
     data = coordinator.data or {}
     data_for_exists = dict(data)
@@ -209,5 +202,5 @@ async def async_setup_entry(
                 )
             )
 
-    _LOGGER.info("Device %s sensors set up, total %d", device_ip, len(sensors))
+    _LOGGER.debug("Device %s sensors set up, total %d", device_ip, len(sensors))
     async_add_entities(sensors)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -13,6 +13,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .device_info import format_device_name
@@ -45,15 +46,6 @@ from .helpers.udp_clients import (
     transfer_reset_prone_mark_for_entry,
 )
 from .options_flow import MarstekOptionsFlow
-
-
-class DhcpServiceInfoLike(Protocol):
-    """Structural typing for DHCP discovery payloads across HA versions."""
-
-    ip: str
-    hostname: str
-    macaddress: str
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,7 +99,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Start broadcast device discovery
         try:
-            _LOGGER.info("Starting device discovery")
+            _LOGGER.debug("Starting device discovery")
 
             # Execute broadcast discovery with retry mechanism
             # Uses local discovery module (workaround for pymarstek echo issues)
@@ -124,7 +116,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Store discovered devices for selection
             self.discovered_devices = devices
-            _LOGGER.info("Discovered %d devices", len(devices))
+            _LOGGER.debug("Discovered %d devices", len(devices))
 
             # Get already configured device MACs for comparison
             configured_macs = collect_configured_macs(
@@ -138,7 +130,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # If all discovered devices are already configured, show manual entry
             if not device_options:
-                _LOGGER.info("All discovered devices are already configured")
+                _LOGGER.debug("All discovered devices are already configured")
                 return await self.async_step_manual(errors={"base": "all_devices_configured"})
 
             device_options[_MANUAL_DEVICE_OPTION] = "Enter IP/port manually"
@@ -245,14 +237,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for attempt in range(1, max_retries + 1):
             try:
                 if attempt > 1:
-                    _LOGGER.info("Device discovery, attempt %d", attempt)
+                    _LOGGER.debug("Device discovery, attempt %d", attempt)
                     await asyncio.sleep(retry_delay)
 
                 devices = await self._async_discover_devices(scan_ports)
 
                 if devices:
                     if attempt > 1:
-                        _LOGGER.info("Device discovery retry successful")
+                        _LOGGER.debug("Device discovery retry successful")
                     return devices
                 _LOGGER.warning("Attempt %d found no devices", attempt)
 
@@ -293,14 +285,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await discover_devices(ports=scan_ports, broadcast_addresses=broadcast_addresses)
 
     async def async_step_dhcp(
-        self, discovery_info: DhcpServiceInfoLike
+        self, discovery_info: DhcpServiceInfo
     ) -> config_entries.ConfigFlowResult:
         """Handle DHCP discovery to update IP address when it changes (mik-laj feedback)."""
         if not discovery_info.macaddress or not discovery_info.ip:
             return self.async_abort(reason="invalid_discovery_info")
 
         mac = format_mac(discovery_info.macaddress)
-        _LOGGER.info(
+        _LOGGER.debug(
             "DHCP discovery triggered: MAC=%s, IP=%s, Hostname=%s",
             mac,
             discovery_info.ip,
@@ -506,7 +498,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             updates: dict[str, Any] = {}
 
             if entry.data.get(CONF_HOST) != self._discovered_ip:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Discovery: Device %s IP changed from %s to %s, updating config entry",
                     entry.unique_id,
                     entry.data.get(CONF_HOST),
@@ -515,7 +507,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 updates[CONF_HOST] = self._discovered_ip
 
             if discovered_port is not None and current_port != discovered_port:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Discovery: Device %s port changed from %s to %s, updating config entry",
                     entry.unique_id,
                     current_port,

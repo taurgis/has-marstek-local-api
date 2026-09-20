@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MarstekConfigEntry
 from .coordinator import MarstekDataUpdateCoordinator
+from .entity import MarstekSysEntity
 from .helpers.switch_descriptions import (
     SWITCH_ENTITIES,
     MarstekSwitchEntityDescription,
 )
-from .helpers.sys_entity import MarstekSysEntity
 from .pymarstek import MarstekUDPClient
-
-_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 
@@ -29,16 +26,12 @@ PARALLEL_UPDATES = 1
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MarstekConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Marstek switch entities based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
     device_info = config_entry.runtime_data.device_info
     udp_client = coordinator.udp_client
-    if udp_client is None:
-        _LOGGER.error("UDP client not found for switch entity setup")
-        return
-
     profile = coordinator.profile
     async_add_entities(
         MarstekSysSwitch(
