@@ -15,7 +15,7 @@ from contextlib import AbstractAsyncContextManager, nullcontext, suppress
 from typing import Any, cast
 
 from ..firmware_profile import FirmwareProfile
-from .command_builder import discover, get_es_mode
+from .command_builder import get_es_mode
 from .command_stats import CommandStats
 from .const import (
     CMD_BATTERY_STATUS,
@@ -26,10 +26,8 @@ from .const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
     DEFAULT_UDP_PORT,
-    DISCOVERY_TIMEOUT,
 )
 from .data_parser import parse_es_mode_response
-from .device_info import build_device_info, non_empty_str
 from .device_status import fetch_device_status
 from .network import (
     PsutilModule,
@@ -41,6 +39,7 @@ from .openapi_marks import OpenApiMarks
 from .poll_gate import PollGate
 from .response_router import ResponseRouter
 from .throttle import DeviceThrottle
+from .udp_discovery import BroadcastDiscoveryMixin
 from .validators import (
     ValidationError,
     json_loads_strict,
@@ -69,8 +68,6 @@ MIN_RESET_PRONE_REQUEST_INTERVAL: float = 1.0
 # Ethernet IPs still get one datagram. Writes and unknown/reset-prone IPs
 # stay one-shot.
 UNICAST_RETRANSMIT_WAIT: float = 0.5
-# How often broadcast discovery drains replies out of the response cache.
-BROADCAST_DRAIN_INTERVAL: float = 0.1
 # Upper bound on how long a unicast waits for a paused listener to resume.
 # Comfortably longer than a full discovery sweep (DISCOVERY_TIMEOUT is 10s),
 # short enough that a scan which died between pause and resume cannot wedge
@@ -109,7 +106,7 @@ _ES_MODE_INSTANCE_IDS: tuple[int, ...] = (0, 1)
 
 
 
-class MarstekUDPClient:
+class MarstekUDPClient(BroadcastDiscoveryMixin):
     """UDP client for communicating with Marstek devices.
 
     Features:
@@ -117,6 +114,9 @@ class MarstekUDPClient:
     - Rate limiting per device IP to prevent overwhelming devices
     - Polling pause/resume for coordinated device control
     - Discovery caching to reduce network traffic
+
+    Broadcast discovery lives in :mod:`.udp_discovery`; this module owns the
+    socket, the listener task and every unicast exchange.
     """
 
     def __init__(
@@ -354,15 +354,6 @@ class MarstekUDPClient:
         if not self._listen_task or self._listen_task.done():
             loop = self._configured_loop()
             self._listen_task = loop.create_task(self._listen_for_responses())
-
-    def _is_cache_valid(self) -> bool:
-        if self._discovery_cache is None:
-            return False
-        return (self.loop_time() - self._cache_timestamp) < self._cache_duration
-
-    def clear_discovery_cache(self) -> None:
-        self._discovery_cache = None
-        self._cache_timestamp = 0
 
     def _get_broadcast_addresses(self) -> list[str]:
         if psutil is _PSUTIL_AUTO:
@@ -828,118 +819,6 @@ class MarstekUDPClient:
                     "Unexpected error in Open API UDP listener; continuing"
                 )
                 await asyncio.sleep(1)
-
-    async def send_broadcast_request(
-        self,
-        message: str,
-        timeout: float = DISCOVERY_TIMEOUT,
-        *,
-        validate: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Send a broadcast message and collect all responses within timeout.
-
-        Args:
-            message: JSON command string to broadcast
-            timeout: Time to wait for responses in seconds
-            validate: If True, validate message before sending (default True)
-
-        Returns:
-            List of response dictionaries from devices
-
-        Raises:
-            ValidationError: If message validation fails and validate=True
-        """
-        _LOGGER.debug("Starting broadcast discovery with timeout %ss", timeout)
-        await self._ensure_socket()
-
-        if validate:
-            try:
-                validate_json_message(message)
-            except ValidationError as err:
-                _LOGGER.error("Broadcast validation failed: %s", err.message)
-                return []
-
-        try:
-            message, request_id, _method_name = normalize_json_rpc_wire_message(message)
-            request_id, _future = self._router.track(request_id)
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            _LOGGER.error("Invalid message for broadcast: %s", exc)
-            return []
-
-        responses: list[dict[str, Any]] = []
-        loop = self._configured_loop()
-        start_time = loop.time()
-
-        try:
-            self._ensure_listener()
-
-            broadcast_addresses = self._get_broadcast_addresses()
-            _LOGGER.debug("Broadcast addresses: %s on port %d", broadcast_addresses, self._port)
-            for address in broadcast_addresses:
-                await self._send_udp_message(message, address, self._port)
-
-            # Drain *after* each sleep, including the final one: a reply that
-            # lands in the last interval is already cached, and breaking out
-            # of the loop without a last drain would silently discard it.
-            deadline = start_time + timeout
-            while True:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    break
-                await asyncio.sleep(min(BROADCAST_DRAIN_INTERVAL, remaining))
-                responses.extend(
-                    self._router.take_cached(request_id, since=start_time)
-                )
-        finally:
-            self._router.drop_waiter(request_id)
-        _LOGGER.debug("Broadcast discovery completed, found %d device(s)", len(responses))
-        return responses
-
-    async def discover_devices(self, use_cache: bool = True) -> list[dict[str, Any]]:
-        """Discover Marstek devices on the network via broadcast."""
-        _LOGGER.debug("Starting device discovery (use_cache=%s)", use_cache)
-        if use_cache and self._is_cache_valid():
-            assert self._discovery_cache is not None
-            _LOGGER.debug("Using cached discovery data (%d devices)", len(self._discovery_cache))
-            return self._discovery_cache.copy()
-
-        devices: list[dict[str, Any]] = []
-        seen_devices: set[str] = set()
-
-        try:
-            responses = await self.send_broadcast_request(discover())
-        except OSError as err:
-            _LOGGER.error("Device discovery failed: %s", err)
-            responses = []
-
-        loop = self._configured_loop()
-
-        for response in responses:
-            result = response.get("result") if isinstance(response, dict) else None
-            if not isinstance(result, dict):
-                continue
-
-            device_id = (
-                result.get("ip")
-                or result.get("ble_mac")
-                or result.get("wifi_mac")
-                or f"device_{int(loop.time())}_{hash(str(result)) % 10000}"
-            )
-            if device_id in seen_devices:
-                continue
-            seen_devices.add(device_id)
-
-            src = ""
-            if isinstance(response, dict):
-                src = non_empty_str(response.get("src"))
-            devices.append(build_device_info(result, src=src))
-
-        self._discovery_cache = devices.copy()
-        self._cache_timestamp = loop.time()
-        _LOGGER.debug("Device discovery completed, found %d device(s)", len(devices))
-        for device in devices:
-            _LOGGER.debug("Found device: %s at %s", device.get("device_type"), device.get("ip"))
-        return devices
 
     async def begin_poll_cycle(self, device_ip: str) -> bool:
         """Mark a coordinator poll cycle as running.
