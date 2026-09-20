@@ -16,6 +16,7 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
+from .helpers.flow_helpers import get_unique_id_from_device_info
 from .pymarstek import ValidationError, discover, json_loads_strict
 from .pymarstek.const import MAX_UDP_DATAGRAM_BYTES
 from .pymarstek.device_info import build_device_info, non_empty_str
@@ -371,9 +372,23 @@ async def discover_devices(
                     _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
                     continue
 
-                seen_ips.add(device_ip)
                 src = non_empty_str(response.get("src"))
                 device = _build_device_info(result, device_ip, sender_port, src=src)
+                if get_unique_id_from_device_info(device) is None:
+                    # No 6-octet MAC in the payload and none in ``src``, so this
+                    # cannot become a config entry by any path. Offering it
+                    # anyway put a phantom "Unknown vNone ()" row in the device
+                    # picker that answered the user with invalid_discovery_info.
+                    # Firmware that omits the MACs from ``result`` still carries
+                    # the BLE MAC in ``src`` (issue #60), so this keeps those.
+                    _LOGGER.debug(
+                        "Ignoring reply without a device identity from %s:%d",
+                        sender_ip,
+                        sender_port,
+                    )
+                    continue
+
+                seen_ips.add(device_ip)
                 devices.append(device)
                 _LOGGER.info(
                     "Discovered device: %s at %s (BLE MAC: %s)",
