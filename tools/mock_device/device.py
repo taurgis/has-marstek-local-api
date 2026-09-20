@@ -6,6 +6,7 @@ import json
 import socket
 import threading
 import time
+from collections import Counter
 from typing import Any
 
 from custom_components.marstek.firmware_profile import (
@@ -145,7 +146,9 @@ class MockMarstekDevice:
         # rather than printed individually.
         self.verbose = verbose
         self.status_interval = status_interval
-        self._dropped_since_log = 0
+        self._status_thread: threading.Thread | None = None
+        self._dropped: Counter[str] = Counter()
+        self._last_drop_sender = "unknown"
         self._last_drop_log = 0.0
 
     def start(self) -> None:
@@ -172,6 +175,9 @@ class MockMarstekDevice:
         except KeyboardInterrupt:
             print("\nShutting down mock device...")
         finally:
+            # A burst can end inside the rate-limit window, so print the tail
+            # counts rather than losing them on the way out.
+            self._flush_dropped()
             if self.simulate:
                 self.simulator.stop()
             self._persist_state()
@@ -236,19 +242,30 @@ class MockMarstekDevice:
         """Summarise dropped datagrams at most once per DROP_LOG_INTERVAL.
 
         Anything unanswerable arrives in bursts rather than singly, so the
-        count carries the signal and printing each one only costs disk.
+        counts carry the signal and printing each one only costs disk. Counts
+        are kept per reason so a burst of one kind cannot be reported under
+        another, and they survive until printed by _flush_dropped.
         """
-        self._dropped_since_log += 1
+        self._dropped[reason] += 1
+        self._last_drop_sender = sender
         now = time.monotonic()
         if now - self._last_drop_log < DROP_LOG_INTERVAL:
             return
-        count = self._dropped_since_log
-        self._dropped_since_log = 0
         self._last_drop_log = now
-        suffix = f" ({count} since the last summary)" if count > 1 else ""
+        self._flush_dropped()
+
+    def _flush_dropped(self) -> None:
+        """Print the pending dropped-datagram counts, if any."""
+        if not self._dropped:
+            return
+        total = sum(self._dropped.values())
+        breakdown = ", ".join(
+            f"{reason} x{count}" for reason, count in sorted(self._dropped.items())
+        )
+        self._dropped.clear()
         print(
-            f"[{time.strftime('%H:%M:%S')}] Dropped datagram from {sender}: "
-            f"{reason}{suffix}"
+            f"[{time.strftime('%H:%M:%S')}] Dropped {total} datagram(s) "
+            f"({breakdown}); most recent from {self._last_drop_sender}"
         )
 
     def _handle_request(self) -> None:
@@ -287,17 +304,21 @@ class MockMarstekDevice:
             self._log_dropped("non-object JSON", sender)
             return
 
-        # Only a request carries a method name. A datagram without one is a
-        # reply -- ours looping back on a shared port, or another device's --
-        # and answering a reply is what spins two sockets into a packet storm.
-        method = request.get("method")
-        if not isinstance(method, str) or not method:
-            self._log_dropped("not a request (no method)", sender)
+        # A reply carries result or error; a request carries method. Answering
+        # a reply is what spins two sockets sharing a UDP port into a packet
+        # storm, so drop it. A request with a missing or malformed method is
+        # still a request: firmware answers -32601 for it ("Method missing or
+        # not available on this firmware", docs/marstek_device_openapi.MD
+        # section 2.1), so it falls through rather than being dropped here.
+        if "result" in request or "error" in request:
+            self._log_dropped("a reply, not a request", sender)
             return
 
         raw_id = request.get("id", 0)
         wire_id = json_rpc_wire_id(raw_id)
         request_id = 0 if wire_id is None else wire_id
+        raw_method = request.get("method", "")
+        method = raw_method if isinstance(raw_method, str) else ""
         params = request.get("params", {})
         if not isinstance(params, dict):
             params = {}

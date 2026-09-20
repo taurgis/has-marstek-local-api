@@ -423,7 +423,12 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 | `--ble-mac` | random | BLE MAC address (unique ID) |
 | `--wifi-mac` | random | WiFi MAC address |
 | `--soc` | 50 | Initial battery SOC percentage |
+| `--pv-channels` | none | VenusD PV channels as `power:voltage:current, ...` (up to 4) |
 | `--no-simulate` | false | Disable dynamic simulation |
+| `--state-dir` | see `utils.py` | Directory holding persisted mock state |
+| `--reset-state` | false | Discard this device's persisted state on start |
+| `--quiet` | false | Drop the per-request log line (drop summaries still print) |
+| `--status-interval` | 30 | Seconds between simulator status lines; `0` disables them |
 
 **Use when:**
 - Running tests (pytest uses mock device fixtures)

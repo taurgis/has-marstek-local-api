@@ -2,6 +2,7 @@
 # so one misbehaving device can fill the disk. Cap and rotate every service.
 # Applies only to containers created after this change:
 #   docker compose up -d --force-recreate
+# https://docs.docker.com/engine/logging/drivers/json-file/
 x-logging: &default-logging
   logging:
     driver: json-file
