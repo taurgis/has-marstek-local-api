@@ -541,6 +541,6 @@ Look for `UDP socket bound to 0.0.0.0:30000` during manual/confirm (second bind 
 
 ## When NOT to use
 
-- Pytest / config-flow unit tests: `homeassistant-testing-playbook` and `tests/test_config_flow.py`.
+- Pytest / config-flow unit tests: `homeassistant-testing-playbook` and `tests/test_config_flow/`.
 - Protocol / bind-port behavior: `marstek-open-api-udp`.
 - Mock firmware encodings: `mock-device-development`.
