@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 
@@ -14,13 +12,6 @@ from custom_components.marstek.const import (
     DATA_UDP_CLIENTS,
     DOMAIN,
 )
-
-
-@pytest.fixture(autouse=True)
-async def _drain_config_entry_tasks(hass: HomeAssistant) -> AsyncIterator[None]:
-    """Finish create/reload tasks before HA 2026.9 lingering-timer checks."""
-    yield
-    await hass.async_block_till_done()
 
 
 def _get_schema_field_default(result: dict[str, Any], field_name: str) -> Any:
