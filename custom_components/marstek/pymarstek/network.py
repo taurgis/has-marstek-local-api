@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import re
@@ -40,28 +41,45 @@ def mac_from_openapi_src(src: Any) -> str:
     return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))
 
 
-def udp_source_matches_host(source_ip: str, host: str) -> bool:
-    """Return True when a UDP sender is the host we queried.
+async def async_resolve_host_ipv4(host: str) -> frozenset[str]:
+    """Resolve *host* to its IPv4 addresses without blocking the event loop.
 
-    Unicast GetDevice must not accept another device's reply. Numeric IPs
-    compare directly; hostnames resolve to IPv4 addresses.
+    A numeric address resolves to itself. Anything else goes through the
+    loop's threaded resolver, so callers can resolve once up front instead of
+    paying a DNS lookup per received datagram.
     """
-    if source_ip == host:
-        return True
     try:
-        return ipaddress.ip_address(source_ip) == ipaddress.ip_address(host)
+        return frozenset({str(ipaddress.ip_address(host))})
     except ValueError:
         pass
     try:
-        infos = socket.getaddrinfo(
+        infos = await asyncio.get_running_loop().getaddrinfo(
             host,
             None,
             family=socket.AF_INET,
             type=socket.SOCK_DGRAM,
         )
     except OSError:
+        return frozenset()
+    return frozenset(str(info[4][0]) for info in infos)
+
+
+def udp_source_matches_host(
+    source_ip: str, host: str, *, resolved: frozenset[str] = frozenset()
+) -> bool:
+    """Return True when a UDP sender is the host we queried.
+
+    Unicast GetDevice must not accept another device's reply. Numeric IPs
+    compare directly. For a hostname, pass *resolved* from
+    ``async_resolve_host_ipv4``: this stays a pure comparison so it can run
+    on every datagram without a name lookup.
+    """
+    if source_ip == host or source_ip in resolved:
+        return True
+    try:
+        return ipaddress.ip_address(source_ip) == ipaddress.ip_address(host)
+    except ValueError:
         return False
-    return any(info[4][0] == source_ip for info in infos)
 
 
 def is_loopback_host(host: str) -> bool:
@@ -179,35 +197,33 @@ def get_broadcast_addresses(
         logger.debug("psutil not available, using only global broadcast")
         return list(addresses)
 
+    # One snapshot of the interface table for both passes. Two calls can
+    # disagree if an interface appears or disappears between them, which
+    # would leave a local address in the broadcast list.
     try:
-        for addrs in psutil_module.net_if_addrs().values():
-            for addr in addrs:
-                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
-                    broadcast = getattr(addr, "broadcast", None)
-                    if isinstance(broadcast, str):
-                        addresses.add(broadcast)
-                        continue
-                    netmask = getattr(addr, "netmask", None)
-                    if isinstance(netmask, str):
-                        try:
-                            network = ipaddress.IPv4Network(
-                                f"{addr.address}/{netmask}", strict=False
-                            )
-                            addresses.add(str(network.broadcast_address))
-                        except (ValueError, OSError):
-                            continue
+        interfaces = psutil_module.net_if_addrs()
     except OSError as err:
         logger.warning("Failed to get network interfaces: %s", err)
+        return list(addresses)
 
-    try:
-        local_ips = {
-            addr.address
-            for addrs in psutil_module.net_if_addrs().values()
-            for addr in addrs
-            if addr.family == socket.AF_INET
-        }
-        addresses -= local_ips
-    except OSError:
-        pass
+    local_ips: set[str] = set()
+    for addrs in interfaces.values():
+        for addr in addrs:
+            if addr.family != socket.AF_INET:
+                continue
+            local_ips.add(addr.address)
+            if addr.address.startswith("127."):
+                continue
+            broadcast = getattr(addr, "broadcast", None)
+            if isinstance(broadcast, str):
+                addresses.add(broadcast)
+                continue
+            netmask = getattr(addr, "netmask", None)
+            if isinstance(netmask, str):
+                with suppress(ValueError, OSError):
+                    network = ipaddress.IPv4Network(
+                        f"{addr.address}/{netmask}", strict=False
+                    )
+                    addresses.add(str(network.broadcast_address))
 
-    return list(addresses)
+    return list(addresses - local_ips)

@@ -19,6 +19,7 @@ from .const import DEFAULT_UDP_PORT
 from .firmware_profile import extract_discovery_version
 from .pymarstek import ValidationError, discover
 from .pymarstek.network import (
+    async_resolve_host_ipv4,
     create_udp_socket,
     get_broadcast_addresses,
     is_loopback_host,
@@ -254,25 +255,50 @@ async def discover_devices(
     echoes_filtered = 0
     start_time = loop.time()
 
+    # One outstanding receive per socket, all awaited together. Walking the
+    # sockets in turn spent up to half a second on a quiet port while a later
+    # one already had a reply queued, and overran ``timeout`` by that much per
+    # extra port. ``asyncio.wait_for`` also cancels the receive it times out,
+    # so a datagram delivered in that window was dropped -- UDP gives no
+    # redelivery (RFC 768). ``asyncio.wait`` does not cancel.
+    receivers: dict[asyncio.Task[Any], tuple[int, socket.socket]] = {
+        asyncio.ensure_future(loop.sock_recvfrom(sock, 4096)): (scan_port, sock)
+        for scan_port, sock in sockets
+    }
+    deadline = start_time + timeout
+
     try:
-        recv_failed = False
-        while (loop.time() - start_time) < timeout:
-            remaining = timeout - (loop.time() - start_time)
+        while receivers:
+            remaining = deadline - loop.time()
             if remaining <= 0:
                 break
-            per_wait = min(0.5, remaining)
-            for _scan_port, sock in sockets:
+            done, _pending = await asyncio.wait(
+                set(receivers),
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                break
+            for task in done:
+                scan_port, sock = receivers.pop(task)
                 try:
-                    data, addr = await asyncio.wait_for(
-                        loop.sock_recvfrom(sock, 4096),
-                        timeout=per_wait,
-                    )
+                    data, addr = task.result()
                 except TimeoutError:
                     continue
                 except OSError as err:
-                    _LOGGER.error("Socket error during discovery: %s", err)
-                    recv_failed = True
-                    break
+                    _LOGGER.error(
+                        "Socket error during discovery on port %s: %s",
+                        scan_port,
+                        err,
+                    )
+                    continue
+
+                # Re-arm before parsing so a burst of replies is not missed
+                # while this one is decoded.
+                receivers[asyncio.ensure_future(loop.sock_recvfrom(sock, 4096))] = (
+                    scan_port,
+                    sock,
+                )
 
                 sender_ip: str = addr[0]
                 sender_port = int(addr[1])
@@ -318,9 +344,11 @@ async def discover_devices(
                     device["ip"],
                     device["ble_mac"],
                 )
-            if recv_failed:
-                break
     finally:
+        for task in receivers:
+            task.cancel()
+        if receivers:
+            await asyncio.gather(*receivers, return_exceptions=True)
         for _, sock in sockets:
             sock.close()
 
@@ -428,6 +456,11 @@ async def get_device_info(
 
     loop = asyncio.get_running_loop()
 
+    # Resolve once, before the receive loop. Matching a hostname against each
+    # datagram's sender used to run a blocking ``socket.getaddrinfo`` inside
+    # the event loop, on every packet.
+    expected_sources = await async_resolve_host_ipv4(host)
+
     try:
         # Send request directly to device
         await loop.sock_sendto(sock, message, (host, port))
@@ -443,7 +476,9 @@ async def get_device_info(
                 )
 
                 sender_ip, _ = addr
-                if not udp_source_matches_host(str(sender_ip), host):
+                if not udp_source_matches_host(
+                    str(sender_ip), host, resolved=expected_sources
+                ):
                     _LOGGER.debug(
                         "Ignoring GetDevice reply from %s while querying %s",
                         sender_ip,

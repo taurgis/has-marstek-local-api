@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
 from typing import Any
@@ -442,6 +443,75 @@ class TestDiscoverDevices:
 
         assert len(result) == 1
         assert result[0]["ip"] == "192.168.9.92"
+
+    @pytest.mark.asyncio
+    async def test_discovery_does_not_serialize_quiet_ports(self) -> None:
+        """A reply on one port is handled while another port stays silent.
+
+        Sockets are listened to together. Walking them in turn made a quiet
+        port hold up a reply already queued on a later one, and overran the
+        caller's timeout by that wait for every extra port.
+        """
+        from custom_components.marstek import discovery
+        from custom_components.marstek.discovery import discover_devices
+
+        sockets = [MagicMock(), MagicMock()]
+        sockets[0].getsockname.return_value = ("0.0.0.0", 30000)
+        sockets[1].getsockname.return_value = ("0.0.0.0", 30003)
+
+        device_response = {
+            "id": 0,
+            "src": "VenusE-AABBCCDDEEFF",
+            "result": {
+                "device": "VenusE 3.0",
+                "ver": 150,
+                "ip": "192.168.9.92",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+                "wifi_mac": "11:22:33:44:55:66",
+                "wifi_name": "net",
+            },
+        }
+        answered = False
+
+        async def mock_recvfrom(sock: Any, _bufsize: int) -> Any:
+            nonlocal answered
+            if sock is sockets[0]:
+                # The port bound first never hears anything.
+                await asyncio.sleep(3600)
+            if answered:
+                await asyncio.sleep(3600)
+            answered = True
+            return (
+                json.dumps(device_response).encode(),
+                ("192.168.9.92", 30003),
+            )
+
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        handled_at: list[float] = []
+        real_build = discovery._build_device_info
+
+        def timed_build(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            handled_at.append(loop.time() - started)
+            return real_build(*args, **kwargs)
+
+        with (
+            patch("socket.socket", side_effect=sockets),
+            patch.object(loop, "sock_sendto", AsyncMock()),
+            patch.object(loop, "sock_recvfrom", mock_recvfrom),
+            patch.object(discovery, "_build_device_info", timed_build),
+            patch(
+                "custom_components.marstek.discovery._get_broadcast_addresses",
+                return_value=["255.255.255.255"],
+            ),
+        ):
+            result = await discover_devices(timeout=1.0, ports=[30000, 30003])
+
+        assert len(result) == 1
+        assert result[0]["ip"] == "192.168.9.92"
+        # Serial polling spent its first half-second window on the silent
+        # socket before ever reading the second one.
+        assert handled_at[0] < 0.4
 
     @pytest.mark.asyncio
     async def test_discovery_scans_multiple_ports(self) -> None:
@@ -1406,31 +1476,34 @@ class TestDiscoverDevicesEdgeCases:
             elif "psutil" in sys.modules:
                 del sys.modules["psutil"]
 
-    def test_local_ip_oserror_in_filter(self) -> None:
-        """Test handling of OSError when filtering local IPs."""
+    def test_local_ip_filter_uses_one_interface_snapshot(self) -> None:
+        """Broadcasts and local IPs come from a single net_if_addrs() call.
+
+        Two snapshots can disagree when an interface appears or disappears
+        between them, which would leave a local address in the broadcast list.
+        """
         from custom_components.marstek.discovery import _get_broadcast_addresses
-        
+
         call_count = 0
-        
+
         def mock_net_if_addrs() -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                # First call returns normal result
-                mock_addr = MagicMock()
-                mock_addr.family = socket.AF_INET
-                mock_addr.address = "192.168.1.100"
-                mock_addr.broadcast = "192.168.1.255"
-                mock_addr.netmask = "255.255.255.0"
-                return {"eth0": [mock_addr]}
-            # Second call (for local IP filtering) raises OSError
-            raise OSError("Network error")
-        
+            mock_addr = MagicMock()
+            mock_addr.family = socket.AF_INET
+            mock_addr.address = "192.168.1.100"
+            mock_addr.broadcast = "192.168.1.255"
+            mock_addr.netmask = "255.255.255.0"
+            return {"eth0": [mock_addr]}
+
         with patch("psutil.net_if_addrs", side_effect=mock_net_if_addrs):
             result = _get_broadcast_addresses()
-        
-        # Should still have results (OSError is caught)
+
+        assert call_count == 1
         assert "255.255.255.255" in result
+        assert "192.168.1.255" in result
+        # The interface's own address is not a broadcast target.
+        assert "192.168.1.100" not in result
 
 
 def test_discovery_omitted_ver_stays_unknown() -> None:
