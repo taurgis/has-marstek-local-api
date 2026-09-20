@@ -6,9 +6,9 @@ Open **Settings → Devices & services → Marstek → (device) → Configure**.
 
 The integration uses tiered polling to reduce device load:
 
-- **Fast** (default 30s): mode/status/meter (real-time power)
-- **Medium** (default 60s): PV status (Venus A/D)
-- **Slow** (default 300s): WiFi + battery diagnostics
+- **Fast** (default 30s, range 10–300s): mode/status/meter (real-time power)
+- **Medium** (default 60s, range 30s–24h): PV status (Venus A/D)
+- **Slow** (default 300s, range 60s–24h): WiFi + battery diagnostics
 
 <img src="screenshots/device-settings-polling.png" alt="Polling settings" width="560" />
 
@@ -50,9 +50,20 @@ flapping on an unstable device API.
 
 These settings affect automations and command validation:
 
-- Action charge power (W): default power for the **Charge** device action
-- Action discharge power (W): default power for the **Discharge** device action
+- Action charge power (W, range -5000–0, default -1300): default power for the **Charge** device action
+- Action discharge power (W, range 0–5000, default 800): default power for the **Discharge** device action
 - Socket limit: toggles an internal power-limit model used to validate requested power (applies to services and actions)
+
+Socket limit defaults to **on** for Venus C, Venus D, Venus E and Venus E mini, and **off** for Venus A. While it is on, validated discharge power is capped at **800 W**. With it off, the cap is the per-family maximum:
+
+| Family | Maximum absolute power |
+|---|---|
+| Venus A | 1500 W |
+| Venus D | 2200 W |
+| Venus C, Venus E, Venus E mini | 2500 W |
+| Unknown family | 5000 W |
+
+Charging is always validated against the same per-family maximum (as a negative value); the socket limit only caps discharge.
 
 <img src="screenshots/device-settings-power.png" alt="Power settings" width="560" />
 

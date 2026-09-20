@@ -4,7 +4,7 @@ The integration exposes services for advanced control and automation.
 
 > Tip: When automating control commands, prefer calling these services rather than trying to “poke” entity state.
 
-All services target a device via `device_id` (select the Marstek device in the UI).
+All services target a device via `device_id` (select the Marstek device in the UI). The only exception is `marstek.request_data_sync`, where `device_id` is optional and omitting it refreshes every configured device.
 
 Home Assistant device IDs are **32-character hex** strings. Quote them in YAML so they stay strings:
 
@@ -240,7 +240,7 @@ Immediately stops any active charge or discharge operation. No parameters requir
 
 ### Power validation
 
-All device actions respect the **Socket limit** setting configured in [Options](options.md). If socket limit is enabled (default for Venus C/D/E), power values above 800 W will be rejected.
+All device actions respect the **Socket limit** setting configured in [Options](options.md). If socket limit is enabled (the default for Venus C, Venus D, Venus E and Venus E mini), discharge power above 800 W is rejected. With it disabled, the cap is the per-family maximum listed in [Options](options.md#power--behavior).
 
 ### Technical details
 
