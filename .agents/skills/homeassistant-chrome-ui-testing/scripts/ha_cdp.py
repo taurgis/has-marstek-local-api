@@ -714,15 +714,7 @@ class Cdp:
             return data.get("result") or {}
 
     async def evaluate(self, expression: str) -> Any:
-        result = await self.call(
-            "Runtime.evaluate",
-            {
-                "expression": expression,
-                "returnByValue": True,
-                "awaitPromise": True,
-                "userGesture": True,
-            },
-        )
+        result = await self._evaluate_with_retry(expression)
         if result.get("exceptionDetails"):
             details = result["exceptionDetails"]
             text = details.get("text") or ""
@@ -730,6 +722,53 @@ class Cdp:
             raise RuntimeError(exc)
         remote = result.get("result") or {}
         return remote.get("value")
+
+    # A renderer that navigates, or is discarded while an awaited fetch is in
+    # flight, answers Runtime.evaluate with a protocol error instead of a
+    # result. The request itself already reached Home Assistant, so the lost
+    # answer is a reporting failure, not a failed operation. Re-read rather
+    # than abandon a campaign half way through.
+    _TRANSIENT_EVAL_ERRORS = (
+        "Promise was collected",
+        "Execution context was destroyed",
+        "Inspected target navigated or closed",
+        "Cannot find context with specified id",
+        "Target closed",
+        "Session closed",
+    )
+
+    async def _evaluate_with_retry(self, expression: str, attempts: int = 4) -> dict[str, Any]:
+        last: RuntimeError | None = None
+        for attempt in range(attempts):
+            try:
+                return await self.call(
+                    "Runtime.evaluate",
+                    {
+                        "expression": expression,
+                        "returnByValue": True,
+                        "awaitPromise": True,
+                        "userGesture": True,
+                    },
+                )
+            except RuntimeError as err:
+                if not any(token in str(err) for token in self._TRANSIENT_EVAL_ERRORS):
+                    raise
+                last = err
+                if attempt == attempts - 1:
+                    break
+                await asyncio.sleep(0.5 * (attempt + 1))
+                # The helper lives in the destroyed context; put it back before
+                # the retry re-runs an expression that calls into it.
+                with contextlib.suppress(RuntimeError):
+                    await self.call(
+                        "Runtime.evaluate",
+                        {
+                            "expression": HELPER_JS,
+                            "returnByValue": True,
+                            "awaitPromise": True,
+                        },
+                    )
+        raise RuntimeError(f"Runtime.evaluate failed after {attempts} attempts: {last}")
 
     async def inject(self) -> None:
         ok = await self.evaluate(HELPER_JS)
