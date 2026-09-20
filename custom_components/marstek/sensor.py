@@ -13,7 +13,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
-from .const import BAT_STATUS_KEYS
+from .const import BAT_STATUS_KEYS, EM_STATUS_KEYS
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
 from .helpers.sensor_descriptions import (
@@ -132,6 +132,11 @@ async def async_setup_entry(
         if (
             description.key in BAT_STATUS_KEYS
             and coordinator.profile.openapi_reset_prone
+        ):
+            continue
+        if (
+            description.key in EM_STATUS_KEYS
+            and not coordinator.profile.supports_em_status
         ):
             continue
         if description.exists_fn(data_for_exists):

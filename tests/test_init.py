@@ -305,14 +305,20 @@ async def test_reconfigure_flow_reloads_and_keeps_services(
             "firmware": "3.0",
         }
 
-        original_schedule_reload = hass.config_entries.async_schedule_reload
+        # The reload is the update listener's, because the flow changes the
+        # entry data; the flow itself no longer schedules a second one.
+        original_reload = hass.config_entries.async_reload
+
+        async def _reload(entry_id: str) -> bool:
+            return await original_reload(entry_id)
+
         with (
             patch_manual_connection(device_info=device_info),
             patch.object(
                 hass.config_entries,
-                "async_schedule_reload",
-                wraps=original_schedule_reload,
-            ) as mock_schedule_reload,
+                "async_reload",
+                AsyncMock(side_effect=_reload),
+            ) as mock_reload,
         ):
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
@@ -323,7 +329,7 @@ async def test_reconfigure_flow_reloads_and_keeps_services(
             assert result["reason"] == "reconfigure_successful"
             await hass.async_block_till_done()
 
-        mock_schedule_reload.assert_called_once_with(mock_config_entry.entry_id)
+        mock_reload.assert_called_once_with(mock_config_entry.entry_id)
         assert (
             hass.config_entries.async_get_entry(mock_config_entry.entry_id).data["host"]
             == "192.168.1.200"

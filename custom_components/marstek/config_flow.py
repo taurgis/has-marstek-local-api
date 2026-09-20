@@ -453,7 +453,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 host,
                 port,
                 update_port=False,
-                reason=None,
+                reason="reauth_successful",
             )
             if result is not None:
                 return result
@@ -584,7 +584,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         port: int,
         *,
         update_port: bool,
-        reason: str | None,
+        reason: str,
     ) -> tuple[config_entries.ConfigFlowResult | None, str | None]:
         """Validate host and update the entry if the device matches."""
         if not host:
@@ -620,23 +620,18 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     new_port=port if update_port else None,
                 )
 
-            if reason is None:
-                return (
-                    self.async_update_reload_and_abort(
-                        entry,
-                        data_updates=data_updates,
-                    ),
-                    None,
-                )
-
-            return (
-                self.async_update_reload_and_abort(
-                    entry,
-                    data_updates=data_updates,
-                    reason=reason,
-                ),
-                None,
+            # The entry carries an update listener that reloads on every
+            # data change, so let it own the reload. async_update_reload_and_abort
+            # would schedule a second one, which Home Assistant reports as
+            # deprecated and stops doing in 2026.12. An unchanged entry never
+            # reaches the listener, so a resubmit that only means "try this
+            # device again" still has to schedule its own reload.
+            changed = self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, **data_updates}
             )
+            if not changed:
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_abort(reason=reason), None
         except (OSError, TimeoutError, ValueError):
             return None, "cannot_connect"
 
