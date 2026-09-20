@@ -1409,3 +1409,104 @@ class TestFirmwareUdpQuirks:
         dest = device.sock.sendto.call_args[0][1]
         assert dest == ("127.0.0.1", 54321)
 
+
+
+class TestDatagramStormGuards:
+    """A shared UDP port must not turn the mock into a packet amplifier."""
+
+    def _device_with_socket(self) -> MockMarstekDevice:
+        device = MockMarstekDevice(simulate=False, status_interval=0)
+        device.sock = MagicMock()
+        return device
+
+    @pytest.mark.parametrize(
+        ("label", "payload"),
+        [
+            ("own success reply", {"id": 1, "result": {"set_result": True}}),
+            ("error reply", {"id": 2, "error": {"code": -32601, "message": "x"}}),
+            ("empty method", {"id": 3, "method": "", "params": {}}),
+            ("non-string method", {"id": 4, "method": 7, "params": {}}),
+        ],
+    )
+    def test_reply_is_never_answered(
+        self, label: str, payload: dict[str, object]
+    ) -> None:
+        """Answering a reply is what spins two sockets into a storm."""
+        device = self._device_with_socket()
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            json.dumps(payload).encode(),
+            ("127.0.0.1", 30000),
+        )
+
+        device._handle_request()
+
+        device.sock.sendto.assert_not_called()
+
+    def test_unknown_method_still_answers_method_not_found(self) -> None:
+        """Dropping replies must not drop the -32601 firmware behaviour."""
+        device = self._device_with_socket()
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":9,"method":"Wifi.SetConfig","params":{}}',
+            ("127.0.0.1", 30000),
+        )
+
+        device._handle_request()
+
+        sent = json.loads(device.sock.sendto.call_args[0][0].decode())
+        assert sent["error"]["code"] == -32601
+
+    def test_dropped_datagrams_are_rate_limited(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A flood of unanswerable datagrams must not print a line each."""
+        device = self._device_with_socket()
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"result":{"set_result":true}}',
+            ("127.0.0.1", 30000),
+        )
+
+        capsys.readouterr()
+        for _ in range(500):
+            device._handle_request()
+
+        printed = capsys.readouterr().out.strip().splitlines()
+        assert len(printed) == 1
+        assert "not a request" in printed[0]
+
+    def test_handled_request_logs_one_line(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Steady-state logging stays at a single line per request."""
+        device = self._device_with_socket()
+        assert device.sock is not None
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 30000),
+        )
+
+        capsys.readouterr()
+        device._handle_request()
+
+        assert len(capsys.readouterr().out.strip().splitlines()) == 1
+
+    def test_quiet_mode_logs_nothing_per_request(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--quiet silences per-request lines but keeps the device working."""
+        device = MockMarstekDevice(
+            simulate=False, status_interval=0, verbose=False
+        )
+        device.sock = MagicMock()
+        device.sock.recvfrom.return_value = (
+            b'{"id":1,"method":"ES.GetStatus","params":{}}',
+            ("127.0.0.1", 30000),
+        )
+
+        capsys.readouterr()
+        device._handle_request()
+
+        assert capsys.readouterr().out == ""
+        device.sock.sendto.assert_called()

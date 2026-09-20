@@ -90,6 +90,8 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 - `--soc PERCENT` - Initial battery SOC percentage (default: 50)
 - `--pv-channels` - Optional `power:voltage:current` list (up to 4 channels). Values are **physical watts**; the mock encodes channel 1 according to the profile
 - `--no-simulate` - Disable dynamic simulation (static values only)
+- `--quiet` - Do not log a line per handled request (dropped datagrams are still summarised)
+- `--status-interval SECONDS` - Seconds between status lines (default: 30; `0` disables them)
 
 ### Examples
 
@@ -220,18 +222,27 @@ python3 /workspaces/ha_marstek/tools/query_device.py 172.28.0.20
 
 ## Console Output
 
-Status updates every 5 seconds:
+Status updates every `--status-interval` seconds (default 30):
 ```
 [STATUS] SOC: 45% | Batt: 523W | 🏠 650W | ⚖️ Balanced | Mode: Auto | 🔋 Discharging
 ```
 
-Request logging:
+One line per handled request:
 ```
-[14:32:05] Request from 172.28.0.10:54321
-   Method: ES.GetMode
-   ID: 1
-   -> Sent response: ES.GetMode
+[14:32:05] 172.28.0.10:54321 ES.GetMode id=1 (wire 1) -> replied
 ```
+
+Datagrams the mock cannot answer are summarised rather than printed
+individually, at most one line per `DROP_LOG_INTERVAL` seconds:
+```
+[14:32:07] Dropped datagram from 172.28.0.10:30000: not a request (no method) (412 since the last summary)
+```
+
+A datagram carrying `result` or `error` instead of `method` is a *reply*, and
+the mock never answers one. Two sockets sharing a UDP port would otherwise
+answer each other's answers, spinning at CPU speed and filling the disk with
+log output. Containers additionally cap their logs (see
+`.devcontainer/docker-compose.yml`), which Docker leaves unbounded by default.
 
 ## Programmatic Usage
 

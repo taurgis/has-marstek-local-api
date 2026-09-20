@@ -1,5 +1,17 @@
+# Container logs are unbounded by default (json-file max-size defaults to -1),
+# so one misbehaving device can fill the disk. Cap and rotate every service.
+# Applies only to containers created after this change:
+#   docker compose up -d --force-recreate
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "2"
+
 services:
   homeassistant:
+    <<: *default-logging
     # Current stable Core as of 2026-09-18. Recreate after bumping:
     #   docker compose pull homeassistant && docker compose up -d homeassistant
     image: ghcr.io/home-assistant/home-assistant:2026.9.3
@@ -22,6 +34,7 @@ services:
   # Mock device 1 - Venus E 3.0, default UDP port 30000
   # Legacy firmware 145: no SYS/UPS; energy fields in Wh
   mock-marstek:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -37,6 +50,7 @@ services:
   # Firmware 150 Rev 3.1: SYS + UPS + EM energy; GetMode CT keys are zeros
   # (matches LAN capture of a real Venus E 3.0 / ver 150)
   mock-marstek-2:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -52,6 +66,7 @@ services:
   # Firmware 148 or older: solar energy in Wh, channel-1 deciwatt PV; no SYS/UPS
   # (issue #57 / integration 1.1.0 must keep the 1.0.0 PV1 ÷10)
   mock-marstek-3:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -66,6 +81,7 @@ services:
   # Mock device 4 - Venus D with PV (4 MPPT channels), custom UDP port 30002
   # Legacy firmware 145: channel-1 deciwatt PV encoding, solar energy in Wh; no SYS/UPS
   mock-marstek-4:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -81,6 +97,7 @@ services:
   # Firmware 149: solar energy as 0.01 kWh (issue #35), channel-1 still deciwatts;
   # no SYS/UPS. Pair with mock-marstek-3 (Venus A 148) for both energy encodings.
   mock-marstek-5:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -97,6 +114,7 @@ services:
   # EM.GetStatus server method; GetDevice omits result MACs. Reset-prone
   # until HMG-50 Control 156.
   mock-marstek-6:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -112,6 +130,7 @@ services:
   # Firmware 150 / app label 150.9 (issue #57): solar 0.01 kWh, PV1 still
   # deciwatts, SYS + UPS. Keep 148 and 149 mocks; do not collapse them here.
   mock-marstek-7:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -127,6 +146,7 @@ services:
   # Known integer ver below 150: SYS without the 150 gate, no UPS, slots 0–5.
   # Distinct from Venus E 145 (no SYS) and Venus E 150 (UPS + ten slots).
   mock-marstek-8:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -143,6 +163,7 @@ services:
   # firmware reports device "VenusE" (src VenusE-%s), not "VenusE 3.0".
   # The integration must reject it (CT003 disconnect), not add it as E 3.x.
   mock-marstek-9:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -159,6 +180,7 @@ services:
 
   # VNSE3-0 Control 144 (oldest archived Venus E 3.0 Open API image)
   mock-marstek-10:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -171,6 +193,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.30", "--device", "VenusE 3.0", "--ver", "144", "--ble-mac", "02deadbeef0a", "--wifi-mac", "02cafebabe0a", "--soc", "44"]
 
   mock-marstek-11:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -183,6 +206,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.31", "--device", "VenusE 3.0", "--ver", "147", "--ble-mac", "02deadbeef0b", "--wifi-mac", "02cafebabe0b", "--soc", "47"]
 
   mock-marstek-12:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -195,6 +219,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.32", "--device", "VenusE 3.0", "--ver", "1476", "--ble-mac", "02deadbeef0c", "--wifi-mac", "02cafebabe0c", "--soc", "46"]
 
   mock-marstek-13:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -207,6 +232,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.33", "--device", "VenusE 3.0", "--ver", "148", "--ble-mac", "02deadbeef0d", "--wifi-mac", "02cafebabe0d", "--soc", "48"]
 
   mock-marstek-14:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -220,6 +246,7 @@ services:
 
   # VNSA-0 1487 (app 148.7; folds to generation 148)
   mock-marstek-15:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -233,6 +260,7 @@ services:
 
   # VNSA-0 1508 banners VEPRO-0 / VenusE Pro — unknown family, not Venus A
   mock-marstek-16:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -246,6 +274,7 @@ services:
 
   # VNSA-0 1509 (app 150.9; Open API ver 1509 folds to generation 150)
   mock-marstek-17:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -258,6 +287,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.37", "--device", "VenusA", "--ver", "1509", "--ble-mac", "02deadbeef11", "--wifi-mac", "02cafebabe11", "--soc", "71", "--pv-channels", "400:45:8.8,310:42:7.4,250:40:6.2,190:38:5.0"]
 
   mock-marstek-18:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -270,6 +300,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.38", "--device", "VenusD", "--ver", "147", "--ble-mac", "02deadbeef12", "--wifi-mac", "02cafebabe12", "--soc", "61", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
 
   mock-marstek-19:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -282,6 +313,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.39", "--device", "VenusD", "--ver", "149", "--ble-mac", "02deadbeef13", "--wifi-mac", "02cafebabe13", "--soc", "62", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
 
   mock-marstek-20:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -294,6 +326,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.40", "--device", "VenusD", "--ver", "1492", "--ble-mac", "02deadbeef14", "--wifi-mac", "02cafebabe14", "--soc", "63", "--pv-channels", "320:42:7.6,280:40:7.0,240:38:6.3,180:36:5.0"]
 
   mock-marstek-21:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -306,6 +339,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.41", "--device", "VenusD", "--ver", "150", "--ble-mac", "02deadbeef15", "--wifi-mac", "02cafebabe15", "--soc", "64", "--pv-channels", "360:44:8.2,300:41:7.3,260:39:6.7,200:37:5.4"]
 
   mock-marstek-22:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -318,6 +352,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.42", "--device", "VenusC", "--ver", "155", "--ble-mac", "02deadbeef16", "--wifi-mac", "02cafebabe16", "--soc", "51"]
 
   mock-marstek-23:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -330,6 +365,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.43", "--device", "VenusC", "--ver", "156", "--ble-mac", "02deadbeef17", "--wifi-mac", "02cafebabe17", "--soc", "53"]
 
   mock-marstek-24:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -342,6 +378,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.44", "--device", "VenusE", "--ver", "155", "--ble-mac", "02deadbeef18", "--wifi-mac", "02cafebabe18", "--soc", "41"]
 
   mock-marstek-25:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
@@ -354,6 +391,7 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.45", "--device", "VenusE", "--ver", "156", "--ble-mac", "02deadbeef19", "--wifi-mac", "02cafebabe19", "--soc", "43"]
 
   mock-marstek-26:
+    <<: *default-logging
     build:
       context: ..
       dockerfile: tools/mock_device/Dockerfile

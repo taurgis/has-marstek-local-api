@@ -61,6 +61,15 @@ from .utils import (
     save_persistent_state,
 )
 
+# Seconds between summaries of dropped datagrams. A shared UDP port can pair
+# this socket with a talker that answers everything it sends; printing a line
+# per dropped datagram is what turns such a loop into gigabytes of log.
+DROP_LOG_INTERVAL = 10.0
+
+# Seconds between simulator status lines. Every mock prints these for as long
+# as it runs, so the default stays coarse; pass --status-interval to tighten.
+DEFAULT_STATUS_INTERVAL = 30.0
+
 
 class MockMarstekDevice:
     """Mock Marstek device that responds to UDP requests."""
@@ -75,6 +84,8 @@ class MockMarstekDevice:
         include_bat_power: bool = False,
         state_dir: str | None = None,
         reset_state: bool = False,
+        verbose: bool = True,
+        status_interval: float = DEFAULT_STATUS_INTERVAL,
     ) -> None:
         self.port = port
         self.config = {**DEFAULT_CONFIG, **(device_config or {})}
@@ -130,6 +141,13 @@ class MockMarstekDevice:
         # (VNSE3-0 json_data.c / CH395 recv path).
         self._openapi_frozen = False
 
+        # One line per handled request, and dropped datagrams summarised
+        # rather than printed individually.
+        self.verbose = verbose
+        self.status_interval = status_interval
+        self._dropped_since_log = 0
+        self._last_drop_log = 0.0
+
     def start(self) -> None:
         """Start the mock device server."""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -142,8 +160,11 @@ class MockMarstekDevice:
 
         if self.simulate:
             self.simulator.start()
-            self._status_thread = threading.Thread(target=self._status_display, daemon=True)
-            self._status_thread.start()
+            if self.status_interval > 0:
+                self._status_thread = threading.Thread(
+                    target=self._status_display, daemon=True
+                )
+                self._status_thread.start()
 
         try:
             while True:
@@ -182,7 +203,7 @@ class MockMarstekDevice:
     def _status_display(self) -> None:
         """Display battery status periodically."""
         while True:
-            time.sleep(5)
+            time.sleep(self.status_interval)
             state = self.simulator.get_state()
 
             power_indicator = (
@@ -211,35 +232,48 @@ class MockMarstekDevice:
                 f"Mode: {state['mode']}{passive_info} | {power_indicator}"
             )
 
+    def _log_dropped(self, reason: str, sender: str) -> None:
+        """Summarise dropped datagrams at most once per DROP_LOG_INTERVAL.
+
+        Anything unanswerable arrives in bursts rather than singly, so the
+        count carries the signal and printing each one only costs disk.
+        """
+        self._dropped_since_log += 1
+        now = time.monotonic()
+        if now - self._last_drop_log < DROP_LOG_INTERVAL:
+            return
+        count = self._dropped_since_log
+        self._dropped_since_log = 0
+        self._last_drop_log = now
+        suffix = f" ({count} since the last summary)" if count > 1 else ""
+        print(
+            f"[{time.strftime('%H:%M:%S')}] Dropped datagram from {sender}: "
+            f"{reason}{suffix}"
+        )
+
     def _handle_request(self) -> None:
         """Handle incoming UDP request."""
         assert self.sock is not None
         data, addr = self.sock.recvfrom(4096)
         sender_ip, sender_port = addr
+        sender = f"{sender_ip}:{sender_port}"
 
         if self._openapi_frozen:
-            print(
-                f"[{time.strftime('%H:%M:%S')}] Open API frozen; "
-                f"ignoring {len(data)} bytes from {sender_ip}:{sender_port}"
-            )
+            self._log_dropped(f"Open API frozen, {len(data)} bytes", sender)
             return
 
         if not data:
             self._openapi_frozen = True
             print(
                 f"[{time.strftime('%H:%M:%S')}] Empty UDP datagram from "
-                f"{sender_ip}:{sender_port}; freezing Open API "
-                "(Control firmware behavior)"
+                f"{sender}; freezing Open API (Control firmware behavior)"
             )
             return
 
         try:
             request = json.loads(data.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
-            print(
-                f"[{time.strftime('%H:%M:%S')}] Invalid JSON from "
-                f"{sender_ip}:{sender_port}"
-            )
+            self._log_dropped("invalid JSON", sender)
             self._send_openapi_datagram(
                 {
                     "id": 0,
@@ -250,33 +284,35 @@ class MockMarstekDevice:
             return
 
         if not isinstance(request, dict):
-            print(
-                f"[{time.strftime('%H:%M:%S')}] Non-object JSON from "
-                f"{sender_ip}:{sender_port}"
-            )
+            self._log_dropped("non-object JSON", sender)
+            return
+
+        # Only a request carries a method name. A datagram without one is a
+        # reply -- ours looping back on a shared port, or another device's --
+        # and answering a reply is what spins two sockets into a packet storm.
+        method = request.get("method")
+        if not isinstance(method, str) or not method:
+            self._log_dropped("not a request (no method)", sender)
             return
 
         raw_id = request.get("id", 0)
         wire_id = json_rpc_wire_id(raw_id)
         request_id = 0 if wire_id is None else wire_id
-        method = request.get("method", "")
         params = request.get("params", {})
         if not isinstance(params, dict):
             params = {}
-
-        print(f"[{time.strftime('%H:%M:%S')}] Request from {sender_ip}:{sender_port}")
-        print(f"   Method: {method}")
-        print(f"   ID: {raw_id} (wire {request_id})")
 
         response = self.build_response(request_id, method, params)
 
         if response:
             self._send_openapi_datagram(response, addr)
-            print(f"   -> Sent response: {method}")
-        else:
-            print("   -> Method not found")
 
-        print()
+        if self.verbose:
+            outcome = "replied" if response else "no response"
+            print(
+                f"[{time.strftime('%H:%M:%S')}] {sender} {method} "
+                f"id={raw_id} (wire {request_id}) -> {outcome}"
+            )
 
     def _send_openapi_datagram(
         self, response: dict[str, Any], addr: tuple[str, int]
