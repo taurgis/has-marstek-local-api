@@ -647,7 +647,6 @@ def merge_device_status(
         "offgrid_power": None,
         "pv_power": None,
         "bat_cap": None,
-        "household_consumption": None,
         "total_pv_energy": None,
         "total_grid_output_energy": None,
         "total_grid_input_energy": None,
