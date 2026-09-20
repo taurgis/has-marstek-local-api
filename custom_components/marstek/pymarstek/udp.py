@@ -364,6 +364,18 @@ class MarstekUDPClient:
         self._discovery_cache = None
         self._cache_timestamp = 0
 
+    async def _async_broadcast_addresses(self) -> list[str]:
+        """Enumerate broadcast addresses off the event loop.
+
+        Reading the interface table imports psutil and issues syscalls, both
+        blocking. Home Assistant reports an import made on the event loop as
+        a blocking call, so the whole pass runs in the default executor.
+        https://developers.home-assistant.io/docs/asyncio_blocking_operations/
+        """
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._get_broadcast_addresses
+        )
+
     def _get_broadcast_addresses(self) -> list[str]:
         if psutil is _PSUTIL_AUTO:
             addresses = get_broadcast_addresses(logger=_LOGGER)
@@ -873,7 +885,7 @@ class MarstekUDPClient:
         try:
             self._ensure_listener()
 
-            broadcast_addresses = self._get_broadcast_addresses()
+            broadcast_addresses = await self._async_broadcast_addresses()
             _LOGGER.debug("Broadcast addresses: %s on port %d", broadcast_addresses, self._port)
             for address in broadcast_addresses:
                 await self._send_udp_message(message, address, self._port)
@@ -994,9 +1006,17 @@ class MarstekUDPClient:
                     device_ip,
                     port,
                     timeout=timeout,
+                    # Probing the instance id this firmware does not use is
+                    # expected to time out, and a device that is off times
+                    # out on both. Either way the caller decides what a None
+                    # result means; this loop records it at debug level.
+                    quiet_on_timeout=True,
                     bypass_rate_limit=bypass_rate_limit,
                 )
-            except (TimeoutError, OSError, ValueError) as err:
+            except (TimeoutError, OSError, ValueError, ValidationError) as err:
+                # ValidationError is not a ValueError. Without it here, a
+                # rejected ES.GetMode would escape a poll that treats every
+                # other read's failure as "contributed nothing".
                 last_error = err
                 _LOGGER.debug(
                     "ES.GetMode id=%s failed for %s: %s",

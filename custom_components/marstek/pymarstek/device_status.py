@@ -241,6 +241,11 @@ class _PollRun:
                 self._device_ip,
                 self._port,
                 timeout=self._timeout,
+                # A read that times out contributes nothing and is already
+                # recorded below; the coordinator reports the outage once.
+                # Warning per read would put six lines in the log for every
+                # poll of a device that is simply switched off.
+                quiet_on_timeout=True,
                 bypass_rate_limit=bypass_rate_limit,
             )
         except (TimeoutError, OSError, ValueError, ValidationError) as err:
@@ -308,8 +313,25 @@ async def fetch_device_status(
                 for read in reads
             },
         }
-        results = await asyncio.gather(*tasks.values())
-        collected = dict(zip(tasks, results, strict=True))
+        # Without return_exceptions a raising read propagates out of gather
+        # and leaves its siblings running: they would go on sending UDP to a
+        # device whose poll has already ended, and Python would report each
+        # one as a never-retrieved task exception. A read that blew up
+        # contributes nothing, exactly like one that timed out.
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        for key, result in zip(tasks, results, strict=True):
+            if isinstance(result, BaseException):
+                if isinstance(result, asyncio.CancelledError):
+                    raise result
+                _LOGGER.debug(
+                    "%s raised during parallel poll of %s: %s",
+                    key,
+                    device_ip,
+                    result,
+                )
+                collected[key] = None
+                continue
+            collected[key] = result
     else:
         collected["es_mode"] = await run.es_mode(
             profile=profile, apply_delay=True, bypass_rate_limit=False

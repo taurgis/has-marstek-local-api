@@ -43,7 +43,9 @@ def raise_if_invalid_status(
     valid_data = has_valid_status_data(device_status)
 
     if not has_fresh_data:
-        logger.warning(
+        # Debug, not warning: this raises, and the coordinator reports the
+        # outage once for the whole run of failures rather than per poll.
+        logger.debug(
             "No fresh data received from device at %s - keeping previous values",
             current_ip,
         )
@@ -51,7 +53,7 @@ def raise_if_invalid_status(
         raise TimeoutError(error_msg) from None
 
     if not valid_data:
-        logger.warning(
+        logger.debug(
             "No valid data received from device at %s "
             "(device_mode=%s, soc=%s, power=%s) - connection failed",
             current_ip,

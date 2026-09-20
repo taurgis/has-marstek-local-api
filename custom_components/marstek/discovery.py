@@ -74,8 +74,30 @@ def _is_echo_response(response: dict[str, Any]) -> bool:
 
 
 def _get_broadcast_addresses() -> list[str]:
-    """Get broadcast addresses for all network interfaces."""
+    """Get broadcast addresses for all network interfaces.
+
+    Blocking: imports psutil and reads the interface table. Reach it through
+    :func:`_async_broadcast_addresses` rather than calling it on the loop.
+    """
     return get_broadcast_addresses(logger=_LOGGER)
+
+
+async def _async_broadcast_addresses(
+    broadcast_addresses: Iterable[str] | None,
+) -> list[str]:
+    """Return the sweep targets without blocking the event loop.
+
+    A caller that already knows the addresses (the Home Assistant layer asks
+    the network integration as well) passes them in. Otherwise the interface
+    table is read in the executor, because Home Assistant reports an import
+    made on the event loop as a blocking call.
+    https://developers.home-assistant.io/docs/asyncio_blocking_operations/
+    """
+    if broadcast_addresses is not None:
+        return list(broadcast_addresses)
+    return await asyncio.get_running_loop().run_in_executor(
+        None, _get_broadcast_addresses
+    )
 
 
 class DeviceInfoUDPClient(Protocol):
@@ -156,6 +178,8 @@ async def discover_devices(
     timeout: float = DISCOVERY_TIMEOUT,
     port: int = DEFAULT_UDP_PORT,
     ports: Iterable[int] | None = None,
+    *,
+    broadcast_addresses: Iterable[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Discover Marstek devices on the local network via UDP broadcast.
 
@@ -168,6 +192,8 @@ async def discover_devices(
         timeout: Discovery timeout in seconds
         port: UDP port to use
         ports: Optional explicit list of UDP ports to scan
+        broadcast_addresses: Sweep targets to use instead of reading the
+            interface table here
 
     Returns:
         List of discovered device dictionaries
@@ -209,7 +235,7 @@ async def discover_devices(
     message = _build_discovery_message()
 
     # Get all broadcast addresses
-    broadcast_addrs = _get_broadcast_addresses()
+    broadcast_addrs = await _async_broadcast_addresses(broadcast_addresses)
     _LOGGER.debug("Broadcast addresses: %s", broadcast_addrs)
 
     for scan_port, sock in sockets:

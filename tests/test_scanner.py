@@ -111,7 +111,12 @@ async def test_scanner_async_setup_noop_when_initialized(hass: HomeAssistant):
 
 
 async def test_scanner_async_scan_creates_background_task(hass: HomeAssistant):
-    """Test async_scan creates background task."""
+    """A sweep runs as a background task, not one Home Assistant waits for.
+
+    A sweep sits out the discovery timeout waiting for replies. Created with
+    async_create_task it would hold up async_block_till_done, and with it
+    Home Assistant's shutdown, for that whole timeout.
+    """
     scanner = MarstekScanner(hass)
     captured_coro = None
 
@@ -119,7 +124,12 @@ async def test_scanner_async_scan_creates_background_task(hass: HomeAssistant):
         nonlocal captured_coro
         captured_coro = coro
 
-    with patch.object(hass, "async_create_task", side_effect=capture_task):
+    with (
+        patch.object(
+            hass, "async_create_background_task", side_effect=capture_task
+        ),
+        patch.object(hass, "async_create_task", side_effect=AssertionError),
+    ):
         scanner.async_scan()
 
     # Verify task was created and clean up the coroutine

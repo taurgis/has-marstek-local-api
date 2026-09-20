@@ -14,6 +14,7 @@ from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import get_device_info
 from .firmware_profile import is_unsupported_venus_e2
 from .helpers.flow_helpers import (
+    async_apply_entry_update,
     get_unique_id_from_device_info,
     identities_overlap,
     identity_macs_from_entry,
@@ -85,9 +86,12 @@ class CannotConnectRepairFlow(RepairsFlow):
                                 new_port=port,
                             )
                             # Update the config entry with the new host/port
-                            self.hass.config_entries.async_update_entry(
+                            # and let exactly one reload follow: the entry's
+                            # update listener already reloads a loaded entry.
+                            async_apply_entry_update(
+                                self.hass,
                                 entry,
-                                data={
+                                {
                                     **entry.data,
                                     CONF_HOST: host,
                                     CONF_PORT: port,
@@ -96,8 +100,6 @@ class CannotConnectRepairFlow(RepairsFlow):
                             )
                             # Delete the issue since it's resolved
                             ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
-                            # Reload the entry to reconnect
-                            await self.hass.config_entries.async_reload(entry.entry_id)
                             return self.async_create_entry(data={})
                     else:
                         errors["base"] = "cannot_connect"

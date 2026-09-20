@@ -89,6 +89,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_update_success_time: datetime | None = None
         self.last_update_attempt_time: datetime | None = None
         self.consecutive_failures: int = 0
+        # True once this run of failures has been reported. Home Assistant
+        # asks integrations to log the transition into and out of being
+        # unreachable, not every failed poll:
+        # https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/log-when-unavailable
+        self._failure_logged: bool = False
         self._marked_reset_prone_ip: str | None = None
         self._marked_retransmit_safe_ip: str | None = None
 
@@ -154,9 +159,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         cached = self.data
         self.consecutive_failures += 1
         failure_threshold = self._get_failure_threshold()
+        # One line per run of failures, not one per poll: a device offline
+        # overnight at the default 30s interval would otherwise write
+        # thousands of warnings and bury whatever else went wrong.
+        first_report = not self._failure_logged
+        self._failure_logged = True
+        report = _LOGGER.warning if first_report else _LOGGER.debug
 
         if not cached or self.consecutive_failures >= failure_threshold:
-            _LOGGER.warning(
+            report(
                 "Device %s status request failed (attempt #%d, threshold: %d): %s. "
                 "Entities will become unavailable. "
                 "Triggering immediate scan for IP changes",
@@ -176,7 +187,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ) from err
 
         # Below threshold with a cache - keep entities available
-        _LOGGER.warning(
+        report(
             "Device %s status request failed (attempt #%d of %d): %s. "
             "Keeping entities available with cached data",
             current_ip,
@@ -423,6 +434,13 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Update success tracking
             self.last_update_success_time = dt_util.now()
+            if self._failure_logged:
+                _LOGGER.info(
+                    "Device %s is answering again after %d failed attempt(s)",
+                    current_ip,
+                    self.consecutive_failures,
+                )
+                self._failure_logged = False
             self.consecutive_failures = 0
 
             # Clear any existing connection issue on successful update
@@ -454,7 +472,14 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return f"cannot_connect_{self._entry.entry_id}"
 
     def _create_connection_issue(self, error: str) -> None:
-        """Create a fixable connection issue for this entry."""
+        """Create a fixable connection issue for this entry.
+
+        Raising the same issue again on every failed poll republishes it to
+        the repairs panel each time, so only the first failure of a run
+        creates it. Recovery deletes it, which re-arms this.
+        """
+        if ir.async_get(self.hass).async_get_issue(DOMAIN, self._issue_id()):
+            return
         ir.async_create_issue(
             self.hass,
             DOMAIN,
