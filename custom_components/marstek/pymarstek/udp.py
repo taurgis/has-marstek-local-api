@@ -13,7 +13,7 @@ import logging
 import socket
 import time
 from collections.abc import Callable
-from contextlib import suppress
+from contextlib import AbstractAsyncContextManager, nullcontext, suppress
 from typing import Any, cast
 
 from ..firmware_profile import FirmwareProfile, extract_discovery_version
@@ -78,6 +78,13 @@ MIN_RESET_PRONE_REQUEST_INTERVAL: float = 1.0
 # Ethernet IPs still get one datagram. Writes and unknown/reset-prone IPs
 # stay one-shot.
 UNICAST_RETRANSMIT_WAIT: float = 0.5
+# How often broadcast discovery drains replies out of the response cache.
+BROADCAST_DRAIN_INTERVAL: float = 0.1
+# Upper bound on how long a unicast waits for a paused listener to resume.
+# Comfortably longer than a full discovery sweep (DISCOVERY_TIMEOUT is 10s),
+# short enough that a scan which died between pause and resume cannot wedge
+# the coordinator for the lifetime of the entry.
+RECEIVER_PAUSE_MAX_WAIT: float = 30.0
 _ANONYMOUS_RESET_PRONE_OWNER = "*"
 _READ_ONLY_UNICAST_METHODS: frozenset[str] = frozenset(
     {
@@ -103,9 +110,7 @@ class _UnicastTimeoutError(TimeoutError):
         self.retried = retried
 
 
-def _is_broadcast_address(target_ip: str) -> bool:
-    """Return True for limited-broadcast and x.x.x.255 subnet broadcasts."""
-    return target_ip in {"255.255.255.255"} or target_ip.endswith(".255")
+LIMITED_BROADCAST_ADDRESS = "255.255.255.255"
 
 # ES.GetMode instance ids observed in the wild. This integration prefers 0
 # (Open API default) and falls back to 1 (vendor library default).
@@ -178,6 +183,7 @@ class MarstekUDPClient:
         self._port = port
         self._bind_port = bind_port if bind_port is not None else port
         self._socket: socket.socket | None = None
+        self._closed: bool = False
         self._pending_requests: dict[
             int | tuple[str, int], asyncio.Future[dict[str, Any]]
         ] = {}
@@ -192,6 +198,14 @@ class MarstekUDPClient:
         self._discovery_cache: list[dict[str, Any]] | None = None
         self._cache_timestamp: float = 0
         self._cache_duration: float = 30.0
+
+        # Broadcast targets are exempt from per-IP throttling. Resolve them
+        # from the interface table rather than guessing from the last octet:
+        # a /23 host really can sit on x.x.1.255, and a /25 broadcast is
+        # x.x.x.127. Refreshed whenever a broadcast send enumerates them.
+        self._broadcast_addresses: frozenset[str] = frozenset(
+            {LIMITED_BROADCAST_ADDRESS}
+        )
 
         self._local_send_ip: str = "0.0.0.0"
         self._polling_paused: dict[str, bool] = {}
@@ -324,14 +338,23 @@ class MarstekUDPClient:
                 return future
         return self._pending_requests.pop(request_id, None)
 
-    def _pop_cached_responses_for_id(self, request_id: int) -> list[dict[str, Any]]:
-        """Take cached replies for a JSON-RPC id from every source IP."""
+    def _pop_cached_responses_for_id(
+        self, request_id: int, *, since: float
+    ) -> list[dict[str, Any]]:
+        """Take cached replies for a JSON-RPC id from every source IP.
+
+        Only replies cached at or after *since* count. JSON-RPC ids are
+        uint16 on the wire and discovery reuses them, so a late datagram
+        answering the *previous* broadcast must not be handed to this one.
+        """
         responses: list[dict[str, Any]] = []
         for key in list(self._response_cache):
             matches_id = key == request_id or (
                 isinstance(key, tuple) and len(key) == 2 and key[1] == request_id
             )
             if not matches_id:
+                continue
+            if self._response_cache[key].get("timestamp", 0.0) < since:
                 continue
             cached = self._response_cache.pop(key)
             response = cached.get("response")
@@ -369,10 +392,28 @@ class MarstekUDPClient:
         return host
 
     async def _enter_unicast_exchange(self) -> None:
-        """Wait until discovery listeners are running, then count this exchange."""
+        """Wait until discovery listeners are running, then count this exchange.
+
+        The wait is bounded. A scan that dies between pause and resume leaves
+        the refcount raised, and an unbounded wait here would block every
+        later unicast before its own timeout ever starts, so the coordinator
+        would hang instead of failing. Past the bound the exchange proceeds:
+        the worst case is one datagram sent while the listener is paused,
+        which times out normally.
+        """
+        deadline = time.monotonic() + RECEIVER_PAUSE_MAX_WAIT
         async with self._exchange_gate:
             while self._receiver_pause_count > 0:
-                await self._exchange_gate.wait()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    _LOGGER.warning(
+                        "Open API UDP listener still paused after %.0fs; "
+                        "proceeding so polling cannot wedge",
+                        RECEIVER_PAUSE_MAX_WAIT,
+                    )
+                    break
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(self._exchange_gate.wait(), remaining)
             self._in_flight_exchanges += 1
 
     async def _exit_unicast_exchange(self) -> None:
@@ -385,6 +426,7 @@ class MarstekUDPClient:
 
     async def async_setup(self) -> None:
         """Prepare the UDP socket."""
+        self._closed = False
         if self._socket is not None:
             return
 
@@ -460,6 +502,7 @@ class MarstekUDPClient:
 
     async def async_cleanup(self) -> None:
         """Close the UDP socket and clear all caches."""
+        self._closed = True
         self._receiver_pause_count = 0
         await self._stop_listener()
         if self._socket:
@@ -495,7 +538,16 @@ class MarstekUDPClient:
         self._es_mode_device_ids.clear()
 
     async def _ensure_socket(self) -> socket.socket:
-        """Ensure the UDP socket is initialized and return it."""
+        """Ensure the UDP socket is initialized and return it.
+
+        Never re-bind after cleanup. ``async_cleanup`` wakes everyone waiting
+        on the exchange gate, and a waiter that then reached this method would
+        bind a second socket into the ``SO_REUSEPORT`` group -- an orphan that
+        outlives the client and steals datagrams from its replacement.
+        Callers already treat OSError as a transport failure.
+        """
+        if self._closed:
+            raise OSError("Marstek UDP client is closed")
         if not self._socket:
             await self.async_setup()
         assert self._socket is not None
@@ -521,14 +573,29 @@ class MarstekUDPClient:
 
     def _get_broadcast_addresses(self) -> list[str]:
         if psutil is _PSUTIL_AUTO:
-            return get_broadcast_addresses(logger=_LOGGER)
-        if psutil is None:
-            return get_broadcast_addresses(logger=_LOGGER, allow_import=False)
-        return get_broadcast_addresses(
-            psutil_module=cast(PsutilModule, psutil),
-            logger=_LOGGER,
-            allow_import=False,
-        )
+            addresses = get_broadcast_addresses(logger=_LOGGER)
+        elif psutil is None:
+            addresses = get_broadcast_addresses(logger=_LOGGER, allow_import=False)
+        else:
+            addresses = get_broadcast_addresses(
+                psutil_module=cast(PsutilModule, psutil),
+                logger=_LOGGER,
+                allow_import=False,
+            )
+        self._broadcast_addresses = frozenset(addresses) | {
+            LIMITED_BROADCAST_ADDRESS
+        }
+        return addresses
+
+    def _is_broadcast_target(self, target_ip: str) -> bool:
+        """Return True when *target_ip* is a broadcast address, not a device.
+
+        Throttling a broadcast makes no sense (there is no single device to
+        protect) but throttling a real host that happens to end in ``.255``
+        is silently wrong, so match against the interface table instead of
+        the last octet.
+        """
+        return target_ip in self._broadcast_addresses
 
     async def _get_rate_limit_lock(self, target_ip: str) -> asyncio.Lock:
         """Get or create a per-IP rate limit lock."""
@@ -692,11 +759,12 @@ class MarstekUDPClient:
             for request_id, _ in sorted_entries[:to_remove]:
                 self._response_cache.pop(request_id, None)
 
-            if to_remove > 0:
-                _LOGGER.debug(
-                    "Cleaned up %d stale response cache entries",
-                    to_remove + len(stale_ids),
-                )
+            # Reaching this branch means the cache is over the max size, so
+            # ``to_remove`` is always positive.
+            _LOGGER.debug(
+                "Cleaned up %d stale response cache entries",
+                to_remove + len(stale_ids),
+            )
 
     async def _enforce_rate_limit(self, target_ip: str) -> None:
         """Enforce minimum interval between requests to the same device.
@@ -745,12 +813,13 @@ class MarstekUDPClient:
         bypass_rate_limit: bool = False,
     ) -> None:
         sock = await self._ensure_socket()
+        is_broadcast = self._is_broadcast_target(target_ip)
 
         # Enforce rate limiting for non-broadcast addresses. Reset-prone IPs
         # keep the floor even when a caller asks to bypass (GetDevice, retries).
-        if not _is_broadcast_address(target_ip) and (
-            target_ip in self._reset_prone_ips or not bypass_rate_limit
-        ):
+        if is_broadcast:
+            pass
+        elif target_ip in self._reset_prone_ips or not bypass_rate_limit:
             await self._enforce_rate_limit(target_ip)
 
         data = message.encode("utf-8")
@@ -759,7 +828,17 @@ class MarstekUDPClient:
                 "Refusing to send an empty UDP datagram; Control firmware "
                 "freezes Open API on 0-byte packets"
             )
-        sock.sendto(data, (target_ip, target_port))
+        # The socket is non-blocking, so a full send buffer would make
+        # ``sock.sendto`` raise BlockingIOError instead of queueing.
+        await self._event_loop().sock_sendto(sock, data, (target_ip, target_port))
+        if not is_broadcast:
+            # Stamp every datagram, including the ones that bypassed the
+            # throttle. Otherwise a bypassing send (GetDevice, a Wi-Fi
+            # retransmit) leaves the clock stale and the *next* throttled
+            # request believes the device has been idle. Same clock as
+            # ``_enforce_rate_limit``, which reads the stamp back.
+            clock = self._loop or asyncio.get_running_loop()
+            self._last_request_time[target_ip] = clock.time()
         _LOGGER.debug("Send: %s:%d | %s", target_ip, target_port, message)
 
     def _wifi_reliability_enabled(self, target_ip: str, method_name: str) -> bool:
@@ -823,8 +902,12 @@ class MarstekUDPClient:
         The silent-wait copy stays inside *timeout* so one logical request
         cannot consume two full timeouts. Ethernet replies that arrive
         before 500 ms never send the copy.
+
+        The deadline starts once the datagram is on the wire. Per-IP
+        throttling can sleep up to a second before that (reset-prone floor),
+        and charging that sleep to the caller's budget would time out a
+        device that in fact answered promptly.
         """
-        deadline = time.monotonic() + timeout
         retried = False
         await self._send_udp_message(
             message,
@@ -832,6 +915,7 @@ class MarstekUDPClient:
             target_port,
             bypass_rate_limit=bypass_rate_limit,
         )
+        deadline = time.monotonic() + timeout
         if allow_retransmit:
             try:
                 return (
@@ -931,29 +1015,25 @@ class MarstekUDPClient:
                 "Bat.GetStatus is blocked on reset-prone firmware",
                 field="method",
             )
-        if target_ip in self._reset_prone_ips:
-            lock = await self._get_device_io_lock(target_ip)
-            async with lock:
-                return await self._exchange_request(
-                    message,
-                    request_id,
-                    method_name,
-                    target_ip,
-                    target_port,
-                    timeout,
-                    quiet_on_timeout=quiet_on_timeout,
-                    bypass_rate_limit=bypass_rate_limit,
-                )
-        return await self._exchange_request(
-            message,
-            request_id,
-            method_name,
-            target_ip,
-            target_port,
-            timeout,
-            quiet_on_timeout=quiet_on_timeout,
-            bypass_rate_limit=bypass_rate_limit,
+        # Reset-prone Control builds cannot take overlapping Open API
+        # requests, so those IPs exchange under a per-device lock. Everything
+        # else runs the same exchange unguarded.
+        guard: AbstractAsyncContextManager[Any, None] = (
+            await self._get_device_io_lock(target_ip)
+            if target_ip in self._reset_prone_ips
+            else nullcontext()
         )
+        async with guard:
+            return await self._exchange_request(
+                message,
+                request_id,
+                method_name,
+                target_ip,
+                target_port,
+                timeout,
+                quiet_on_timeout=quiet_on_timeout,
+                bypass_rate_limit=bypass_rate_limit,
+            )
 
     async def _exchange_request(
         self,
@@ -976,7 +1056,7 @@ class MarstekUDPClient:
             try:
                 self._ensure_listener()
 
-                request_started = time.time()
+                request_started = time.monotonic()
                 _LOGGER.debug(
                     "Send request to %s:%d: %s",
                     target_ip,
@@ -1018,7 +1098,7 @@ class MarstekUDPClient:
                     raise TimeoutError(
                         f"Request timeout to {target_ip}:{target_port}"
                     ) from err
-                latency = time.time() - request_started
+                latency = time.monotonic() - request_started
                 if retried:
                     _LOGGER.debug(
                         "Got UDP reply from %s:%d for %s after retransmit (%.0f ms)",
@@ -1027,13 +1107,17 @@ class MarstekUDPClient:
                         method_name,
                         latency * 1000,
                     )
+                # A JSON-RPC error is a delivered reply, not a success.
+                # Counting it as one hides "method not found" storms behind a
+                # 100% success rate in diagnostics.
+                error = response.get("error")
                 self._record_command_result(
                     method_name,
                     device_ip=target_ip,
-                    success=True,
+                    success=error is None,
                     timeout=False,
                     latency=latency,
-                    error=None,
+                    error=None if error is None else str(error),
                     retransmitted=retried,
                 )
                 return response
@@ -1092,13 +1176,6 @@ class MarstekUDPClient:
                         "timestamp": loop.time(),
                     }
                     future = self._pop_pending_future(request_id, source_ip=addr[0])
-                    if (
-                        future is None
-                        and isinstance(raw_id, int)
-                        and not isinstance(raw_id, bool)
-                        and raw_id != request_id
-                    ):
-                        future = self._pop_pending_future(raw_id, source_ip=addr[0])
                     if future and not future.done():
                         future.set_result(response)
                     elif future is None:
@@ -1173,9 +1250,18 @@ class MarstekUDPClient:
             for address in broadcast_addresses:
                 await self._send_udp_message(message, address, self._port)
 
-            while (loop.time() - start_time) < timeout:
-                responses.extend(self._pop_cached_responses_for_id(request_id))
-                await asyncio.sleep(0.1)
+            # Drain *after* each sleep, including the final one: a reply that
+            # lands in the last interval is already cached, and breaking out
+            # of the loop without a last drain would silently discard it.
+            deadline = start_time + timeout
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(min(BROADCAST_DRAIN_INTERVAL, remaining))
+                responses.extend(
+                    self._pop_cached_responses_for_id(request_id, since=start_time)
+                )
         finally:
             self._pending_requests.pop(request_id, None)
         _LOGGER.debug("Broadcast discovery completed, found %d device(s)", len(responses))
@@ -1323,18 +1409,13 @@ class MarstekUDPClient:
         return _ES_MODE_INSTANCE_IDS
 
     @staticmethod
-    def _es_mode_response_usable(response: dict[str, Any]) -> bool:
-        """Return whether a JSON-RPC payload has a result object.
-
-        A result dict — even empty — is our historical success path. Retry the
-        other instance id only on transport failure, a JSON-RPC error, or a
-        missing/non-dict result (the vendor library's id=1 probe).
-        """
-        return MarstekUDPClient._json_rpc_result_usable(response)
-
-    @staticmethod
     def _json_rpc_result_usable(response: dict[str, Any]) -> bool:
-        """Return True when the payload is a JSON-RPC result, not an error."""
+        """Return True when the payload is a JSON-RPC result, not an error.
+
+        A result dict — even empty — is the success path. ES.GetMode retries
+        the other instance id only on transport failure, a JSON-RPC error, or
+        a missing/non-dict result (the vendor library's id=1 probe).
+        """
         if "error" in response:
             return False
         return isinstance(response.get("result"), dict)
@@ -1373,7 +1454,7 @@ class MarstekUDPClient:
                     err,
                 )
                 continue
-            if not self._es_mode_response_usable(response):
+            if not self._json_rpc_result_usable(response):
                 _LOGGER.debug(
                     "ES.GetMode id=%s returned no usable result for %s: %s",
                     instance_id,

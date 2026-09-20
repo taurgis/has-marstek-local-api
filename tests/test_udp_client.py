@@ -44,6 +44,18 @@ def _complete_first_pending(
             return
 
 
+def _patch_sock_sendto() -> Any:
+    """Patch ``loop.sock_sendto`` for tests that drive a mocked socket.
+
+    ``_send_udp_message`` puts datagrams on the wire through the event loop
+    because the Open API socket is non-blocking. A ``MagicMock`` socket is not
+    a real one, so the loop call has to be intercepted.
+    """
+    return patch.object(
+        asyncio.get_running_loop(), "sock_sendto", AsyncMock()
+    )
+
+
 def _unicast_test_client() -> MarstekUDPClient:
     """Return a UDP client with a mocked socket ready for send_request tests."""
     client = MarstekUDPClient()
@@ -2171,10 +2183,11 @@ class TestRateLimitCleanupEnforcement:
             await original_enforce(ip)
         
         client._enforce_rate_limit = tracking_enforce
-        
+
         # Send to broadcast - should skip rate limiting
-        await client._send_udp_message('{"test": 1}', "255.255.255.255", 30000)
-        
+        with _patch_sock_sendto():
+            await client._send_udp_message('{"test": 1}', "255.255.255.255", 30000)
+
         # Rate limit should not have been called
         assert call_count == 0
 
@@ -2186,14 +2199,18 @@ class TestRateLimitCleanupEnforcement:
         client._loop.time.return_value = 1000.0
         client._enforce_rate_limit = AsyncMock()
 
-        await client._send_udp_message(
-            '{"test": 1}',
-            "192.168.1.100",
-            30000,
-            bypass_rate_limit=True,
-        )
+        with _patch_sock_sendto():
+            await client._send_udp_message(
+                '{"test": 1}',
+                "192.168.1.100",
+                30000,
+                bypass_rate_limit=True,
+            )
 
         client._enforce_rate_limit.assert_not_called()
+        # The throttle was skipped, but the datagram still updates the clock
+        # the next throttled request reads.
+        assert client._last_request_time["192.168.1.100"] == 1000.0
 
     async def test_reset_prone_ignores_bypass_rate_limit(self) -> None:
         """Reset-prone IPs keep the UDP floor even when bypass is requested."""
@@ -2204,12 +2221,13 @@ class TestRateLimitCleanupEnforcement:
         client.set_openapi_reset_prone("192.168.1.100", True)
         client._enforce_rate_limit = AsyncMock()
 
-        await client._send_udp_message(
-            '{"test": 1}',
-            "192.168.1.100",
-            30000,
-            bypass_rate_limit=True,
-        )
+        with _patch_sock_sendto():
+            await client._send_udp_message(
+                '{"test": 1}',
+                "192.168.1.100",
+                30000,
+                bypass_rate_limit=True,
+            )
 
         client._enforce_rate_limit.assert_awaited_once_with("192.168.1.100")
 
@@ -2234,20 +2252,56 @@ class TestRateLimitCleanupEnforcement:
                 MIN_RESET_PRONE_REQUEST_INTERVAL - 0.3
             )
 
-    async def test_rate_limit_skips_subnet_broadcast(self) -> None:
-        """Test that rate limiting is skipped for subnet broadcasts."""
+    async def test_rate_limit_skips_known_subnet_broadcast(self) -> None:
+        """Rate limiting is skipped for a broadcast the interface table knows."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+        client._broadcast_addresses = frozenset(
+            {"255.255.255.255", "192.168.1.255"}
+        )
+
         initial_time_tracking = dict(client._last_request_time)
-        
-        # Send to subnet broadcast - should skip rate limiting
-        await client._send_udp_message('{"test": 1}', "192.168.1.255", 30000)
-        
+
+        with _patch_sock_sendto():
+            await client._send_udp_message('{"test": 1}', "192.168.1.255", 30000)
+
         # No new entries should be tracked
         assert client._last_request_time == initial_time_tracking
+
+    async def test_rate_limit_applies_to_host_ending_in_255(self) -> None:
+        """A .255 host on a wider prefix is a device, not a broadcast.
+
+        ``10.0.1.255`` is an ordinary host inside ``10.0.0.0/23``. Guessing
+        from the last octet would exempt it from throttling.
+        """
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+        client._broadcast_addresses = frozenset({"255.255.255.255", "10.0.1.255"})
+        client._enforce_rate_limit = AsyncMock()
+
+        with _patch_sock_sendto():
+            await client._send_udp_message('{"test": 1}', "10.0.0.255", 30000)
+
+        client._enforce_rate_limit.assert_awaited_once_with("10.0.0.255")
+        assert client._last_request_time["10.0.0.255"] == 1000.0
+
+    async def test_broadcast_addresses_refresh_from_interface_table(self) -> None:
+        """Enumerating broadcast targets updates the throttle exemption set."""
+        client = MarstekUDPClient()
+        with patch(
+            "custom_components.marstek.pymarstek.udp.get_broadcast_addresses",
+            return_value=["192.168.8.127"],
+        ):
+            assert client._get_broadcast_addresses() == ["192.168.8.127"]
+
+        # A /25 broadcast never ends in .255 but must still be exempt.
+        assert client._is_broadcast_target("192.168.8.127") is True
+        assert client._is_broadcast_target("255.255.255.255") is True
+        assert client._is_broadcast_target("192.168.8.255") is False
 
     async def test_refuses_empty_udp_datagram(self) -> None:
         """Refuse 0-byte sends; Control firmware freezes Open API on empty packets."""
@@ -2256,10 +2310,11 @@ class TestRateLimitCleanupEnforcement:
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
 
-        with pytest.raises(ValueError, match="empty UDP datagram"):
-            await client._send_udp_message("", "192.168.1.100", 30000)
+        with _patch_sock_sendto() as mock_sendto:
+            with pytest.raises(ValueError, match="empty UDP datagram"):
+                await client._send_udp_message("", "192.168.1.100", 30000)
 
-        client._socket.sendto.assert_not_called()
+            mock_sendto.assert_not_called()
 
 
 class TestValidationErrorLogging:
@@ -2803,7 +2858,10 @@ class TestSendRequestSkipValidation:
                 ("192.168.1.100", 30000),
             )
         
-        with patch.object(loop, "sock_recvfrom", mock_recvfrom):
+        with (
+            patch.object(loop, "sock_recvfrom", mock_recvfrom),
+            _patch_sock_sendto(),
+        ):
             # Pre-validated message (skip_validation=True)
             message = '{"id": 999, "method": "ES.GetStatus", "params": {"id": 0}}'
             result = await client.send_request(
@@ -3015,14 +3073,15 @@ class TestResetProneRequestLock:
         client._loop.time.return_value = 1000.0
         client.set_openapi_reset_prone("192.168.1.100", True)
 
-        with pytest.raises(ValidationError, match="Bat.GetStatus"):
-            await client.send_request(
-                '{"id": 1, "method": "Bat.GetStatus", "params": {"id": 0}}',
-                "192.168.1.100",
-                30000,
-                validate=False,
-            )
-        client._socket.sendto.assert_not_called()
+        with _patch_sock_sendto() as mock_sendto:
+            with pytest.raises(ValidationError, match="Bat.GetStatus"):
+                await client.send_request(
+                    '{"id": 1, "method": "Bat.GetStatus", "params": {"id": 0}}',
+                    "192.168.1.100",
+                    30000,
+                    validate=False,
+                )
+            mock_sendto.assert_not_called()
 
     async def test_pause_receiver_waits_for_inflight_unicast(self) -> None:
         """Discovery does not stop the listener while a unicast is in flight."""

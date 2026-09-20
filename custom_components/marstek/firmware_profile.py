@@ -34,10 +34,13 @@ _PV_FAMILIES = frozenset({DeviceFamily.VENUS_A, DeviceFamily.VENUS_D})
 # names with a plausible Control generation below 150 still get the reset
 # warning (mis-parsed Venus). Placeholders such as ``version: 3`` do not.
 _UNKNOWN_CONTROL_GENERATION_MIN = 100
-# HMG-50 Control images in the community archives (153 / 155 / 156). The
-# same binaries can GetDevice as ``VenusE`` (unsupported E 2.x) or
-# ``VenusC`` (issue #60). Recv-list and OTA notes are shared.
-_HMG50_CONTROL_GENERATIONS = frozenset({153, 155, 156})
+# HMG-50 Control starts at generation 153. The community archives hold
+# 153 / 155 / 156 and the 153 strings also cover 154, so this is a floor
+# rather than a list: an unarchived 154, or a future 157, is still HMG-50
+# and must not fall through to the regular Venus C profile. The same
+# binaries can GetDevice as ``VenusE`` (unsupported E 2.x) or ``VenusC``
+# (issue #60). Recv-list and OTA notes are shared.
+_HMG50_CONTROL_MIN_GENERATION = 153
 _HMG50_EM_SERVER_GENERATION = 155
 _HMG50_OPENAPI_STABLE_GENERATION = 156
 # Venus E 2.x / HMG-50 is not Venus E 3.x. HMG-50 Control 153+ Open API
@@ -91,13 +94,27 @@ class FirmwareProfile:
         )
 
     @property
-    def setup_reload_signature(self) -> tuple[bool, ...]:
-        """Return setup flags that require a config-entry reload when they change.
+    def setup_reload_signature(self) -> tuple[object, ...]:
+        """Return profile values that require a config-entry reload when they change.
 
         Capability gates recreate SYS/UPS/PV entities. Reset-prone also
         recreates (or removes) Bat.GetStatus entities and the Open API warning.
+
+        The scales and the EM/schedule gates matter for the same reason: the
+        coordinator, the parser and the services all read the profile captured
+        at setup. A Venus A moving 148 -> 149 changes ``pv_energy_scale`` from
+        1.0 to 10.0, so without a reload the entry would keep decoding PV
+        energy ten times too small until Home Assistant restarts.
         """
-        return (*self.setup_capability_signature, self.openapi_reset_prone)
+        return (
+            *self.setup_capability_signature,
+            self.openapi_reset_prone,
+            self.pv_energy_scale,
+            self.pv_channel_1_power_scale,
+            self.em_energy_scale,
+            self.supports_em_status,
+            self.max_manual_schedule_slot,
+        )
 
     @property
     def control_generation(self) -> int | None:
@@ -243,8 +260,14 @@ def _is_hmg50_control_image(
     family: DeviceFamily,
     generation: int | None,
 ) -> bool:
-    """Return whether this discovery matches an archived HMG-50 Control image."""
-    if generation not in _HMG50_CONTROL_GENERATIONS:
+    """Return whether this discovery runs an HMG-50 Control image.
+
+    Generation is a floor, not a membership test: 154 is unarchived but
+    shares the 153 strings, and a future 157 keeps the same recv list.
+    Falling through to the regular Venus C profile would hand those builds
+    the SYS/UPS entities HMG-50 does not serve.
+    """
+    if generation is None or generation < _HMG50_CONTROL_MIN_GENERATION:
         return False
     return family is DeviceFamily.VENUS_C or is_unsupported_venus_e2(device_type)
 
