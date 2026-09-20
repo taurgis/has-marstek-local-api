@@ -36,9 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
-class MarstekSensor(
-    CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity
-):
+class MarstekSensor(CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
     _attr_has_entity_name = True
@@ -127,22 +125,14 @@ async def async_setup_entry(
         for pv_channel in range(1, 5):
             for metric in ("power", "voltage", "current", "state"):
                 data_for_exists.setdefault(f"pv{pv_channel}_{metric}", None)
-    pv_keys = {"pv_power", "total_pv_energy"} | {
-        description.key for description in PV_SENSORS
-    }
+    pv_keys = {"pv_power", "total_pv_energy"} | {description.key for description in PV_SENSORS}
     sensors: list[MarstekSensor] = []
     for description in (*SENSORS, *PV_SENSORS, *API_STABILITY_SENSORS):
         if not coordinator.profile.supports_pv and description.key in pv_keys:
             continue
-        if (
-            description.key in BAT_STATUS_KEYS
-            and coordinator.profile.openapi_reset_prone
-        ):
+        if description.key in BAT_STATUS_KEYS and coordinator.profile.openapi_reset_prone:
             continue
-        if (
-            description.key in EM_STATUS_KEYS
-            and not coordinator.profile.supports_em_status
-        ):
+        if description.key in EM_STATUS_KEYS and not coordinator.profile.supports_em_status:
             continue
         if description.exists_fn(data_for_exists):
             sensors.append(

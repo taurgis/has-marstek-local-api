@@ -58,6 +58,7 @@ _DEVICE_METADATA_FIELDS: tuple[str, ...] = (
     "firmware",
 )
 
+
 def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
     """Build discovery flow data from device info."""
     flow_data: dict[str, Any] = {
@@ -211,9 +212,7 @@ class MarstekScanner:
             _LOGGER.exception("Scanner discovery failed")
             return
 
-        _LOGGER.debug(
-            "Scanner: Discovered %d device(s)", len(devices) if devices else 0
-        )
+        _LOGGER.debug("Scanner: Discovered %d device(s)", len(devices) if devices else 0)
 
         if not devices:
             return
@@ -285,9 +284,7 @@ class MarstekScanner:
             )
             return
 
-        matched_device = self._find_device_by_identity(
-            devices, stored_macs, entry.title
-        )
+        matched_device = self._find_device_by_identity(devices, stored_macs, entry.title)
 
         if not matched_device:
             _LOGGER.debug(
@@ -360,9 +357,7 @@ class MarstekScanner:
         old_profile = resolve_firmware_profile_from_metadata(entry.data)
         merged = {**entry.data, **updates}
         new_profile = resolve_firmware_profile_from_metadata(merged)
-        profile_changed = (
-            old_profile.setup_reload_signature != new_profile.setup_reload_signature
-        )
+        profile_changed = old_profile.setup_reload_signature != new_profile.setup_reload_signature
 
         _LOGGER.info(
             "Scanner: Updating device metadata for %s: %s",
@@ -378,9 +373,7 @@ class MarstekScanner:
                 entry.title,
             )
 
-        self._hass.config_entries.async_update_entry(
-            entry, data={**entry.data, **updates}
-        )
+        self._hass.config_entries.async_update_entry(entry, data={**entry.data, **updates})
 
         if (
             not profile_changed

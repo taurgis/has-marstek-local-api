@@ -80,9 +80,7 @@ ACTION_SCHEMA = cv.DEVICE_ACTION_BASE_SCHEMA.extend(
         vol.Required(CONF_DOMAIN): vol.In((DOMAIN,)),
         vol.Required(CONF_DEVICE_ID): cv.string,
         vol.Required(CONF_TYPE): vol.In(ACTION_TYPES),
-        vol.Optional(ATTR_POWER): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=5000)
-        ),
+        vol.Optional(ATTR_POWER): vol.All(vol.Coerce(int), vol.Range(min=0, max=5000)),
         vol.Optional("entity_id"): cv.entity_id,
     }
 )
@@ -95,9 +93,7 @@ def _resolve_action_settings(
 ) -> tuple[int, int]:
     """Resolve power and enable values for the action."""
     if action_type == ACTION_CHARGE:
-        default_power = entry.options.get(
-            CONF_ACTION_CHARGE_POWER, DEFAULT_ACTION_CHARGE_POWER
-        )
+        default_power = entry.options.get(CONF_ACTION_CHARGE_POWER, DEFAULT_ACTION_CHARGE_POWER)
         power_value = action_power if action_power is not None else abs(default_power)
         return -int(power_value), 1
 
@@ -113,19 +109,11 @@ def _resolve_action_settings(
 
 def _calculate_action_timing(entry: ConfigEntry) -> tuple[float, float]:
     """Calculate request timeout and poll cycle time for action verification."""
-    poll_interval = entry.options.get(
-        CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST
-    )
-    request_delay = entry.options.get(
-        CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
-    )
-    request_timeout = entry.options.get(
-        CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-    )
+    poll_interval = entry.options.get(CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST)
+    request_delay = entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY)
+    request_timeout = entry.options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT)
 
-    poll_cycle_time = poll_interval + (
-        FAST_TIER_CALL_COUNT * (request_delay + CALL_TIME_BUDGET)
-    )
+    poll_cycle_time = poll_interval + (FAST_TIER_CALL_COUNT * (request_delay + CALL_TIME_BUDGET))
     return float(request_timeout), float(poll_cycle_time)
 
 
@@ -192,9 +180,7 @@ async def _verify_action_command(
             return False
 
 
-async def async_validate_action_config(
-    hass: HomeAssistant, config: ConfigType
-) -> ConfigType:
+async def async_validate_action_config(hass: HomeAssistant, config: ConfigType) -> ConfigType:
     """Validate config for device actions."""
     device_id: str = config[CONF_DEVICE_ID]
     action_type: str = config[CONF_TYPE]
@@ -209,9 +195,7 @@ async def async_validate_action_config(
     return config
 
 
-async def async_get_actions(
-    hass: HomeAssistant, device_id: str
-) -> list[dict[str, str]]:
+async def async_get_actions(hass: HomeAssistant, device_id: str) -> list[dict[str, str]]:
     """List device actions for a Marstek device."""
     device = async_find_marstek_device(hass, device_id)
     if not device:
@@ -352,9 +336,7 @@ async def async_get_action_capabilities(
         return {
             "extra_fields": vol.Schema(
                 {
-                    vol.Optional(ATTR_POWER): vol.All(
-                        vol.Coerce(int), vol.Range(min=0, max=5000)
-                    ),
+                    vol.Optional(ATTR_POWER): vol.All(vol.Coerce(int), vol.Range(min=0, max=5000)),
                 }
             )
         }
@@ -485,9 +467,7 @@ async def _verify_es_mode_quick(
     return False
 
 
-async def _get_host_from_device(
-    hass: HomeAssistant, device_id: str
-) -> tuple[str, int] | None:
+async def _get_host_from_device(hass: HomeAssistant, device_id: str) -> tuple[str, int] | None:
     """Resolve device IP address from device registry and config entries."""
     device = async_find_marstek_device(hass, device_id)
     if not device:

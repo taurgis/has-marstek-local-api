@@ -116,9 +116,7 @@ async def _setup_entry(
     return client
 
 
-def _disable_coordinator_refresh(
-    entry: MockConfigEntry, client: MagicMock
-) -> AsyncMock:
+def _disable_coordinator_refresh(entry: MockConfigEntry, client: MagicMock) -> AsyncMock:
     """Replace coordinator refresh so SYS writes can prove they skip it."""
     client.get_device_status.reset_mock()
     refresh = AsyncMock()
@@ -204,10 +202,7 @@ async def test_unsupported_sys_controls_leave_no_registry_entries(
     await _setup_entry(hass, mock_config_entry)
     registry = er.async_get(hass)
     for key in SYS_ENTITY_KEYS:
-        assert (
-            registry.async_get_entity_id(_platform_for_key(key), DOMAIN, _unique_id(key))
-            is None
-        )
+        assert registry.async_get_entity_id(_platform_for_key(key), DOMAIN, _unique_id(key)) is None
         for existing in hass.states.async_entity_ids():
             assert key not in existing
 
@@ -221,9 +216,7 @@ async def test_sys_unique_ids_stay_ble_mac_based_across_firmware(
     await _setup_entry(hass, entry)
     registry = er.async_get(hass)
     for key in SYS_ENTITY_KEYS:
-        entity_id = registry.async_get_entity_id(
-            _platform_for_key(key), DOMAIN, _unique_id(key)
-        )
+        entity_id = registry.async_get_entity_id(_platform_for_key(key), DOMAIN, _unique_id(key))
         assert entity_id is not None
         registry_entry = registry.async_get(entity_id)
         assert registry_entry is not None
@@ -271,9 +264,7 @@ async def test_dod_entity_defaults_and_attributes(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.parametrize("value", [DOD_MIN_VALUE, DOD_MAX_VALUE, 50])
-async def test_dod_write_sends_integer_value(
-    hass: HomeAssistant, value: int
-) -> None:
+async def test_dod_write_sends_integer_value(hass: HomeAssistant, value: int) -> None:
     """Acknowledged DOD writes send DOD.SET with an integer value."""
     entry = _config_entry()
     client = _sys_client()
@@ -302,9 +293,7 @@ async def test_dod_write_sends_integer_value(
 
 
 @pytest.mark.parametrize("value", [29, 89])
-async def test_dod_rejects_out_of_range_values(
-    hass: HomeAssistant, value: int
-) -> None:
+async def test_dod_rejects_out_of_range_values(hass: HomeAssistant, value: int) -> None:
     """Home Assistant rejects DOD values outside 30-88 before a write."""
     entry = _config_entry()
     client = _sys_client()
@@ -437,9 +426,7 @@ async def test_bluetooth_advertising_wire_polarity(
         assert entity_id is not None
         refresh = _disable_coordinator_refresh(entry, client)
 
-        await hass.services.async_call(
-            "switch", service, {"entity_id": entity_id}, blocking=True
-        )
+        await hass.services.async_call("switch", service, {"entity_id": entity_id}, blocking=True)
 
         payload = _command_after_setup(client, setup_calls)
         assert payload["method"] == CMD_BLE_ADV
@@ -453,9 +440,7 @@ async def test_bluetooth_advertising_wire_polarity(
     ("service", "wire_state"),
     [("turn_on", LED_ON), ("turn_off", LED_OFF)],
 )
-async def test_panel_led_wire_polarity(
-    hass: HomeAssistant, service: str, wire_state: int
-) -> None:
+async def test_panel_led_wire_polarity(hass: HomeAssistant, service: str, wire_state: int) -> None:
     """Panel LED on sends state 1 and off sends state 0."""
     entry = _config_entry()
     client = _sys_client()
@@ -468,9 +453,7 @@ async def test_panel_led_wire_polarity(
         assert entity_id is not None
         refresh = _disable_coordinator_refresh(entry, client)
 
-        await hass.services.async_call(
-            "switch", service, {"entity_id": entity_id}, blocking=True
-        )
+        await hass.services.async_call("switch", service, {"entity_id": entity_id}, blocking=True)
 
         payload = _command_after_setup(client, setup_calls)
         assert payload["method"] == CMD_LED_CTRL
@@ -481,9 +464,7 @@ async def test_panel_led_wire_polarity(
 
 
 @pytest.mark.parametrize("restored", [STATE_ON, STATE_OFF])
-async def test_sys_switches_restore_on_and_off(
-    hass: HomeAssistant, restored: str
-) -> None:
+async def test_sys_switches_restore_on_and_off(hass: HomeAssistant, restored: str) -> None:
     """Valid prior on/off switch states are restored."""
     entry = _config_entry()
     client = _sys_client()
@@ -491,16 +472,12 @@ async def test_sys_switches_restore_on_and_off(
         entry.add_to_hass(hass)
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        entity_ids = [
-            _entity_id(hass, "switch", key) for key in SYS_SWITCH_KEYS
-        ]
+        entity_ids = [_entity_id(hass, "switch", key) for key in SYS_SWITCH_KEYS]
         assert all(entity_ids)
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
 
-        mock_restore_cache(
-            hass, [State(entity_id, restored) for entity_id in entity_ids]
-        )
+        mock_restore_cache(hass, [State(entity_id, restored) for entity_id in entity_ids])
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -591,9 +568,7 @@ async def test_sys_write_device_failures_keep_prior_state(
         entity_id = _entity_id(hass, "switch", "panel_led")
         assert entity_id is not None
         client.send_request.return_value = {"result": {"set_result": True}}
-        await hass.services.async_call(
-            "switch", "turn_on", {"entity_id": entity_id}, blocking=True
-        )
+        await hass.services.async_call("switch", "turn_on", {"entity_id": entity_id}, blocking=True)
         assert hass.states.get(entity_id).state == STATE_ON
 
         client.send_request.return_value = response
@@ -758,17 +733,11 @@ async def test_sys_write_pauses_before_send_and_resumes(
         client.send_request.side_effect = send
         client.resume_polling.side_effect = resume
 
-        await hass.services.async_call(
-            "switch", "turn_on", {"entity_id": entity_id}, blocking=True
-        )
+        await hass.services.async_call("switch", "turn_on", {"entity_id": entity_id}, blocking=True)
 
         assert order == ["pause", "send", "resume"]
         payload = json.loads(
-            [
-                call.args[0]
-                for call in client.send_request.call_args_list
-                if call.args
-            ][-1]
+            [call.args[0] for call in client.send_request.call_args_list if call.args][-1]
         )
         assert payload["method"] == CMD_BLE_ADV
         assert payload["params"]["enable"] == BLE_ADV_ENABLED

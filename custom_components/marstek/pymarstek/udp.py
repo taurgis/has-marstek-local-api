@@ -26,6 +26,7 @@ from .const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
     DEFAULT_UDP_PORT,
+    MAX_UDP_DATAGRAM_BYTES,
 )
 from .data_parser import parse_es_mode_response
 from .device_status import fetch_device_status
@@ -105,7 +106,6 @@ LIMITED_BROADCAST_ADDRESS = "255.255.255.255"
 _ES_MODE_INSTANCE_IDS: tuple[int, ...] = (0, 1)
 
 
-
 class MarstekUDPClient(BroadcastDiscoveryMixin):
     """UDP client for communicating with Marstek devices.
 
@@ -145,9 +145,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         # from the interface table rather than guessing from the last octet:
         # a /23 host really can sit on x.x.1.255, and a /25 broadcast is
         # x.x.x.127. Refreshed whenever a broadcast send enumerates them.
-        self._broadcast_addresses: frozenset[str] = frozenset(
-            {LIMITED_BROADCAST_ADDRESS}
-        )
+        self._broadcast_addresses: frozenset[str] = frozenset({LIMITED_BROADCAST_ADDRESS})
 
         self._local_send_ip: str = "0.0.0.0"
         self._poll_gate: PollGate = PollGate()
@@ -248,9 +246,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
             logger=_LOGGER,
         )
         self._socket = sock
-        _LOGGER.debug(
-            "UDP client bound to %s:%s", sock.getsockname()[0], sock.getsockname()[1]
-        )
+        _LOGGER.debug("UDP client bound to %s:%s", sock.getsockname()[0], sock.getsockname()[1])
 
     async def async_pause_receiver(self) -> None:
         """Stop the background UDP listener without closing the socket.
@@ -363,9 +359,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         a blocking call, so the whole pass runs in the default executor.
         https://developers.home-assistant.io/docs/asyncio_blocking_operations/
         """
-        return await asyncio.get_running_loop().run_in_executor(
-            None, self._get_broadcast_addresses
-        )
+        return await asyncio.get_running_loop().run_in_executor(None, self._get_broadcast_addresses)
 
     def _get_broadcast_addresses(self) -> list[str]:
         if psutil is _PSUTIL_AUTO:
@@ -378,9 +372,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                 logger=_LOGGER,
                 allow_import=False,
             )
-        self._broadcast_addresses = frozenset(addresses) | {
-            LIMITED_BROADCAST_ADDRESS
-        }
+        self._broadcast_addresses = frozenset(addresses) | {LIMITED_BROADCAST_ADDRESS}
         return addresses
 
     def _is_broadcast_target(self, target_ip: str) -> bool:
@@ -407,15 +399,11 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         """Return True when *device_ip* may receive extra read-only unicasts."""
         return self._marks.is_retransmit_safe(device_ip)
 
-    def clear_openapi_reset_prone(
-        self, device_ip: str, *, owner: str | None = None
-    ) -> None:
+    def clear_openapi_reset_prone(self, device_ip: str, *, owner: str | None = None) -> None:
         """Stop serializing Open API traffic for a device IP."""
         self._marks.clear_reset_prone(device_ip, owner=owner)
 
-    def is_openapi_reset_prone(
-        self, device_ip: str, *, owner: str | None = None
-    ) -> bool:
+    def is_openapi_reset_prone(self, device_ip: str, *, owner: str | None = None) -> bool:
         """Return True when *device_ip* is marked reset-prone for *owner*."""
         return self._marks.is_reset_prone(device_ip, owner=owner)
 
@@ -423,9 +411,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         """Drop every reset-prone mark owned by a config entry."""
         self._marks.clear_owner(owner)
 
-    def transfer_openapi_reset_prone(
-        self, old_ip: str, new_ip: str, *, owner: str
-    ) -> None:
+    def transfer_openapi_reset_prone(self, old_ip: str, new_ip: str, *, owner: str) -> None:
         """Move one owner's reset-prone mark when a device changes IP."""
         self._marks.transfer_reset_prone(old_ip, new_ip, owner=owner)
 
@@ -492,13 +478,10 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         known-safe firmware so ES.SetMode / SYS commands cannot double.
         """
         return (
-            self.is_openapi_retransmit_safe(target_ip)
-            and method_name in _READ_ONLY_UNICAST_METHODS
+            self.is_openapi_retransmit_safe(target_ip) and method_name in _READ_ONLY_UNICAST_METHODS
         )
 
-    def _unicast_allows_retransmit(
-        self, target_ip: str, method_name: str, timeout: float
-    ) -> bool:
+    def _unicast_allows_retransmit(self, target_ip: str, method_name: str, timeout: float) -> bool:
         """Return whether a silent first wait may be followed by a second send.
 
         Short unit-test timeouts skip the extra wait so they do not pay
@@ -563,9 +546,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         if allow_retransmit:
             try:
                 return (
-                    await self._wait_for_pending_response(
-                        future, UNICAST_RETRANSMIT_WAIT
-                    ),
+                    await self._wait_for_pending_response(future, UNICAST_RETRANSMIT_WAIT),
                     False,
                 )
             except TimeoutError:
@@ -736,12 +717,9 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                         timeout=True,
                         latency=None,
                         error="timeout",
-                        retransmitted=isinstance(err, _UnicastTimeoutError)
-                        and err.retried,
+                        retransmitted=isinstance(err, _UnicastTimeoutError) and err.retried,
                     )
-                    raise TimeoutError(
-                        f"Request timeout to {target_ip}:{target_port}"
-                    ) from err
+                    raise TimeoutError(f"Request timeout to {target_ip}:{target_port}") from err
                 latency = time.monotonic() - request_started
                 if retried:
                     _LOGGER.debug(
@@ -789,7 +767,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         cleanup_counter = 0
         while True:
             try:
-                data, addr = await loop.sock_recvfrom(self._socket, 4096)
+                data, addr = await loop.sock_recvfrom(self._socket, MAX_UDP_DATAGRAM_BYTES)
                 if not data:
                     _LOGGER.debug(
                         "Ignoring empty UDP datagram from %s:%d",
@@ -827,9 +805,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                 _LOGGER.error("Error receiving UDP response: %s", err)
                 await asyncio.sleep(1)
             except Exception:
-                _LOGGER.exception(
-                    "Unexpected error in Open API UDP listener; continuing"
-                )
+                _LOGGER.exception("Unexpected error in Open API UDP listener; continuing")
                 await asyncio.sleep(1)
 
     async def begin_poll_cycle(self, device_ip: str) -> bool:

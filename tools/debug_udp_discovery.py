@@ -186,8 +186,7 @@ async def discover_devices_async(
             if response_id != request_id and response_id != 0:
                 if verbose:
                     print(
-                        f"   ⚠️  Unexpected response ID {response_id} "
-                        f"from {sender_ip}:{sender_port}"
+                        f"   ⚠️  Unexpected response ID {response_id} from {sender_ip}:{sender_port}"
                     )
                 continue
 
@@ -278,17 +277,17 @@ def discover_devices_sync(timeout: float = DEFAULT_TIMEOUT, verbose: bool = Fals
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Debug Marstek UDP device discovery"
-    )
+    parser = argparse.ArgumentParser(description="Debug Marstek UDP device discovery")
     parser.add_argument(
-        "-t", "--timeout",
+        "-t",
+        "--timeout",
         type=float,
         default=DEFAULT_TIMEOUT,
         help=f"Discovery timeout in seconds (default: {DEFAULT_TIMEOUT})",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show verbose output including raw responses",
     )

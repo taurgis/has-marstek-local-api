@@ -99,9 +99,7 @@ class MockMarstekDevice:
         self.config["ver"] = self.profile.firmware_version
         self.ip = ip_override or get_local_ip()
         self.sock: socket.socket | None = None
-        self._state_dir = (
-            resolve_state_dir(state_dir) if state_dir is not None else None
-        )
+        self._state_dir = resolve_state_dir(state_dir) if state_dir is not None else None
 
         # Whether to include bat_power in ES.GetStatus responses
         # Default False since real Venus E 3.0 does NOT return bat_power
@@ -164,9 +162,7 @@ class MockMarstekDevice:
         if self.simulate:
             self.simulator.start()
             if self.status_interval > 0:
-                self._status_thread = threading.Thread(
-                    target=self._status_display, daemon=True
-                )
+                self._status_thread = threading.Thread(target=self._status_display, daemon=True)
                 self._status_thread.start()
 
         try:
@@ -335,9 +331,7 @@ class MockMarstekDevice:
                 f"id={raw_id} (wire {request_id}) -> {outcome}"
             )
 
-    def _send_openapi_datagram(
-        self, response: dict[str, Any], addr: tuple[str, int]
-    ) -> None:
+    def _send_openapi_datagram(self, response: dict[str, Any], addr: tuple[str, int]) -> None:
         """Send a UDP reply, duplicating it on reset-prone Control firmware.
 
         Pre-150 VNSE3-0 builds send Local API replies on both the FC41D WiFi
@@ -386,20 +380,14 @@ class MockMarstekDevice:
     def _totals_from_state(self, state: dict[str, Any]) -> dict[str, float]:
         return {
             "total_pv_energy": float(state.get("total_pv_energy", 0.0)),
-            "total_grid_output_energy": float(
-                state.get("total_grid_output_energy", 0.0)
-            ),
-            "total_grid_input_energy": float(
-                state.get("total_grid_input_energy", 0.0)
-            ),
+            "total_grid_output_energy": float(state.get("total_grid_output_energy", 0.0)),
+            "total_grid_input_energy": float(state.get("total_grid_input_energy", 0.0)),
             "total_load_energy": float(state.get("total_load_energy", 0.0)),
             "em_input_energy": float(
                 state.get("em_input_energy", state.get("total_grid_input_energy", 0.0))
             ),
             "em_output_energy": float(
-                state.get(
-                    "em_output_energy", state.get("total_grid_output_energy", 0.0)
-                )
+                state.get("em_output_energy", state.get("total_grid_output_energy", 0.0))
             ),
         }
 
@@ -456,8 +444,7 @@ class MockMarstekDevice:
 
         if method == "Marstek.GetDevice":
             omit_result_macs = (
-                self.profile.family is DeviceFamily.VENUS_C
-                and self.profile.hmg50_control
+                self.profile.family is DeviceFamily.VENUS_C and self.profile.hmg50_control
             )
             return handle_get_device(
                 request_id,
@@ -468,9 +455,7 @@ class MockMarstekDevice:
             )
 
         elif method == "BLE.GetStatus":
-            return handle_ble_get_status(
-                request_id, src, self.config, self._ble_connected
-            )
+            return handle_ble_get_status(request_id, src, self.config, self._ble_connected)
 
         elif method == "ES.GetStatus":
             # State includes energy stats from simulator
@@ -481,14 +466,11 @@ class MockMarstekDevice:
                 state_with_capacity,
                 self.config.get("device", ""),
                 profile=self.profile,
-                include_bat_power=self.include_bat_power
-                or reports_es_bat_power(self.profile),
+                include_bat_power=self.include_bat_power or reports_es_bat_power(self.profile),
             )
 
         elif method == "ES.GetMode":
-            return handle_es_get_mode(
-                request_id, src, state, profile=self.profile, params=params
-            )
+            return handle_es_get_mode(request_id, src, state, profile=self.profile, params=params)
 
         elif method == "PV.GetStatus":
             if not self.profile.supports_pv:
@@ -516,14 +498,10 @@ class MockMarstekDevice:
         elif method == "EM.GetStatus":
             if not self.profile.supports_em_status:
                 return handle_method_not_found(request_id, src)
-            return handle_em_get_status(
-                request_id, src, state, profile=self.profile
-            )
+            return handle_em_get_status(request_id, src, state, profile=self.profile)
 
         elif method == "Bat.GetStatus":
-            return handle_bat_get_status(
-                request_id, src, state, self.simulator.capacity_wh
-            )
+            return handle_bat_get_status(request_id, src, state, self.simulator.capacity_wh)
 
         elif method == "ES.SetMode":
             config = params.get("config", {})
@@ -533,9 +511,7 @@ class MockMarstekDevice:
             if mode == MODE_MANUAL:
                 manual_config = config.get("manual_cfg", {})
                 schedule_slot = (
-                    manual_config.get("time_num")
-                    if isinstance(manual_config, dict)
-                    else None
+                    manual_config.get("time_num") if isinstance(manual_config, dict) else None
                 )
                 if (
                     isinstance(schedule_slot, bool)

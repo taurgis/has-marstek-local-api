@@ -40,25 +40,31 @@ from custom_components.marstek.pymarstek.validators import (
 class TestValidateTimeFormat:
     """Tests for validate_time_format."""
 
-    @pytest.mark.parametrize("time_str", [
-        "00:00",
-        "12:30",
-        "23:59",
-        "9:05",
-        "09:05",
-    ])
+    @pytest.mark.parametrize(
+        "time_str",
+        [
+            "00:00",
+            "12:30",
+            "23:59",
+            "9:05",
+            "09:05",
+        ],
+    )
     def test_valid_times(self, time_str: str) -> None:
         """Test valid time formats are accepted."""
         validate_time_format(time_str)  # Should not raise
 
-    @pytest.mark.parametrize("time_str", [
-        "24:00",
-        "12:60",
-        "invalid",
-        "",
-        "12",
-        "12:30:00",  # Seconds not allowed
-    ])
+    @pytest.mark.parametrize(
+        "time_str",
+        [
+            "24:00",
+            "12:60",
+            "invalid",
+            "",
+            "12",
+            "12:30:00",  # Seconds not allowed
+        ],
+    )
     def test_invalid_times(self, time_str: str) -> None:
         """Test invalid time formats are rejected."""
         with pytest.raises(ValidationError) as exc_info:
@@ -132,13 +138,16 @@ class TestValidateDeviceId:
 class TestValidatePowerValue:
     """Tests for validate_power_value."""
 
-    @pytest.mark.parametrize("power", [
-        0,
-        1000,
-        -1000,
-        MAX_POWER_VALUE,
-        -MAX_POWER_VALUE,
-    ])
+    @pytest.mark.parametrize(
+        "power",
+        [
+            0,
+            1000,
+            -1000,
+            MAX_POWER_VALUE,
+            -MAX_POWER_VALUE,
+        ],
+    )
     def test_valid_power_values(self, power: int) -> None:
         """Test valid power values are accepted."""
         validate_power_value(power)  # Should not raise
@@ -686,6 +695,7 @@ class TestStrictMode:
     def test_high_power_warns_in_strict_mode(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test high power values log warnings in strict mode."""
         import logging
+
         caplog.set_level(logging.WARNING)
         enable_strict_mode(True)
         high_power = int(MAX_POWER_VALUE * 0.95)  # 95% of max
@@ -710,6 +720,7 @@ class TestStrictMode:
     def test_short_schedule_warns_in_strict_mode(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test very short schedules log warnings in strict mode."""
         import logging
+
         caplog.set_level(logging.WARNING)
         enable_strict_mode(True)
         config = {
@@ -730,31 +741,37 @@ class TestExportedConstants:
     def test_max_power_value_exported(self) -> None:
         """Test MAX_POWER_VALUE is exported and reasonable."""
         from custom_components.marstek.pymarstek import MAX_POWER_VALUE
+
         assert MAX_POWER_VALUE == 5000
 
     def test_max_passive_duration_exported(self) -> None:
         """Test MAX_PASSIVE_DURATION is exported (24 hours in seconds)."""
         from custom_components.marstek.pymarstek import MAX_PASSIVE_DURATION
+
         assert MAX_PASSIVE_DURATION == 86400
 
     def test_max_time_slots_exported(self) -> None:
         """Test MAX_TIME_SLOTS is exported."""
         from custom_components.marstek.pymarstek import MAX_TIME_SLOTS
+
         assert MAX_TIME_SLOTS == 10
 
     def test_max_week_set_exported(self) -> None:
         """Test MAX_WEEK_SET is exported."""
         from custom_components.marstek.pymarstek import MAX_WEEK_SET
+
         assert MAX_WEEK_SET == 127
 
     def test_enable_strict_mode_exported(self) -> None:
         """Test enable_strict_mode function is exported."""
         from custom_components.marstek.pymarstek import enable_strict_mode
+
         assert callable(enable_strict_mode)
 
     def test_is_strict_mode_exported(self) -> None:
         """Test is_strict_mode function is exported."""
         from custom_components.marstek.pymarstek import is_strict_mode
+
         assert callable(is_strict_mode)
 
 
@@ -826,7 +843,6 @@ class TestSysWriteCommands:
             with pytest.raises(ValidationError) as exc_info:
                 validate_method(method)
             assert exc_info.value.field == "method"
-
 
 
 class TestJsonLoadsStrict:

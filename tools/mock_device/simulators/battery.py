@@ -99,8 +99,8 @@ class BatterySimulator:
         # Energy statistics (accumulated over time, in Wh)
         self.total_pv_energy = 0.0
         self.total_grid_output_energy = 0.0  # Energy exported to grid
-        self.total_grid_input_energy = 0.0   # Energy imported from grid
-        self.total_load_energy = 0.0         # Total household consumption
+        self.total_grid_input_energy = 0.0  # Energy imported from grid
+        self.total_load_energy = 0.0  # Total household consumption
 
         # PV simulation (always 0 for plug-in battery without solar input)
         self.pv_power = 0
@@ -323,18 +323,14 @@ class BatterySimulator:
         """Apply persisted state values to the simulator."""
         with self._lock:
             self.soc = float(state.get("soc", self.soc))
-            self.total_pv_energy = float(
-                state.get("total_pv_energy", self.total_pv_energy)
-            )
+            self.total_pv_energy = float(state.get("total_pv_energy", self.total_pv_energy))
             self.total_grid_output_energy = float(
                 state.get("total_grid_output_energy", self.total_grid_output_energy)
             )
             self.total_grid_input_energy = float(
                 state.get("total_grid_input_energy", self.total_grid_input_energy)
             )
-            self.total_load_energy = float(
-                state.get("total_load_energy", self.total_load_energy)
-            )
+            self.total_load_energy = float(state.get("total_load_energy", self.total_load_energy))
 
     def _get_persistent_state_locked(self) -> dict[str, Any]:
         return {
@@ -457,33 +453,27 @@ class BatterySimulator:
                 "power": self.actual_power,
                 "mode": self.mode,
                 "status": status,
-
                 # Grid/P1 meter state
                 "grid_power": self.grid_power,
                 "em_a_power": self.em_a_power,
                 "em_b_power": self.em_b_power,
                 "em_c_power": self.em_c_power,
                 "household_consumption": self.gross_household_consumption,
-
                 # Mode-specific
                 "passive_remaining": passive_remaining,
                 "passive_cfg": passive_cfg,
-
                 # Sensors
                 "wifi_rssi": self.wifi.get_rssi(),
                 "battery_temp": round(self.battery_temp, 1),
                 "ct_connected": self.ct_connected,
-
                 # Battery flags
                 "charg_flag": 1 if self.soc < 100 else 0,
                 "dischrg_flag": 1 if self.soc > SOC_MIN_DISCHARGE else 0,
-
                 # Energy statistics (Wh)
                 "total_pv_energy": int(self.total_pv_energy),
                 "total_grid_output_energy": int(self.total_grid_output_energy),
                 "total_grid_input_energy": int(self.total_grid_input_energy),
                 "total_load_energy": int(self.total_load_energy),
-
                 # PV state
                 "pv_power": self.pv_power,
                 "pv_voltage": self.pv_voltage,

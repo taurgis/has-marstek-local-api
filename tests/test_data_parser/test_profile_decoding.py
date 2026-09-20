@@ -306,9 +306,7 @@ class TestFirmwareProfileDecoding:
             },
             profile,
         )
-        merged = merge_device_status(
-            es_mode_data=mode, previous_status=previous
-        )
+        merged = merge_device_status(es_mode_data=mode, previous_status=previous)
 
         assert merged["device_mode"] == "auto"
         assert merged["ongrid_power"] == 1246

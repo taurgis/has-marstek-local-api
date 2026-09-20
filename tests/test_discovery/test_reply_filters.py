@@ -25,11 +25,7 @@ class TestIsEchoResponse:
         from custom_components.marstek.discovery import _is_echo_response
 
         # Has result, so should not be echo even if has method
-        response = {
-            "result": {"device": "Venus"},
-            "method": "Marstek.GetDevice",
-            "params": {}
-        }
+        response = {"result": {"device": "Venus"}, "method": "Marstek.GetDevice", "params": {}}
         assert _is_echo_response(response) is False
 
 
@@ -159,3 +155,28 @@ def test_udp_source_matches_numeric_host() -> None:
 
     assert udp_source_matches_host("192.168.1.10", "192.168.1.10") is True
     assert udp_source_matches_host("192.168.1.11", "192.168.1.10") is False
+
+
+class TestNonObjectDatagrams:
+    """A datagram that decodes to a JSON scalar must be noise, not a crash.
+
+    Anything on the LAN can put a datagram on the Open API port, and JSON has
+    no rule that a payload be an object. Before these filters were total, one
+    such datagram raised ``TypeError`` out of the whole sweep: the scanner
+    logged "Scanner discovery failed" and dropped every device found in that
+    pass, and the config flow's discovery step never returned a device list.
+    """
+
+    def test_echo_filter_rejects_non_objects(self) -> None:
+        """_is_echo_response says False for every non-object payload."""
+        from custom_components.marstek.discovery import _is_echo_response
+
+        for payload in (5, 5.5, True, False, None, "text", [1, 2]):
+            assert _is_echo_response(payload) is False
+
+    def test_valid_filter_rejects_non_objects(self) -> None:
+        """_is_valid_device_response says False for every non-object payload."""
+        from custom_components.marstek.discovery import _is_valid_device_response
+
+        for payload in (5, 5.5, True, False, None, "text", [1, 2]):
+            assert _is_valid_device_response(payload) is False

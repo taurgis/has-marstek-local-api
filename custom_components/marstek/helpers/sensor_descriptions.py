@@ -55,14 +55,17 @@ class MarstekSensorEntityDescription(SensorEntityDescription):  # type: ignore[m
         ],
         StateType,
     ]
-    attributes_fn: Callable[
-        [
-            MarstekDataUpdateCoordinator,
-            dict[str, Any],
-            ConfigEntry | None,
-        ],
-        dict[str, Any] | None,
-    ] | None = None
+    attributes_fn: (
+        Callable[
+            [
+                MarstekDataUpdateCoordinator,
+                dict[str, Any],
+                ConfigEntry | None,
+            ],
+            dict[str, Any] | None,
+        ]
+        | None
+    ) = None
     exists_fn: Callable[[dict[str, Any]], bool] = lambda data: True
 
 
@@ -116,15 +119,11 @@ def _success_rate_sensor(
     )
 
 
-def _api_success_rate_sensor(
-    method: str, translation_key: str
-) -> MarstekSensorEntityDescription:
+def _api_success_rate_sensor(method: str, translation_key: str) -> MarstekSensorEntityDescription:
     return _success_rate_sensor(
         translation_key,
         lambda coordinator, _info, _entry: command_success_rate(coordinator, method),
-        lambda coordinator, _info, _entry: command_stats_attributes(
-            coordinator, method
-        ),
+        lambda coordinator, _info, _entry: command_stats_attributes(coordinator, method),
     )
 
 
@@ -134,9 +133,7 @@ def _overall_success_rate_sensor(
     return _success_rate_sensor(
         translation_key,
         lambda coordinator, _info, _entry: overall_command_success_rate(coordinator),
-        lambda coordinator, _info, _entry: overall_command_stats_attributes(
-            coordinator
-        ),
+        lambda coordinator, _info, _entry: overall_command_stats_attributes(coordinator),
     )
 
 
@@ -147,8 +144,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("battery_soc", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "battery_soc", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -158,8 +155,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("battery_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "battery_power", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -169,8 +166,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("ongrid_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "ongrid_power", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_key_with_value("ongrid_power", data),
     ),
@@ -181,8 +178,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("offgrid_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "offgrid_power", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_key_with_value("offgrid_power", data),
     ),
@@ -193,8 +190,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("pv_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "pv_power", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_key_with_value("pv_power", data),
     ),
@@ -204,8 +201,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY_STORAGE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("bat_cap", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "bat_cap", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_key_with_value("bat_cap", data),
     ),
@@ -221,8 +218,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="battery_status",
         device_class=SensorDeviceClass.ENUM,
         options=["charging", "discharging", "idle"],
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("battery_status", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "battery_status", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -234,8 +231,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("wifi_rssi", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "wifi_rssi", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -243,8 +240,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="wifi_ip_address",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("wifi_sta_ip", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "wifi_sta_ip", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -252,8 +249,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="wifi_gateway",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("wifi_sta_gate", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "wifi_sta_gate", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -261,8 +258,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="wifi_subnet_mask",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("wifi_sta_mask", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "wifi_sta_mask", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -270,8 +267,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         translation_key="wifi_dns",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("wifi_sta_dns", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "wifi_sta_dns", coordinator.data or {}
         ),
     ),
     # Bat.GetStatus sensors are disabled by default: the request is suspected
@@ -286,8 +283,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         suggested_display_precision=1,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("bat_temp", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "bat_temp", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -298,8 +295,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("bat_capacity", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "bat_capacity", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -310,8 +307,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("bat_rated_capacity", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "bat_rated_capacity", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -321,8 +318,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("em_total_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "em_total_power", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -332,8 +329,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("em_a_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "em_a_power", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -343,8 +340,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("em_b_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "em_b_power", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -354,8 +351,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("em_c_power", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "em_c_power", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -365,8 +362,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=1,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("em_input_energy", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "em_input_energy", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_present_value("em_input_energy", data),
     ),
@@ -377,8 +374,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=1,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("em_output_energy", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "em_output_energy", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_present_value("em_output_energy", data),
     ),
@@ -388,8 +385,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("total_pv_energy", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "total_pv_energy", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -398,8 +395,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("total_grid_output_energy", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "total_grid_output_energy", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -408,8 +405,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("total_grid_input_energy", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "total_grid_input_energy", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -418,8 +415,8 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda coordinator, _info, _entry: (
-            _value_from_data("total_load_energy", coordinator.data or {})
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            "total_load_energy", coordinator.data or {}
         ),
     ),
     MarstekSensorEntityDescription(
@@ -497,11 +494,7 @@ def _pv_sensor_descriptions() -> tuple[MarstekSensorEntityDescription, ...]:
                     translation_key=sensor_key,
                     native_unit_of_measurement=unit,
                     device_class=device_class,
-                    state_class=(
-                        SensorStateClass.MEASUREMENT
-                        if metric_type != "state"
-                        else None
-                    ),
+                    state_class=(SensorStateClass.MEASUREMENT if metric_type != "state" else None),
                     suggested_display_precision=precision,
                     value_fn=lambda coordinator, _info, _entry, key=sensor_key: (  # type: ignore[misc]
                         _value_from_data(key, coordinator.data or {})

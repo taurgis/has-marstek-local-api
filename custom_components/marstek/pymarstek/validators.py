@@ -261,9 +261,7 @@ VALID_METHODS: dict[str, MethodSpec] = {
 }
 
 # Valid operating modes (as expected by Marstek device API)
-VALID_MODES: Final[frozenset[str]] = frozenset(
-    {"Auto", "AI", "Manual", "Passive", "UPS"}
-)
+VALID_MODES: Final[frozenset[str]] = frozenset({"Auto", "AI", "Manual", "Passive", "UPS"})
 
 # Time format pattern HH:MM
 TIME_PATTERN = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
@@ -412,8 +410,7 @@ def validate_dod_value(value: Any, field_name: str = "value") -> None:
     dod = _require_int(value, field_name)
     if dod < DOD_MIN_VALUE or dod > DOD_MAX_VALUE:
         raise ValidationError(
-            f"{field_name} must be between {DOD_MIN_VALUE} and {DOD_MAX_VALUE} "
-            f"(got {dod})",
+            f"{field_name} must be between {DOD_MIN_VALUE} and {DOD_MAX_VALUE} (got {dod})",
             field_name,
         )
 

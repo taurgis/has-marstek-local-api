@@ -71,9 +71,7 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             CONF_PARALLEL_API_REQUESTS,
             DEFAULT_PARALLEL_API_REQUESTS,
         )
-        current_delay = self.config_entry.options.get(
-            CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
-        )
+        current_delay = self.config_entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY)
         current_timeout = self.config_entry.options.get(
             CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
         )

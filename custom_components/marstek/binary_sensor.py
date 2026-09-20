@@ -25,9 +25,7 @@ from .helpers.binary_sensor_descriptions import (
 PARALLEL_UPDATES = 0
 
 
-class MarstekBinarySensor(
-    CoordinatorEntity[MarstekDataUpdateCoordinator], BinarySensorEntity
-):
+class MarstekBinarySensor(CoordinatorEntity[MarstekDataUpdateCoordinator], BinarySensorEntity):
     """Representation of a Marstek binary sensor."""
 
     _attr_has_entity_name = True
@@ -74,15 +72,10 @@ async def async_setup_entry(
 
     entities: list[MarstekBinarySensor] = []
     for description in BINARY_SENSORS:
-        if (
-            description.key in BAT_STATUS_KEYS
-            and coordinator.profile.openapi_reset_prone
-        ):
+        if description.key in BAT_STATUS_KEYS and coordinator.profile.openapi_reset_prone:
             continue
         if description.exists_fn(data_for_exists):
             entities.append(
-                MarstekBinarySensor(
-                    coordinator, device_info, description, config_entry
-                )
+                MarstekBinarySensor(coordinator, device_info, description, config_entry)
             )
     async_add_entities(entities)

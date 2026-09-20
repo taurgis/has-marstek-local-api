@@ -47,9 +47,7 @@ async def test_wifi_rssi_sensor_created(
         assert mock_config_entry.state == ConfigEntryState.LOADED
         # Sensor is disabled by default, check entity registry instead of state
         entity_registry = er.async_get(hass)
-        entry = entity_registry.async_get(
-            "sensor.venus_wifi_signal_strength"
-        )
+        entry = entity_registry.async_get("sensor.venus_wifi_signal_strength")
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
 
@@ -109,9 +107,7 @@ async def test_api_stability_sensors_disabled_by_default(
         ]
         for key in entity_keys:
             unique_id = f"{device_identifier}_{key}"
-            entity_id = entity_registry.async_get_entity_id(
-                "sensor", DOMAIN, unique_id
-            )
+            entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
             assert entity_id is not None
             entry = entity_registry.async_get(entity_id)
             assert entry is not None
@@ -152,9 +148,7 @@ async def test_battery_detail_sensors_disabled_by_default(
             ("binary_sensor", "bat_dischrg_flag"),
         ):
             unique_id = f"{device_identifier}_{key}"
-            entity_id = entity_registry.async_get_entity_id(
-                domain, DOMAIN, unique_id
-            )
+            entity_id = entity_registry.async_get_entity_id(domain, DOMAIN, unique_id)
             assert entity_id is not None
             entry = entity_registry.async_get(entity_id)
             assert entry is not None
@@ -398,91 +392,28 @@ async def test_all_new_sensors_with_full_status(
         entity_registry = er.async_get(hass)
 
         # WiFi and CT sensors are disabled by default
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_wifi_signal_strength"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_wi_fi_ip_address"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_wi_fi_gateway"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_wi_fi_subnet_mask"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_wi_fi_dns"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "binary_sensor.venus_a_ct_connection"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "binary_sensor.venus_a_charge_permission"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "binary_sensor.venus_a_discharge_permission"
-            )
-            is not None
-        )
+        assert entity_registry.async_get("sensor.venus_a_wifi_signal_strength") is not None
+        assert entity_registry.async_get("sensor.venus_a_wi_fi_ip_address") is not None
+        assert entity_registry.async_get("sensor.venus_a_wi_fi_gateway") is not None
+        assert entity_registry.async_get("sensor.venus_a_wi_fi_subnet_mask") is not None
+        assert entity_registry.async_get("sensor.venus_a_wi_fi_dns") is not None
+        assert entity_registry.async_get("binary_sensor.venus_a_ct_connection") is not None
+        assert entity_registry.async_get("binary_sensor.venus_a_charge_permission") is not None
+        assert entity_registry.async_get("binary_sensor.venus_a_discharge_permission") is not None
 
         # Battery detail sensors are disabled by default (issue #14)
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_battery_temperature"
-            )
-            is not None
-        )
+        assert entity_registry.async_get("sensor.venus_a_battery_temperature") is not None
         # Grid power is enabled
-        assert (
-            hass.states.get("sensor.venus_a_total_power")
-            is not None
-        )
+        assert hass.states.get("sensor.venus_a_total_power") is not None
         assert hass.states.get("sensor.venus_a_on_grid_power") is not None
         assert hass.states.get("sensor.venus_a_off_grid_power") is not None
         # PV power (overridden from calculated sum when API returns 0)
         pv_power = hass.states.get("sensor.venus_a_pv_power")
         assert pv_power is not None
         assert float(pv_power.state) == 320.0  # 100 + 120 + 50 + 50
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_battery_remaining_capacity"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_battery_rated_capacity"
-            )
-            is not None
-        )
-        assert (
-            entity_registry.async_get(
-                "sensor.venus_a_battery_total_capacity"
-            )
-            is not None
-        )
+        assert entity_registry.async_get("sensor.venus_a_battery_remaining_capacity") is not None
+        assert entity_registry.async_get("sensor.venus_a_battery_rated_capacity") is not None
+        assert entity_registry.async_get("sensor.venus_a_battery_total_capacity") is not None
 
         # Phase sensors (entity_id uses em_X_power)
         assert hass.states.get("sensor.venus_a_phase_a_power") is not None

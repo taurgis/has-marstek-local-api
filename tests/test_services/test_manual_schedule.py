@@ -132,9 +132,7 @@ async def test_e_mini_single_schedule_rejects_slot_six_before_udp(
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        device = async_lookup_device_by_identifier(
-            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
-        )
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
         client.send_request.reset_mock()
 
@@ -217,9 +215,7 @@ async def test_e_mini_clear_sends_six_commands_with_single_pause(
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        device = async_lookup_device_by_identifier(
-            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
-        )
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
         client.send_request.reset_mock()
         client.pause_polling.reset_mock()
@@ -308,9 +304,7 @@ async def test_e_mini_batch_rejects_before_pause_or_udp(
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        device = async_lookup_device_by_identifier(
-            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
-        )
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
         client.send_request.reset_mock()
         client.pause_polling.reset_mock()

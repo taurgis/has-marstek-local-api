@@ -55,12 +55,8 @@ async def test_setup_binds_shared_udp_client_to_entry_port(
 
     with (
         patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
-        patch(
-            "custom_components.marstek.MarstekUDPClient", return_value=client
-        ) as mock_udp,
-        patch(
-            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
-        ),
+        patch("custom_components.marstek.MarstekUDPClient", return_value=client) as mock_udp,
+        patch("custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client),
         patch(
             "custom_components.marstek.scanner.MarstekScanner.async_get",
             return_value=scanner,
@@ -105,12 +101,8 @@ async def test_setup_loopback_uses_ephemeral_bind_port(
 
     with (
         patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
-        patch(
-            "custom_components.marstek.MarstekUDPClient", return_value=client
-        ) as mock_udp,
-        patch(
-            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
-        ),
+        patch("custom_components.marstek.MarstekUDPClient", return_value=client) as mock_udp,
+        patch("custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client),
         patch(
             "custom_components.marstek.scanner.MarstekScanner.async_get",
             return_value=scanner,
@@ -326,9 +318,7 @@ async def test_entries_on_different_ports_use_separate_udp_clients(
     scanner = create_mock_scanner()
     with (
         patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
-        patch(
-            "custom_components.marstek.MarstekUDPClient", side_effect=_make_client
-        ) as mock_udp,
+        patch("custom_components.marstek.MarstekUDPClient", side_effect=_make_client) as mock_udp,
         patch(
             "custom_components.marstek.pymarstek.MarstekUDPClient",
             side_effect=_make_client,
@@ -383,9 +373,7 @@ async def test_remove_setup_retry_entry_releases_udp_client(
         await hass.async_block_till_done()
 
     client.async_cleanup.assert_awaited()
-    assert DOMAIN not in hass.data or DATA_UDP_CLIENTS not in hass.data.get(
-        DOMAIN, {}
-    )
+    assert DOMAIN not in hass.data or DATA_UDP_CLIENTS not in hass.data.get(DOMAIN, {})
 
 
 async def test_setup_error_after_lease_releases_udp_client(

@@ -118,9 +118,7 @@ async def test_coordinator_skips_wifi_status_when_disabled(
 ):
     """Test that Wifi.GetStatus is skipped when WiFi diagnostics are disabled."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0})
 
     entity_registry = er.async_get(hass)
     entity_registry.async_get_or_create(
@@ -150,9 +148,7 @@ async def test_coordinator_skips_bat_status_when_disabled(
 ):
     """Test that Bat.GetStatus is skipped when battery detail entities are disabled."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0})
 
     entity_registry = er.async_get(hass)
     entity_registry.async_get_or_create(
@@ -182,9 +178,7 @@ async def test_coordinator_includes_bat_status_when_entity_enabled(
 ):
     """Test that Bat.GetStatus resumes when a battery detail entity is enabled."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0})
 
     entity_registry = er.async_get(hass)
     entity_registry.async_get_or_create(
@@ -245,9 +239,7 @@ async def test_coordinator_skips_bat_status_on_reset_prone_firmware(
     mock_udp_client.set_openapi_reset_prone.assert_called_with(
         "1.2.3.4", True, owner=mock_config_entry.entry_id
     )
-    mock_udp_client.set_openapi_retransmit_safe.assert_called_with(
-        "1.2.3.4", False
-    )
+    mock_udp_client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", False)
 
 
 @pytest.mark.asyncio
@@ -256,9 +248,7 @@ async def test_coordinator_includes_bat_status_for_binary_sensor_entity(
 ):
     """Test that an enabled permission binary sensor also opens the gate."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0})
 
     entity_registry = er.async_get(hass)
     entity_registry.async_get_or_create(
@@ -292,9 +282,7 @@ async def test_coordinator_non_gated_entities_do_not_open_bat_gate(
     re-enable the reset-triggering Bat.GetStatus call.
     """
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={CONF_POLL_INTERVAL_SLOW: 0})
 
     entity_registry = er.async_get(hass)
     for key in ("battery_soc", "bat_cap", "em_total_power"):
@@ -432,9 +420,7 @@ async def test_coordinator_fetches_bat_status_promptly_after_enable(
 
     # User enables the entity; the next cycle must fetch immediately
     # (battery details were never actually fetched)
-    entity_registry.async_update_entity(
-        registry_entry.entity_id, disabled_by=None
-    )
+    entity_registry.async_update_entity(registry_entry.entity_id, disabled_by=None)
     await coordinator._async_update_data()
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_bat"] is True
@@ -523,18 +509,14 @@ async def test_coordinator_first_slow_fetch_when_monotonic_below_interval(
         "1.2.3.4",
     )
 
-    with patch(
-        "custom_components.marstek.coordinator.time.monotonic", return_value=10.0
-    ):
+    with patch("custom_components.marstek.coordinator.time.monotonic", return_value=10.0):
         await coordinator._async_update_data()
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs
     assert kwargs["include_wifi"] is True
     assert kwargs["include_bat"] is True
 
-    with patch(
-        "custom_components.marstek.coordinator.time.monotonic", return_value=11.0
-    ):
+    with patch("custom_components.marstek.coordinator.time.monotonic", return_value=11.0):
         await coordinator._async_update_data()
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs

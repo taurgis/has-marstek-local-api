@@ -69,9 +69,7 @@ def _get_entry_and_client_from_device_id(
 ) -> tuple[MarstekConfigEntry, MarstekUDPClient, str, int]:
     """Get config entry and UDP client from device ID."""
     device = async_resolve_marstek_device(hass, device_id)
-    entry = cast(
-        "MarstekConfigEntry", require_loaded_marstek_entry(hass, device, device_id)
-    )
+    entry = cast("MarstekConfigEntry", require_loaded_marstek_entry(hass, device, device_id))
     host = entry.data.get(CONF_HOST)
     port = entry.data.get(CONF_PORT, DEFAULT_UDP_PORT)
     udp_client = get_udp_client_for_entry(hass, entry)
@@ -85,9 +83,7 @@ def _get_entry_and_client_from_device_id(
     )
 
 
-def _power_error(
-    requested: int, min_power: int, max_power: int
-) -> ServiceValidationError:
+def _power_error(requested: int, min_power: int, max_power: int) -> ServiceValidationError:
     """Build a power validation error for service calls."""
     return ServiceValidationError(
         translation_domain=DOMAIN,
@@ -343,6 +339,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     Services are registered once globally (idempotent registration).
     """
+
     async def handle_set_passive_mode(call: ServiceCall) -> None:
         """Handle the set_passive_mode service call."""
         await async_set_passive_mode(hass, call)
@@ -402,4 +399,3 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             handle_request_data_sync,
             schema=SERVICE_REQUEST_DATA_SYNC_SCHEMA,
         )
-

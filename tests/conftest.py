@@ -182,9 +182,7 @@ def patch_marstek_integration(
     with (
         patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
         patch("custom_components.marstek.MarstekUDPClient", return_value=client),
-        patch(
-            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
-        ),
+        patch("custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client),
         patch(
             "custom_components.marstek.scanner.MarstekScanner.async_get",
             return_value=scanner,
@@ -235,8 +233,6 @@ def patch_manual_connection(
     Yields:
         None - context manager for use in tests.
     """
-    mock_fn = (
-        AsyncMock(side_effect=error) if error else AsyncMock(return_value=device_info)
-    )
+    mock_fn = AsyncMock(side_effect=error) if error else AsyncMock(return_value=device_info)
     with patch("custom_components.marstek.config_flow.get_device_info", mock_fn):
         yield

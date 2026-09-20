@@ -34,9 +34,7 @@ async def query_device(host: str, port: int = 30000, timeout: float = 5.0):
     start = loop.time()
     while (loop.time() - start) < timeout:
         try:
-            data, addr = await asyncio.wait_for(
-                loop.sock_recvfrom(sock, 4096), timeout=0.5
-            )
+            data, addr = await asyncio.wait_for(loop.sock_recvfrom(sock, 4096), timeout=0.5)
             if not data:
                 continue
             try:

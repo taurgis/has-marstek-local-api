@@ -19,11 +19,7 @@ class TestSendBroadcastRequest:
         client = MarstekUDPClient()
         client._socket = MagicMock()
 
-        invalid_message = json.dumps({
-            "id": 1,
-            "method": "Invalid.Method",
-            "params": {}
-        })
+        invalid_message = json.dumps({"id": 1, "method": "Invalid.Method", "params": {}})
 
         result = await client.send_broadcast_request(invalid_message)
         assert result == []
@@ -124,7 +120,7 @@ class TestDiscoverDevices:
                 "ip": "192.168.1.100",
                 "wifi_mac": "11:22:33:44:55:66",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[response])):
@@ -149,17 +145,13 @@ class TestDiscoverDevices:
             },
         }
 
-        with patch.object(
-            udp_client, "send_broadcast_request", AsyncMock(return_value=[response])
-        ):
+        with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[response])):
             result = await udp_client.discover_devices(use_cache=False)
 
         assert result[0]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
         assert result[0]["mac"] == "AA:BB:CC:DD:EE:FF"
 
-    async def test_omitted_ver_is_not_coerced_to_zero(
-        self, udp_client: MarstekUDPClient
-    ) -> None:
+    async def test_omitted_ver_is_not_coerced_to_zero(self, udp_client: MarstekUDPClient) -> None:
         """A discovery result without ver must keep firmware unknown."""
         response = {
             "id": 1,
@@ -170,9 +162,7 @@ class TestDiscoverDevices:
             },
         }
 
-        with patch.object(
-            udp_client, "send_broadcast_request", AsyncMock(return_value=[response])
-        ):
+        with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[response])):
             result = await udp_client.discover_devices(use_cache=False)
 
         assert result[0]["version"] is None
@@ -185,7 +175,7 @@ class TestDiscoverDevices:
             "result": {
                 "device": "Venus",
                 "ip": "192.168.1.100",
-            }
+            },
         }
 
         # Return same device twice

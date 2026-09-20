@@ -152,9 +152,7 @@ async def test_scanner_scan_impl_discovers_devices_ip_changed(
         assert call_args[1]["data"]["ble_mac"] == "AA:BB:CC:DD:EE:FF"
 
 
-async def test_scanner_scan_impl_entry_in_setup_retry(
-    hass: HomeAssistant, mock_config_entry
-):
+async def test_scanner_scan_impl_entry_in_setup_retry(hass: HomeAssistant, mock_config_entry):
     """Test _async_scan_impl handles entries in SETUP_RETRY state."""
     mock_config_entry.add_to_hass(hass)
     mock_config_entry.mock_state(hass, ConfigEntryState.SETUP_RETRY)
@@ -184,9 +182,7 @@ async def test_scanner_scan_impl_entry_in_setup_retry(
         mock_create_flow.assert_called_once()
 
 
-async def test_scanner_scan_impl_skips_not_loaded_entry(
-    hass: HomeAssistant, mock_config_entry
-):
+async def test_scanner_scan_impl_skips_not_loaded_entry(hass: HomeAssistant, mock_config_entry):
     """Test _async_scan_impl skips entries not in LOADED/SETUP_RETRY state."""
     mock_config_entry.add_to_hass(hass)
     mock_config_entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
@@ -245,9 +241,7 @@ async def test_scanner_scan_impl_entry_missing_ble_mac(hass: HomeAssistant):
         mock_create_flow.assert_called_once()
 
 
-async def test_scanner_scan_impl_no_matching_device(
-    hass: HomeAssistant, mock_config_entry
-):
+async def test_scanner_scan_impl_no_matching_device(hass: HomeAssistant, mock_config_entry):
     """Test _async_scan_impl triggers discovery for unconfigured devices."""
     mock_config_entry.add_to_hass(hass)
     mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)

@@ -247,9 +247,7 @@ async def test_integration_discovery_reloads_and_keeps_services(
                 "async_reload",
                 AsyncMock(side_effect=_passthrough_reload),
             ) as mock_reload,
-            patch.object(
-                hass.config_entries, "async_schedule_reload"
-            ) as mock_schedule_reload,
+            patch.object(hass.config_entries, "async_schedule_reload") as mock_schedule_reload,
         ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN,
@@ -313,9 +311,7 @@ async def test_dhcp_discovery_reloads_and_keeps_services(
                 "async_reload",
                 AsyncMock(side_effect=_passthrough_reload),
             ) as mock_reload,
-            patch.object(
-                hass.config_entries, "async_schedule_reload"
-            ) as mock_schedule_reload,
+            patch.object(hass.config_entries, "async_schedule_reload") as mock_schedule_reload,
         ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN,
@@ -358,9 +354,7 @@ async def test_dhcp_discovery_reloads_and_keeps_services(
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
 
 
-async def test_reload_entry(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_reload_entry(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
     """Test reloading the integration re-establishes coordinator."""
     mock_config_entry.add_to_hass(hass)
 
@@ -383,7 +377,5 @@ async def test_reload_entry(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        assert (
-            hass.states.get("sensor.venus_battery_level") is not None
-        )
+        assert hass.states.get("sensor.venus_battery_level") is not None
         assert hass.services.has_service(DOMAIN, "set_passive_mode")

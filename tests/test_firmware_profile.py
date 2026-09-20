@@ -59,9 +59,7 @@ def test_profile_resolves_family_capabilities(
 
 @pytest.mark.parametrize("version", [150, "150"])
 @pytest.mark.parametrize("device_type", ["VenusA", "VenusC", "VenusD", "VenusE 3.0"])
-def test_firmware_150_enables_sys_and_ups(
-    device_type: str, version: int | str
-) -> None:
+def test_firmware_150_enables_sys_and_ups(device_type: str, version: int | str) -> None:
     """Firmware 150 enables each gated feature on regular families."""
     profile = resolve_firmware_profile(device_type, version)
 
@@ -110,10 +108,14 @@ def test_e_mini_known_firmware_sys_exception() -> None:
 
 @pytest.mark.parametrize(
     "version",
-    [None, True, False, -1, 145.0, "", " ", "v150", "not-a-version"],
+    [None, True, False, -1, -145.0, "", " ", "v150", "not-a-version"],
 )
 def test_unknown_firmware_is_conservative(version: object) -> None:
-    """Malformed firmware never authorizes SYS or UPS, including E mini."""
+    """Malformed firmware never authorizes SYS or UPS, including E mini.
+
+    A plain float such as ``145.0`` is *not* malformed: it is the dotted app
+    label on the wire as a JSON number, and it resolves like ``"145.0"`` does.
+    """
     profile = resolve_firmware_profile("Venus E mini", version)
 
     assert profile.firmware_version is None
@@ -559,3 +561,44 @@ def test_venus_a_1487_folds_to_legacy_148_generation() -> None:
     assert profile.pv_energy_scale == 1.0
     assert profile.openapi_reset_prone is True
 
+
+@pytest.mark.parametrize(
+    ("version", "firmware_version", "pv_energy_scale", "pv_channel_1_power_scale"),
+    [
+        (147.7, 147, 1.0, 0.1),
+        (148.3, 148, 1.0, 0.1),
+        (149.1, 149, 10.0, 0.1),
+        (150.9, 150, 10.0, 0.1),
+    ],
+)
+def test_float_app_firmware_labels_match_their_dotted_strings(
+    version: float,
+    firmware_version: int,
+    pv_energy_scale: float,
+    pv_channel_1_power_scale: float,
+) -> None:
+    """A JSON number ver means the same as the dotted string of the same label."""
+    profile = resolve_firmware_profile("VenusA", version)
+
+    assert profile.firmware_version == firmware_version
+    assert profile.pv_energy_scale == pv_energy_scale
+    assert profile.pv_channel_1_power_scale == pv_channel_1_power_scale
+
+
+def test_float_ver_150_9_keeps_rev31_capabilities() -> None:
+    """Rejecting a float ver would drop SYS/UPS and force reset-prone polling."""
+    profile = resolve_firmware_profile("VenusA", 150.9)
+
+    assert profile.control_generation == 150
+    assert profile.supports_sys_dod is True
+    assert profile.supports_ups is True
+    assert profile.openapi_reset_prone is False
+
+
+@pytest.mark.parametrize("version", [float("nan"), float("inf"), float("-inf"), -1.5])
+def test_unusable_float_ver_stays_unknown(version: float) -> None:
+    """A non-finite or negative ver carries no generation; stay on the safe profile."""
+    profile = resolve_firmware_profile("VenusA", version)
+
+    assert profile.firmware_version is None
+    assert profile.openapi_reset_prone is True

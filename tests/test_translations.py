@@ -187,9 +187,7 @@ class TestTranslationParity:
                 f"strings.json has {strings_data_keys}, en.json has {en_data_keys}"
             )
 
-    def test_config_flow_steps_match(
-        self, strings_json: dict, translations_en_json: dict
-    ) -> None:
+    def test_config_flow_steps_match(self, strings_json: dict, translations_en_json: dict) -> None:
         """Test that config flow steps match between strings.json and en.json."""
         strings_steps = set(strings_json["config"]["step"].keys())
         en_steps = set(translations_en_json["config"]["step"].keys())
@@ -197,9 +195,7 @@ class TestTranslationParity:
             f"Config flow steps differ: strings.json has {strings_steps}, en.json has {en_steps}"
         )
 
-    def test_error_keys_match(
-        self, strings_json: dict, translations_en_json: dict
-    ) -> None:
+    def test_error_keys_match(self, strings_json: dict, translations_en_json: dict) -> None:
         """Test that error keys match between strings.json and en.json."""
         strings_errors = set(strings_json["config"]["error"].keys())
         en_errors = set(translations_en_json["config"]["error"].keys())
@@ -207,9 +203,7 @@ class TestTranslationParity:
             f"Error keys differ: strings.json has {strings_errors}, en.json has {en_errors}"
         )
 
-    def test_abort_keys_match(
-        self, strings_json: dict, translations_en_json: dict
-    ) -> None:
+    def test_abort_keys_match(self, strings_json: dict, translations_en_json: dict) -> None:
         """Test that abort keys match between strings.json and en.json."""
         strings_aborts = set(strings_json["config"]["abort"].keys())
         en_aborts = set(translations_en_json["config"]["abort"].keys())

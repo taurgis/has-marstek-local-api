@@ -95,9 +95,7 @@ def udp_client_pool(hass: HomeAssistant) -> dict[int, MarstekUDPClient]:
 
 def udp_client_lock(hass: HomeAssistant) -> asyncio.Lock:
     """Return the lock that serializes pool mutations."""
-    return _domain_singleton(
-        hass, DATA_UDP_CLIENTS_LOCK, asyncio.Lock, asyncio.Lock
-    )
+    return _domain_singleton(hass, DATA_UDP_CLIENTS_LOCK, asyncio.Lock, asyncio.Lock)
 
 
 def discovery_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -163,9 +161,7 @@ def iter_udp_clients(hass: HomeAssistant) -> tuple[MarstekUDPClient, ...]:
     return tuple(udp_client_pool(hass).values())
 
 
-def get_udp_client_for_entry(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> MarstekUDPClient | None:
+def get_udp_client_for_entry(hass: HomeAssistant, entry: ConfigEntry) -> MarstekUDPClient | None:
     """Return the UDP client used by a config entry.
 
     Prefers the coordinator client created at setup so control paths follow
@@ -212,9 +208,7 @@ def transfer_reset_prone_mark_for_entry(
 
     if new_client is old_client:
         if old_host != new_host:
-            old_client.transfer_openapi_reset_prone(
-                old_host, new_host, owner=owner
-            )
+            old_client.transfer_openapi_reset_prone(old_host, new_host, owner=owner)
         return
 
     old_client.clear_openapi_reset_prone(old_host, owner=owner)
@@ -228,16 +222,12 @@ def clear_reset_prone_owner_from_pool(hass: HomeAssistant, owner: str) -> None:
         client.clear_openapi_reset_prone_owner(owner)
 
 
-def store_udp_client(
-    hass: HomeAssistant, bind_port: int, client: MarstekUDPClient
-) -> None:
+def store_udp_client(hass: HomeAssistant, bind_port: int, client: MarstekUDPClient) -> None:
     """Store *client* in the pool under *bind_port*."""
     udp_client_pool(hass)[bind_port] = client
 
 
-def _bind_port_in_use(
-    hass: HomeAssistant, bind_port: int, *, excluding_entry_id: str
-) -> bool:
+def _bind_port_in_use(hass: HomeAssistant, bind_port: int, *, excluding_entry_id: str) -> bool:
     """Return True when another entry still needs *bind_port*."""
     owners = _udp_client_owners(hass).get(bind_port, set())
     if any(owner != excluding_entry_id for owner in owners):
@@ -252,9 +242,7 @@ def _bind_port_in_use(
     return False
 
 
-async def async_release_udp_client_for_entry(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> None:
+async def async_release_udp_client_for_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Close the runtime client when no remaining entry needs its port."""
     async with discovery_lock(hass), udp_client_lock(hass):
         client = get_udp_client_for_entry(hass, entry)
@@ -269,11 +257,7 @@ async def async_release_udp_client_for_entry(
                     owners.pop(bind_port, None)
         elif client is not None:
             runtime_port = client.bind_port
-            bind_port = (
-                runtime_port
-                if isinstance(runtime_port, int)
-                else entry_bind_port(entry)
-            )
+            bind_port = runtime_port if isinstance(runtime_port, int) else entry_bind_port(entry)
         else:
             bind_port = entry_bind_port(entry)
 

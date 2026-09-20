@@ -26,9 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
 
 
-def _parse_dod_int(
-    value: Any, description: MarstekNumberEntityDescription
-) -> int | None:
+def _parse_dod_int(value: Any, description: MarstekNumberEntityDescription) -> int | None:
     """Return a DOD integer in range, or None when the value is unusable."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -53,8 +51,7 @@ def _coerce_dod_int(value: float, description: MarstekNumberEntityDescription) -
             translation_key="sys_write_invalid",
             translation_placeholders={
                 "error": (
-                    f"value must be an integer between {min_value} and "
-                    f"{max_value} (got {value})"
+                    f"value must be an integer between {min_value} and {max_value} (got {value})"
                 )
             },
         )
@@ -110,9 +107,7 @@ class MarstekSysNumber(MarstekSysEntity, RestoreNumber):
         config_entry: ConfigEntry,
     ) -> None:
         """Initialize the SYS number entity."""
-        super().__init__(
-            coordinator, device_info, description, udp_client, config_entry
-        )
+        super().__init__(coordinator, device_info, description, udp_client, config_entry)
         self._attr_native_value = float(description.default_value)
 
     @property
@@ -126,17 +121,13 @@ class MarstekSysNumber(MarstekSysEntity, RestoreNumber):
         last_data = await self.async_get_last_number_data()
         if last_data is None:
             return
-        restored = _restored_dod_value(
-            last_data.native_value, self.entity_description
-        )
+        restored = _restored_dod_value(last_data.native_value, self.entity_description)
         if restored is not None:
             self._attr_native_value = float(restored)
 
     async def async_set_native_value(self, value: float) -> None:
         """Send DOD.SET and publish the requested value after acknowledgement."""
         int_value = _coerce_dod_int(value, self.entity_description)
-        await self._async_sys_write(
-            self.entity_description.method, {"value": int_value}
-        )
+        await self._async_sys_write(self.entity_description.method, {"value": int_value})
         self._attr_native_value = float(int_value)
         self.async_write_ha_state()

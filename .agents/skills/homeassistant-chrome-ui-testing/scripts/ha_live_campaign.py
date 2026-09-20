@@ -271,14 +271,27 @@ def rest_login_tokens() -> dict[str, Any]:
     return {"ok": True, "tokens": tokens}
 
 
+def _is_onboarding_complete(status: Any) -> bool:
+    """Return True when HA reports, or implies, that onboarding is finished."""
+    if isinstance(status, dict) and status.get("status_code") == 404:
+        return True
+    if not isinstance(status, list):
+        return False
+    done = {row["step"]: bool(row.get("done")) for row in status if isinstance(row, dict)}
+    return all(done.get(step) for step in ("user", "core_config", "analytics", "integration"))
+
+
 def onboard_home_assistant() -> dict[str, Any]:
     """Finish HA onboarding over REST when the config volume is fresh."""
     status = _json_http("GET", f"{HA_URL}/api/onboarding")
+    if _is_onboarding_complete(status):
+        # HA stops registering the onboarding view once every step is done, so
+        # a restarted instance answers 404 here. That is "already onboarded",
+        # not a failure; only the first boot on a fresh volume returns a list.
+        return {"ok": True, "already": True}
     if not isinstance(status, list):
         return {"ok": False, "error": "onboarding_status", "detail": status}
     done = {row["step"]: bool(row.get("done")) for row in status if isinstance(row, dict)}
-    if all(done.get(step) for step in ("user", "core_config", "analytics", "integration")):
-        return {"ok": True, "already": True}
 
     token: str | None = None
     if not done.get("user"):
@@ -2001,15 +2014,27 @@ class Campaign:
 
 
 def wait_ha_api(timeout: float = 120) -> bool:
-    """Wait until HA onboarding/status HTTP answers."""
+    """Wait until HA's HTTP stack answers.
+
+    ``/api/onboarding`` only 200s while onboarding is still pending; once it is
+    done the component stops registering the view, so a restarted instance
+    answers 404. Both mean the HTTP stack is up, and so does the 401 that
+    ``/api/`` returns without a token. Only a connection error means HA is not
+    serving yet.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        try:
-            with urlopen(f"{HA_URL}/api/onboarding", timeout=3) as resp:
-                if resp.status == 200:
+        for path, ready in (("/api/onboarding", (200, 404)), ("/api/", (401, 200))):
+            try:
+                with urlopen(f"{HA_URL}{path}", timeout=3) as resp:
+                    if resp.status in ready:
+                        return True
+            except HTTPError as err:
+                if err.code in ready:
                     return True
-        except (URLError, TimeoutError, OSError):
-            time.sleep(2)
+            except (URLError, TimeoutError, OSError):
+                pass
+        time.sleep(2)
     return False
 
 

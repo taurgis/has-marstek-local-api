@@ -52,9 +52,7 @@ class TestRequestIdManagement:
         # Next ID should be 1
         assert get_next_request_id() == 1
 
-    def test_get_next_request_id_wraps_at_16_bits(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_get_next_request_id_wraps_at_16_bits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that request IDs wrap after 65535 and skip 0.
 
         Control firmware stores JSON-RPC ``id`` as uint16. Id 0 collides with

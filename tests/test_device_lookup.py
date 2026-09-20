@@ -84,9 +84,7 @@ def test_lookup_device_by_identifier_falls_back_to_legacy_api() -> None:
     registry.async_get_device.return_value = expected
     found = async_lookup_device_by_identifier(registry, (DOMAIN, "aa:bb:cc:dd:ee:ff"))
     assert found is expected
-    registry.async_get_device.assert_called_once_with(
-        identifiers={(DOMAIN, "aa:bb:cc:dd:ee:ff")}
-    )
+    registry.async_get_device.assert_called_once_with(identifiers={(DOMAIN, "aa:bb:cc:dd:ee:ff")})
     registry.async_get_devices.assert_not_called()
 
 
@@ -115,9 +113,7 @@ def test_lookup_device_by_identifier_uses_async_get_devices() -> None:
     )
     assert found is not None
     assert found.id == "dev-1"
-    assert registry.async_get_devices_calls == [
-        ({(DOMAIN, "aa:bb:cc:dd:ee:ff")}, "entry-1")
-    ]
+    assert registry.async_get_devices_calls == [({(DOMAIN, "aa:bb:cc:dd:ee:ff")}, "entry-1")]
     registry.async_get_device.assert_not_called()
 
 
@@ -203,9 +199,7 @@ async def test_resolve_truncated_registry_id(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        device = async_lookup_device_by_identifier(
-            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
-        )
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
         truncated = device.id[:-1]
         assert len(truncated) == len(device.id) - 1
@@ -225,9 +219,7 @@ async def test_resolve_mac_and_config_entry_id(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        device = async_lookup_device_by_identifier(
-            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
-        )
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
         found_mac = async_find_marstek_device(hass, DEVICE_IDENTIFIER)
@@ -239,9 +231,7 @@ async def test_resolve_mac_and_config_entry_id(
 
 
 @pytest.mark.asyncio
-async def test_resolve_entity_id(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_resolve_entity_id(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
     """Battery entity IDs resolve to the same device as device_id()."""
     mock_config_entry.add_to_hass(hass)
     client = create_mock_client()
@@ -249,9 +239,7 @@ async def test_resolve_entity_id(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        device = async_lookup_device_by_identifier(
-            dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER)
-        )
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
         resolved = async_resolve_marstek_device(hass, "sensor.venus_battery_level")
         assert resolved.id == device.id

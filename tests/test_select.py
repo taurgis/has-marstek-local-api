@@ -71,9 +71,7 @@ def _patch_all(client=None, scanner=None):
     with (
         patch("custom_components.marstek.scanner.MarstekScanner._scanner", None),
         patch("custom_components.marstek.MarstekUDPClient", return_value=client),
-        patch(
-            "custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client
-        ),
+        patch("custom_components.marstek.pymarstek.MarstekUDPClient", return_value=client),
         patch(
             "custom_components.marstek.scanner.MarstekScanner.async_get",
             return_value=scanner,
@@ -198,9 +196,7 @@ async def test_select_mode_sends_command(
         assert mode in str(command) or expected_config_key in str(command)
 
 
-async def test_select_mode_command_failure_retries(
-    hass: HomeAssistant, mock_config_entry
-):
+async def test_select_mode_command_failure_retries(hass: HomeAssistant, mock_config_entry):
     """Test selecting mode retries on failure."""
     mock_config_entry.add_to_hass(hass)
 
@@ -273,9 +269,7 @@ async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_ent
             )
 
 
-async def test_select_entity_created_with_valid_data(
-    hass: HomeAssistant, mock_config_entry
-):
+async def test_select_entity_created_with_valid_data(hass: HomeAssistant, mock_config_entry):
     """Test select entity is created with valid data."""
     mock_config_entry.add_to_hass(hass)
 
@@ -290,9 +284,7 @@ async def test_select_entity_created_with_valid_data(
         assert state.state == MODE_MANUAL
 
 
-async def test_select_invalid_mode(
-    hass: HomeAssistant, mock_config_entry
-):
+async def test_select_invalid_mode(hass: HomeAssistant, mock_config_entry):
     """Test select raises error for invalid operating mode."""
     mock_config_entry.add_to_hass(hass)
 
@@ -567,9 +559,7 @@ async def test_unsupported_direct_ups_selection_sends_no_request() -> None:
 
 async def test_unknown_profile_direct_ups_selection_sends_no_request() -> None:
     """Unknown family firmware cannot transmit UPS."""
-    entity, client = _make_select_entity(
-        device_type="Marstek Energy Storage", version=150
-    )
+    entity, client = _make_select_entity(device_type="Marstek Energy Storage", version=150)
 
     with pytest.raises(HomeAssistantError, match="mode_not_supported"):
         await entity.async_select_option(MODE_UPS)
@@ -646,9 +636,7 @@ async def test_manual_and_passive_remain_blocked_on_ups_capable_profile(
         assert client.send_request.call_count == requests_before
 
 
-async def test_select_reports_ups_state(
-    hass: HomeAssistant, mock_config_entry: Any
-) -> None:
+async def test_select_reports_ups_state(hass: HomeAssistant, mock_config_entry: Any) -> None:
     """ES.GetMode UPS is represented as Home Assistant state ups."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(

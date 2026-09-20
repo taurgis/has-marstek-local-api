@@ -39,9 +39,7 @@ async def test_user_flow_success(hass: HomeAssistant) -> None:
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["type"] == FlowResultType.FORM
 
         result = await hass.config_entries.flow.async_configure(
@@ -72,9 +70,7 @@ async def test_user_flow_can_switch_to_manual_with_discovered_devices(
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
 
@@ -93,9 +89,7 @@ async def test_user_flow_discovery_probes_multiple_ports(hass: HomeAssistant) ->
         "custom_components.marstek.config_flow.discover_devices",
         AsyncMock(return_value=[]),
     ) as mock_discover:
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
@@ -128,9 +122,7 @@ async def test_user_flow_uses_discovered_custom_port(hass: HomeAssistant) -> Non
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["type"] == FlowResultType.FORM
 
         result = await hass.config_entries.flow.async_configure(
@@ -142,9 +134,7 @@ async def test_user_flow_uses_discovered_custom_port(hass: HomeAssistant) -> Non
     assert result["data"]["port"] == 30003
 
 
-async def test_user_flow_form_snapshot(
-    hass: HomeAssistant, snapshot
-) -> None:
+async def test_user_flow_form_snapshot(hass: HomeAssistant, snapshot) -> None:
     """Test user flow form structure snapshot."""
     devices = [
         {
@@ -161,9 +151,7 @@ async def test_user_flow_form_snapshot(
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     schema = result["data_schema"].schema
     device_key, validator = next(iter(schema.items()))
@@ -183,9 +171,7 @@ async def test_user_flow_form_snapshot(
 async def test_user_flow_no_devices_redirects_to_manual(hass: HomeAssistant) -> None:
     """Test user flow redirects to manual entry when no devices found."""
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     # Should redirect to manual entry step when no devices found
     assert result["type"] == FlowResultType.FORM
@@ -197,9 +183,7 @@ async def test_user_flow_cannot_connect_redirects_to_manual(
 ) -> None:
     """Test user flow redirects to manual entry when discovery fails with connection error."""
     with patch_discovery([], error=OSError("cannot connect")):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     # Should redirect to manual entry with error message
     assert result["type"] == FlowResultType.FORM
@@ -224,9 +208,7 @@ async def test_user_flow_invalid_discovery_info(hass: HomeAssistant) -> None:
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], user_input={"device": "0"}
         )
@@ -240,9 +222,7 @@ async def test_user_flow_connection_error_redirects_to_manual(
 ) -> None:
     """Test user flow redirects to manual when ConnectionError occurs."""
     with patch_discovery([], error=ConnectionError("Network unreachable")):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     # Should redirect to manual entry with cannot_connect error
     assert result["type"] == FlowResultType.FORM
@@ -270,9 +250,7 @@ async def test_user_flow_filters_unsupported_venus_e2(
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manual"
@@ -297,9 +275,7 @@ async def test_already_configured_unique_id(
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     # All discovered devices are already configured, redirects to manual step
     assert result["type"] == FlowResultType.FORM
@@ -337,9 +313,7 @@ async def test_mixed_configured_and_new_devices(
     ]
 
     with patch_discovery(devices):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
 
@@ -359,9 +333,7 @@ async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
     client = _pooled_udp_client(hass)
 
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     assert result["step_id"] == "manual"
     client.async_pause_receiver.assert_awaited()

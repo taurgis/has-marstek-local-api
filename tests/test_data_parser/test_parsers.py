@@ -235,6 +235,44 @@ class TestParsePvStatusResponse:
         assert result["pv1_power"] == 0.0
         assert result["pv1_state"] == 0  # Inactive since power = 0
 
+    def test_channel_breakdown_wins_over_the_aggregate(self):
+        """A reply carrying both forms keeps all four channels, not the total."""
+        response = {
+            "id": 1,
+            "result": {
+                "pv_power": 500,
+                "pv1_power": 8000,
+                "pv2_power": 280,
+                "pv3_power": 240,
+                "pv4_power": 180,
+            },
+        }
+
+        result = parse_pv_status_response(response)
+
+        # 8000 deciwatts on channel 1, and the aggregate is not rescaled as if
+        # it were that channel (which read 50.0 W for an 1500 W array).
+        assert result["pv1_power"] == 800.0
+        assert result["pv2_power"] == 280
+        assert result["pv3_power"] == 240
+        assert result["pv4_power"] == 180
+
+    def test_unreadable_aggregate_keeps_the_channels(self):
+        """An aggregate the firmware cannot read must not hide the channels."""
+        response = {
+            "id": 1,
+            "result": {
+                "pv_power": "unknown",
+                "pv1_power": 8000,
+                "pv2_power": 280,
+            },
+        }
+
+        result = parse_pv_status_response(response)
+
+        assert result["pv1_power"] == 800.0
+        assert result["pv2_power"] == 280
+
 
 class TestParseEsModeResponse:
     """Tests for parse_es_mode_response."""
@@ -283,9 +321,7 @@ class TestParseEsModeResponse:
             ("SelfUse", "selfuse"),
         ],
     )
-    def test_parse_integer_and_string_modes(
-        self, wire_mode: int | str, expected: str
-    ) -> None:
+    def test_parse_integer_and_string_modes(self, wire_mode: int | str, expected: str) -> None:
         """Reads accept Open API strings, integer codes, and our unknown-string lowercase."""
         result = parse_es_mode_response(
             {"id": 1, "result": {"mode": wire_mode, "bat_soc": 80, "ongrid_power": 0}}

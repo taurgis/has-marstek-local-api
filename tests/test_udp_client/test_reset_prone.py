@@ -434,14 +434,10 @@ class TestResetProneRequestLock:
         client._loop = asyncio.get_running_loop()
         client._listen_task = MagicMock()
         client._listen_task.done.return_value = False
-        message = json.dumps(
-            {"id": 70000, "method": "ES.GetStatus", "params": {"id": 0}}
-        )
+        message = json.dumps({"id": 70000, "method": "ES.GetStatus", "params": {"id": 0}})
         with (
             patch.object(client, "_send_udp_message", AsyncMock()) as mock_send,
-            patch.object(
-                client, "_get_broadcast_addresses", return_value=["255.255.255.255"]
-            ),
+            patch.object(client, "_get_broadcast_addresses", return_value=["255.255.255.255"]),
         ):
             await client.send_broadcast_request(message, timeout=0, validate=False)
 

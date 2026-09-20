@@ -56,12 +56,8 @@ def test_configured_device_port_defaults_and_rejects_invalid() -> None:
 
 def test_entry_bind_port_follows_host_and_port() -> None:
     """Pool keys combine loopback detection with the configured listen port."""
-    lan = MockConfigEntry(
-        domain=DOMAIN, data={"host": "192.168.1.50", "port": 30002}
-    )
-    loopback = MockConfigEntry(
-        domain=DOMAIN, data={"host": "127.0.0.1", "port": 30002}
-    )
+    lan = MockConfigEntry(domain=DOMAIN, data={"host": "192.168.1.50", "port": 30002})
+    loopback = MockConfigEntry(domain=DOMAIN, data={"host": "127.0.0.1", "port": 30002})
     assert entry_bind_port(lan) == 30002
     assert entry_bind_port(loopback) == 0
 
@@ -145,9 +141,7 @@ async def test_release_uses_runtime_client_bind_port(
         domain=DOMAIN,
         data={"host": "192.168.1.50", "port": 30001},
     )
-    entry.runtime_data = MagicMock(
-        coordinator=MagicMock(udp_client=runtime_client)
-    )
+    entry.runtime_data = MagicMock(coordinator=MagicMock(udp_client=runtime_client))
     entry.add_to_hass(hass)
 
     await async_release_udp_client_for_entry(hass, entry)
@@ -236,9 +230,7 @@ async def test_transfer_reset_prone_mark_clears_old_client_on_port_change(
     )
     entry.add_to_hass(hass)
 
-    transfer_reset_prone_mark_for_entry(
-        hass, entry, "192.168.1.50", "192.168.1.51", new_port=30003
-    )
+    transfer_reset_prone_mark_for_entry(hass, entry, "192.168.1.50", "192.168.1.51", new_port=30003)
 
     old_client.clear_openapi_reset_prone.assert_called_once_with(
         "192.168.1.50", owner=entry.entry_id

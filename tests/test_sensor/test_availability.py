@@ -122,9 +122,7 @@ async def test_coordinator_failure_marks_entities_unavailable(
     """Test coordinator failure raises UpdateFailed, entities become unavailable."""
     mock_config_entry.add_to_hass(hass)
     # Set failure threshold to 1 so entities become unavailable immediately
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
 
     client = create_mock_client(status=TimeoutError("poll failed"))
 
@@ -144,9 +142,7 @@ async def test_entities_recover_after_unavailable(
 ) -> None:
     """Test entities recover after a failed refresh."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
 
     good_status = {
         "device_mode": "auto",

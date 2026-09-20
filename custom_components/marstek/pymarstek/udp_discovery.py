@@ -133,9 +133,7 @@ class BroadcastDiscoveryMixin:
                 if remaining <= 0:
                     break
                 await asyncio.sleep(min(BROADCAST_DRAIN_INTERVAL, remaining))
-                responses.extend(
-                    self._router.take_cached(request_id, since=start_time)
-                )
+                responses.extend(self._router.take_cached(request_id, since=start_time))
         finally:
             self._router.drop_waiter(request_id)
         _LOGGER.debug("Broadcast discovery completed, found %d device(s)", len(responses))

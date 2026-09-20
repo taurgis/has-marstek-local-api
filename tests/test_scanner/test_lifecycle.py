@@ -35,9 +35,7 @@ async def test_scanner_async_setup(hass: HomeAssistant):
     scanner = MarstekScanner(hass)
 
     with (
-        patch(
-            "custom_components.marstek.scanner.async_track_time_interval"
-        ) as mock_track,
+        patch("custom_components.marstek.scanner.async_track_time_interval") as mock_track,
         patch.object(scanner, "async_scan") as mock_scan,
     ):
         mock_track.return_value = MagicMock()
@@ -54,9 +52,7 @@ async def test_scanner_async_setup_noop_when_initialized(hass: HomeAssistant):
     scanner = MarstekScanner(hass)
 
     with (
-        patch(
-            "custom_components.marstek.scanner.async_track_time_interval"
-        ) as mock_track,
+        patch("custom_components.marstek.scanner.async_track_time_interval") as mock_track,
         patch.object(scanner, "async_scan") as mock_scan,
     ):
         mock_track.return_value = MagicMock()
@@ -84,9 +80,7 @@ async def test_scanner_async_scan_creates_background_task(hass: HomeAssistant):
         captured_coro = coro
 
     with (
-        patch.object(
-            hass, "async_create_background_task", side_effect=capture_task
-        ),
+        patch.object(hass, "async_create_background_task", side_effect=capture_task),
         patch.object(hass, "async_create_task", side_effect=AssertionError),
     ):
         scanner.async_scan()
@@ -235,9 +229,7 @@ async def test_scanner_async_unload_cancels_task(hass: HomeAssistant):
 
     # Setup the scanner first
     with (
-        patch(
-            "custom_components.marstek.scanner.async_track_time_interval"
-        ) as mock_track,
+        patch("custom_components.marstek.scanner.async_track_time_interval") as mock_track,
         patch.object(scanner, "async_scan"),
     ):
         mock_cancel = MagicMock()
@@ -301,9 +293,7 @@ async def test_scanner_scan_impl_continues_after_entry_error(
     original = scanner._process_discovered_entry
     calls = {"count": 0}
 
-    def _side_effect(
-        entry: MockConfigEntry, devices: list[dict[str, object]]
-    ) -> None:
+    def _side_effect(entry: MockConfigEntry, devices: list[dict[str, object]]) -> None:
         calls["count"] += 1
         if entry is broken:
             raise RuntimeError("bad entry")
@@ -321,9 +311,7 @@ async def test_scanner_scan_impl_continues_after_entry_error(
                 ]
             ),
         ),
-        patch.object(
-            scanner, "_process_discovered_entry", side_effect=_side_effect
-        ),
+        patch.object(scanner, "_process_discovered_entry", side_effect=_side_effect),
         patch(
             "custom_components.marstek.scanner.discovery_flow.async_create_flow"
         ) as mock_create_flow,

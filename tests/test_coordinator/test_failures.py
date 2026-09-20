@@ -22,9 +22,7 @@ async def test_coordinator_no_fresh_data_raises_update_failed(
     """Test that no fresh data raises UpdateFailed after threshold is reached."""
     mock_config_entry.add_to_hass(hass)
     # Set failure threshold to 1 (immediate failure)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
     mock_udp_client.get_device_status = AsyncMock(
         return_value={
             "battery_soc": 0,
@@ -52,9 +50,7 @@ async def test_coordinator_timeout_error_raises_update_failed(
     """Test that TimeoutError raises UpdateFailed after threshold is reached."""
     mock_config_entry.add_to_hass(hass)
     # Set failure threshold to 1 (immediate failure)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
     mock_udp_client.get_device_status = AsyncMock(side_effect=TimeoutError("timeout"))
 
     coordinator = MarstekDataUpdateCoordinator(
@@ -75,12 +71,8 @@ async def test_coordinator_os_error_raises_update_failed(
     """Test that OSError raises UpdateFailed after threshold is reached."""
     mock_config_entry.add_to_hass(hass)
     # Set failure threshold to 1 (immediate failure)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
-    mock_udp_client.get_device_status = AsyncMock(
-        side_effect=OSError("Network unreachable")
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
+    mock_udp_client.get_device_status = AsyncMock(side_effect=OSError("Network unreachable"))
 
     coordinator = MarstekDataUpdateCoordinator(
         hass,
@@ -100,9 +92,7 @@ async def test_coordinator_value_error_raises_update_failed(
     """Test that ValueError raises UpdateFailed after threshold is reached."""
     mock_config_entry.add_to_hass(hass)
     # Set failure threshold to 1 (immediate failure)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
     mock_udp_client.get_device_status = AsyncMock(side_effect=ValueError("Invalid data"))
 
     coordinator = MarstekDataUpdateCoordinator(
@@ -176,9 +166,7 @@ async def test_coordinator_recovers_after_failure(
 ):
     """Test coordinator recovers after a failure threshold is hit."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        mock_config_entry, options={"failure_threshold": 1}
-    )
+    hass.config_entries.async_update_entry(mock_config_entry, options={"failure_threshold": 1})
     mock_udp_client.get_device_status = AsyncMock(
         side_effect=[
             TimeoutError("timeout"),
@@ -309,8 +297,7 @@ async def test_unreachable_device_logs_the_transitions_only(
         warnings = [
             record
             for record in caplog.records
-            if record.levelno == logging.WARNING and "status request failed" in
-            record.getMessage()
+            if record.levelno == logging.WARNING and "status request failed" in record.getMessage()
         ]
         assert len(warnings) == 1
 
@@ -319,8 +306,7 @@ async def test_unreachable_device_logs_the_transitions_only(
         recoveries = [
             record
             for record in caplog.records
-            if record.levelno == logging.INFO and "answering again" in
-            record.getMessage()
+            if record.levelno == logging.INFO and "answering again" in record.getMessage()
         ]
         assert len(recoveries) == 1
         assert coordinator.consecutive_failures == 0
@@ -332,8 +318,7 @@ async def test_unreachable_device_logs_the_transitions_only(
         assert [
             record
             for record in caplog.records
-            if record.levelno == logging.WARNING and "status request failed" in
-            record.getMessage()
+            if record.levelno == logging.WARNING and "status request failed" in record.getMessage()
         ]
 
 

@@ -18,6 +18,7 @@ from .data_parser import (
     parse_es_mode_response,
     parse_es_status_response,
     parse_pv_status_response,
+    total_pv_channel_power,
 )
 from .udp import MarstekUDPClient
 from .validators import (
@@ -63,5 +64,6 @@ __all__ = [
     "reset_request_id",
     "set_es_mode_manual_charge",
     "set_es_mode_manual_discharge",
+    "total_pv_channel_power",
     "validate_json_message",
 ]

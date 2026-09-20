@@ -39,12 +39,8 @@ def main() -> None:
         default=DEFAULT_CONFIG["ver"],
         help=f"Firmware version (default: {DEFAULT_CONFIG['ver']})",
     )
-    parser.add_argument(
-        "--ble-mac", type=str, default="009b08a5aa39", help="BLE MAC address"
-    )
-    parser.add_argument(
-        "--wifi-mac", type=str, default="7483c2315cf8", help="WiFi MAC address"
-    )
+    parser.add_argument("--ble-mac", type=str, default="009b08a5aa39", help="BLE MAC address")
+    parser.add_argument("--wifi-mac", type=str, default="7483c2315cf8", help="WiFi MAC address")
     parser.add_argument(
         "--soc",
         type=int,
@@ -105,17 +101,14 @@ def main() -> None:
             parts = chunk.split(":")
             if len(parts) != 3:
                 raise SystemExit(
-                    "Invalid --pv-channels format. "
-                    "Expected 'power:voltage:current' per channel."
+                    "Invalid --pv-channels format. Expected 'power:voltage:current' per channel."
                 )
             try:
                 power = float(parts[0])
                 voltage = float(parts[1])
                 current = float(parts[2])
             except ValueError as exc:
-                raise SystemExit(
-                    "Invalid numeric values in --pv-channels."
-                ) from exc
+                raise SystemExit("Invalid numeric values in --pv-channels.") from exc
             channels.append(
                 {
                     "channel": idx,

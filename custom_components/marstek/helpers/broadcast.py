@@ -32,8 +32,7 @@ async def async_broadcast_addresses(hass: HomeAssistant) -> list[str]:
     addresses: set[str] = {IPV4_BROADCAST_ADDR}
     try:
         addresses.update(
-            str(address)
-            for address in await network.async_get_ipv4_broadcast_addresses(hass)
+            str(address) for address in await network.async_get_ipv4_broadcast_addresses(hass)
         )
     except Exception:
         # A sweep that reaches fewer interfaces still beats no sweep at all.
@@ -41,9 +40,7 @@ async def async_broadcast_addresses(hass: HomeAssistant) -> list[str]:
             "Could not read broadcast addresses from the network integration",
             exc_info=True,
         )
-    addresses.update(
-        await hass.async_add_executor_job(_interface_broadcast_addresses)
-    )
+    addresses.update(await hass.async_add_executor_job(_interface_broadcast_addresses))
     return sorted(addresses)
 
 

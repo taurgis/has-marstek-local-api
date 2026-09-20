@@ -48,9 +48,7 @@ class TestPollingControl:
 class TestPollCycleLease:
     """Tests for coordinator poll-cycle leases used by pause_polling."""
 
-    async def test_pause_polling_waits_for_active_cycle(
-        self, udp_client: MarstekUDPClient
-    ) -> None:
+    async def test_pause_polling_waits_for_active_cycle(self, udp_client: MarstekUDPClient) -> None:
         """Writers wait until the in-flight poll cycle finishes."""
         device_ip = "192.168.1.100"
         started = asyncio.Event()
@@ -68,9 +66,7 @@ class TestPollCycleLease:
         assert udp_client.is_polling_paused(device_ip)
         assert await udp_client.begin_poll_cycle(device_ip) is False
 
-    async def test_begin_poll_cycle_skips_when_paused(
-        self, udp_client: MarstekUDPClient
-    ) -> None:
+    async def test_begin_poll_cycle_skips_when_paused(self, udp_client: MarstekUDPClient) -> None:
         """A paused device does not start another coordinator cycle."""
         device_ip = "192.168.1.100"
         await udp_client.pause_polling(device_ip)

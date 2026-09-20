@@ -50,6 +50,7 @@ from mock_device.utils import get_local_ip
 def main():
     """Run the mock device CLI."""
     from mock_device.__main__ import main as _main
+
     _main()
 
 

@@ -236,9 +236,7 @@ class TestAsyncSetup:
             await client.async_setup()
 
         if hasattr(socket, "SO_REUSEPORT"):
-            mock_socket.setsockopt.assert_any_call(
-                socket.SOL_SOCKET, socket.SO_REUSEPORT, 1
-            )
+            mock_socket.setsockopt.assert_any_call(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 
         await client.async_cleanup()
 
@@ -405,9 +403,7 @@ class TestRateLimitCleanupEnforcement:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        client._broadcast_addresses = frozenset(
-            {"255.255.255.255", "192.168.1.255"}
-        )
+        client._broadcast_addresses = frozenset({"255.255.255.255", "192.168.1.255"})
 
         initial_time_tracking = dict(client._throttle.last_request_time)
 
@@ -476,15 +472,12 @@ class TestPeriodicCleanup:
 
         # Pre-populate with old cache entries
         client._router.cache = {
-            i: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 0}
-            for i in range(100)
+            i: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 0} for i in range(100)
         }
 
         recv_count = 0
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_count
             recv_count += 1
             # Return 11 responses to trigger cleanup (every 10 responses)
@@ -517,10 +510,10 @@ class TestPeriodicCleanup:
 
         # Add entries with varying ages (need more than max_tracked_ips)
         client._throttle.last_request_time = {
-            "192.168.1.1": current_time - 500,   # Old (> cleanup threshold)
-            "192.168.1.2": current_time - 200,   # Old (> cleanup threshold)
-            "192.168.1.3": current_time - 10,    # Recent (< cleanup threshold)
-            "192.168.1.4": current_time,         # Current (< cleanup threshold)
+            "192.168.1.1": current_time - 500,  # Old (> cleanup threshold)
+            "192.168.1.2": current_time - 200,  # Old (> cleanup threshold)
+            "192.168.1.3": current_time - 10,  # Recent (< cleanup threshold)
+            "192.168.1.4": current_time,  # Current (< cleanup threshold)
         }
 
         await client._cleanup_rate_limit_tracking()

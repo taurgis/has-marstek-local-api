@@ -54,15 +54,16 @@ def _mock_client(status=None, mode_response=None):
     client = MagicMock()
     client.async_setup = AsyncMock(return_value=None)
     client.async_cleanup = AsyncMock(return_value=None)
-    client.send_request = AsyncMock(
-        return_value=mode_response or _verify_status(charge=True)
-    )
+    client.send_request = AsyncMock(return_value=mode_response or _verify_status(charge=True))
     client.fetch_es_mode = AsyncMock(return_value={"device_mode": "manual"})
-    client.get_device_status = AsyncMock(return_value=status or {
-        "device_mode": "SelfUse",
-        "battery_soc": 55,
-        "battery_power": 120,
-    })
+    client.get_device_status = AsyncMock(
+        return_value=status
+        or {
+            "device_mode": "SelfUse",
+            "battery_soc": 55,
+            "battery_power": 120,
+        }
+    )
     client.pause_polling = AsyncMock(return_value=None)
     client.resume_polling = AsyncMock(return_value=None)
     client.begin_poll_cycle = AsyncMock(return_value=True)
@@ -112,11 +113,14 @@ async def test_async_get_actions(hass, mock_config_entry):
         assert ACTION_STOP in action_types
 
 
-@pytest.mark.parametrize("action_type,expected_power_negative", [
-    (ACTION_CHARGE, True),
-    (ACTION_DISCHARGE, False),
-    (ACTION_STOP, None),
-])
+@pytest.mark.parametrize(
+    "action_type,expected_power_negative",
+    [
+        (ACTION_CHARGE, True),
+        (ACTION_DISCHARGE, False),
+        (ACTION_STOP, None),
+    ],
+)
 async def test_device_actions_pause_and_resume(
     hass, mock_config_entry, action_type, expected_power_negative
 ):
@@ -169,13 +173,12 @@ async def test_device_action_invalid_device(hass, mock_config_entry):
         }
 
         from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+
         with pytest.raises(InvalidDeviceAutomationConfig):
             await async_call_action_from_config(hass, config, {}, None)
 
 
-async def test_device_action_power_out_of_range_socket_limit_default(
-    hass, mock_config_entry
-):
+async def test_device_action_power_out_of_range_socket_limit_default(hass, mock_config_entry):
     """Test device action rejects power above socket limit by default for Venus E."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
@@ -205,6 +208,7 @@ async def test_device_action_power_out_of_range_socket_limit_default(
         }
 
         from homeassistant.exceptions import HomeAssistantError
+
         with pytest.raises(HomeAssistantError, match="Requested power"):
             await async_call_action_from_config(hass, config, {}, None)
 
@@ -239,13 +243,12 @@ async def test_device_action_power_out_of_range_model_limit(hass, mock_config_en
         }
 
         from homeassistant.exceptions import HomeAssistantError
+
         with pytest.raises(HomeAssistantError, match="Requested power"):
             await async_call_action_from_config(hass, config, {}, None)
 
 
-async def test_device_action_charge_allows_high_power_socket_limit_default(
-    hass, mock_config_entry
-):
+async def test_device_action_charge_allows_high_power_socket_limit_default(hass, mock_config_entry):
     """Test charge action allows high power even when socket limit is on by default."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
@@ -316,9 +319,7 @@ async def test_device_action_charge_allows_high_power_socket_limit_explicit_true
         client.resume_polling.assert_called()
 
 
-async def test_device_action_charge_allows_high_power_without_socket_limit(
-    hass, mock_config_entry
-):
+async def test_device_action_charge_allows_high_power_without_socket_limit(hass, mock_config_entry):
     """Test charge action allows high power when socket limit is disabled."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
@@ -353,9 +354,7 @@ async def test_device_action_charge_allows_high_power_without_socket_limit(
         client.resume_polling.assert_called()
 
 
-async def test_device_action_polling_active_during_verification_delay(
-    hass, mock_config_entry
-):
+async def test_device_action_polling_active_during_verification_delay(hass, mock_config_entry):
     """Test polling is resumed BEFORE verification delay sleep (not blocked during wait)."""
     mock_config_entry.add_to_hass(hass)
 
@@ -392,6 +391,7 @@ async def test_device_action_polling_active_during_verification_delay(
         # Track sleep calls in order
         async def track_sleep(delay: float) -> None:
             call_order.append(f"sleep_{delay}")
+
         mock_sleep.side_effect = track_sleep
 
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -430,11 +430,10 @@ async def test_device_action_polling_active_during_verification_delay(
         )
 
         # The resume for send must come before the verification delay sleep
-        last_resume_before_sleep = max(
-            i for i, c in enumerate(pre_sleep_calls) if c == "resume"
-        )
-        assert last_resume_before_sleep < verification_sleep_idx, \
+        last_resume_before_sleep = max(i for i, c in enumerate(pre_sleep_calls) if c == "resume")
+        assert last_resume_before_sleep < verification_sleep_idx, (
             f"Polling should be active during verification delay. Order: {call_order}"
+        )
 
 
 async def test_async_get_actions_device_not_found(hass):
@@ -483,6 +482,7 @@ async def test_device_action_entry_not_found(hass, mock_config_entry):
         }
 
         from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+
         with pytest.raises(InvalidDeviceAutomationConfig):
             await async_call_action_from_config(hass, config, {}, None)
 
@@ -526,9 +526,7 @@ async def test_device_action_retry_on_send_failure(hass, mock_config_entry):
         assert send_call_count >= 2
 
 
-async def test_validate_action_config_power_out_of_range(
-    hass, mock_config_entry
-):
+async def test_validate_action_config_power_out_of_range(hass, mock_config_entry):
     """Test action config validation enforces device limits."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
@@ -556,13 +554,12 @@ async def test_validate_action_config_power_out_of_range(
         }
 
         from homeassistant.components.device_automation import InvalidDeviceAutomationConfig
+
         with pytest.raises(InvalidDeviceAutomationConfig, match="Requested power"):
             await async_validate_action_config(hass, config)
 
 
-async def test_validate_action_config_stop_allows_unloaded_entry(
-    hass, mock_config_entry
-):
+async def test_validate_action_config_stop_allows_unloaded_entry(hass, mock_config_entry):
     """Test action config validation works for unloaded entries."""
     mock_config_entry.add_to_hass(hass)
 

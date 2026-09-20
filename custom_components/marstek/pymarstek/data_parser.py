@@ -122,9 +122,7 @@ def parse_es_mode_response(
     if "ct_state" in result:
         ct_state_raw = result.get("ct_state")
         parsed["ct_state"] = ct_state_raw
-        parsed["ct_connected"] = (
-            ct_state_raw == 1 if ct_state_raw is not None else None
-        )
+        parsed["ct_connected"] = ct_state_raw == 1 if ct_state_raw is not None else None
 
     for source_key, dest_key in (
         ("a_power", "em_a_power"),
@@ -192,8 +190,7 @@ def parse_es_status_response(
             # All reported flows are zero; treat as idle instead of keeping stale power.
             raw_bat_power = 0
             _get_logger().debug(
-                "ES.GetStatus missing bat_power with zero flows; "
-                "treating battery power as idle"
+                "ES.GetStatus missing bat_power with zero flows; treating battery power as idle"
             )
     battery_power: float | None
     battery_status: str | None
@@ -218,9 +215,7 @@ def parse_es_status_response(
             battery_status = "idle"
 
     # Energy totals. Solar energy uses the profile scale; grid/load stay Wh.
-    total_pv_energy = _scale_numeric(
-        result.get("total_pv_energy"), active_profile.pv_energy_scale
-    )
+    total_pv_energy = _scale_numeric(result.get("total_pv_energy"), active_profile.pv_energy_scale)
     total_grid_output_energy = result.get("total_grid_output_energy")
     total_grid_input_energy = result.get("total_grid_input_energy")
     total_load_energy = result.get("total_load_energy")
@@ -276,10 +271,36 @@ def parse_pv_status_response(
         except (TypeError, ValueError):
             return raw_value
 
+    # Multi-channel format - extract data for each PV channel (1-4). A reply
+    # that carries the per-channel breakdown is read as multi-channel even when
+    # it also carries the spec's aggregate ``pv_power``, because the breakdown
+    # is strictly more information. Branching on the aggregate's presence
+    # instead dropped channels 2-4 and rescaled the aggregate as if it were
+    # channel 1, which reports the array total at a tenth of its real value.
+    for channel in range(1, 5):
+        prefix = f"pv{channel}_"
+        channel_keys = (
+            f"{prefix}power",
+            f"{prefix}voltage",
+            f"{prefix}current",
+            f"{prefix}state",
+        )
+        if not any(key in result for key in channel_keys):
+            continue
+        if f"{prefix}power" in result:
+            pv_data[f"{prefix}power"] = _scale_pv_power(
+                result.get(f"{prefix}power"),
+                channel=channel,
+            )
+        if f"{prefix}voltage" in result:
+            pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage")
+        if f"{prefix}current" in result:
+            pv_data[f"{prefix}current"] = result.get(f"{prefix}current")
+        if f"{prefix}state" in result:
+            pv_data[f"{prefix}state"] = result.get(f"{prefix}state")
 
-    # Check for single-channel format (per API spec)
-    if "pv_power" in result:
-        # Single PV channel - map to pv1_* for consistency
+    # Single-channel format (per API spec) - map to pv1_* for consistency.
+    if not pv_data and "pv_power" in result:
         pv_power = result.get("pv_power")
         pv_data["pv1_power"] = _scale_pv_power(pv_power)
         if "pv_voltage" in result:
@@ -288,29 +309,6 @@ def parse_pv_status_response(
             pv_data["pv1_current"] = result.get("pv_current")
         if isinstance(pv_power, (int, float)):
             pv_data["pv1_state"] = 1 if pv_power > 0 else 0
-    else:
-        # Multi-channel format - extract data for each PV channel (1-4)
-        for channel in range(1, 5):
-            prefix = f"pv{channel}_"
-            channel_keys = (
-                f"{prefix}power",
-                f"{prefix}voltage",
-                f"{prefix}current",
-                f"{prefix}state",
-            )
-            if not any(key in result for key in channel_keys):
-                continue
-            if f"{prefix}power" in result:
-                pv_data[f"{prefix}power"] = _scale_pv_power(
-                    result.get(f"{prefix}power"),
-                    channel=channel,
-                )
-            if f"{prefix}voltage" in result:
-                pv_data[f"{prefix}voltage"] = result.get(f"{prefix}voltage")
-            if f"{prefix}current" in result:
-                pv_data[f"{prefix}current"] = result.get(f"{prefix}current")
-            if f"{prefix}state" in result:
-                pv_data[f"{prefix}state"] = result.get(f"{prefix}state")
 
     return pv_data
 
@@ -412,6 +410,28 @@ def _is_unusable_value(value: Any) -> bool:
     return False
 
 
+def total_pv_channel_power(pv_status_data: dict[str, Any]) -> float:
+    """Sum the PV channel powers that are usable numbers.
+
+    The parsers keep a value they cannot scale exactly as the wire sent it, so
+    a channel the firmware cannot read yet arrives here as the literal string
+    ``"unknown"`` (see :func:`_is_unusable_value`), and a glitched datagram can
+    put a list or a bool there. Adding one of those to the running total
+    raises, and nothing between here and the coordinator catches ``TypeError``,
+    so the whole poll cycle would fail over one unreadable channel. Skip them
+    instead; the channels that did report still carry the sum.
+    """
+    total = 0.0
+    for channel in range(1, 5):
+        value = pv_status_data.get(f"pv{channel}_power")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if not math.isfinite(value):
+            continue
+        total += float(value)
+    return total
+
+
 def _recalculate_battery_from_pv(
     status: dict[str, Any],
     pv_status_data: dict[str, Any],
@@ -419,9 +439,7 @@ def _recalculate_battery_from_pv(
 ) -> None:
     """Recalculate battery power using PV channel data when ES.GetStatus is wrong."""
     es_pv_power = es_status_data.get("pv_power")
-    total_pv_from_channels = sum(
-        pv_status_data.get(f"pv{ch}_power", 0) or 0 for ch in range(1, 5)
-    )
+    total_pv_from_channels = total_pv_channel_power(pv_status_data)
     # If ES.GetStatus pv_power is 0 but channels have real power, override
     if (es_pv_power in (None, 0)) and total_pv_from_channels > 0:
         status["pv_power"] = total_pv_from_channels
@@ -489,9 +507,7 @@ def _average_ongrid_power(
 ) -> float | None:
     """Return the average grid power between two samples when available."""
     numeric_values = [
-        float(value)
-        for value in (previous_power, current_power)
-        if isinstance(value, (int, float))
+        float(value) for value in (previous_power, current_power) if isinstance(value, (int, float))
     ]
     if not numeric_values:
         return None
@@ -623,7 +639,6 @@ def merge_device_status(
         "offgrid_power": None,
         "pv_power": None,
         "bat_cap": None,
-        "household_consumption": None,
         "total_pv_energy": None,
         "total_grid_output_energy": None,
         "total_grid_input_energy": None,
@@ -659,19 +674,14 @@ def merge_device_status(
         # Only preserve non-None values from previous status
         for key, value in previous_status.items():
             extra_key = key not in status and (
-                key.startswith("pv")
-                or key in {"em_input_energy", "em_output_energy"}
+                key.startswith("pv") or key in {"em_input_energy", "em_output_energy"}
             )
             if (
                 value is not None
                 and not _is_unusable_value(value)
                 and key in status
                 and status[key] is None
-            ) or (
-                extra_key
-                and value is not None
-                and not _is_unusable_value(value)
-            ):
+            ) or (extra_key and value is not None and not _is_unusable_value(value)):
                 status[key] = value
 
     # Apply in order of priority (lowest to highest)
@@ -729,4 +739,3 @@ def merge_device_status(
     apply_energy_total_guard(status, energy_safe_previous)
 
     return status
-

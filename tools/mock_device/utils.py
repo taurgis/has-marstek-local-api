@@ -34,9 +34,7 @@ def _state_file_path(ble_mac: str, state_dir: str | Path | None) -> Path:
     return resolve_state_dir(state_dir) / f"{normalized_ble}.json"
 
 
-def load_persistent_state(
-    ble_mac: str, state_dir: str | Path | None
-) -> dict[str, Any] | None:
+def load_persistent_state(ble_mac: str, state_dir: str | Path | None) -> dict[str, Any] | None:
     """Load persisted state for a mock device, if available."""
     path = _state_file_path(ble_mac, state_dir)
     if not path.exists():

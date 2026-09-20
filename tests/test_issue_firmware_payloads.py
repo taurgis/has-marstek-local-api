@@ -183,9 +183,7 @@ def test_issue_5_venus_a_es_pv_power_zero_uses_channel_sum() -> None:
         },
         profile,
     )
-    merged = merge_device_status(
-        es_status_data=es_status, em_status_data=em, pv_status_data=pv
-    )
+    merged = merge_device_status(es_status_data=es_status, em_status_data=em, pv_status_data=pv)
 
     assert merged["pv1_power"] == 41.5
     assert merged["pv2_power"] == 52
@@ -273,9 +271,7 @@ def test_issue_21_venus_e_144_getmode_has_no_ct_keys() -> None:
         },
         profile,
     )
-    merged = merge_device_status(
-        es_mode_data=mode, es_status_data=es_status, em_status_data=em
-    )
+    merged = merge_device_status(es_mode_data=mode, es_status_data=es_status, em_status_data=em)
 
     assert profile.supports_ups is False
     assert profile.supports_em_energy is False

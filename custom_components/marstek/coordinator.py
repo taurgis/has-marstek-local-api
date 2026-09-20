@@ -132,26 +132,24 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     @staticmethod
-    def _interval_elapsed(
-        last_fetch: float | None, current_time: float, interval: float
-    ) -> bool:
+    def _interval_elapsed(last_fetch: float | None, current_time: float, interval: float) -> bool:
         """Return True if this tier has never been fetched or its interval elapsed."""
         return last_fetch is None or (current_time - last_fetch) >= interval
 
-    def _select_polling_tiers(
-        self, current_time: float
-    ) -> tuple[bool, bool, bool]:
+    def _select_polling_tiers(self, current_time: float) -> tuple[bool, bool, bool]:
         """Decide which polling tiers to include for this update cycle."""
         include_pv = self.profile.supports_pv and self._interval_elapsed(
             self._last_pv_fetch, current_time, self._get_medium_interval()
         )
         slow_interval = self._get_slow_interval()
-        include_wifi = self._interval_elapsed(
-            self._last_wifi_fetch, current_time, slow_interval
-        ) and self._is_wifi_status_enabled()
-        include_bat = self._interval_elapsed(
-            self._last_bat_fetch, current_time, slow_interval
-        ) and self._is_bat_status_enabled()
+        include_wifi = (
+            self._interval_elapsed(self._last_wifi_fetch, current_time, slow_interval)
+            and self._is_wifi_status_enabled()
+        )
+        include_bat = (
+            self._interval_elapsed(self._last_bat_fetch, current_time, slow_interval)
+            and self._is_bat_status_enabled()
+        )
         return include_pv, include_wifi, include_bat
 
     def _handle_update_error(self, current_ip: str, err: Exception) -> dict[str, Any]:
@@ -199,15 +197,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _get_medium_interval(self) -> int:
         """Get medium polling interval from options."""
-        return int(self._entry.options.get(
-            CONF_POLL_INTERVAL_MEDIUM, DEFAULT_POLL_INTERVAL_MEDIUM
-        ))
+        return int(self._entry.options.get(CONF_POLL_INTERVAL_MEDIUM, DEFAULT_POLL_INTERVAL_MEDIUM))
 
     def _get_slow_interval(self) -> int:
         """Get slow polling interval from options."""
-        return int(self._entry.options.get(
-            CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW
-        ))
+        return int(self._entry.options.get(CONF_POLL_INTERVAL_SLOW, DEFAULT_POLL_INTERVAL_SLOW))
 
     def _use_parallel_api_requests(self) -> bool:
         """Return True when polling should call status APIs in parallel.
@@ -236,9 +230,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get delay between requests from options, or fast delay for initial setup."""
         if self._use_parallel_api_requests():
             return 0.0
-        configured = float(self._entry.options.get(
-            CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY
-        ))
+        configured = float(self._entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY))
         # Reset-prone Control builds stay at the configured spacing even during
         # the first fetch; the 2s initial shortcut is for firmware 150+.
         if self._is_initial_setup and not self.profile.openapi_reset_prone:
@@ -247,17 +239,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _get_request_timeout(self) -> float:
         """Get timeout for API requests from options."""
-        return float(self._entry.options.get(
-            CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-        ))
+        return float(self._entry.options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT))
 
     def _get_failure_threshold(self) -> int:
         """Get failure threshold from options (failures before entities become unavailable)."""
-        return int(
-            self._entry.options.get(
-                CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD
-            )
-        )
+        return int(self._entry.options.get(CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD))
 
     @staticmethod
     def _entity_key_from_unique_id(unique_id: str) -> str | None:
@@ -268,9 +254,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _has_enabled_entities(self, keys: frozenset[str]) -> bool:
         """Return True if any entity with one of these keys is enabled."""
         entity_registry = er.async_get(self.hass)
-        entries = er.async_entries_for_config_entry(
-            entity_registry, self._entry.entry_id
-        )
+        entries = er.async_entries_for_config_entry(entity_registry, self._entry.entry_id)
         for entry in entries:
             if entry.disabled_by is not None:
                 continue
@@ -307,14 +291,10 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         prone = self.profile.openapi_reset_prone
         wifi_safe = self.profile.openapi_wifi_retransmit_safe
         if previous is not None and previous != current_ip:
-            self.udp_client.clear_openapi_reset_prone(
-                previous, owner=self._entry.entry_id
-            )
+            self.udp_client.clear_openapi_reset_prone(previous, owner=self._entry.entry_id)
         if previous_safe is not None and previous_safe != current_ip:
             self.udp_client.set_openapi_retransmit_safe(previous_safe, False)
-        self.udp_client.set_openapi_reset_prone(
-            current_ip, prone, owner=self._entry.entry_id
-        )
+        self.udp_client.set_openapi_reset_prone(current_ip, prone, owner=self._entry.entry_id)
         self.udp_client.set_openapi_retransmit_safe(current_ip, wifi_safe)
         self._marked_reset_prone_ip = current_ip if prone else None
         self._marked_retransmit_safe_ip = current_ip if wifi_safe else None
@@ -375,9 +355,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         parallel_requests = self._use_parallel_api_requests()
         request_delay = self._get_request_delay()
 
-        include_pv, include_wifi, include_bat = self._select_polling_tiers(
-            current_time
-        )
+        include_pv, include_wifi, include_bat = self._select_polling_tiers(current_time)
 
         # Get configured timeout
         request_timeout = self._get_request_timeout()
@@ -460,9 +438,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ips = {previous, previous_safe, current, initial}
         for ip in ips:
             if isinstance(ip, str) and ip:
-                self.udp_client.clear_openapi_reset_prone(
-                    ip, owner=self._entry.entry_id
-                )
+                self.udp_client.clear_openapi_reset_prone(ip, owner=self._entry.entry_id)
                 self.udp_client.set_openapi_retransmit_safe(ip, False)
         self.udp_client.clear_openapi_reset_prone_owner(self._entry.entry_id)
         self._marked_reset_prone_ip = None

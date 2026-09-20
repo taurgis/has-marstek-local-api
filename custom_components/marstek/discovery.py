@@ -16,7 +16,9 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
+from .helpers.flow_helpers import get_unique_id_from_device_info
 from .pymarstek import ValidationError, discover, json_loads_strict
+from .pymarstek.const import MAX_UDP_DATAGRAM_BYTES
 from .pymarstek.device_info import build_device_info, non_empty_str
 from .pymarstek.network import (
     async_resolve_host_ipv4,
@@ -45,6 +47,32 @@ def _normalize_ip(ip: str) -> str:
         return ip
 
 
+def _resolve_device_ip(result: dict[str, Any], observed_ip: str) -> str:
+    """Pick the address to record for a device that just answered.
+
+    The reply carries the address the device believes it has, and the socket
+    carries the address the datagram actually came from. The claimed value wins
+    when it is usable, because it is what the rest of the integration has always
+    recorded and because it survives the leading-zero forms some builds emit.
+
+    It is not always usable. ``ip`` is absent on the trimmed GetDevice payloads
+    (issue #60), null while a device is still negotiating its lease, and a bare
+    number or list on a glitched datagram; ``.split`` on any of those raises
+    ``AttributeError`` out of the config flow, which only catches ``AbortFlow``.
+    An unconfigured device reports ``0.0.0.0``, which parses fine but is not a
+    host anything can be polled at. Fall back to the observed address in all of
+    those cases: a datagram arrived from it, so it is known to be reachable.
+    """
+    claimed = result.get("ip")
+    if not isinstance(claimed, str):
+        return observed_ip
+
+    normalized = _normalize_ip(claimed.strip())
+    if normalized in ("", "0.0.0.0"):
+        return observed_ip
+    return normalized
+
+
 def _build_discovery_message() -> bytes:
     """Build discovery request payload."""
     request = {
@@ -66,8 +94,15 @@ def _build_device_info(
     return build_device_info(result, ip=device_ip, port=device_port, src=src)
 
 
-def _is_echo_response(response: dict[str, Any]) -> bool:
-    """Check if a response is an echo of our request (not a valid device response)."""
+def _is_echo_response(response: Any) -> bool:
+    """Check if a response is an echo of our request (not a valid device response).
+
+    A datagram is whatever landed on the port, so the payload may be any JSON
+    value. ``5``, ``null`` and ``true`` decode to objects that ``in`` cannot
+    look inside, and the sweep must treat them as noise rather than raise.
+    """
+    if not isinstance(response, dict):
+        return False
     # Valid device response must have 'result' key
     # Echo/request has 'method' and 'params' but no 'result'
     return "result" not in response and "method" in response and "params" in response
@@ -95,9 +130,7 @@ async def _async_broadcast_addresses(
     """
     if broadcast_addresses is not None:
         return list(broadcast_addresses)
-    return await asyncio.get_running_loop().run_in_executor(
-        None, _get_broadcast_addresses
-    )
+    return await asyncio.get_running_loop().run_in_executor(None, _get_broadcast_addresses)
 
 
 class DeviceInfoUDPClient(Protocol):
@@ -135,14 +168,20 @@ def _device_info_from_response(
         return None
     return _build_device_info(
         result,
-        _normalize_ip(result.get("ip", host)),
+        _resolve_device_ip(result, host),
         port,
         src=non_empty_str(response.get("src")),
     )
 
 
-def _is_valid_device_response(response: dict[str, Any]) -> bool:
-    """Check if response contains valid device info."""
+def _is_valid_device_response(response: Any) -> bool:
+    """Check if response contains valid device info.
+
+    Total for the same reason as :func:`_is_echo_response`: the sweep hands
+    this whatever the datagram decoded to, not only JSON objects.
+    """
+    if not isinstance(response, dict):
+        return False
     if "result" not in response:
         return False
     result = response["result"]
@@ -258,7 +297,7 @@ async def discover_devices(
     # so a datagram delivered in that window was dropped -- UDP gives no
     # redelivery (RFC 768). ``asyncio.wait`` does not cancel.
     receivers: dict[asyncio.Task[Any], tuple[int, socket.socket]] = {
-        asyncio.ensure_future(loop.sock_recvfrom(sock, 4096)): (scan_port, sock)
+        asyncio.ensure_future(loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES)): (scan_port, sock)
         for scan_port, sock in sockets
     }
     deadline = start_time + timeout
@@ -291,10 +330,9 @@ async def discover_devices(
 
                 # Re-arm before parsing so a burst of replies is not missed
                 # while this one is decoded.
-                receivers[asyncio.ensure_future(loop.sock_recvfrom(sock, 4096))] = (
-                    scan_port,
-                    sock,
-                )
+                receivers[
+                    asyncio.ensure_future(loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES))
+                ] = (scan_port, sock)
 
                 sender_ip: str = addr[0]
                 sender_port = int(addr[1])
@@ -302,9 +340,7 @@ async def discover_devices(
                 try:
                     response = json_loads_strict(data.decode("utf-8"))
                 except UnicodeDecodeError:
-                    _LOGGER.debug(
-                        "Invalid UTF-8 from %s:%d", sender_ip, sender_port
-                    )
+                    _LOGGER.debug("Invalid UTF-8 from %s:%d", sender_ip, sender_port)
                     continue
                 except json.JSONDecodeError:
                     _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
@@ -325,14 +361,28 @@ async def discover_devices(
                     continue
 
                 result = response["result"]
-                device_ip = _normalize_ip(result.get("ip", sender_ip))
+                device_ip = _resolve_device_ip(result, sender_ip)
                 if device_ip in seen_ips:
                     _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
                     continue
 
-                seen_ips.add(device_ip)
                 src = non_empty_str(response.get("src"))
                 device = _build_device_info(result, device_ip, sender_port, src=src)
+                if get_unique_id_from_device_info(device) is None:
+                    # No 6-octet MAC in the payload and none in ``src``, so this
+                    # cannot become a config entry by any path. Offering it
+                    # anyway put a phantom "Unknown vNone ()" row in the device
+                    # picker that answered the user with invalid_discovery_info.
+                    # Firmware that omits the MACs from ``result`` still carries
+                    # the BLE MAC in ``src`` (issue #60), so this keeps those.
+                    _LOGGER.debug(
+                        "Ignoring reply without a device identity from %s:%d",
+                        sender_ip,
+                        sender_port,
+                    )
+                    continue
+
+                seen_ips.add(device_ip)
                 devices.append(device)
                 _LOGGER.info(
                     "Discovered device: %s at %s (BLE MAC: %s)",
@@ -369,9 +419,7 @@ async def _get_device_info_via_client(
     sees that reply: Linux hashes it onto the socket that already owns the
     port, even if that listener is paused. Reuse the pooled client instead.
     """
-    _LOGGER.debug(
-        "Querying device info from %s:%d via pooled UDP client", host, port
-    )
+    _LOGGER.debug("Querying device info from %s:%d via pooled UDP client", host, port)
     try:
         response = await udp_client.send_request(
             discover(),
@@ -467,14 +515,12 @@ async def get_device_info(
         while (loop.time() - start_time) < timeout:
             try:
                 data, addr = await asyncio.wait_for(
-                    loop.sock_recvfrom(sock, 4096),
+                    loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES),
                     timeout=min(0.5, timeout - (loop.time() - start_time)),
                 )
 
                 sender_ip, _ = addr
-                if not udp_source_matches_host(
-                    str(sender_ip), host, resolved=expected_sources
-                ):
+                if not udp_source_matches_host(str(sender_ip), host, resolved=expected_sources):
                     _LOGGER.debug(
                         "Ignoring GetDevice reply from %s while querying %s",
                         sender_ip,

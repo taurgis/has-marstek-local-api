@@ -214,9 +214,7 @@ async def test_coordinator_opts_in_wifi_retransmit_on_firmware_150(
     mock_udp_client.set_openapi_reset_prone.assert_called_with(
         "1.2.3.4", False, owner=mock_config_entry.entry_id
     )
-    mock_udp_client.set_openapi_retransmit_safe.assert_called_with(
-        "1.2.3.4", True
-    )
+    mock_udp_client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", True)
 
 
 @pytest.mark.asyncio

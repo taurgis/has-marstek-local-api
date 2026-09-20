@@ -215,10 +215,12 @@ class TestDiscoverDevices:
 
                 # Make time advance on each call
                 call_count = 0
+
                 def advancing_time() -> float:
                     nonlocal call_count
                     call_count += 1
                     return float(call_count * 2)  # Advances by 2 seconds each call
+
                 loop.time.side_effect = advancing_time
 
                 with patch(
@@ -244,7 +246,7 @@ class TestDiscoverDevices:
                 "ip": "192.168.1.100",
                 "wifi_mac": "11:22:33:44:55:66",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
@@ -253,6 +255,7 @@ class TestDiscoverDevices:
         mock_socket.setsockopt = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -261,6 +264,7 @@ class TestDiscoverDevices:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -450,16 +454,13 @@ class TestDiscoverDevices:
         """Test that echoed requests are filtered."""
         from custom_components.marstek.discovery import discover_devices
 
-        echo_response = {
-            "id": 0,
-            "method": "Marstek.GetDevice",
-            "params": {"ble_mac": "0"}
-        }
+        echo_response = {"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}
 
         mock_socket = MagicMock()
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -468,6 +469,7 @@ class TestDiscoverDevices:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -544,6 +546,7 @@ class TestDiscoverDevices:
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -555,6 +558,7 @@ class TestDiscoverDevices:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1  # Small increments to keep loop running
             return time_calls[0]
@@ -587,13 +591,14 @@ class TestDiscoverDevices:
                 "device": "Venus",
                 "ip": "192.168.1.100",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -603,6 +608,7 @@ class TestDiscoverDevices:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.2
             return time_calls[0]
@@ -664,13 +670,14 @@ class TestDiscoverDevices:
                 "device": "Venus",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
                 # No "ip" field
-            }
+            },
         }
 
         mock_socket = MagicMock()
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -679,6 +686,7 @@ class TestDiscoverDevices:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -714,6 +722,7 @@ class TestDiscoverDevicesEdgeCases:
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.6
             return time_calls[0]
@@ -751,6 +760,7 @@ class TestDiscoverDevicesEdgeCases:
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -759,6 +769,7 @@ class TestDiscoverDevicesEdgeCases:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -789,6 +800,7 @@ class TestDiscoverDevicesEdgeCases:
         mock_socket.getsockname.return_value = ("0.0.0.0", 12345)
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.6
             return time_calls[0]
@@ -820,10 +832,12 @@ class TestDiscoverDevicesEdgeCases:
         import sys
 
         from custom_components.marstek.discovery import _get_broadcast_addresses
+
         original_psutil = sys.modules.get("psutil")
 
         class MockPsutilRaiser:
             """Mock module that raises ImportError on any attribute access."""
+
             def __getattr__(self, name: str) -> Any:
                 raise ImportError("No module named 'psutil'")
 
@@ -904,8 +918,6 @@ async def test_discover_devices_accepts_injected_broadcast_addresses() -> None:
         loop.sock_recvfrom = mock_recvfrom
         mock_loop.return_value = loop
 
-        await discover_devices(
-            timeout=0.5, broadcast_addresses=["10.0.0.255", "192.168.1.255"]
-        )
+        await discover_devices(timeout=0.5, broadcast_addresses=["10.0.0.255", "192.168.1.255"])
 
     assert set(sent_to) == {"10.0.0.255", "192.168.1.255"}

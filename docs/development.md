@@ -20,6 +20,9 @@ From repo root:
 # Linting
 python3 -m ruff check custom_components/marstek/
 
+# Formatting (ruff is pinned, so this matches CI exactly)
+python3 -m ruff format --check custom_components tests tools scripts
+
 # Type checking
 python3 -m mypy --strict custom_components/marstek/
 
@@ -29,9 +32,12 @@ pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
 ## Code quality gates
 
-The `Code Quality` workflow runs four static checks on every pull request and
-blocks the merge when any of them fails. All four are configured in
+The `Code Quality` workflow runs five static checks on every pull request and
+blocks the merge when any of them fails. All five are configured in
 `pyproject.toml` (plus `.jscpd.json`) so a local run and CI see the same rules.
+`requirements_quality.txt` pins every tool, ruff included, because `ruff format`
+output changes between releases — a floating version would make the formatting
+gate disagree with a local run.
 
 ```bash
 # Install the quality tooling once (separate from requirements_test.txt, so
@@ -41,13 +47,16 @@ pip install -r requirements_quality.txt
 # 1. Complexity, dead code and commented-out code
 python3 -m ruff check custom_components tests tools scripts
 
-# 2. File and function length ceilings
+# 2. Formatting (drop --check to rewrite the files in place)
+python3 -m ruff format --check custom_components tests tools scripts
+
+# 3. File and function length ceilings
 python3 scripts/check_code_limits.py
 
-# 3. Unused code the linter cannot see
+# 4. Unused code the linter cannot see
 python3 -m vulture
 
-# 4. Copy-paste detection
+# 5. Copy-paste detection
 jscpd
 ```
 
@@ -58,6 +67,7 @@ What each one enforces:
 | ruff `C901` | Over-complex functions | McCabe 25, matching Home Assistant Core |
 | ruff `PLR0911`–`PLR0915` | Too many returns / branches / arguments / statements | 10 / 25 / 12 / 90 |
 | ruff `ERA` | Commented-out code | any |
+| ruff `format --check` | Formatting drift | the formatter's own style at `line-length = 100` |
 | `scripts/check_code_limits.py` | Oversized modules and functions | 1000 lines per file, 200 per function |
 | vulture | Unreachable functions, unused attributes and variables | 80% confidence |
 | jscpd | Duplicated blocks | 0.5% of the codebase, 15 lines / 70 tokens per clone |

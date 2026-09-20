@@ -93,11 +93,7 @@ def _sync_openapi_reset_issue(
             issue_registry.async_delete(DOMAIN, issue_id)
         return
 
-    firmware = (
-        str(profile.firmware_version)
-        if profile.firmware_version is not None
-        else "unknown"
-    )
+    firmware = str(profile.firmware_version) if profile.firmware_version is not None else "unknown"
     ir.async_create_issue(
         hass,
         DOMAIN,
@@ -155,9 +151,7 @@ def _async_remove_unsupported_capability_entities(
     try:
         device_identifier = get_device_identifier(device_info)
     except ValueError:
-        _LOGGER.debug(
-            "Skipping capability entity cleanup; device identifier is missing"
-        )
+        _LOGGER.debug("Skipping capability entity cleanup; device identifier is missing")
         return
 
     registry = er.async_get(hass)
@@ -226,9 +220,7 @@ async def _get_or_create_udp_client(
     async with discovery_lock(hass), udp_client_lock(hass):
         existing = get_udp_client(hass, effective_bind_port)
         if existing is not None:
-            stale_client = acquire_udp_client_lease(
-                hass, owner, effective_bind_port
-            )
+            stale_client = acquire_udp_client_lease(hass, owner, effective_bind_port)
             udp_client = existing
         else:
             _LOGGER.debug(
@@ -238,13 +230,9 @@ async def _get_or_create_udp_client(
             udp_client = MarstekUDPClient(port=port, bind_port=effective_bind_port)
             await udp_client.async_setup()
             store_udp_client(hass, effective_bind_port, udp_client)
-            stale_client = acquire_udp_client_lease(
-                hass, owner, effective_bind_port
-            )
+            stale_client = acquire_udp_client_lease(hass, owner, effective_bind_port)
     if stale_client is not None:
-        _LOGGER.debug(
-            "Closing unused Open API UDP client after bind-port change"
-        )
+        _LOGGER.debug("Closing unused Open API UDP client after bind-port change")
         await stale_client.async_cleanup()
     return udp_client
 
@@ -374,9 +362,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     )
 
     try:
-        return await _async_setup_entry_with_client(
-            hass, entry, udp_client, stored_ip, stored_port
-        )
+        return await _async_setup_entry_with_client(hass, entry, udp_client, stored_ip, stored_port)
     except ConfigEntryNotReady:
         raise
     except BaseException:
@@ -407,12 +393,8 @@ async def _async_setup_entry_with_client(
         device_info_dict.get("version"),
     )
     _sync_openapi_reset_issue(hass, entry, profile)
-    udp_client.set_openapi_reset_prone(
-        stored_ip, profile.openapi_reset_prone, owner=entry.entry_id
-    )
-    udp_client.set_openapi_retransmit_safe(
-        stored_ip, profile.openapi_wifi_retransmit_safe
-    )
+    udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone, owner=entry.entry_id)
+    udp_client.set_openapi_retransmit_safe(stored_ip, profile.openapi_wifi_retransmit_safe)
 
     # Scanner starts after the pooled client exists so an immediate scan can
     # pause this listener instead of racing a probe on a missing socket.
@@ -443,9 +425,7 @@ async def _async_setup_entry_with_client(
 
     # Drop stale capability-gated registry entries before platforms re-add
     # the entities the current firmware profile still supports.
-    _async_remove_unsupported_capability_entities(
-        hass, device_info_dict, coordinator.profile
-    )
+    _async_remove_unsupported_capability_entities(hass, device_info_dict, coordinator.profile)
 
     # Clear any prior connection issue after successful setup
     _clear_connection_issue(hass, entry)
@@ -474,9 +454,7 @@ def _entry_coordinator(entry: ConfigEntry) -> MarstekDataUpdateCoordinator | Non
     return None
 
 
-def _clear_entry_reset_prone_flag(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> None:
+def _clear_entry_reset_prone_flag(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Clear the UDP reset-prone mark using every IP this entry may have used."""
     coordinator = _entry_coordinator(entry)
     if coordinator is not None:
@@ -489,9 +467,7 @@ def _clear_entry_reset_prone_flag(
     clear_reset_prone_owner_from_pool(hass, entry.entry_id)
 
 
-async def _async_release_entry_resources(
-    hass: HomeAssistant, entry: MarstekConfigEntry
-) -> None:
+async def _async_release_entry_resources(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:
     """Drop this entry's UDP lease and tear down shared state if it was last.
 
     Unload and remove both end here: releasing the lease can free the pooled
@@ -566,8 +542,6 @@ async def _async_update_listener(hass: HomeAssistant, entry: MarstekConfigEntry)
     suppress = hass.data.get(DOMAIN, {}).get(DATA_SUPPRESS_RELOADS)
     if suppress and entry.entry_id in suppress:
         suppress.discard(entry.entry_id)
-        _LOGGER.debug(
-            "Skipping reload for entry %s (metadata-only update)", entry.entry_id
-        )
+        _LOGGER.debug("Skipping reload for entry %s (metadata-only update)", entry.entry_id)
         return
     await hass.config_entries.async_reload(entry.entry_id)

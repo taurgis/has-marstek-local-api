@@ -30,12 +30,13 @@ class TestGetDeviceInfo:
                 "ip": "192.168.1.100",
                 "wifi_mac": "11:22:33:44:55:66",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -44,6 +45,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -261,12 +263,13 @@ class TestGetDeviceInfo:
                 "ver": 3,
                 "ip": "192.168.1.100",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -276,6 +279,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -306,6 +310,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.2
             return time_calls[0]
@@ -347,15 +352,12 @@ class TestGetDeviceInfo:
         """Test that echo responses are filtered."""
         from custom_components.marstek.discovery import get_device_info
 
-        echo_response = {
-            "id": 0,
-            "method": "Marstek.GetDevice",
-            "params": {"ble_mac": "0"}
-        }
+        echo_response = {"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -364,6 +366,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -389,6 +392,7 @@ class TestGetDeviceInfo:
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -397,6 +401,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -424,12 +429,13 @@ class TestGetDeviceInfo:
             "result": {
                 "device": "Venus",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -438,6 +444,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -506,14 +513,12 @@ class TestGetDeviceInfo:
         from custom_components.marstek.discovery import get_device_info
 
         # Response with result but no valid identifiers
-        invalid_response = {
-            "id": 0,
-            "result": {"unknown": "value"}
-        }
+        invalid_response = {"id": 0, "result": {"unknown": "value"}}
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -522,6 +527,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -621,9 +627,7 @@ class TestGetDeviceInfo:
         from custom_components.marstek.discovery import get_device_info
 
         client = AsyncMock()
-        client.send_request = AsyncMock(
-            return_value={"id": 1, "result": {"unknown": "value"}}
-        )
+        client.send_request = AsyncMock(return_value={"id": 1, "result": {"unknown": "value"}})
 
         result = await get_device_info("172.28.0.20", udp_client=client)
 
@@ -688,3 +692,109 @@ def test_build_device_info_prefers_result_ble_mac() -> None:
     )
 
     assert info["ble_mac"] == "11:22:33:44:55:66"
+
+
+class TestUnusableClaimedIp:
+    """A reply that cannot supply a usable address falls back to the socket."""
+
+    @pytest.mark.parametrize(
+        "claimed",
+        [12345, None, ["192.168.1.7"], {"addr": "192.168.1.7"}, True, 1.5],
+    )
+    def test_non_string_ip_does_not_raise(self, claimed: object) -> None:
+        """A non-string ip used to raise AttributeError out of the config flow."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": claimed}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.1.9"
+
+    @pytest.mark.parametrize("claimed", ["0.0.0.0", "", "   "])
+    def test_placeholder_ip_falls_back_to_the_probed_host(self, claimed: str) -> None:
+        """A device without a lease reports 0.0.0.0; nothing can poll that."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": claimed}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.1.9"
+
+    def test_usable_claimed_ip_still_wins_and_is_normalized(self) -> None:
+        """The claimed address remains authoritative when it is usable."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.09.92"}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.9.92"
+
+
+class TestOversizedReply:
+    """A reply longer than the read buffer is truncated and lost by the kernel."""
+
+    @pytest.mark.asyncio
+    async def test_read_buffer_fits_any_datagram_a_device_can_send(self) -> None:
+        """A 6 KB schedule reply used to decode as broken JSON and time out."""
+        from custom_components.marstek.discovery import get_device_info
+
+        slots = [
+            {"id": index, "start_time": 0, "end_time": 1440, "power": -2500, "label": "x" * 380}
+            for index in range(12)
+        ]
+        device_response = {
+            "id": 0,
+            "result": {
+                "device": "VenusE 3.0",
+                "ver": 150,
+                "ip": "192.168.1.100",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+                "manual_cfg": slots,
+            },
+        }
+        payload = json.dumps(device_response).encode()
+        assert len(payload) > 4096
+
+        requested_sizes: list[int] = []
+        call_count = 0
+
+        async def mock_recvfrom(_sock: Any, size: int) -> tuple[bytes, tuple[str, int]]:
+            nonlocal call_count
+            requested_sizes.append(size)
+            call_count += 1
+            if call_count == 1:
+                return (payload, ("192.168.1.100", 30000))
+            raise TimeoutError
+
+        time_calls = [0.0]
+
+        def time_side_effect() -> float:
+            time_calls[0] += 0.1
+            return time_calls[0]
+
+        with patch("socket.socket", return_value=MagicMock()):
+            with patch("asyncio.get_running_loop") as mock_loop:
+                loop = MagicMock()
+                loop.run_in_executor = _run_in_executor
+                loop.sock_sendto = AsyncMock()
+                loop.time.side_effect = time_side_effect
+                loop.sock_recvfrom = mock_recvfrom
+                mock_loop.return_value = loop
+
+                result = await get_device_info("192.168.1.100", timeout=0.5)
+
+        assert result is not None
+        assert result["ble_mac"] == "AA:BB:CC:DD:EE:FF"
+        assert all(size >= len(payload) for size in requested_sizes)

@@ -63,10 +63,7 @@ class CommandStats:
 
     def snapshot_for_ip(self, device_ip: str) -> dict[str, dict[str, Any]]:
         """Return a copy of the counters recorded for one device IP."""
-        return {
-            method: dict(stats)
-            for method, stats in self._by_ip.get(device_ip, {}).items()
-        }
+        return {method: dict(stats) for method, stats in self._by_ip.get(device_ip, {}).items()}
 
     def forget_ip(self, device_ip: str) -> None:
         """Drop the per-device counters for one IP the client stopped tracking."""

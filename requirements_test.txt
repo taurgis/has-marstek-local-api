@@ -3,5 +3,8 @@
 # 2026.9.3; both require Python >=3.14.2. Do not pin pytest/asyncio/syrupy
 # separately — this package pins those to match Core.
 pytest-homeassistant-custom-component==0.13.365
-ruff>=0.6.9
+# Pinned, not floating: ``ruff format`` output changes between releases, so
+# an unpinned ruff means CI and a local checkout can disagree about what
+# formatted code is. Keep this in step with requirements_quality.txt.
+ruff==0.16.8
 mypy>=1.11.2

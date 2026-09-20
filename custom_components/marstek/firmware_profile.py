@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -138,15 +139,9 @@ class FirmwareProfile:
         """
         generation = self.control_generation
         if self.hmg50_control:
-            return (
-                generation is None
-                or generation < _HMG50_OPENAPI_STABLE_GENERATION
-            )
+            return generation is None or generation < _HMG50_OPENAPI_STABLE_GENERATION
         if self.family not in _KNOWN_FAMILIES:
-            return (
-                generation is not None
-                and _UNKNOWN_CONTROL_GENERATION_MIN <= generation < 150
-            )
+            return generation is not None and _UNKNOWN_CONTROL_GENERATION_MIN <= generation < 150
         if generation is None:
             return True
         return generation < 150
@@ -217,11 +212,20 @@ def _normalize_version(version: Any) -> int | None:
 
     Discovery `ver` is an integer. App labels such as ``148.3`` share that
     integer as a dotted prefix; only the leading number selects the profile.
+    A build that puts that label on the wire as a JSON *number* rather than a
+    string means the same thing, so ``150.9`` resolves like ``"150.9"``.
+    Rejecting it instead would silently downgrade a Rev 3.1 device: unknown
+    ``ver`` counts as reset-prone, which drops the SYS/UPS entities, forces
+    serialized polling, and raises the firmware-reset repair warning.
     """
     if isinstance(version, bool):
         return None
     if isinstance(version, int):
         return version if version >= 0 else None
+    if isinstance(version, float):
+        if not math.isfinite(version) or version < 0:
+            return None
+        return int(version)
     if isinstance(version, str):
         stripped = version.strip()
         if not stripped or not stripped.isascii():
@@ -295,9 +299,9 @@ def resolve_firmware_profile(
     # GetDevice, ES.*, BLE, Wifi, Bat, PV stub, and EM from 155). Do not
     # unlock SYS from string presence in VNSE3-0 147-149 either: HA keeps
     # the Rev 3.1 ``ver >= 150`` gate (PDF + issue #15).
-    supports_sys = (
-        regular_family and firmware_150 and not hmg50_control
-    ) or (family is DeviceFamily.VENUS_E_MINI and firmware_known)
+    supports_sys = (regular_family and firmware_150 and not hmg50_control) or (
+        family is DeviceFamily.VENUS_E_MINI and firmware_known
+    )
     supports_ups = (
         (regular_family or family is DeviceFamily.VENUS_E_MINI)
         and firmware_150
@@ -322,12 +326,8 @@ def resolve_firmware_profile(
     scaled_pv_energy = known_family and (
         firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
     )
-    if is_unsupported_venus_e2(device_type) or (
-        family is DeviceFamily.VENUS_C and hmg50_control
-    ):
-        supports_em_status = (
-            generation is not None and generation >= _HMG50_EM_SERVER_GENERATION
-        )
+    if is_unsupported_venus_e2(device_type) or (family is DeviceFamily.VENUS_C and hmg50_control):
+        supports_em_status = generation is not None and generation >= _HMG50_EM_SERVER_GENERATION
     else:
         supports_em_status = known_family
     supports_em_energy = supports_em_status and firmware_150
@@ -340,9 +340,7 @@ def resolve_firmware_profile(
         supports_sys_ble_advertising=supports_sys,
         supports_sys_led=supports_sys,
         supports_ups=supports_ups,
-        max_manual_schedule_slot=5
-        if family is DeviceFamily.VENUS_E_MINI
-        else 9,
+        max_manual_schedule_slot=5 if family is DeviceFamily.VENUS_E_MINI else 9,
         pv_energy_scale=10.0 if scaled_pv_energy else 1.0,
         pv_channel_1_power_scale=0.1,
         em_energy_scale=0.1 if supports_em_energy else 1.0,

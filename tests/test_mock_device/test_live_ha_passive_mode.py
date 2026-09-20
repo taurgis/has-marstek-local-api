@@ -86,9 +86,7 @@ def running_udp_mock_device(
                 if stop.is_set():
                     return
 
-    thread = threading.Thread(
-        target=_serve, name="mock-marstek-venus-e-150", daemon=True
-    )
+    thread = threading.Thread(target=_serve, name="mock-marstek-venus-e-150", daemon=True)
     thread.start()
     try:
         yield device
@@ -281,9 +279,7 @@ async def test_live_device_going_quiet_logs_once_and_recovers(
         issue_registry = ir.async_get(hass)
         issue_id = f"cannot_connect_{entry.entry_id}"
 
-        with caplog.at_level(
-            logging.DEBUG, logger="custom_components.marstek.coordinator"
-        ):
+        with caplog.at_level(logging.DEBUG, logger="custom_components.marstek.coordinator"):
             silent.set()
             # Let the serving thread finish the receive it is already in, so
             # the first poll after this cannot still be answered.
@@ -320,8 +316,7 @@ async def test_live_device_going_quiet_logs_once_and_recovers(
                 [
                     record
                     for record in caplog.records
-                    if record.levelno == logging.INFO
-                    and "answering again" in record.getMessage()
+                    if record.levelno == logging.INFO and "answering again" in record.getMessage()
                 ]
             )
             == 1

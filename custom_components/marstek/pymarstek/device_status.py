@@ -98,9 +98,7 @@ def _em_status_summary(data: Mapping[str, Any]) -> str:
 
 
 def _pv_status_summary(data: Mapping[str, Any]) -> str:
-    return ", ".join(
-        f"PV{channel}={data.get(f'pv{channel}_power')}W" for channel in (1, 2, 3, 4)
-    )
+    return ", ".join(f"PV{channel}={data.get(f'pv{channel}_power')}W" for channel in (1, 2, 3, 4))
 
 
 def _wifi_status_summary(data: Mapping[str, Any]) -> str:
@@ -225,9 +223,7 @@ class _PollRun:
             _LOGGER.debug("ES.GetMode failed for %s: no usable result", self._device_ip)
             return None
         self.has_fresh_data = True
-        _LOGGER.debug(
-            "ES.GetMode parsed for %s: %s", self._device_ip, _es_mode_summary(parsed)
-        )
+        _LOGGER.debug("ES.GetMode parsed for %s: %s", self._device_ip, _es_mode_summary(parsed))
         return parsed
 
     async def read(
@@ -263,9 +259,7 @@ class _PollRun:
             return None
         parsed = read.parse(response)
         self.has_fresh_data = True
-        _LOGGER.debug(
-            "%s parsed for %s: %s", read.method, self._device_ip, read.summary(parsed)
-        )
+        _LOGGER.debug("%s parsed for %s: %s", read.method, self._device_ip, read.summary(parsed))
         return parsed
 
 
@@ -337,9 +331,7 @@ async def fetch_device_status(
             profile=profile, apply_delay=True, bypass_rate_limit=False
         )
         for read in reads:
-            collected[read.key] = await run.read(
-                read, apply_delay=True, bypass_rate_limit=False
-            )
+            collected[read.key] = await run.read(read, apply_delay=True, bypass_rate_limit=False)
 
     status = merge_device_status(
         es_mode_data=collected.get("es_mode"),

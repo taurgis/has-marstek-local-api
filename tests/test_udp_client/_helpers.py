@@ -30,9 +30,7 @@ def _patch_sock_sendto() -> Any:
     because the Open API socket is non-blocking. A ``MagicMock`` socket is not
     a real one, so the loop call has to be intercepted.
     """
-    return patch.object(
-        asyncio.get_running_loop(), "sock_sendto", AsyncMock()
-    )
+    return patch.object(asyncio.get_running_loop(), "sock_sendto", AsyncMock())
 
 
 def _unicast_test_client() -> MarstekUDPClient:
@@ -53,6 +51,4 @@ _STATUS_COMBINATION_LABELS = (
     "wifi",
     "bat",
 )
-_STATUS_COMBINATIONS = list(
-    product([True, False], repeat=len(_STATUS_COMBINATION_LABELS))
-)
+_STATUS_COMBINATIONS = list(product([True, False], repeat=len(_STATUS_COMBINATION_LABELS)))

@@ -14,9 +14,7 @@ from typing import Any, Protocol
 _LOGGER = logging.getLogger(__name__)
 
 # Open API `src` is typically "{model}-{ble_mac}", e.g. "VenusC-AABBCCDDEEFF".
-_SRC_MAC_SEPARATED = re.compile(
-    r"(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}"
-)
+_SRC_MAC_SEPARATED = re.compile(r"(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}")
 _SRC_MAC_COMPACT = re.compile(r"[0-9A-Fa-f]{12}")
 
 
@@ -65,9 +63,7 @@ async def async_resolve_host_ipv4(host: str) -> tuple[str, ...]:
     return tuple(str(info[4][0]) for info in infos)
 
 
-def udp_source_matches_host(
-    source_ip: str, host: str, *, resolved: Collection[str] = ()
-) -> bool:
+def udp_source_matches_host(source_ip: str, host: str, *, resolved: Collection[str] = ()) -> bool:
     """Return True when a UDP sender is the host we queried.
 
     Unicast GetDevice must not accept another device's reply. Numeric IPs
@@ -222,9 +218,7 @@ def get_broadcast_addresses(
             netmask = getattr(addr, "netmask", None)
             if isinstance(netmask, str):
                 with suppress(ValueError, OSError):
-                    network = ipaddress.IPv4Network(
-                        f"{addr.address}/{netmask}", strict=False
-                    )
+                    network = ipaddress.IPv4Network(f"{addr.address}/{netmask}", strict=False)
                     addresses.add(str(network.broadcast_address))
 
     return list(addresses - local_ips)
