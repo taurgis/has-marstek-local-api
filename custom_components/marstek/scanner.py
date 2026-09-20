@@ -17,6 +17,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import discovery_flow
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
@@ -24,6 +25,7 @@ from .firmware_profile import (
     is_unsupported_venus_e2,
     resolve_firmware_profile_from_metadata,
 )
+from .helpers.broadcast import async_broadcast_addresses
 from .helpers.device_lookup import async_lookup_device_by_identifier
 from .helpers.flow_helpers import (
     formatted_mac_or_none,
@@ -157,8 +159,13 @@ class MarstekScanner:
             _LOGGER.debug("Previous scan still running, skipping")
             return
 
-        # Execute scan in background task (non-blocking)
-        self._scan_task = self._hass.async_create_task(self._async_scan_impl())
+        # A sweep waits out DISCOVERY_TIMEOUT for replies. As a background
+        # task it neither holds up startup nor makes async_block_till_done
+        # (and so Home Assistant's shutdown) wait for that timeout; Home
+        # Assistant cancels it at shutdown instead.
+        self._scan_task = self._hass.async_create_background_task(
+            self._async_scan_impl(), name="Marstek device scan"
+        )
         self._last_scan_monotonic = time.monotonic()
 
     @callback
@@ -193,8 +200,11 @@ class MarstekScanner:
             # Use local discovery module (workaround for pymarstek echo issues)
             _LOGGER.debug("Scanner: Starting device discovery (broadcast)")
             scan_ports = self._build_scan_ports()
+            broadcast_addresses = await async_broadcast_addresses(self._hass)
             async with async_paused_udp_receivers(self._hass):
-                devices = await discover_devices(ports=scan_ports)
+                devices = await discover_devices(
+                    ports=scan_ports, broadcast_addresses=broadcast_addresses
+                )
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -492,7 +502,9 @@ class MarstekScanner:
         if self._has_pending_discovery(identity_macs):
             return False
 
-        now = datetime.now()
+        # UTC: a naive local clock repeats or skips an hour at a DST
+        # change, which would fire or swallow a debounced discovery flow.
+        now = dt_util.utcnow()
         for mac in identity_macs:
             last_seen = self._unconfigured_seen.get(mac)
             if last_seen and (now - last_seen) < UNCONFIGURED_DISCOVERY_DEBOUNCE:

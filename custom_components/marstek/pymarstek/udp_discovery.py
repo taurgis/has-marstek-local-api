@@ -53,7 +53,7 @@ class BroadcastDiscoveryMixin:
 
         def _ensure_listener(self) -> None: ...
 
-        def _get_broadcast_addresses(self) -> list[str]: ...
+        async def _async_broadcast_addresses(self) -> list[str]: ...
 
         async def _ensure_socket(self) -> socket.socket: ...
 
@@ -119,7 +119,7 @@ class BroadcastDiscoveryMixin:
         try:
             self._ensure_listener()
 
-            broadcast_addresses = self._get_broadcast_addresses()
+            broadcast_addresses = await self._async_broadcast_addresses()
             _LOGGER.debug("Broadcast addresses: %s on port %d", broadcast_addresses, self._port)
             for address in broadcast_addresses:
                 await self._send_udp_message(message, address, self._port)

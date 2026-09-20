@@ -18,7 +18,9 @@ from .const import DEFAULT_UDP_PORT, DOMAIN
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
 from .firmware_profile import is_unsupported_venus_e2
+from .helpers.broadcast import async_broadcast_addresses
 from .helpers.flow_helpers import (
+    async_apply_entry_update,
     build_entry_data,
     collect_configured_macs,
     format_already_configured_text,
@@ -303,8 +305,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, scan_ports: list[int]
     ) -> list[dict[str, Any]]:
         """Broadcast discovery while pooled listeners are paused."""
+        broadcast_addresses = await async_broadcast_addresses(self.hass)
         async with async_paused_udp_receivers(self.hass):
-            return await discover_devices(ports=scan_ports)
+            return await discover_devices(
+                ports=scan_ports, broadcast_addresses=broadcast_addresses
+            )
 
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfoLike
@@ -523,7 +528,6 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._entry_matches_flow_identity(entry):
                 continue
 
-            reload = entry.state == ConfigEntryState.SETUP_RETRY
             discovered_port = self._discovered_port
             current_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
             updates: dict[str, Any] = {}
@@ -562,15 +566,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         new_host,
                         new_port=new_port if isinstance(new_port, int) else None,
                     )
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    data={**entry.data, **updates},
+                async_apply_entry_update(
+                    self.hass, entry, {**entry.data, **updates}
                 )
-                reload = entry.state in (
-                    ConfigEntryState.SETUP_RETRY,
-                    ConfigEntryState.LOADED,
-                )
-            if reload:
+            elif entry.state is ConfigEntryState.SETUP_RETRY:
+                # Nothing to write, but the device is answering again, so
+                # stop waiting out Home Assistant's setup-retry backoff.
                 self.hass.config_entries.async_schedule_reload(entry.entry_id)
             return self.async_abort(reason="already_configured")
 
@@ -620,17 +621,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     new_port=port if update_port else None,
                 )
 
-            # The entry carries an update listener that reloads on every
-            # data change, so let it own the reload. async_update_reload_and_abort
-            # would schedule a second one, which Home Assistant reports as
-            # deprecated and stops doing in 2026.12. An unchanged entry never
-            # reaches the listener, so a resubmit that only means "try this
-            # device again" still has to schedule its own reload.
-            changed = self.hass.config_entries.async_update_entry(
-                entry, data={**entry.data, **data_updates}
+            # The entry's own update listener owns the reload when it runs;
+            # async_update_reload_and_abort would schedule a second one, which
+            # Home Assistant reports as deprecated and stops doing in 2026.12.
+            async_apply_entry_update(
+                self.hass, entry, {**entry.data, **data_updates}
             )
-            if not changed:
-                self.hass.config_entries.async_schedule_reload(entry.entry_id)
             return self.async_abort(reason=reason), None
         except (OSError, TimeoutError, ValueError):
             return None, "cannot_connect"

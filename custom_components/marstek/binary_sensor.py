@@ -19,6 +19,11 @@ from .helpers.binary_sensor_descriptions import (
     MarstekBinarySensorEntityDescription,
 )
 
+# Read-only platform: every value comes from the shared coordinator, so
+# Home Assistant never has to serialize updates for these entities.
+# https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/parallel-updates
+PARALLEL_UPDATES = 0
+
 
 class MarstekBinarySensor(
     CoordinatorEntity[MarstekDataUpdateCoordinator], BinarySensorEntity

@@ -1520,6 +1520,78 @@ class TestGetDeviceStatus:
         assert result.get("wifi_ssid") == "TestNet"
         mock_sleep.assert_not_called()
 
+    async def test_rejected_es_mode_reply_does_not_escape_the_poll(self) -> None:
+        """ValidationError is not a ValueError, so it needs naming explicitly.
+
+        Every other read treats a rejected reply as "contributed nothing";
+        ES.GetMode must not be the one that takes the whole poll down.
+        """
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        async def mock_send_request(
+            message: str, *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
+            method = str(json.loads(message).get("method"))
+            if method == "ES.GetMode":
+                raise ValidationError("reply failed validation")
+            if method == "ES.GetStatus":
+                return {"id": 2, "result": {"bat_soc": 66, "bat_power": 150}}
+            return {"id": 0, "result": {}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            assert await client.fetch_es_mode("192.168.1.100") is None
+
+            result = await client.get_device_status(
+                "192.168.1.100",
+                include_em=False,
+                include_pv=False,
+                include_wifi=False,
+                include_bat=False,
+            )
+
+        assert result["has_fresh_data"]
+        assert result["battery_soc"] == 66
+
+    async def test_parallel_poll_contains_an_unexpected_error(self) -> None:
+        """A read that blows up contributes nothing, like one that timed out.
+
+        Without containment the exception would leave the gather, abandoning
+        its siblings: they would go on sending UDP to a device whose poll had
+        already ended, and Python would report each as a never-retrieved task
+        exception.
+        """
+        client = MarstekUDPClient()
+        client._socket = MagicMock()
+        client._loop = MagicMock()
+        client._loop.time.return_value = 1000.0
+
+        async def mock_send_request(
+            message: str, *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
+            method = str(json.loads(message).get("method"))
+            if method == "Wifi.GetStatus":
+                raise RuntimeError("socket went away mid-poll")
+            if method == "ES.GetStatus":
+                return {"id": 2, "result": {"bat_soc": 66, "bat_power": 150}}
+            return {"id": 0, "result": {}}
+
+        with patch.object(client, "send_request", side_effect=mock_send_request):
+            result = await client.get_device_status(
+                "192.168.1.100",
+                include_em=False,
+                include_pv=False,
+                include_wifi=True,
+                include_bat=False,
+                parallel_requests=True,
+            )
+
+        assert result["has_fresh_data"]
+        assert result["battery_soc"] == 66
+        assert result.get("wifi_ssid") is None
+
     async def test_partial_failure_preserves_data(self) -> None:
         """Test that partial failures preserve previous data."""
         client = MarstekUDPClient()

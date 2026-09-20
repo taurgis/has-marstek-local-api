@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.const import DOMAIN
 from custom_components.marstek.helpers.flow_helpers import (
+    async_apply_entry_update,
     collect_configured_macs,
     formatted_mac_or_none,
     get_unique_id_from_device_info,
@@ -102,3 +106,61 @@ def test_split_devices_marks_wifi_only_as_configured() -> None:
     )
     assert options == {}
     assert already
+
+
+def _entry_with_host(hass: HomeAssistant, host: str) -> MockConfigEntry:
+    """Add a minimal entry whose host an update can change."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={"host": host, "port": 30000, "ble_mac": "AA:BB:CC:DD:EE:FF"},
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_loaded_entry_leaves_the_reload_to_its_listener(
+    hass: HomeAssistant,
+) -> None:
+    """A changed, loaded entry is reloaded by its own update listener.
+
+    Scheduling a second reload here would set the device up twice, which is
+    also what Home Assistant reports as deprecated.
+    """
+    entry = _entry_with_host(hass, "192.168.1.200")
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as schedule:
+        async_apply_entry_update(hass, entry, {**entry.data, "host": "192.168.1.201"})
+
+    assert entry.data["host"] == "192.168.1.201"
+    schedule.assert_not_called()
+
+
+async def test_unchanged_loaded_entry_still_reloads(hass: HomeAssistant) -> None:
+    """Nothing changed, so no listener runs, but the user asked for a retry."""
+    entry = _entry_with_host(hass, "192.168.1.200")
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as schedule:
+        async_apply_entry_update(hass, entry, dict(entry.data))
+
+    schedule.assert_called_once_with(entry.entry_id)
+
+
+async def test_retrying_entry_reloads_on_a_corrected_host(
+    hass: HomeAssistant,
+) -> None:
+    """A retrying entry carries no listener, so nothing else would reload it.
+
+    The corrected host would sit unused until Home Assistant's own
+    setup-retry backoff came round, which grows to ten minutes.
+    """
+    entry = _entry_with_host(hass, "192.168.1.200")
+    entry.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as schedule:
+        async_apply_entry_update(hass, entry, {**entry.data, "host": "192.168.1.201"})
+
+    assert entry.data["host"] == "192.168.1.201"
+    schedule.assert_called_once_with(entry.entry_id)

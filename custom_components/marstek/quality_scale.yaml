@@ -31,7 +31,10 @@ rules:
   log-when-unavailable: done
   parallel-updates:
     status: done
-    comment: Single coordinator per device; entities read from coordinator.data
+    comment: >-
+      Every platform sets the constant explicitly: 0 on the coordinator-driven
+      read-only platforms, 1 on the write platforms, because the device answers
+      one UDP request at a time.
   reauthentication-flow:
     status: exempt
     comment: Integration uses UDP with no authentication; reauth flow handles IP changes only
