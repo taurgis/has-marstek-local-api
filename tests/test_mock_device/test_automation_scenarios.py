@@ -7,6 +7,7 @@ the mock device returns correct and consistent status information.
 from __future__ import annotations
 
 import time
+
 from mock_device import MockMarstekDevice
 
 
@@ -165,7 +166,17 @@ class TestAutomationWorkflows:
                 ("Passive", {"power": -2000, "cd_time": 3600}),
                 ("AI", None),
                 ("Passive", {"power": 1500, "cd_time": 3600}),
-                ("Manual", {"time_num": 0, "start_time": "00:00", "end_time": "23:59", "week_set": 127, "power": -1200, "enable": 1}),
+                (
+                    "Manual",
+                    {
+                        "time_num": 0,
+                        "start_time": "00:00",
+                        "end_time": "23:59",
+                        "week_set": 127,
+                        "power": -1200,
+                        "enable": 1,
+                    },
+                ),
                 ("Passive", {"power": -800, "cd_time": 3600}),
             ]
 
@@ -335,7 +346,19 @@ class TestGridPowerConsistency:
                 ("Passive", {"passive_cfg": {"power": -1000, "cd_time": 3600}}),
                 ("Auto", {}),
                 ("AI", {}),
-                ("Manual", {"manual_cfg": {"time_num": 0, "start_time": "00:00", "end_time": "23:59", "week_set": 127, "power": 500, "enable": 1}}),
+                (
+                    "Manual",
+                    {
+                        "manual_cfg": {
+                            "time_num": 0,
+                            "start_time": "00:00",
+                            "end_time": "23:59",
+                            "week_set": 127,
+                            "power": 500,
+                            "enable": 1,
+                        }
+                    },
+                ),
                 ("Passive", {"passive_cfg": {"power": 2000, "cd_time": 3600}}),
             ]
 

@@ -50,20 +50,20 @@ class TestHouseholdSimulator:
     def test_time_of_day_variation(self) -> None:
         """Test consumption varies by time of day."""
         sim = HouseholdSimulator()
-        
+
         # Get several readings - they should fluctuate
         readings = [sim.get_consumption() for _ in range(20)]
-        
+
         # Should have some variation (not all identical)
         assert max(readings) > min(readings)
 
     def test_force_cooking_event_duration(self) -> None:
         """Test cooking event has a duration effect."""
         sim = HouseholdSimulator()
-        
+
         # Force short cooking event
         sim.force_cooking_event(power=3000, duration_mins=1)
-        
+
         # Should see elevated consumption immediately
         consumption1 = sim.get_consumption()
         assert consumption1 > sim.base_load + 2500
@@ -71,9 +71,9 @@ class TestHouseholdSimulator:
     def test_current_consumption_attribute(self) -> None:
         """Test current_consumption is updated on get_consumption."""
         sim = HouseholdSimulator()
-        
+
         # Call get_consumption to update
         consumption = sim.get_consumption()
-        
+
         # current_consumption should match returned value
         assert sim.current_consumption == consumption

@@ -302,8 +302,22 @@ class TestManualSchedules:
         """Test first matching schedule is returned."""
         sim = BatterySimulator(initial_soc=50)
         sim.manual_schedules = [
-            {"time_num": 0, "start_time": "00:00", "end_time": "23:59", "week_set": 127, "power": -1000, "enable": True},
-            {"time_num": 1, "start_time": "00:00", "end_time": "23:59", "week_set": 127, "power": -2000, "enable": True},
+            {
+                "time_num": 0,
+                "start_time": "00:00",
+                "end_time": "23:59",
+                "week_set": 127,
+                "power": -1000,
+                "enable": True,
+            },
+            {
+                "time_num": 1,
+                "start_time": "00:00",
+                "end_time": "23:59",
+                "week_set": 127,
+                "power": -2000,
+                "enable": True,
+            },
         ]
 
         schedule = sim._get_active_schedule()

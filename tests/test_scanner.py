@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import time
+from contextlib import suppress
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek import MarstekRuntimeData
 from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
@@ -273,7 +273,9 @@ async def test_scanner_scan_impl_discovers_devices_port_changed(
 ):
     """Test _async_scan_impl triggers discovery flow when port changes at same IP."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(mock_config_entry, data={**mock_config_entry.data, "port": 30000})
+    hass.config_entries.async_update_entry(
+        mock_config_entry, data={**mock_config_entry.data, "port": 30000}
+    )
     mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)
 
     scanner = MarstekScanner(hass)
@@ -439,7 +441,9 @@ async def test_scanner_updates_device_metadata_and_registry(
     assert mock_config_entry.runtime_data.device_info["wifi_name"] == "AirPort-38"
     coordinator.async_set_updated_data.assert_called_once_with(coordinator.data)
 
-    device = async_lookup_device_by_identifier(device_registry, (DOMAIN, format_mac("AA:BB:CC:DD:EE:FF")))
+    device = async_lookup_device_by_identifier(
+        device_registry, (DOMAIN, format_mac("AA:BB:CC:DD:EE:FF"))
+    )
     assert device is not None
     assert device.sw_version == "147"
     assert device.model == "VenusE 3.0"
@@ -603,7 +607,9 @@ async def test_scanner_skips_registry_update_when_device_missing(
 
     with (
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
-        patch("custom_components.marstek.scanner.dr.async_get", return_value=registry) as mock_dr_get,
+        patch(
+            "custom_components.marstek.scanner.dr.async_get", return_value=registry
+        ) as mock_dr_get,
     ):
         scanner._maybe_update_entry_metadata(mock_config_entry, updates_device)
 
@@ -1197,10 +1203,8 @@ async def test_scanner_async_scan_skips_if_previous_running(hass: HomeAssistant)
 
     # Cleanup
     scanner._scan_task.cancel()
-    try:
+    with suppress(asyncio.CancelledError):
         await scanner._scan_task
-    except asyncio.CancelledError:
-        pass
 
 
 async def test_scanner_ignores_malformed_discovered_mac(

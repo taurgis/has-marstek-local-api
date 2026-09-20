@@ -7,18 +7,23 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from homeassistant.helpers.device_registry import format_mac
 from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
+from custom_components.marstek.helpers.service_helpers import calculate_week_set
+from custom_components.marstek.pymarstek.validators import (
+    ValidationError,
+    normalize_time_value,
+)
 from custom_components.marstek.services import (
-    ATTR_DEVICE_ID,
     ATTR_DAYS,
+    ATTR_DEVICE_ID,
     ATTR_DURATION,
     ATTR_ENABLE,
     ATTR_END_TIME,
@@ -32,14 +37,8 @@ from custom_components.marstek.services import (
     SERVICE_SET_MANUAL_SCHEDULES,
     SERVICE_SET_PASSIVE_MODE,
 )
-from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
-from custom_components.marstek.helpers.service_helpers import calculate_week_set
-from custom_components.marstek.pymarstek.validators import (
-    ValidationError,
-    normalize_time_value,
-)
-
 from tests.conftest import create_mock_client, patch_marstek_integration
+
 DEVICE_IDENTIFIER = format_mac("AA:BB:CC:DD:EE:FF")
 
 
@@ -561,7 +560,7 @@ async def test_service_command_all_retries_fail(
         device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
-        with pytest.raises(HomeAssistantError, match="command_failed|Failed to send"):
+        with pytest.raises(HomeAssistantError, match=r"command_failed|Failed to send"):
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_PASSIVE_MODE,

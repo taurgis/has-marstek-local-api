@@ -8,9 +8,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from mock_device import MockMarstekDevice
 from mock_device.__main__ import main
+
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     is_unsupported_venus_e2,
@@ -743,7 +743,7 @@ class TestDeviceDiscovery:
         """Test PV.GetStatus returns panel info for VenusD (only device with PV support)."""
         # Only Venus D supports PV per API docs (Chapter 4)
         device = MockMarstekDevice(
-            port=30007, 
+            port=30007,
             simulate=False,
             device_config={"device": "VenusD", "ver": 145},
         )

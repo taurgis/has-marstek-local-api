@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
-from itertools import product
 import json
 import logging
 import socket
 import time
+from contextlib import suppress
+from itertools import product
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -249,13 +249,13 @@ class TestAsyncSetup:
         """Test that async_setup creates a UDP socket."""
         client = MarstekUDPClient(port=0)
         mock_socket = MagicMock()
-        
+
         with patch("socket.socket", return_value=mock_socket):
             await client.async_setup()
-            
+
             assert client._socket is mock_socket
             assert client._loop is not None
-        
+
         await client.async_cleanup()
 
     async def test_noop_if_already_setup(self) -> None:
@@ -263,9 +263,9 @@ class TestAsyncSetup:
         client = MarstekUDPClient()
         mock_socket = MagicMock()
         client._socket = mock_socket
-        
+
         await client.async_setup()
-        
+
         # Should still be the same socket
         assert client._socket is mock_socket
 
@@ -375,14 +375,14 @@ class TestSendRequest:
         """Test that validation errors are raised."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        
+
         # Invalid method name should fail validation
         invalid_message = json.dumps({
             "id": 1,
             "method": "Invalid.Method",
             "params": {}
         })
-        
+
         with pytest.raises(ValidationError):
             await client.send_request(
                 invalid_message, "192.168.1.100", 30000, timeout=0.1
@@ -398,22 +398,22 @@ class TestSendRequest:
         client._loop = mock_loop
         client._listen_task = MagicMock()
         client._listen_task.done.return_value = False
-        
-        # Invalid method but validation skipped - should get ValueError for no id, 
+
+        # Invalid method but validation skipped - should get ValueError for no id,
         # not ValidationError (since validation is skipped)
         message = json.dumps({
             "id": 1,
             "method": "Invalid.Method",
             "params": {}
         })
-        
+
         # Mock UDP send to do nothing, test will timeout
         with patch.object(client, "_send_udp_message", AsyncMock()):
             # Should not raise ValidationError because validate=False
             # Just timeout since no response arrives
             with pytest.raises(TimeoutError):
                 await client.send_request(
-                    message, "192.168.1.100", 30000, 
+                    message, "192.168.1.100", 30000,
                     timeout=0.01, validate=False
                 )
 
@@ -421,9 +421,9 @@ class TestSendRequest:
         """Test that message without id raises ValueError."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        
+
         message = json.dumps({"method": "ES.GetStatus", "params": {}})
-        
+
         with pytest.raises((ValueError, ValidationError)):
             await client.send_request(
                 message, "192.168.1.100", 30000, timeout=0.1, validate=False
@@ -483,19 +483,18 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
+        ), patch.object(
+            client,
+            "_send_udp_message",
+            AsyncMock(side_effect=send_and_complete_on_retransmit),
         ):
-            with patch.object(
-                client,
-                "_send_udp_message",
-                AsyncMock(side_effect=send_and_complete_on_retransmit),
-            ):
-                result = await client.send_request(
-                    message,
-                    "192.168.1.100",
-                    30000,
-                    timeout=1.0,
-                    validate=False,
-                )
+            result = await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=1.0,
+                validate=False,
+            )
 
         assert sends == 2
         assert result["result"] == {}
@@ -516,19 +515,18 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.2
+        ), patch.object(
+            client,
+            "_send_udp_message",
+            AsyncMock(side_effect=send_and_complete),
         ):
-            with patch.object(
-                client,
-                "_send_udp_message",
-                AsyncMock(side_effect=send_and_complete),
-            ):
-                result = await client.send_request(
-                    message,
-                    "192.168.1.100",
-                    30000,
-                    timeout=1.0,
-                    validate=False,
-                )
+            result = await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=1.0,
+                validate=False,
+            )
 
         assert sends == 1
         assert result["result"] == {}
@@ -550,19 +548,18 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
+        ), patch.object(
+            client,
+            "_send_udp_message",
+            AsyncMock(side_effect=send_and_complete),
         ):
-            with patch.object(
-                client,
-                "_send_udp_message",
-                AsyncMock(side_effect=send_and_complete),
-            ):
-                await client.send_request(
-                    message,
-                    "192.168.1.100",
-                    30000,
-                    timeout=1.0,
-                    validate=False,
-                )
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=1.0,
+                validate=False,
+            )
 
         assert sends == 1
 
@@ -581,15 +578,14 @@ class TestSendRequest:
 
         with patch.object(
             client, "_send_udp_message", AsyncMock(side_effect=count_sends)
-        ):
-            with pytest.raises(TimeoutError):
-                await client.send_request(
-                    message,
-                    "192.168.1.100",
-                    30000,
-                    timeout=0.02,
-                    validate=False,
-                )
+        ), pytest.raises(TimeoutError):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.02,
+                validate=False,
+            )
 
         assert sends == 1
 
@@ -607,18 +603,16 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
-        ):
-            with patch.object(
-                client, "_send_udp_message", AsyncMock(side_effect=count_sends)
-            ):
-                with pytest.raises(TimeoutError):
-                    await client.send_request(
-                        message,
-                        "192.168.1.100",
-                        30000,
-                        timeout=0.05,
-                        validate=False,
-                    )
+        ), patch.object(
+            client, "_send_udp_message", AsyncMock(side_effect=count_sends)
+        ), pytest.raises(TimeoutError):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.05,
+                validate=False,
+            )
 
         assert sends == 1
 
@@ -641,18 +635,16 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
-        ):
-            with patch.object(
-                client, "_send_udp_message", AsyncMock(side_effect=count_sends)
-            ):
-                with pytest.raises(TimeoutError):
-                    await client.send_request(
-                        message,
-                        "192.168.1.100",
-                        30000,
-                        timeout=0.05,
-                        validate=False,
-                    )
+        ), patch.object(
+            client, "_send_udp_message", AsyncMock(side_effect=count_sends)
+        ), pytest.raises(TimeoutError):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.05,
+                validate=False,
+            )
 
         assert sends == 1
 
@@ -673,19 +665,18 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
+        ), patch.object(
+            client,
+            "_send_udp_message",
+            AsyncMock(side_effect=send_and_complete_on_retry),
         ):
-            with patch.object(
-                client,
-                "_send_udp_message",
-                AsyncMock(side_effect=send_and_complete_on_retry),
-            ):
-                result = await client.send_request(
-                    message,
-                    "192.168.1.100",
-                    30000,
-                    timeout=1.0,
-                    validate=False,
-                )
+            result = await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=1.0,
+                validate=False,
+            )
 
         assert sends == 2
         assert result["id"] == 1
@@ -708,18 +699,16 @@ class TestSendRequest:
         started = time.monotonic()
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
-        ):
-            with patch.object(
-                client, "_send_udp_message", AsyncMock(side_effect=count_sends)
-            ):
-                with pytest.raises(TimeoutError):
-                    await client.send_request(
-                        message,
-                        "192.168.1.100",
-                        30000,
-                        timeout=0.05,
-                        validate=False,
-                    )
+        ), patch.object(
+            client, "_send_udp_message", AsyncMock(side_effect=count_sends)
+        ), pytest.raises(TimeoutError):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.05,
+                validate=False,
+            )
 
         elapsed = time.monotonic() - started
         assert sends == 2
@@ -739,19 +728,18 @@ class TestSendRequest:
 
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
-        ):
-            with patch.object(client, "_send_udp_message", AsyncMock()):
-                completer = asyncio.create_task(delayed_complete())
-                try:
-                    result = await client.send_request(
-                        message,
-                        "192.168.1.100",
-                        30000,
-                        timeout=0.05,
-                        validate=False,
-                    )
-                finally:
-                    await completer
+        ), patch.object(client, "_send_udp_message", AsyncMock()):
+            completer = asyncio.create_task(delayed_complete())
+            try:
+                result = await client.send_request(
+                    message,
+                    "192.168.1.100",
+                    30000,
+                    timeout=0.05,
+                    validate=False,
+                )
+            finally:
+                await completer
 
         assert result["id"] == 1
 
@@ -775,19 +763,18 @@ class TestSendRequest:
         caplog.set_level(logging.DEBUG)
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
+        ), patch.object(
+            client,
+            "_send_udp_message",
+            AsyncMock(side_effect=send_and_complete_on_retransmit),
         ):
-            with patch.object(
-                client,
-                "_send_udp_message",
-                AsyncMock(side_effect=send_and_complete_on_retransmit),
-            ):
-                await client.send_request(
-                    message,
-                    "192.168.1.100",
-                    30000,
-                    timeout=1.0,
-                    validate=False,
-                )
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=1.0,
+                validate=False,
+            )
 
         assert "retransmitting" in caplog.text
         assert "after retransmit" in caplog.text
@@ -837,16 +824,14 @@ class TestSendRequest:
         caplog.set_level(logging.DEBUG)
         with patch(
             "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01
-        ):
-            with patch.object(client, "_send_udp_message", AsyncMock()):
-                with pytest.raises(TimeoutError):
-                    await client.send_request(
-                        message,
-                        "192.168.1.100",
-                        30000,
-                        timeout=0.05,
-                        validate=False,
-                    )
+        ), patch.object(client, "_send_udp_message", AsyncMock()), pytest.raises(TimeoutError):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.05,
+                validate=False,
+            )
 
         assert "retransmitting" not in caplog.text
         assert "Request timeout" in caplog.text
@@ -930,17 +915,17 @@ class TestCommandStats:
         client._loop = mock_loop
         client._listen_task = MagicMock()
         client._listen_task.done.return_value = False
-        
+
         message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
-        
+
         # Mock send to do nothing - will timeout waiting for response
         with patch.object(client, "_send_udp_message", AsyncMock()):
             with pytest.raises(TimeoutError):
                 await client.send_request(
-                    message, "192.168.1.100", 30000, 
+                    message, "192.168.1.100", 30000,
                     timeout=0.01, quiet_on_timeout=True
                 )
-        
+
         # Check no warning was logged (only debug level logs should appear)
         assert "Request timeout" not in caplog.text
 
@@ -952,13 +937,13 @@ class TestSendBroadcastRequest:
         """Test that validation failure returns empty list."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        
+
         invalid_message = json.dumps({
             "id": 1,
             "method": "Invalid.Method",
             "params": {}
         })
-        
+
         result = await client.send_broadcast_request(invalid_message)
         assert result == []
 
@@ -966,7 +951,7 @@ class TestSendBroadcastRequest:
         """Test that invalid JSON returns empty list."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        
+
         result = await client.send_broadcast_request("not json", validate=False)
         assert result == []
 
@@ -979,29 +964,29 @@ class TestDiscoverDevices:
         cached_devices = [{"ip": "192.168.1.100", "device_type": "Venus"}]
         udp_client._discovery_cache = cached_devices
         udp_client._cache_timestamp = 995.0  # 5 seconds ago, within cache duration
-        
+
         result = await udp_client.discover_devices(use_cache=True)
-        
+
         assert result == cached_devices
 
     async def test_ignores_cache_when_invalid(self, udp_client: MarstekUDPClient) -> None:
         """Test that discovery ignores cache when expired."""
         udp_client._discovery_cache = [{"ip": "old"}]
         udp_client._cache_timestamp = 900.0  # 100 seconds ago, expired
-        
+
         with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[])):
             result = await udp_client.discover_devices(use_cache=True)
-        
+
         assert result == []
 
     async def test_ignores_cache_when_disabled(self, udp_client: MarstekUDPClient) -> None:
         """Test that discovery ignores cache when use_cache=False."""
         udp_client._discovery_cache = [{"ip": "cached"}]
         udp_client._cache_timestamp = 999.0  # Fresh cache
-        
+
         with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[])):
             result = await udp_client.discover_devices(use_cache=False)
-        
+
         # Should have made new request and returned empty
         assert result == []
 
@@ -1018,10 +1003,10 @@ class TestDiscoverDevices:
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
             }
         }
-        
+
         with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[response])):
             result = await udp_client.discover_devices(use_cache=False)
-        
+
         assert len(result) == 1
         assert result[0]["ip"] == "192.168.1.100"
         assert result[0]["device_type"] == "Venus"
@@ -1079,18 +1064,26 @@ class TestDiscoverDevices:
                 "ip": "192.168.1.100",
             }
         }
-        
+
         # Return same device twice
-        with patch.object(udp_client, "send_broadcast_request", AsyncMock(return_value=[response, response])):
+        with patch.object(
+            udp_client,
+            "send_broadcast_request",
+            AsyncMock(return_value=[response, response]),
+        ):
             result = await udp_client.discover_devices(use_cache=False)
-        
+
         assert len(result) == 1
 
     async def test_handles_oserror(self, udp_client: MarstekUDPClient) -> None:
         """Test that OSError is handled gracefully."""
-        with patch.object(udp_client, "send_broadcast_request", AsyncMock(side_effect=OSError("Network error"))):
+        with patch.object(
+            udp_client,
+            "send_broadcast_request",
+            AsyncMock(side_effect=OSError("Network error")),
+        ):
             result = await udp_client.discover_devices(use_cache=False)
-        
+
         assert result == []
 
 
@@ -1100,12 +1093,12 @@ class TestPollingControl:
     async def test_pause_and_resume(self, udp_client: MarstekUDPClient) -> None:
         """Test pausing and resuming polling."""
         device_ip = "192.168.1.100"
-        
+
         assert not udp_client.is_polling_paused(device_ip)
-        
+
         await udp_client.pause_polling(device_ip)
         assert udp_client.is_polling_paused(device_ip)
-        
+
         await udp_client.resume_polling(device_ip)
         assert not udp_client.is_polling_paused(device_ip)
 
@@ -1183,22 +1176,22 @@ class TestRateLimiting:
         client = MarstekUDPClient()
         client._socket = MagicMock()
         client._loop = MagicMock()
-        
+
         time_value = 0.0
         def get_time() -> float:
             return time_value
-        
+
         client._loop.time.side_effect = get_time
-        
+
         # First call - no wait
         await client._enforce_rate_limit("192.168.1.100")
         assert client._throttle.last_request_time.get("192.168.1.100") == 0.0
-        
+
         # Second call - should wait (mocked)
         time_value = 0.1  # Only 100ms elapsed
         with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
             await client._enforce_rate_limit("192.168.1.100")
-            
+
             # Should have called sleep for the remaining time
             mock_sleep.assert_called_once()
             wait_time = mock_sleep.call_args[0][0]
@@ -1208,11 +1201,11 @@ class TestRateLimiting:
     async def test_creates_per_ip_lock(self) -> None:
         """Test that per-IP locks are created."""
         client = MarstekUDPClient()
-        
+
         lock1 = await client._throttle.rate_limit_lock("192.168.1.100")
         lock2 = await client._throttle.rate_limit_lock("192.168.1.100")
         lock3 = await client._throttle.rate_limit_lock("192.168.1.101")
-        
+
         # Same IP should get same lock
         assert lock1 is lock2
         # Different IP should get different lock
@@ -1241,29 +1234,29 @@ class TestCacheValidation:
         """Test cache is valid within duration."""
         udp_client._discovery_cache = [{"ip": "test"}]
         udp_client._cache_timestamp = 980.0  # 20 seconds ago
-        
+
         assert udp_client._is_cache_valid()
 
     def test_cache_invalid_after_duration(self, udp_client: MarstekUDPClient) -> None:
         """Test cache is invalid after duration."""
         udp_client._discovery_cache = [{"ip": "test"}]
         udp_client._cache_timestamp = 900.0  # 100 seconds ago
-        
+
         assert not udp_client._is_cache_valid()
 
     def test_cache_invalid_when_none(self, udp_client: MarstekUDPClient) -> None:
         """Test cache is invalid when None."""
         udp_client._discovery_cache = None
-        
+
         assert not udp_client._is_cache_valid()
 
     def test_clear_discovery_cache(self, udp_client: MarstekUDPClient) -> None:
         """Test clearing discovery cache."""
         udp_client._discovery_cache = [{"ip": "test"}]
         udp_client._cache_timestamp = 999.0
-        
+
         udp_client.clear_discovery_cache()
-        
+
         assert udp_client._discovery_cache is None
         assert udp_client._cache_timestamp == 0
 
@@ -1277,7 +1270,7 @@ class TestGetDeviceStatus:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Mock responses for each status call
         responses = [
             {"id": 1, "result": {"mode": 0, "gridpower": 100}},  # ES.GetMode
@@ -1288,20 +1281,20 @@ class TestGetDeviceStatus:
             {"id": 6, "result": {"temp": 25, "cflag": 1, "dflag": 0}},  # Bat.GetStatus
         ]
         response_iter = iter(responses)
-        
+
         async def mock_send_request(*args: Any, **kwargs: Any) -> dict[str, Any]:
             try:
                 return next(response_iter)
             except StopIteration:
                 return {}
-        
+
         with patch.object(client, "send_request", side_effect=mock_send_request):
             with patch("asyncio.sleep", AsyncMock()):
                 result = await client.get_device_status(
                     "192.168.1.100",
                     delay_between_requests=0,
                 )
-        
+
         assert result["has_fresh_data"]
         # Check merged data
         assert "device_mode" in result or "ongrid_power" in result
@@ -1491,12 +1484,23 @@ class TestGetDeviceStatus:
             if method == "ES.GetStatus":
                 return {
                     "id": 2,
-                    "result": {"bat_soc": 66, "bat_power": 150, "pv_power": 400, "ongrid_power": 200},
+                    "result": {
+                        "bat_soc": 66,
+                        "bat_power": 150,
+                        "pv_power": 400,
+                        "ongrid_power": 200,
+                    },
                 }
             if method == "EM.GetStatus":
-                return {"id": 3, "result": {"ct_state": 1, "a_power": 10, "b_power": 11, "c_power": 12}}
+                return {
+                    "id": 3,
+                    "result": {"ct_state": 1, "a_power": 10, "b_power": 11, "c_power": 12},
+                }
             if method == "PV.GetStatus":
-                return {"id": 4, "result": {"pv1_power": 700, "pv1_voltage": 35, "pv1_current": 2.0}}
+                return {
+                    "id": 4,
+                    "result": {"pv1_power": 700, "pv1_voltage": 35, "pv1_current": 2.0},
+                }
             if method == "Wifi.GetStatus":
                 return {"id": 5, "result": {"rssi": -60, "ssid": "TestNet"}}
             if method == "Bat.GetStatus":
@@ -1522,16 +1526,16 @@ class TestGetDeviceStatus:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         call_count = 0
-        
+
         async def mock_send_request(*args: Any, **kwargs: Any) -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 return {"id": 1, "result": {"mode": 0, "gridpower": 100}}
             raise TimeoutError("Request timeout")
-        
+
         with patch.object(client, "send_request", side_effect=mock_send_request):
             with patch("asyncio.sleep", AsyncMock()):
                 result = await client.get_device_status(
@@ -1541,7 +1545,7 @@ class TestGetDeviceStatus:
                     include_wifi=False,
                     include_bat=False,
                 )
-        
+
         # Should still have some data from successful calls
         assert result["has_fresh_data"]
 
@@ -1551,7 +1555,7 @@ class TestGetDeviceStatus:
         ids=[
             "-".join(
                 f"{label}:{'ok' if flag else 'fail'}"
-                for label, flag in zip(_STATUS_COMBINATION_LABELS, combo)
+                for label, flag in zip(_STATUS_COMBINATION_LABELS, combo, strict=True)
             )
             for combo in _STATUS_COMBINATIONS
         ],
@@ -1736,12 +1740,12 @@ class TestGetDeviceStatus:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         previous_status = {"battery_soc": 75, "device_mode": "Auto"}
-        
+
         async def mock_send_request(*args: Any, **kwargs: Any) -> dict[str, Any]:
             raise TimeoutError("Request timeout")
-        
+
         with patch.object(client, "send_request", side_effect=mock_send_request):
             with patch("asyncio.sleep", AsyncMock()):
                 result = await client.get_device_status(
@@ -1752,7 +1756,7 @@ class TestGetDeviceStatus:
                     include_wifi=False,
                     include_bat=False,
                 )
-        
+
         # Previous values should be preserved
         assert result.get("battery_soc") == 75
         # No fresh data
@@ -1823,9 +1827,9 @@ class TestListenForResponses:
         """Test handling of non-JSON responses."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        
+
         recv_calls = 0
-        
+
         async def mock_recvfrom(
             sock: Any, bufsize: int
         ) -> tuple[bytes, tuple[str, int]]:
@@ -1835,13 +1839,13 @@ class TestListenForResponses:
                 return (b"not json", ("192.168.1.100", 30000))
             # Second call: cancel to exit loop
             raise asyncio.CancelledError()
-        
+
         client._loop = asyncio.get_event_loop()
-        
+
         with patch.object(client._loop, "sock_recvfrom", mock_recvfrom):
             # The method breaks on CancelledError, doesn't re-raise
             await client._listen_for_responses()
-        
+
         # Should have processed the non-JSON, then received cancel
         assert recv_calls == 2
 
@@ -1849,9 +1853,9 @@ class TestListenForResponses:
         """Test that OSError during receive continues loop."""
         client = MarstekUDPClient()
         client._socket = MagicMock()
-        
+
         recv_calls = 0
-        
+
         async def mock_recvfrom(
             sock: Any, bufsize: int
         ) -> tuple[bytes, tuple[str, int]]:
@@ -1861,14 +1865,14 @@ class TestListenForResponses:
                 raise OSError("Network error")
             # Second call after error: cancel to exit loop
             raise asyncio.CancelledError()
-        
+
         client._loop = asyncio.get_event_loop()
-        
+
         with patch.object(client._loop, "sock_recvfrom", mock_recvfrom):
             with patch("asyncio.sleep", AsyncMock()):
                 # The method breaks on CancelledError, doesn't re-raise
                 await client._listen_for_responses()
-        
+
         # Should have caught the OSError, slept, then got cancelled
         assert recv_calls == 2
 
@@ -2079,10 +2083,10 @@ class TestPsutilHandling:
         client = MarstekUDPClient()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         with patch("custom_components.marstek.pymarstek.udp.psutil", None):
             result = client._get_broadcast_addresses()
-        
+
         # Should fall back to 255.255.255.255
         assert result == ["255.255.255.255"]
 
@@ -2091,13 +2095,13 @@ class TestPsutilHandling:
         client = MarstekUDPClient()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         mock_psutil = MagicMock()
         mock_psutil.net_if_addrs.side_effect = OSError("Permission denied")
-        
+
         with patch("custom_components.marstek.pymarstek.udp.psutil", mock_psutil):
             result = client._get_broadcast_addresses()
-        
+
         assert result == ["255.255.255.255"]
 
     def test_get_broadcast_with_none_netmask(self) -> None:
@@ -2105,19 +2109,19 @@ class TestPsutilHandling:
         client = MarstekUDPClient()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Create mock address with None netmask
         mock_addr = MagicMock()
         mock_addr.family = 2  # socket.AF_INET
         mock_addr.address = "192.168.1.100"
         mock_addr.netmask = None  # No netmask
-        
+
         mock_psutil = MagicMock()
         mock_psutil.net_if_addrs.return_value = {"eth0": [mock_addr]}
-        
+
         with patch("custom_components.marstek.pymarstek.udp.psutil", mock_psutil):
             result = client._get_broadcast_addresses()
-        
+
         # Should still have fallback address
         assert "255.255.255.255" in result
 
@@ -2126,33 +2130,33 @@ class TestPsutilHandling:
         client = MarstekUDPClient()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Create mock addresses with saddr attribute
         mock_loopback = MagicMock()
         mock_loopback.family = 2  # socket.AF_INET
         mock_loopback.address = "127.0.0.1"
         mock_loopback.netmask = "255.0.0.0"
-        
+
         mock_linklocal = MagicMock()
         mock_linklocal.family = 2
         mock_linklocal.address = "169.254.1.1"
         mock_linklocal.netmask = "255.255.0.0"
-        
+
         mock_valid = MagicMock()
         mock_valid.family = 2
         mock_valid.address = "10.0.0.5"
         mock_valid.netmask = "255.255.255.0"
-        
+
         mock_psutil = MagicMock()
         mock_psutil.net_if_addrs.return_value = {
             "lo0": [mock_loopback],
             "docker0": [mock_linklocal],
             "eth0": [mock_valid],
         }
-        
+
         with patch("custom_components.marstek.pymarstek.udp.psutil", mock_psutil):
             result = client._get_broadcast_addresses()
-        
+
         # Should have the valid broadcast addresses + fallback
         # Check that fallback got added
         assert "255.255.255.255" in result
@@ -2171,17 +2175,17 @@ class TestRateLimitCleanupEnforcement:
         client._loop = loop
         client._throttle.max_tracked_ips = 3  # Small limit for test
         client._throttle.stale_after = 50.0  # Short threshold for test
-        
+
         # Fill up the tracking dict with more IPs than limit
         current_time = loop.time()
         client._throttle.last_request_time = {
             f"192.168.1.{i}": current_time - 100  # Old entries (older than threshold)
             for i in range(10)
         }
-        
+
         # Enforce rate limit should trigger cleanup
         await client._enforce_rate_limit("192.168.1.200")
-        
+
         # Should have cleaned up old entries
         assert len(client._throttle.last_request_time) <= client._throttle.max_tracked_ips
 
@@ -2191,16 +2195,16 @@ class TestRateLimitCleanupEnforcement:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Track request times
         call_count = 0
         original_enforce = client._enforce_rate_limit
-        
+
         async def tracking_enforce(ip: str) -> None:
             nonlocal call_count
             call_count += 1
             await original_enforce(ip)
-        
+
         client._enforce_rate_limit = tracking_enforce
 
         # Send to broadcast - should skip rate limiting
@@ -2345,10 +2349,10 @@ class TestValidationErrorLogging:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Send an invalid command with a recognizable method
         invalid_message = '{"id": 1, "method": "Invalid.Method", "params": {}}'
-        
+
         with pytest.raises(ValidationError):
             await client.send_request(invalid_message, "192.168.1.100", 30000)
 
@@ -2358,7 +2362,7 @@ class TestValidationErrorLogging:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Send completely invalid message
         with pytest.raises(ValidationError):
             await client.send_request("not json at all", "192.168.1.100", 30000)
@@ -2373,12 +2377,12 @@ class TestBroadcastValidation:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Invalid broadcast message
         invalid_message = '{"id": 1, "method": "Invalid.Method", "params": {}}'
-        
+
         result = await client.send_broadcast_request(invalid_message)
-        
+
         assert result == []
 
     async def test_broadcast_invalid_json_returns_empty(self) -> None:
@@ -2387,10 +2391,10 @@ class TestBroadcastValidation:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Not valid JSON
         result = await client.send_broadcast_request("not json {}", validate=False)
-        
+
         assert result == []
 
     async def test_broadcast_missing_id_returns_empty(self) -> None:
@@ -2399,10 +2403,10 @@ class TestBroadcastValidation:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Valid JSON but missing id
         result = await client.send_broadcast_request('{"method": "Test"}', validate=False)
-        
+
         assert result == []
 
 
@@ -2415,13 +2419,13 @@ class TestDiscoverDevicesOSError:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         async def mock_broadcast(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
             raise OSError("Network unreachable")
-        
+
         with patch.object(client, "send_broadcast_request", mock_broadcast):
             result = await client.discover_devices(use_cache=False)
-        
+
         assert result == []
 
 
@@ -2434,9 +2438,9 @@ class TestGetDeviceStatusTieredFailures:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         call_count = 0
-        
+
         async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
@@ -2449,7 +2453,7 @@ class TestGetDeviceStatusTieredFailures:
             if "EM.GetStatus" in message:
                 return {"id": 3, "result": {"state": 1}}
             return {}
-        
+
         with patch.object(client, "send_request", mock_send_request):
             with patch("asyncio.sleep", AsyncMock()):
                 result = await client.get_device_status(
@@ -2458,7 +2462,7 @@ class TestGetDeviceStatusTieredFailures:
                     include_wifi=False,
                     include_bat=False,
                 )
-        
+
         # Should still have data from other requests
         assert result["has_fresh_data"]
 
@@ -2468,7 +2472,7 @@ class TestGetDeviceStatusTieredFailures:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
             if "Wifi.GetStatus" in message:
                 raise OSError("WiFi query failed")
@@ -2477,7 +2481,7 @@ class TestGetDeviceStatusTieredFailures:
             if "ES.GetStatus" in message:
                 return {"id": 2, "result": {"soc": 50}}
             return {}
-        
+
         with patch.object(client, "send_request", mock_send_request):
             with patch("asyncio.sleep", AsyncMock()):
                 result = await client.get_device_status(
@@ -2487,7 +2491,7 @@ class TestGetDeviceStatusTieredFailures:
                     include_bat=False,
                     include_em=False,
                 )
-        
+
         assert result["has_fresh_data"]
 
     async def test_bat_status_failure_continues(self) -> None:
@@ -2496,7 +2500,7 @@ class TestGetDeviceStatusTieredFailures:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
             if "Bat.GetStatus" in message:
                 raise ValueError("Invalid battery response")
@@ -2505,7 +2509,7 @@ class TestGetDeviceStatusTieredFailures:
             if "ES.GetStatus" in message:
                 return {"id": 2, "result": {"soc": 75}}
             return {}
-        
+
         with patch.object(client, "send_request", mock_send_request):
             with patch("asyncio.sleep", AsyncMock()):
                 result = await client.get_device_status(
@@ -2798,15 +2802,15 @@ class TestPeriodicCleanup:
         client._socket = MagicMock()
         loop = asyncio.get_event_loop()
         client._loop = loop
-        
+
         # Pre-populate with old cache entries
         client._router.cache = {
             i: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 0}
             for i in range(100)
         }
-        
+
         recv_count = 0
-        
+
         async def mock_recvfrom(
             sock: Any, bufsize: int
         ) -> tuple[bytes, tuple[str, int]]:
@@ -2819,10 +2823,10 @@ class TestPeriodicCleanup:
                     ("192.168.1.100", 30000),
                 )
             raise asyncio.CancelledError()
-        
+
         with patch.object(loop, "sock_recvfrom", mock_recvfrom):
             await client._listen_for_responses()
-        
+
         # Cleanup should have run and removed old entries
         # (new entries from test + some old entries may remain depending on max age)
         assert recv_count == 12
@@ -2832,14 +2836,14 @@ class TestPeriodicCleanup:
         client = MarstekUDPClient()
         loop = asyncio.get_event_loop()
         client._loop = loop
-        
+
         current_time = loop.time()
-        
+
         # Set a smaller cleanup threshold for testing
         client._throttle.stale_after = 100.0
         # Set max_tracked_ips low so cleanup is triggered
         client._throttle.max_tracked_ips = 2
-        
+
         # Add entries with varying ages (need more than max_tracked_ips)
         client._throttle.last_request_time = {
             "192.168.1.1": current_time - 500,   # Old (> cleanup threshold)
@@ -2847,9 +2851,9 @@ class TestPeriodicCleanup:
             "192.168.1.3": current_time - 10,    # Recent (< cleanup threshold)
             "192.168.1.4": current_time,         # Current (< cleanup threshold)
         }
-        
+
         await client._cleanup_rate_limit_tracking()
-        
+
         # Old entries should be removed, recent ones kept
         assert "192.168.1.1" not in client._throttle.last_request_time
         assert "192.168.1.2" not in client._throttle.last_request_time
@@ -2866,7 +2870,7 @@ class TestSendRequestSkipValidation:
         client._socket = MagicMock()
         loop = asyncio.get_event_loop()
         client._loop = loop
-        
+
         async def mock_recvfrom(
             sock: Any, bufsize: int
         ) -> tuple[bytes, tuple[str, int]]:
@@ -2876,7 +2880,7 @@ class TestSendRequestSkipValidation:
                 json.dumps({"id": 999, "result": {"test": "data"}}).encode(),
                 ("192.168.1.100", 30000),
             )
-        
+
         with (
             patch.object(loop, "sock_recvfrom", mock_recvfrom),
             _patch_sock_sendto(),
@@ -2890,16 +2894,14 @@ class TestSendRequestSkipValidation:
                 timeout=1.0,
                 validate=False,
             )
-        
+
         assert result["id"] == 999
-        
+
         # Clean up listen task
         if client._listen_task:
             client._listen_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await client._listen_task
-            except asyncio.CancelledError:
-                pass
 
     async def test_send_request_rewrites_overflow_id_when_validation_skipped(
         self,
@@ -3072,10 +3074,10 @@ class TestResetProneRequestLock:
         client._socket = MagicMock()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        
+
         # Message without id field
         message = '{"method": "ES.GetStatus", "params": {}}'
-        
+
         with pytest.raises(ValueError, match="missing id"):
             await client.send_request(
                 message,
@@ -3093,7 +3095,7 @@ class TestResetProneRequestLock:
         client.set_openapi_reset_prone("192.168.1.100", True)
 
         with _patch_sock_sendto() as mock_sendto:
-            with pytest.raises(ValidationError, match="Bat.GetStatus"):
+            with pytest.raises(ValidationError, match=r"Bat\.GetStatus"):
                 await client.send_request(
                     '{"id": 1, "method": "Bat.GetStatus", "params": {"id": 0}}',
                     "192.168.1.100",

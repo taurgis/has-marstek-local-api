@@ -11,4 +11,4 @@ from pathlib import Path
 
 _tools_dir = Path(__file__).parent.parent.parent / "tools"
 if str(_tools_dir) not in sys.path:
-	sys.path.insert(0, str(_tools_dir))
+    sys.path.insert(0, str(_tools_dir))

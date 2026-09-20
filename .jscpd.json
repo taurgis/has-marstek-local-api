@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/jscpd/schema.json",
+  "path": ["custom_components", "tools", "scripts"],
+  "format": ["python"],
+  "minLines": 15,
+  "minTokens": 70,
+  "mode": "weak",
+  "threshold": 0.5,
+  "reporters": ["console-full", "threshold"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "tools/firmware/blobs/**"
+  ]
+}

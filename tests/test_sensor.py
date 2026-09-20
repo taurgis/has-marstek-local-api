@@ -29,7 +29,6 @@ from custom_components.marstek.helpers.sensor_stats import (
 )
 from custom_components.marstek.pymarstek.data_parser import merge_device_status
 from custom_components.marstek.sensor import MarstekSensor
-
 from tests.conftest import create_mock_client, patch_marstek_integration
 
 
@@ -387,8 +386,8 @@ async def test_pv_power_overridden_when_api_returns_zero(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
     """Test pv_power is overridden with calculated sum when API returns 0.
-    
-    Venus A devices report pv_power=0 in ES.GetStatus but individual 
+
+    Venus A devices report pv_power=0 in ES.GetStatus but individual
     channels from PV.GetStatus have correct values. The integration should
     override pv_power with the calculated sum from channels.
     """
@@ -1032,10 +1031,10 @@ async def test_all_new_sensors_with_full_status(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        
+
         # Verify entities - some are disabled by default (check entity_registry)
         entity_registry = er.async_get(hass)
-        
+
         # WiFi and CT sensors are disabled by default
         assert (
             entity_registry.async_get(
@@ -1085,7 +1084,7 @@ async def test_all_new_sensors_with_full_status(
             )
             is not None
         )
-        
+
         # Battery detail sensors are disabled by default (issue #14)
         assert (
             entity_registry.async_get(
@@ -1122,7 +1121,7 @@ async def test_all_new_sensors_with_full_status(
             )
             is not None
         )
-        
+
         # Phase sensors (entity_id uses em_X_power)
         assert hass.states.get("sensor.venus_a_phase_a_power") is not None
         assert hass.states.get("sensor.venus_a_phase_b_power") is not None

@@ -15,7 +15,7 @@ Enhanced with realistic battery simulation including:
 
 Usage:
     python mock_marstek.py [OPTIONS]
-    
+
     Or as a module:
     python -m mock_device [OPTIONS]
 """
@@ -44,6 +44,7 @@ from mock_device.const import (
 from mock_device.device import MockMarstekDevice
 from mock_device.simulators import BatterySimulator, HouseholdSimulator, WiFiSimulator
 from mock_device.utils import get_local_ip
+
 
 # For CLI usage
 def main():

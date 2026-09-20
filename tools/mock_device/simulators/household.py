@@ -11,7 +11,7 @@ class HouseholdSimulator:
 
     def __init__(self, base_load: int = 200):
         """Initialize household simulator.
-        
+
         Args:
             base_load: Base load in watts (fridge, standby devices, etc.)
         """
@@ -81,7 +81,8 @@ class HouseholdSimulator:
         # Smooth interpolation between base and target
         elapsed = now - self._last_fluctuation_update
         progress = min(1.0, elapsed / 1.0)
-        current = self._fluctuation_base + (self._fluctuation_target - self._fluctuation_base) * progress
+        span = self._fluctuation_target - self._fluctuation_base
+        current = self._fluctuation_base + span * progress
 
         return int(current)
 
@@ -115,8 +116,7 @@ class HouseholdSimulator:
                 )
 
         # Appliance events
-        if now >= self._appliance_until:
-            if random.random() < 0.03:
+        if now >= self._appliance_until and random.random() < 0.03:
                 appliances = [
                     ("Washing machine", 400, 800, 30, 60),
                     ("Dryer", 2000, 3000, 45, 90),

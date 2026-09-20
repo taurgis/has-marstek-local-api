@@ -20,6 +20,8 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import format_mac
+from mock_device import MODE_PASSIVE as MOCK_MODE_PASSIVE
+from mock_device import MockMarstekDevice
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.const import (
@@ -36,8 +38,6 @@ from custom_components.marstek.services import (
     ATTR_POWER,
     SERVICE_SET_PASSIVE_MODE,
 )
-from mock_device import MODE_PASSIVE as MOCK_MODE_PASSIVE
-from mock_device import MockMarstekDevice
 from tests.conftest import create_mock_scanner
 
 _BLE_MAC = "02feedface34"

@@ -261,7 +261,7 @@ async def test_select_mode_all_retries_fail(hass: HomeAssistant, mock_config_ent
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-        with pytest.raises(HomeAssistantError, match="mode_change_failed|Failed to set"):
+        with pytest.raises(HomeAssistantError, match=r"mode_change_failed|Failed to set"):
             await hass.services.async_call(
                 "select",
                 "select_option",
@@ -542,7 +542,7 @@ async def test_select_ups_resumes_polling_after_failure(
 
         resume_before = client.resume_polling.call_count
         entity_id = _operating_mode_state(hass).entity_id
-        with pytest.raises(HomeAssistantError, match="mode_change_failed|Failed to set"):
+        with pytest.raises(HomeAssistantError, match=r"mode_change_failed|Failed to set"):
             await hass.services.async_call(
                 "select",
                 "select_option",

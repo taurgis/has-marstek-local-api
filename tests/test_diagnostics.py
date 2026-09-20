@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -44,8 +44,8 @@ def mock_coordinator() -> MagicMock:
     }
     coordinator.last_update_success = True
     coordinator.last_exception = None
-    coordinator.last_update_success_time = datetime(2026, 1, 27, 10, 30, 0, tzinfo=timezone.utc)
-    coordinator.last_update_attempt_time = datetime(2026, 1, 27, 10, 30, 0, tzinfo=timezone.utc)
+    coordinator.last_update_success_time = datetime(2026, 1, 27, 10, 30, 0, tzinfo=UTC)
+    coordinator.last_update_attempt_time = datetime(2026, 1, 27, 10, 30, 0, tzinfo=UTC)
     coordinator.consecutive_failures = 0
     return coordinator
 
@@ -458,7 +458,7 @@ async def test_diagnostics_snapshot(
     snapshot,
 ) -> None:
     """Test diagnostics output snapshot for regression coverage."""
-    fixed_now = datetime(2026, 1, 27, 10, 30, 10, tzinfo=timezone.utc)
+    fixed_now = datetime(2026, 1, 27, 10, 30, 10, tzinfo=UTC)
     last_time = fixed_now - timedelta(seconds=10)
 
     mock_runtime_data.coordinator.device_ip = "192.168.1.100"

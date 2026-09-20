@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -56,8 +56,8 @@ def test_gated_status_keys_match_entity_descriptions() -> None:
     }
     bat_parser_keys = set(parse_bat_status_response({}))
     wifi_parser_keys = set(parse_wifi_status_response({}))
-    assert BAT_STATUS_KEYS == bat_parser_keys & description_keys
-    assert WIFI_STATUS_KEYS == wifi_parser_keys & description_keys
+    assert bat_parser_keys & description_keys == BAT_STATUS_KEYS
+    assert wifi_parser_keys & description_keys == WIFI_STATUS_KEYS
 
 
 @pytest.mark.asyncio

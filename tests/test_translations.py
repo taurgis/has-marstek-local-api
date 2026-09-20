@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -58,7 +59,7 @@ class TestOptionsFlowSections:
     """Test options flow section translations."""
 
     # Define the expected section structure
-    EXPECTED_SECTIONS = {
+    EXPECTED_SECTIONS: ClassVar[dict[str, list[str]]] = {
         "polling_settings": [
             CONF_POLL_INTERVAL_FAST,
             CONF_POLL_INTERVAL_MEDIUM,

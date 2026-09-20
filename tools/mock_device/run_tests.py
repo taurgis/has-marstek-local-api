@@ -5,15 +5,15 @@ import sys
 import time
 
 from mock_marstek import (
-    BatterySimulator,
-    HouseholdSimulator,
-    MODE_AUTO,
     MODE_AI,
+    MODE_AUTO,
     MODE_MANUAL,
     MODE_PASSIVE,
     STATUS_CHARGING,
     STATUS_DISCHARGING,
     STATUS_IDLE,
+    BatterySimulator,
+    HouseholdSimulator,
 )
 
 passed = 0
@@ -190,7 +190,7 @@ def main() -> int:
     household = HouseholdSimulator()
     consumption = household.get_consumption()
     test("Household consumption is positive", consumption >= 50)
-    
+
     # Create a fresh simulator with no events for baseline comparison
     household2 = HouseholdSimulator()
     baseline = household2.base_load  # Use base_load as reference
@@ -206,11 +206,11 @@ def main() -> int:
     sim.actual_power = 800  # Battery discharging 800W
     sim.grid_power = sim.household.current_consumption - sim.actual_power
     test("Grid = household - battery discharge", sim.grid_power == 200)
-    
+
     sim.actual_power = -500  # Battery charging 500W
     sim.grid_power = sim.household.current_consumption - sim.actual_power
     test("Grid increases with battery charge", sim.grid_power == 1500)
-    
+
     state = sim.get_state()
     test("State includes household_consumption", "household_consumption" in state)
     test("State includes grid_power", "grid_power" in state)

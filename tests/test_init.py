@@ -5,14 +5,17 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
+)
+from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.helpers.device_registry import format_mac
@@ -26,7 +29,6 @@ from custom_components.marstek.const import (
     DOMAIN,
 )
 from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
-
 from tests.conftest import (
     create_mock_client,
     create_mock_scanner,

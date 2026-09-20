@@ -340,7 +340,7 @@ class TestMergeDeviceStatus:
 
     def test_previous_status_preserves_values_on_partial_failure(self):
         """Test that previous_status values are preserved when individual requests fail.
-        
+
         This prevents intermittent "Unknown" states when a single API endpoint
         times out but others succeed.
         """
@@ -361,7 +361,7 @@ class TestMergeDeviceStatus:
             "total_grid_input_energy": 15000,
             "total_load_energy": 18000,
         }
-        
+
         # Simulate: ES.GetMode succeeded, but EM.GetStatus and Bat.GetStatus failed
         es_mode_data = {
             "device_mode": "auto",
@@ -372,12 +372,12 @@ class TestMergeDeviceStatus:
             "battery_power": -280,
             "battery_status": "discharging",
         }
-        
+
         result = merge_device_status(
             es_mode_data=es_mode_data,
             es_status_data=es_status_data,
             pv_status_data=None,  # Failed
-            wifi_status_data=None,  # Failed  
+            wifi_status_data=None,  # Failed
             em_status_data=None,  # Failed - would normally set ct_state to None
             bat_status_data=None,  # Failed - would normally set bat_temp to None
             previous_status=previous_status,
@@ -388,7 +388,7 @@ class TestMergeDeviceStatus:
         assert result["battery_soc"] == 58  # Updated
         assert result["battery_power"] == -280  # Updated
         assert result["battery_status"] == "discharging"
-        
+
         # Preserved values from previous_status (requests failed)
         assert result["ct_state"] == 1  # Preserved
         assert result["ct_connected"] is True  # Preserved
@@ -407,7 +407,7 @@ class TestMergeDeviceStatus:
             "device_mode": "auto",
             "battery_status": "idle",
         }
-        
+
         # Simulate all requests failed - merge_device_status would use defaults
         result = merge_device_status(
             es_mode_data=None,
@@ -459,7 +459,7 @@ class TestMergeDeviceStatus:
             "battery_power": 300,
             "ct_connected": True,
         }
-        
+
         es_status_data = {
             "battery_soc": 55,  # New value
             "battery_power": 0,  # New value (idle)
@@ -467,7 +467,7 @@ class TestMergeDeviceStatus:
         em_status_data = {
             "ct_connected": False,  # CT disconnected now
         }
-        
+
         result = merge_device_status(
             es_status_data=es_status_data,
             em_status_data=em_status_data,
@@ -638,12 +638,12 @@ class TestMergeDeviceStatus:
 
     def test_battery_power_recalculated_from_pv_channels(self):
         """Test battery power and pv_power are recalculated when ES.GetStatus pv_power is 0.
-        
-        Venus A devices report pv_power=0 in ES.GetStatus but individual 
+
+        Venus A devices report pv_power=0 in ES.GetStatus but individual
         channels from PV.GetStatus have correct values. The merge function
-        should override pv_power with the calculated sum and recalculate 
+        should override pv_power with the calculated sum and recalculate
         battery power using PV channels.
-        
+
         Example from issue #3/#5:
         - pv1=41.5W, pv2=52W, pv3=58W, pv4=33W (total 184.5W)
         - ES.GetStatus returns pv_power=0 (incorrect)
@@ -664,12 +664,12 @@ class TestMergeDeviceStatus:
             "battery_power": 169,  # Wrong calculation: -(0 - 169) = 169
             "battery_status": "discharging",  # Wrong!
         }
-        
+
         result = merge_device_status(
             es_status_data=es_status_data,
             pv_status_data=pv_status_data,
         )
-        
+
         # Total PV: 41.5 + 52 + 58 + 33 = 184.5W
         # pv_power should be overridden with calculated sum
         assert result["pv_power"] == 184.5
@@ -690,12 +690,12 @@ class TestMergeDeviceStatus:
             "battery_power": -84.5,  # Correct: -(184.5 - 100) = -84.5
             "battery_status": "charging",
         }
-        
+
         result = merge_device_status(
             es_status_data=es_status_data,
             pv_status_data=pv_status_data,
         )
-        
+
         # Should use the original ES.GetStatus values (not recalculated)
         assert result["pv_power"] == 184.5
         assert result["battery_power"] == -84.5
@@ -710,19 +710,19 @@ class TestMergeDeviceStatus:
             "battery_power": 500,  # -(0 - 500) = 500
             "battery_status": "discharging",
         }
-        
+
         result = merge_device_status(
             es_status_data=es_status_data,
             pv_status_data=None,  # No PV data available
         )
-        
+
         # Should use original value (no recalculation without PV channels)
         assert result["battery_power"] == 500
         assert result["battery_status"] == "discharging"
 
     def test_battery_power_recalculated_discharging(self):
         """Test battery power recalculation when discharging with PV.
-        
+
         Example: PV generating 50W, exporting 200W to grid
         -> Battery discharging: 50 - 200 = -150 (API convention: discharging)
         -> HA: +150 (positive = discharging)
@@ -737,12 +737,12 @@ class TestMergeDeviceStatus:
             "battery_power": 200,  # Wrong: -(0 - 200) = 200
             "battery_status": "discharging",
         }
-        
+
         result = merge_device_status(
             es_status_data=es_status_data,
             pv_status_data=pv_status_data,
         )
-        
+
         # Total PV: 50W
         # Battery: -(50 - 200) = -(-150) = 150W (HA: positive = discharging)
         assert result["battery_power"] == 150
@@ -820,7 +820,7 @@ class TestParseEsStatusResponse:
 
     def test_parse_charging_status(self):
         """Test parsing charging battery status.
-        
+
         API convention: bat_power > 0 = charging
         HA convention: battery_power < 0 = charging (negated)
         """
@@ -844,7 +844,7 @@ class TestParseEsStatusResponse:
 
     def test_parse_discharging_status(self):
         """Test parsing discharging battery status.
-        
+
         API convention: bat_power < 0 = discharging
         HA convention: battery_power > 0 = discharging (negated)
         """
@@ -880,10 +880,10 @@ class TestParseEsStatusResponse:
 
     def test_parse_missing_bat_power_fallback(self):
         """Test fallback calculation when bat_power is missing.
-        
+
         Venus A/E devices don't provide bat_power. Fallback uses energy balance:
         bat_power = pv_power - ongrid_power (API convention)
-        
+
         Example: pv=0, ongrid=+800 (exporting to grid while discharging)
         -> raw: 0 - 800 = -800 (API: discharging)
         -> HA: +800 (positive = discharging)
@@ -907,7 +907,7 @@ class TestParseEsStatusResponse:
 
     def test_parse_missing_bat_power_fallback_charging(self):
         """Test fallback calculation when bat_power is missing and battery charges.
-        
+
         Example: PV producing 1200W, exporting 200W to grid
         -> Battery absorbs: 1200 - 200 = 1000W (charging)
         -> raw = pv - ongrid = 1200 - 200 = 1000 (API: charging)
@@ -986,7 +986,7 @@ class TestMergeDeviceStatusNoPV:
 
     def test_no_pv_keys_when_no_pv_data(self):
         """Test that PV keys are NOT included when no PV data is provided.
-        
+
         Venus A and Venus D support PV; Venus C/E do NOT.
         When pv_status_data is None, no PV keys should be in the result.
         """
@@ -1107,9 +1107,9 @@ class TestScalePvPowerEdgeCases:
                 "pv_current": 0,
             },
         }
-        
+
         result = parse_pv_status_response(response)
-        
+
         assert result["pv1_power"] == 0.0
         assert result["pv1_state"] == 0
 
@@ -1123,9 +1123,9 @@ class TestScalePvPowerEdgeCases:
                 "pv_current": 2.5,
             },
         }
-        
+
         result = parse_pv_status_response(response)
-        
+
         assert result["pv1_power"] == 100.0  # 1000 / 10 = 100
         assert result["pv1_state"] == 1
 
@@ -1141,14 +1141,14 @@ class TestMergeStatusPreviousStatusHandling:
             "pv1_current": 5.7,
             "battery_soc": 60,
         }
-        
+
         result = merge_device_status(
             es_mode_data={"device_mode": "auto"},
             es_status_data={"battery_soc": 65},
             pv_status_data=None,  # No PV data this time
             previous_status=previous,
         )
-        
+
         # PV keys should be preserved from previous status
         assert result["pv1_power"] == 200
         assert result["pv1_voltage"] == 35
@@ -1162,14 +1162,14 @@ class TestMergeStatusPreviousStatusHandling:
             "pv1_power": None,
             "pv1_voltage": 35,
         }
-        
+
         result = merge_device_status(
             es_mode_data={"device_mode": "auto"},
             es_status_data=None,
             pv_status_data=None,
             previous_status=previous,
         )
-        
+
         # None values should not be preserved
         assert "pv1_power" not in result
         # Non-None values should be preserved
@@ -1182,7 +1182,7 @@ class TestMergeStatusPreviousStatusHandling:
             "battery_power": 500,
             "wifi_rssi": -55,
         }
-        
+
         result = merge_device_status(
             es_mode_data=None,  # No mode data - status[battery_soc] stays None
             es_status_data=None,  # No status data
@@ -1190,7 +1190,7 @@ class TestMergeStatusPreviousStatusHandling:
             wifi_status_data=None,
             previous_status=previous,
         )
-        
+
         # Previous values should fill in None values in status
         assert result["battery_soc"] == 75
         assert result["battery_power"] == 500
