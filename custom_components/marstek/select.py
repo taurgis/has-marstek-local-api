@@ -63,9 +63,7 @@ async def async_setup_entry(
     )
 
 
-class MarstekOperatingModeSelect(
-    CoordinatorEntity[MarstekDataUpdateCoordinator], SelectEntity
-):
+class MarstekOperatingModeSelect(CoordinatorEntity[MarstekDataUpdateCoordinator], SelectEntity):
     """Select entity for Marstek operating mode."""
 
     _attr_has_entity_name = True
@@ -169,5 +167,3 @@ class MarstekOperatingModeSelect(
 
         # Refresh after polling resumes so begin_poll_cycle is not skipped.
         await self.coordinator.async_request_refresh()
-
-

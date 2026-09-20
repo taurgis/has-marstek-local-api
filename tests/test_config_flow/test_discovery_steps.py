@@ -24,9 +24,7 @@ from ._helpers import (
 )
 
 
-async def test_dhcp_updates_ip(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_dhcp_updates_ip(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
     """Test DHCP discovery updates existing entry IP."""
     mock_config_entry.add_to_hass(hass)
 
@@ -80,9 +78,7 @@ async def test_dhcp_does_not_reset_custom_port(
     assert updated_entry.data["port"] == 30030
 
 
-async def test_dhcp_unchanged_ip(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_dhcp_unchanged_ip(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
     """Test DHCP discovery with unchanged IP logs and ignores."""
     mock_config_entry.add_to_hass(hass)
 
@@ -444,9 +440,7 @@ async def test_integration_discovery_missing_ble_mac(hass: HomeAssistant) -> Non
 
 
 @pytest.mark.parametrize("device_type", ["VenusE", "HMG-50", "Venus E2.0"])
-async def test_integration_discovery_aborts_venus_e2(
-    hass: HomeAssistant, device_type: str
-) -> None:
+async def test_integration_discovery_aborts_venus_e2(hass: HomeAssistant, device_type: str) -> None:
     """Scanner discovery of HMG-50 / Venus E2 must abort, not confirm as Venus E."""
     discovery_info = {
         "ip": "172.28.0.29",

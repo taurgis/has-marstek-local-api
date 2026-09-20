@@ -25,11 +25,7 @@ class TestIsEchoResponse:
         from custom_components.marstek.discovery import _is_echo_response
 
         # Has result, so should not be echo even if has method
-        response = {
-            "result": {"device": "Venus"},
-            "method": "Marstek.GetDevice",
-            "params": {}
-        }
+        response = {"result": {"device": "Venus"}, "method": "Marstek.GetDevice", "params": {}}
         assert _is_echo_response(response) is False
 
 

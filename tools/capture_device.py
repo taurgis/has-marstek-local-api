@@ -81,9 +81,7 @@ async def send_request(
         start = loop.time()
         while (loop.time() - start) < timeout:
             try:
-                data, _addr = await asyncio.wait_for(
-                    loop.sock_recvfrom(sock, 4096), timeout=0.5
-                )
+                data, _addr = await asyncio.wait_for(loop.sock_recvfrom(sock, 4096), timeout=0.5)
                 if not data:
                     continue
                 try:
@@ -154,9 +152,7 @@ async def capture_device_data(
         print("   ❌ No response")
 
     reset_prone = True
-    device_result = (
-        device_response.get("result") if isinstance(device_response, dict) else None
-    )
+    device_result = device_response.get("result") if isinstance(device_response, dict) else None
     if isinstance(device_result, dict):
         profile = resolve_firmware_profile(
             device_result.get("device"),
@@ -215,7 +211,7 @@ def generate_mock_config(captured: dict[str, Any]) -> str:
     mode_result = mode_resp.get("result", {}) if mode_resp else {}
     pv_result = pv_resp.get("result", {}) if pv_resp else {}
 
-    code = f'''# Mock device configuration captured from real device
+    code = f"""# Mock device configuration captured from real device
 # Captured: {captured["capture_time"]}
 # Device: {captured["device_ip"]}:{captured["device_port"]}
 
@@ -226,18 +222,14 @@ MOCK_STATUS = {json.dumps(status_result, indent=4)}
 MOCK_MODE = {json.dumps(mode_result, indent=4)}
 
 MOCK_PV_STATUS = {json.dumps(pv_result, indent=4)}
-'''
+"""
     return code
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Capture data from a real Marstek device"
-    )
+    parser = argparse.ArgumentParser(description="Capture data from a real Marstek device")
     parser.add_argument("host", help="Device IP address")
-    parser.add_argument(
-        "--port", type=int, default=30000, help="UDP port (default: 30000)"
-    )
+    parser.add_argument("--port", type=int, default=30000, help="UDP port (default: 30000)")
     parser.add_argument(
         "--output",
         "-o",
@@ -321,28 +313,36 @@ def update_mock_device(captured: dict[str, Any]) -> None:
     if device_resp and "result" in device_resp:
         result = device_resp["result"]
         new_config = f'''DEFAULT_CONFIG = {{
-    "device": "{result.get('device', 'VenusE 3.0')}",
-    "ver": {result.get('ver', 145)},
-    "ble_mac": "{result.get('ble_mac', '009b08a5aa39')}",
-    "wifi_mac": "{result.get('wifi_mac', '7483c2315cf8')}",
-    "wifi_name": "{result.get('wifi_name', 'MockNetwork')}",
+    "device": "{result.get("device", "VenusE 3.0")}",
+    "ver": {result.get("ver", 145)},
+    "ble_mac": "{result.get("ble_mac", "009b08a5aa39")}",
+    "wifi_mac": "{result.get("wifi_mac", "7483c2315cf8")}",
+    "wifi_name": "{result.get("wifi_name", "MockNetwork")}",
 }}'''
         # Replace DEFAULT_CONFIG
         import re
-        content = re.sub(
-            r'DEFAULT_CONFIG = \{[^}]+\}',
-            new_config,
-            content,
-            flags=re.DOTALL
-        )
+
+        content = re.sub(r"DEFAULT_CONFIG = \{[^}]+\}", new_config, content, flags=re.DOTALL)
 
     if status_resp and "result" in status_resp:
         result = status_resp["result"]
         # Build status dict with available fields
         status_fields = []
-        for key in ["soc", "power", "voltage", "current", "temp", "grid_power",
-                    "home_power", "pv_power", "pv1_power", "pv2_power", "mode",
-                    "charge_power", "discharge_power"]:
+        for key in [
+            "soc",
+            "power",
+            "voltage",
+            "current",
+            "temp",
+            "grid_power",
+            "home_power",
+            "pv_power",
+            "pv1_power",
+            "pv2_power",
+            "mode",
+            "charge_power",
+            "discharge_power",
+        ]:
             if key in result:
                 val = result[key]
                 if isinstance(val, str):
@@ -353,12 +353,8 @@ def update_mock_device(captured: dict[str, Any]) -> None:
         if status_fields:
             new_status = "MOCK_STATUS = {\n" + ",\n".join(status_fields) + ",\n}"
             import re
-            content = re.sub(
-                r'MOCK_STATUS = \{[^}]+\}',
-                new_status,
-                content,
-                flags=re.DOTALL
-            )
+
+            content = re.sub(r"MOCK_STATUS = \{[^}]+\}", new_status, content, flags=re.DOTALL)
 
     if mode_resp and "result" in mode_resp:
         result = mode_resp["result"]
@@ -372,12 +368,8 @@ def update_mock_device(captured: dict[str, Any]) -> None:
 
         new_mode = "MOCK_MODE = {\n" + ",\n".join(mode_fields) + ",\n}"
         import re
-        content = re.sub(
-            r'MOCK_MODE = \{[^}]+\}',
-            new_mode,
-            content,
-            flags=re.DOTALL
-        )
+
+        content = re.sub(r"MOCK_MODE = \{[^}]+\}", new_mode, content, flags=re.DOTALL)
 
     mock_file.write_text(content)
 

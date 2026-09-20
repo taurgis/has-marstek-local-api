@@ -80,9 +80,7 @@ class ResponseRouter:
                 return future
         return self.pending.pop(request_id, None)
 
-    def deliver(
-        self, request_id: int, response: dict[str, Any], addr: tuple[str, int]
-    ) -> None:
+    def deliver(self, request_id: int, response: dict[str, Any], addr: tuple[str, int]) -> None:
         """Cache a reply and hand it to its waiter, if one is still there."""
         self.cache[(addr[0], request_id)] = {
             "response": response,

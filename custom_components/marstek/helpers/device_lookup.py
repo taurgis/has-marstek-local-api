@@ -85,16 +85,12 @@ def async_get_marstek_entry(
     return None
 
 
-def async_get_loaded_marstek_entry(
-    hass: HomeAssistant, device: DeviceEntry
-) -> ConfigEntry | None:
+def async_get_loaded_marstek_entry(hass: HomeAssistant, device: DeviceEntry) -> ConfigEntry | None:
     """Return the loaded Marstek config entry that owns ``device``."""
     return async_get_marstek_entry(hass, device, require_loaded=True)
 
 
-def async_find_marstek_device(
-    hass: HomeAssistant, device_id: str
-) -> DeviceEntry | None:
+def async_find_marstek_device(hass: HomeAssistant, device_id: str) -> DeviceEntry | None:
     """Find a Marstek device by registry ID or fallback identifier."""
     registry = dr.async_get(hass)
     target = normalize_device_id(device_id)
@@ -117,9 +113,7 @@ def async_find_marstek_device(
     return None
 
 
-def async_resolve_marstek_device(
-    hass: HomeAssistant, device_id: str
-) -> DeviceEntry:
+def async_resolve_marstek_device(hass: HomeAssistant, device_id: str) -> DeviceEntry:
     """Resolve a service/action target to a Marstek device registry entry.
 
     Lookup order:
@@ -147,9 +141,7 @@ def async_resolve_marstek_device(
     )
 
 
-def _marstek_devices(
-    hass: HomeAssistant, registry: dr.DeviceRegistry
-) -> list[DeviceEntry]:
+def _marstek_devices(hass: HomeAssistant, registry: dr.DeviceRegistry) -> list[DeviceEntry]:
     """Return devices owned by Marstek config entries."""
     devices: list[DeviceEntry] = []
     seen: set[str] = set()
@@ -217,9 +209,7 @@ def _resolve_from_mac(
     if mac is None:
         return None
     matches = [
-        device
-        for device in _marstek_devices(hass, registry)
-        if (DOMAIN, mac) in device.identifiers
+        device for device in _marstek_devices(hass, registry) if (DOMAIN, mac) in device.identifiers
     ]
     return _unique_device(matches)
 
@@ -227,9 +217,8 @@ def _resolve_from_mac(
 def _is_truncated_hex_id(value: str) -> bool:
     """Return whether ``value`` looks like a truncated HA device ID."""
     lowered = value.lower()
-    return (
-        _MIN_PREFIX_LEN <= len(lowered) < _HA_DEVICE_ID_LEN
-        and all(char in _HEX_CHARS for char in lowered)
+    return _MIN_PREFIX_LEN <= len(lowered) < _HA_DEVICE_ID_LEN and all(
+        char in _HEX_CHARS for char in lowered
     )
 
 
@@ -241,9 +230,7 @@ def _resolve_from_truncated_id(
         return None
     prefix = target.lower()
     matches = [
-        device
-        for device in _marstek_devices(hass, registry)
-        if device.id.startswith(prefix)
+        device for device in _marstek_devices(hass, registry) if device.id.startswith(prefix)
     ]
     return _unique_device(matches)
 
@@ -271,9 +258,7 @@ def async_lookup_device_by_identifier(
             if main is not None:
                 return main
         return None
-    if config_entry_id is not None and hasattr(
-        registry_type, "async_get_device_by_identifier"
-    ):
+    if config_entry_id is not None and hasattr(registry_type, "async_get_device_by_identifier"):
         return _as_main_device_entry(
             registry.async_get_device_by_identifier(identifier, config_entry_id)
         )

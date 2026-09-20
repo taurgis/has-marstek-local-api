@@ -9,9 +9,7 @@ from ..pymarstek import MarstekUDPClient
 
 
 @asynccontextmanager
-async def polling_paused(
-    udp_client: MarstekUDPClient, host: str
-) -> AsyncIterator[None]:
+async def polling_paused(udp_client: MarstekUDPClient, host: str) -> AsyncIterator[None]:
     """Hold polling for *host* while the wrapped block runs.
 
     Polls and writes share one UDP socket and one device, so a poll landing

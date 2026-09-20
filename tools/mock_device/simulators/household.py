@@ -117,22 +117,22 @@ class HouseholdSimulator:
 
         # Appliance events
         if now >= self._appliance_until and random.random() < 0.03:
-                appliances = [
-                    ("Washing machine", 400, 800, 30, 60),
-                    ("Dryer", 2000, 3000, 45, 90),
-                    ("Dishwasher", 1200, 1800, 60, 120),
-                    ("Vacuum cleaner", 800, 1500, 10, 30),
-                    ("Iron", 1000, 2000, 10, 20),
-                    ("Kettle", 2000, 3000, 2, 5),
-                    ("Microwave", 800, 1200, 2, 10),
-                ]
-                name, min_power, max_power, min_mins, max_mins = random.choice(appliances)
-                self._appliance_power = random.randint(min_power, max_power)
-                self._appliance_until = now + random.randint(min_mins, max_mins) * 60
-                print(
-                    f"[HOUSE] 🔌 {name} started: {self._appliance_power}W "
-                    f"for {int((self._appliance_until - now) / 60)} min"
-                )
+            appliances = [
+                ("Washing machine", 400, 800, 30, 60),
+                ("Dryer", 2000, 3000, 45, 90),
+                ("Dishwasher", 1200, 1800, 60, 120),
+                ("Vacuum cleaner", 800, 1500, 10, 30),
+                ("Iron", 1000, 2000, 10, 20),
+                ("Kettle", 2000, 3000, 2, 5),
+                ("Microwave", 800, 1200, 2, 10),
+            ]
+            name, min_power, max_power, min_mins, max_mins = random.choice(appliances)
+            self._appliance_power = random.randint(min_power, max_power)
+            self._appliance_until = now + random.randint(min_mins, max_mins) * 60
+            print(
+                f"[HOUSE] 🔌 {name} started: {self._appliance_power}W "
+                f"for {int((self._appliance_until - now) / 60)} min"
+            )
 
     def force_cooking_event(self, power: int = 2500, duration_mins: int = 15) -> None:
         """Force a cooking event for testing."""

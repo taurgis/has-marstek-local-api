@@ -55,12 +55,8 @@ DEFAULT_SCHEDULE_DAYS: tuple[str, ...] = (
 
 # Field validators shared by the service schemas below. Voluptuous validators
 # are stateless, so one instance can serve every schema that needs the field.
-_POWER_VALIDATOR = vol.All(
-    vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE)
-)
-_SCHEDULE_SLOT_VALIDATOR = vol.All(
-    vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1)
-)
+_POWER_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=-MAX_POWER_VALUE, max=MAX_POWER_VALUE))
+_SCHEDULE_SLOT_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=0, max=MAX_TIME_SLOTS - 1))
 _DAYS_VALIDATOR = vol.All(cv.ensure_list, [vol.In(WEEKDAY_MAP.keys())])
 
 SERVICE_SET_PASSIVE_MODE_SCHEMA = vol.Schema(

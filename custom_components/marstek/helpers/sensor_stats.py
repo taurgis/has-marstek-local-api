@@ -7,9 +7,7 @@ from typing import Any
 from ..coordinator import MarstekDataUpdateCoordinator
 
 
-def command_success_rate(
-    coordinator: MarstekDataUpdateCoordinator, method: str
-) -> float | None:
+def command_success_rate(coordinator: MarstekDataUpdateCoordinator, method: str) -> float | None:
     """Return success rate for a command as a percentage."""
     stats = coordinator.udp_client.get_command_stats_for_ip(coordinator.device_ip)
     if not isinstance(stats, dict):
@@ -64,9 +62,7 @@ def overall_command_success_rate(
             continue
         attempts = bucket.get("total_attempts")
         success = bucket.get("total_success")
-        if not isinstance(attempts, (int, float)) or not isinstance(
-            success, (int, float)
-        ):
+        if not isinstance(attempts, (int, float)) or not isinstance(success, (int, float)):
             continue
         attempts_total += float(attempts)
         success_total += float(success)

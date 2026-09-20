@@ -42,9 +42,7 @@ BINARY_SENSORS: tuple[MarstekBinarySensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda data: (
-            bool(data.get("bat_charg_flag"))
-            if data.get("bat_charg_flag") is not None
-            else None
+            bool(data.get("bat_charg_flag")) if data.get("bat_charg_flag") is not None else None
         ),
         exists_fn=lambda data: _exists_key("bat_charg_flag", data),
     ),
@@ -54,9 +52,7 @@ BINARY_SENSORS: tuple[MarstekBinarySensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda data: (
-            bool(data.get("bat_dischrg_flag"))
-            if data.get("bat_dischrg_flag") is not None
-            else None
+            bool(data.get("bat_dischrg_flag")) if data.get("bat_dischrg_flag") is not None else None
         ),
         exists_fn=lambda data: _exists_key("bat_dischrg_flag", data),
     ),

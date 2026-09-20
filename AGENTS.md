@@ -241,6 +241,9 @@ from .pymarstek import MAX_POWER_VALUE, MAX_PASSIVE_DURATION, MAX_TIME_SLOTS
 # 1. Linting (code style and common errors)
 python3 -m ruff check custom_components/marstek/
 
+# 1b. Formatting (ruff is pinned, so this matches CI exactly)
+python3 -m ruff format --check custom_components tests tools scripts
+
 # 2. Type checking (strict mode enabled)
 python3 -m mypy --strict custom_components/marstek/
 
@@ -249,6 +252,7 @@ pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
 # 4. Static quality gates (blocking in the Code Quality workflow)
 python3 -m ruff check custom_components tests tools scripts
+python3 -m ruff format --check custom_components tests tools scripts
 python3 scripts/check_code_limits.py
 python3 -m vulture
 jscpd
@@ -261,6 +265,10 @@ jscpd
 
 This ensures:
 - **Code quality**: Ruff catches unused imports, style issues, and common bugs
+- **Consistent formatting**: `ruff format` owns layout, so review comments are
+  about behavior rather than line breaks. Write the change however you like and
+  run `python3 -m ruff format custom_components tests tools scripts` before
+  committing; the pinned ruff means your result and CI's agree
 - **Type safety**: The codebase uses `--strict` mypy; all functions need proper annotations
 - **No regressions**: Tests must pass to confirm existing functionality isn't broken
 - **Bounded complexity**: Complexity, dead code, duplication, and the 1000-line

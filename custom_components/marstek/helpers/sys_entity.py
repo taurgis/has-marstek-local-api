@@ -38,9 +38,7 @@ class MarstekSysEntity(CoordinatorEntity[MarstekDataUpdateCoordinator]):
         self.entity_description = description
         self._udp_client = udp_client
         self._config_entry = config_entry
-        self._attr_unique_id = (
-            f"{get_device_identifier(device_info)}_{description.key}"
-        )
+        self._attr_unique_id = f"{get_device_identifier(device_info)}_{description.key}"
         self._attr_device_info = build_device_info(device_info)
 
     async def _async_sys_write(self, method: str, params: dict[str, Any]) -> None:

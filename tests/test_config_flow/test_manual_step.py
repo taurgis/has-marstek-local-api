@@ -27,14 +27,10 @@ from ._helpers import (
 )
 
 
-async def test_manual_flow_form_snapshot(
-    hass: HomeAssistant, snapshot
-) -> None:
+async def test_manual_flow_form_snapshot(hass: HomeAssistant, snapshot) -> None:
     """Test manual entry form structure snapshot."""
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     schema = result["data_schema"].schema
     fields: dict[str, dict[str, object]] = {}
@@ -73,9 +69,7 @@ async def test_manual_flow_success(hass: HomeAssistant) -> None:
 
     # First trigger discovery that finds no devices to get to manual step
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     # Now submit manual entry
@@ -94,9 +88,7 @@ async def test_manual_flow_cannot_connect(hass: HomeAssistant) -> None:
     """Test manual entry flow when device cannot be reached."""
     # First trigger discovery that finds no devices to get to manual step
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     # Submit manual entry that fails to connect
@@ -115,9 +107,7 @@ async def test_manual_flow_keeps_custom_port_after_failure(
 ) -> None:
     """Test manual form keeps the submitted custom port after connection failure."""
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     with patch_manual_connection(error=ConnectionError("cannot connect")):
@@ -144,9 +134,7 @@ async def test_manual_flow_invalid_response(hass: HomeAssistant) -> None:
 
     # First trigger discovery that finds no devices to get to manual step
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     # Submit manual entry with invalid device info
@@ -178,9 +166,7 @@ async def test_manual_flow_already_configured(
 
     # First trigger discovery that finds no devices to get to manual step
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     # Submit manual entry for already configured device
@@ -208,9 +194,7 @@ async def test_manual_flow_already_configured_via_wifi_mac(
     }
 
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     with patch_manual_connection(device_info=device_info):
@@ -227,9 +211,7 @@ async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
     """Test manual entry flow when device returns ValueError (invalid data)."""
     # First trigger discovery that finds no devices to get to manual step
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     # Submit manual entry that raises ValueError
@@ -247,9 +229,7 @@ async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
     "device_type",
     ["Venus E2.0", "VenusE", "HMG-50"],
 )
-async def test_manual_flow_rejects_venus_e2(
-    hass: HomeAssistant, device_type: str
-) -> None:
+async def test_manual_flow_rejects_venus_e2(hass: HomeAssistant, device_type: str) -> None:
     """HMG-50 Open API names are not a supported family."""
     device_info = {
         "ip": "192.168.1.100",
@@ -264,9 +244,7 @@ async def test_manual_flow_rejects_venus_e2(
     }
 
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     with patch_manual_connection(device_info=device_info):
@@ -306,9 +284,7 @@ async def test_manual_add_reuses_pooled_udp_client(hass: HomeAssistant) -> None:
     }
 
     with patch_discovery([]):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert result["step_id"] == "manual"
 
     client.async_pause_receiver.reset_mock()

@@ -28,9 +28,7 @@ class TestListenForResponses:
 
         recv_calls = 0
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -54,9 +52,7 @@ class TestListenForResponses:
 
         recv_calls = 0
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -88,9 +84,7 @@ class TestListenForResponses:
         recv_calls = 0
         response = {"id": 0, "result": {"mode": "Auto"}}
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -114,9 +108,7 @@ class TestListenForResponses:
 
         recv_calls = 0
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -142,9 +134,7 @@ class TestListenForResponses:
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         client._router.pending[7] = future
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -172,9 +162,7 @@ class TestListenForResponses:
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         client._router.pending[8] = future
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -203,9 +191,7 @@ class TestListenForResponses:
             b'{"id": 9, "result": {"input_energy": 1' + b"0" * 400 + b"}}",
         ],
     )
-    async def test_ignores_datagram_carrying_a_non_finite_number(
-        self, poisoned: bytes
-    ) -> None:
+    async def test_ignores_datagram_carrying_a_non_finite_number(self, poisoned: bytes) -> None:
         """A non-finite number is not JSON; such a reply must never resolve.
 
         Python's decoder accepts bare NaN/Infinity and overflows 1e400 to inf,
@@ -223,9 +209,7 @@ class TestListenForResponses:
 
         recv_calls = 0
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -256,9 +240,7 @@ class TestListenForResponses:
         recv_calls = 0
         response = {"id": 65537, "result": {"mode": "Auto"}}
 
-        async def mock_recvfrom(
-            sock: Any, bufsize: int
-        ) -> tuple[bytes, tuple[str, int]]:
+        async def mock_recvfrom(sock: Any, bufsize: int) -> tuple[bytes, tuple[str, int]]:
             nonlocal recv_calls
             recv_calls += 1
             if recv_calls == 1:
@@ -286,16 +268,12 @@ class TestCommandStats:
         client._listen_task = MagicMock()
         client._listen_task.done.return_value = False
 
-        message = json.dumps(
-            {"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}
-        )
+        message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
 
         async def send_and_complete(*_args: Any, **_kwargs: Any) -> None:
             _complete_first_pending(client)
 
-        with patch.object(
-            client, "_send_udp_message", AsyncMock(side_effect=send_and_complete)
-        ):
+        with patch.object(client, "_send_udp_message", AsyncMock(side_effect=send_and_complete)):
             await client.send_request(
                 message,
                 "192.168.1.100",
@@ -320,9 +298,7 @@ class TestCommandStats:
         client._listen_task = MagicMock()
         client._listen_task.done.return_value = False
 
-        message = json.dumps(
-            {"id": 1, "method": "ES.GetStatus", "params": {"id": 0}}
-        )
+        message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
 
         with patch.object(client, "_send_udp_message", AsyncMock()):
             with pytest.raises(TimeoutError):
@@ -357,8 +333,7 @@ class TestCommandStats:
         with patch.object(client, "_send_udp_message", AsyncMock()):
             with pytest.raises(TimeoutError):
                 await client.send_request(
-                    message, "192.168.1.100", 30000,
-                    timeout=0.01, quiet_on_timeout=True
+                    message, "192.168.1.100", 30000, timeout=0.01, quiet_on_timeout=True
                 )
 
         # Check no warning was logged (only debug level logs should appear)

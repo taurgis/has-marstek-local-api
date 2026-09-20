@@ -59,9 +59,7 @@ def test_profile_resolves_family_capabilities(
 
 @pytest.mark.parametrize("version", [150, "150"])
 @pytest.mark.parametrize("device_type", ["VenusA", "VenusC", "VenusD", "VenusE 3.0"])
-def test_firmware_150_enables_sys_and_ups(
-    device_type: str, version: int | str
-) -> None:
+def test_firmware_150_enables_sys_and_ups(device_type: str, version: int | str) -> None:
     """Firmware 150 enables each gated feature on regular families."""
     profile = resolve_firmware_profile(device_type, version)
 
@@ -562,7 +560,6 @@ def test_venus_a_1487_folds_to_legacy_148_generation() -> None:
     assert profile.supports_ups is False
     assert profile.pv_energy_scale == 1.0
     assert profile.openapi_reset_prone is True
-
 
 
 @pytest.mark.parametrize(

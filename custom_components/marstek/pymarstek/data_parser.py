@@ -122,9 +122,7 @@ def parse_es_mode_response(
     if "ct_state" in result:
         ct_state_raw = result.get("ct_state")
         parsed["ct_state"] = ct_state_raw
-        parsed["ct_connected"] = (
-            ct_state_raw == 1 if ct_state_raw is not None else None
-        )
+        parsed["ct_connected"] = ct_state_raw == 1 if ct_state_raw is not None else None
 
     for source_key, dest_key in (
         ("a_power", "em_a_power"),
@@ -192,8 +190,7 @@ def parse_es_status_response(
             # All reported flows are zero; treat as idle instead of keeping stale power.
             raw_bat_power = 0
             _get_logger().debug(
-                "ES.GetStatus missing bat_power with zero flows; "
-                "treating battery power as idle"
+                "ES.GetStatus missing bat_power with zero flows; treating battery power as idle"
             )
     battery_power: float | None
     battery_status: str | None
@@ -218,9 +215,7 @@ def parse_es_status_response(
             battery_status = "idle"
 
     # Energy totals. Solar energy uses the profile scale; grid/load stay Wh.
-    total_pv_energy = _scale_numeric(
-        result.get("total_pv_energy"), active_profile.pv_energy_scale
-    )
+    total_pv_energy = _scale_numeric(result.get("total_pv_energy"), active_profile.pv_energy_scale)
     total_grid_output_energy = result.get("total_grid_output_energy")
     total_grid_input_energy = result.get("total_grid_input_energy")
     total_load_energy = result.get("total_load_energy")
@@ -275,7 +270,6 @@ def parse_pv_status_response(
             return float(raw_value) * active_profile.pv_channel_1_power_scale
         except (TypeError, ValueError):
             return raw_value
-
 
     # Multi-channel format - extract data for each PV channel (1-4). A reply
     # that carries the per-channel breakdown is read as multi-channel even when
@@ -513,9 +507,7 @@ def _average_ongrid_power(
 ) -> float | None:
     """Return the average grid power between two samples when available."""
     numeric_values = [
-        float(value)
-        for value in (previous_power, current_power)
-        if isinstance(value, (int, float))
+        float(value) for value in (previous_power, current_power) if isinstance(value, (int, float))
     ]
     if not numeric_values:
         return None
@@ -682,19 +674,14 @@ def merge_device_status(
         # Only preserve non-None values from previous status
         for key, value in previous_status.items():
             extra_key = key not in status and (
-                key.startswith("pv")
-                or key in {"em_input_energy", "em_output_energy"}
+                key.startswith("pv") or key in {"em_input_energy", "em_output_energy"}
             )
             if (
                 value is not None
                 and not _is_unusable_value(value)
                 and key in status
                 and status[key] is None
-            ) or (
-                extra_key
-                and value is not None
-                and not _is_unusable_value(value)
-            ):
+            ) or (extra_key and value is not None and not _is_unusable_value(value)):
                 status[key] = value
 
     # Apply in order of priority (lowest to highest)
@@ -752,4 +739,3 @@ def merge_device_status(
     apply_energy_total_guard(status, energy_safe_previous)
 
     return status
-

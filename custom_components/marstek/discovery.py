@@ -130,9 +130,7 @@ async def _async_broadcast_addresses(
     """
     if broadcast_addresses is not None:
         return list(broadcast_addresses)
-    return await asyncio.get_running_loop().run_in_executor(
-        None, _get_broadcast_addresses
-    )
+    return await asyncio.get_running_loop().run_in_executor(None, _get_broadcast_addresses)
 
 
 class DeviceInfoUDPClient(Protocol):
@@ -333,9 +331,7 @@ async def discover_devices(
                 # Re-arm before parsing so a burst of replies is not missed
                 # while this one is decoded.
                 receivers[
-                    asyncio.ensure_future(
-                        loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES)
-                    )
+                    asyncio.ensure_future(loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES))
                 ] = (scan_port, sock)
 
                 sender_ip: str = addr[0]
@@ -344,9 +340,7 @@ async def discover_devices(
                 try:
                     response = json_loads_strict(data.decode("utf-8"))
                 except UnicodeDecodeError:
-                    _LOGGER.debug(
-                        "Invalid UTF-8 from %s:%d", sender_ip, sender_port
-                    )
+                    _LOGGER.debug("Invalid UTF-8 from %s:%d", sender_ip, sender_port)
                     continue
                 except json.JSONDecodeError:
                     _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
@@ -425,9 +419,7 @@ async def _get_device_info_via_client(
     sees that reply: Linux hashes it onto the socket that already owns the
     port, even if that listener is paused. Reuse the pooled client instead.
     """
-    _LOGGER.debug(
-        "Querying device info from %s:%d via pooled UDP client", host, port
-    )
+    _LOGGER.debug("Querying device info from %s:%d via pooled UDP client", host, port)
     try:
         response = await udp_client.send_request(
             discover(),
@@ -528,9 +520,7 @@ async def get_device_info(
                 )
 
                 sender_ip, _ = addr
-                if not udp_source_matches_host(
-                    str(sender_ip), host, resolved=expected_sources
-                ):
+                if not udp_source_matches_host(str(sender_ip), host, resolved=expected_sources):
                     _LOGGER.debug(
                         "Ignoring GetDevice reply from %s while querying %s",
                         sender_ip,

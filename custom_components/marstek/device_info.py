@@ -15,9 +15,7 @@ def get_device_identifier(device_info: dict[str, Any]) -> str:
     """Return a stable device identifier based on MAC addresses."""
     identifier = get_unique_id_from_device_info(device_info)
     if identifier is None:
-        raise ValueError(
-            "Marstek device identifier (MAC) is required for stable entities"
-        )
+        raise ValueError("Marstek device identifier (MAC) is required for stable entities")
     return identifier
 
 

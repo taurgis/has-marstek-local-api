@@ -126,9 +126,7 @@ async def test_repair_flow_submit_updates_entry(
             "custom_components.marstek.repairs.get_device_info",
             return_value=device_info,
         ),
-        patch.object(
-            hass.config_entries, "async_reload", new_callable=AsyncMock
-        ) as mock_reload,
+        patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock) as mock_reload,
     ):
         result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
 
@@ -232,9 +230,7 @@ async def test_repair_flow_accepts_wifi_unique_id_when_ble_present(
             "custom_components.marstek.repairs.get_device_info",
             return_value=device_info,
         ),
-        patch.object(
-            hass.config_entries, "async_reload", new_callable=AsyncMock
-        ),
+        patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
     ):
         result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
 
@@ -270,9 +266,7 @@ async def test_repair_flow_reuses_pooled_udp_client(
             new_callable=AsyncMock,
             return_value=device_info,
         ) as mock_get_device_info,
-        patch.object(
-            hass.config_entries, "async_reload", new_callable=AsyncMock
-        ),
+        patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock),
     ):
         result = await flow.async_step_init({"host": "192.168.1.100", "port": 30000})
 

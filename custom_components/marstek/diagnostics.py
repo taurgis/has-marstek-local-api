@@ -140,9 +140,7 @@ def _build_polling_config(
         )
     )
     parallel_enabled = parallel_requested and parallel_requests_safe
-    configured_delay = float(
-        entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY)
-    )
+    configured_delay = float(entry.options.get(CONF_REQUEST_DELAY, DEFAULT_REQUEST_DELAY))
 
     return {
         "poll_interval_fast": entry.options.get(
@@ -159,12 +157,8 @@ def _build_polling_config(
         "request_delay": configured_delay,
         "request_delay_effective": 0.0 if parallel_enabled else configured_delay,
         "udp_rate_limit_bypassed": parallel_enabled,
-        "request_timeout": entry.options.get(
-            CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-        ),
-        "failure_threshold": entry.options.get(
-            CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD
-        ),
+        "request_timeout": entry.options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT),
+        "failure_threshold": entry.options.get(CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD),
     }
 
 

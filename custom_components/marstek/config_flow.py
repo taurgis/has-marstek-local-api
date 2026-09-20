@@ -54,6 +54,7 @@ class DhcpServiceInfoLike(Protocol):
     hostname: str
     macaddress: str
 
+
 _LOGGER = logging.getLogger(__name__)
 
 _MANUAL_DEVICE_OPTION = "__manual__"
@@ -86,9 +87,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # BLE-MAC is more stable than WiFi MAC and ensures device history continuity
             formatted_unique_id = get_unique_id_from_device_info(device)
             if not formatted_unique_id:
-                return await self.async_step_manual(
-                    errors={"base": "invalid_discovery_info"}
-                )
+                return await self.async_step_manual(errors={"base": "invalid_discovery_info"})
 
             if is_unsupported_venus_e2(device.get("device_type")):
                 return self.async_abort(reason="unsupported_device")
@@ -140,9 +139,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # If all discovered devices are already configured, show manual entry
             if not device_options:
                 _LOGGER.info("All discovered devices are already configured")
-                return await self.async_step_manual(
-                    errors={"base": "all_devices_configured"}
-                )
+                return await self.async_step_manual(errors={"base": "all_devices_configured"})
 
             device_options[_MANUAL_DEVICE_OPTION] = "Enter IP/port manually"
 
@@ -150,18 +147,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Note: The "Already configured devices:" header is embedded in the placeholder
             # value since HA config flows don't support dynamic translation lookups.
             # This is a common pattern in HA integrations for this type of dynamic content.
-            already_configured_text = format_already_configured_text(
-                already_configured_names
-            )
+            already_configured_text = format_already_configured_text(already_configured_names)
 
             return self.async_show_form(
                 step_id="user",
-                data_schema=vol.Schema(
-                    {vol.Required("device"): vol.In(device_options)}
-                ),
-                description_placeholders={
-                    "already_configured": already_configured_text
-                },
+                data_schema=vol.Schema({vol.Required("device"): vol.In(device_options)}),
+                description_placeholders={"already_configured": already_configured_text},
             )
 
         except ConnectionError as err:
@@ -215,9 +206,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors={"base": "unsupported_device"},
                     )
 
-                self._discovered_identity_macs = identity_macs_from_mapping(
-                    device_info
-                )
+                self._discovered_identity_macs = identity_macs_from_mapping(device_info)
                 await self.async_set_unique_id(formatted_unique_id)
                 self._abort_if_identity_configured()
 
@@ -282,13 +271,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _build_discovery_ports(self) -> list[int]:
         """Build UDP ports to probe during initial config flow discovery."""
-        return discovery_scan_ports(
-            self._async_current_entries(include_ignore=False)
-        )
+        return discovery_scan_ports(self._async_current_entries(include_ignore=False))
 
-    async def _async_get_device_info(
-        self, host: str, port: int
-    ) -> dict[str, Any] | None:
+    async def _async_get_device_info(self, host: str, port: int) -> dict[str, Any] | None:
         """Unicast GetDevice on the pooled client when one already owns this port.
 
         Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
@@ -301,15 +286,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
             return await get_device_info(host=host, port=port, udp_client=udp_client)
 
-    async def _async_discover_devices(
-        self, scan_ports: list[int]
-    ) -> list[dict[str, Any]]:
+    async def _async_discover_devices(self, scan_ports: list[int]) -> list[dict[str, Any]]:
         """Broadcast discovery while pooled listeners are paused."""
         broadcast_addresses = await async_broadcast_addresses(self.hass)
         async with async_paused_udp_receivers(self.hass):
-            return await discover_devices(
-                ports=scan_ports, broadcast_addresses=broadcast_addresses
-            )
+            return await discover_devices(ports=scan_ports, broadcast_addresses=broadcast_addresses)
 
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfoLike
@@ -358,9 +339,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_identity_macs = identity_macs
         discovered_port = discovery_info.get("port")
         try:
-            self._discovered_port = (
-                int(discovered_port) if discovered_port is not None else None
-            )
+            self._discovered_port = int(discovered_port) if discovered_port is not None else None
         except (TypeError, ValueError):
             self._discovered_port = None
 
@@ -423,9 +402,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=build_host_port_schema(
-                default_host=form_host, default_port=form_port
-            ),
+            data_schema=build_host_port_schema(default_host=form_host, default_port=form_port),
             errors=errors,
             description_placeholders={"host": self._discovered_ip},
         )
@@ -507,13 +484,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure_confirm",
-            data_schema=build_host_port_schema(
-                default_host=form_host, default_port=form_port
-            ),
+            data_schema=build_host_port_schema(default_host=form_host, default_port=form_port),
             errors=errors,
-            description_placeholders={
-                "host": str(reconfigure_entry.data.get(CONF_HOST, ""))
-            },
+            description_placeholders={"host": str(reconfigure_entry.data.get(CONF_HOST, ""))},
         )
 
     async def _async_handle_discovery_with_unique_id(
@@ -566,9 +539,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         new_host,
                         new_port=new_port if isinstance(new_port, int) else None,
                     )
-                async_apply_entry_update(
-                    self.hass, entry, {**entry.data, **updates}
-                )
+                async_apply_entry_update(self.hass, entry, {**entry.data, **updates})
             elif entry.state is ConfigEntryState.SETUP_RETRY:
                 # Nothing to write, but the device is answering again, so
                 # stop waiting out Home Assistant's setup-retry backoff.
@@ -624,16 +595,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # The entry's own update listener owns the reload when it runs;
             # async_update_reload_and_abort would schedule a second one, which
             # Home Assistant reports as deprecated and stops doing in 2026.12.
-            async_apply_entry_update(
-                self.hass, entry, {**entry.data, **data_updates}
-            )
+            async_apply_entry_update(self.hass, entry, {**entry.data, **data_updates})
             return self.async_abort(reason=reason), None
         except (OSError, TimeoutError, ValueError):
             return None, "cannot_connect"
 
-    def _entry_matches_flow_identity(
-        self, entry: config_entries.ConfigEntry
-    ) -> bool:
+    def _entry_matches_flow_identity(self, entry: config_entries.ConfigEntry) -> bool:
         """Return True if entry shares any stable MAC with this flow.
 
         Wider than the unique id alone: the entry's BLE, Wi-Fi and legacy MACs
@@ -666,4 +633,3 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.OptionsFlow:
         """Return the options flow."""
         return MarstekOptionsFlow()
-

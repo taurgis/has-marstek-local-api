@@ -30,12 +30,13 @@ class TestGetDeviceInfo:
                 "ip": "192.168.1.100",
                 "wifi_mac": "11:22:33:44:55:66",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -44,6 +45,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -261,12 +263,13 @@ class TestGetDeviceInfo:
                 "ver": 3,
                 "ip": "192.168.1.100",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -276,6 +279,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -306,6 +310,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.2
             return time_calls[0]
@@ -347,15 +352,12 @@ class TestGetDeviceInfo:
         """Test that echo responses are filtered."""
         from custom_components.marstek.discovery import get_device_info
 
-        echo_response = {
-            "id": 0,
-            "method": "Marstek.GetDevice",
-            "params": {"ble_mac": "0"}
-        }
+        echo_response = {"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -364,6 +366,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -389,6 +392,7 @@ class TestGetDeviceInfo:
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -397,6 +401,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -424,12 +429,13 @@ class TestGetDeviceInfo:
             "result": {
                 "device": "Venus",
                 "ble_mac": "AA:BB:CC:DD:EE:FF",
-            }
+            },
         }
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -438,6 +444,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -506,14 +513,12 @@ class TestGetDeviceInfo:
         from custom_components.marstek.discovery import get_device_info
 
         # Response with result but no valid identifiers
-        invalid_response = {
-            "id": 0,
-            "result": {"unknown": "value"}
-        }
+        invalid_response = {"id": 0, "result": {"unknown": "value"}}
 
         mock_socket = MagicMock()
 
         call_count = 0
+
         async def mock_recvfrom(*args: Any) -> tuple[bytes, tuple[str, int]]:
             nonlocal call_count
             call_count += 1
@@ -522,6 +527,7 @@ class TestGetDeviceInfo:
             raise TimeoutError()
 
         time_calls = [0.0]
+
         def time_side_effect() -> float:
             time_calls[0] += 0.1
             return time_calls[0]
@@ -621,9 +627,7 @@ class TestGetDeviceInfo:
         from custom_components.marstek.discovery import get_device_info
 
         client = AsyncMock()
-        client.send_request = AsyncMock(
-            return_value={"id": 1, "result": {"unknown": "value"}}
-        )
+        client.send_request = AsyncMock(return_value={"id": 1, "result": {"unknown": "value"}})
 
         result = await get_device_info("172.28.0.20", udp_client=client)
 
@@ -747,8 +751,7 @@ class TestOversizedReply:
         from custom_components.marstek.discovery import get_device_info
 
         slots = [
-            {"id": index, "start_time": 0, "end_time": 1440, "power": -2500,
-             "label": "x" * 380}
+            {"id": index, "start_time": 0, "end_time": 1440, "power": -2500, "label": "x" * 380}
             for index in range(12)
         ]
         device_response = {

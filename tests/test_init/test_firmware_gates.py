@@ -93,9 +93,7 @@ async def test_openapi_reset_issue_created_for_legacy_firmware(
         await hass.async_block_till_done()
 
         issue_registry = ir.async_get(hass)
-        issue = issue_registry.async_get_issue(
-            DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
-        )
+        issue = issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}")
         assert issue is not None
         assert issue.translation_key == "openapi_reset_prone"
         assert issue.severity is ir.IssueSeverity.WARNING
@@ -108,12 +106,7 @@ async def test_openapi_reset_issue_created_for_legacy_firmware(
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
 
-    assert (
-        issue_registry.async_get_issue(
-            DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
-        )
-        is None
-    )
+    assert issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}") is None
 
 
 async def test_openapi_reset_issue_skipped_for_firmware_150(
@@ -143,15 +136,8 @@ async def test_openapi_reset_issue_skipped_for_firmware_150(
         await hass.async_block_till_done()
 
     issue_registry = ir.async_get(hass)
-    assert (
-        issue_registry.async_get_issue(
-            DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
-        )
-        is None
-    )
-    client.set_openapi_reset_prone.assert_called_with(
-        "1.2.3.4", False, owner=entry.entry_id
-    )
+    assert issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}") is None
+    client.set_openapi_reset_prone.assert_called_with("1.2.3.4", False, owner=entry.entry_id)
     client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", True)
 
 
@@ -181,14 +167,10 @@ async def test_openapi_reset_issue_created_when_connection_fails(
 
     assert entry.state == ConfigEntryState.SETUP_RETRY
     issue_registry = ir.async_get(hass)
-    issue = issue_registry.async_get_issue(
-        DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
-    )
+    issue = issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}")
     assert issue is not None
     assert issue.translation_key == "openapi_reset_prone"
-    client.set_openapi_reset_prone.assert_called_with(
-        "1.2.3.4", True, owner=entry.entry_id
-    )
+    client.set_openapi_reset_prone.assert_called_with("1.2.3.4", True, owner=entry.entry_id)
     client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", False)
 
 
@@ -275,10 +257,7 @@ async def test_non_meter_firmware_removes_em_status_entities(
 
     assert entry.state == ConfigEntryState.LOADED
     assert entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is None
-    assert (
-        entity_registry.async_get_entity_id("sensor", DOMAIN, kept_unique_id)
-        is not None
-    )
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, kept_unique_id) is not None
 
 
 async def test_meter_firmware_keeps_em_status_entities(
@@ -317,6 +296,4 @@ async def test_meter_firmware_keeps_em_status_entities(
         await hass.async_block_till_done()
 
     assert entry.state == ConfigEntryState.LOADED
-    assert (
-        entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is not None
-    )
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is not None

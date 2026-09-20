@@ -91,9 +91,7 @@ class DeviceThrottle:
                 self.device_io_locks.pop(device_ip, None)
 
             if stale_ips:
-                _LOGGER.debug(
-                    "Cleaned up rate limit tracking for %d stale IPs", len(stale_ips)
-                )
+                _LOGGER.debug("Cleaned up rate limit tracking for %d stale IPs", len(stale_ips))
             return stale_ips
 
     def clear(self) -> None:

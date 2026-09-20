@@ -115,9 +115,7 @@ async def test_scanner_updates_metadata_in_setup_retry(
     assert mock_config_entry.data["wifi_name"] == "AirPort-38"
 
 
-async def test_scanner_skips_blank_metadata_updates(
-    hass: HomeAssistant, mock_config_entry
-) -> None:
+async def test_scanner_skips_blank_metadata_updates(hass: HomeAssistant, mock_config_entry) -> None:
     """Test scanner ignores blank metadata values."""
     mock_config_entry.add_to_hass(hass)
     mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)

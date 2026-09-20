@@ -139,9 +139,7 @@ async def _count_reloads(hass: HomeAssistant) -> AsyncIterator[list[str]]:
 
 
 def _entity_id(hass: HomeAssistant, key: str) -> str | None:
-    return er.async_get(hass).async_get_entity_id(
-        _platform_for_key(key), DOMAIN, _unique_id(key)
-    )
+    return er.async_get(hass).async_get_entity_id(_platform_for_key(key), DOMAIN, _unique_id(key))
 
 
 def _assert_sys_entities(hass: HomeAssistant, *, present: bool) -> None:
@@ -410,8 +408,7 @@ async def test_unique_ids_survive_upgrade_downgrade_upgrade(hass: HomeAssistant)
         mode_matches = [
             item
             for item in registry.entities.values()
-            if item.unique_id == _unique_id(OPERATING_MODE_KEY)
-            and item.platform == DOMAIN
+            if item.unique_id == _unique_id(OPERATING_MODE_KEY) and item.platform == DOMAIN
         ]
         assert len(mode_matches) == 1
 
@@ -421,9 +418,7 @@ async def test_capability_removal_keeps_unrelated_entities(hass: HomeAssistant) 
     entry = _config_entry(version=150)
     async with _loaded_entry(hass, entry):
         battery_matches = [
-            entity_id
-            for entity_id in hass.states.async_entity_ids()
-            if "battery" in entity_id
+            entity_id for entity_id in hass.states.async_entity_ids() if "battery" in entity_id
         ]
         assert battery_matches
 
@@ -444,9 +439,7 @@ async def test_scanner_reloads_when_reset_prone_clears_without_capability_change
     async with _loaded_entry(hass, entry):
         issue_registry = ir.async_get(hass)
         assert (
-            issue_registry.async_get_issue(
-                DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
-            )
+            issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}")
             is not None
         )
 
@@ -465,9 +458,5 @@ async def test_scanner_reloads_when_reset_prone_clears_without_capability_change
         assert reload_ids == [entry.entry_id]
         assert entry.data["version"] == 150
         assert (
-            issue_registry.async_get_issue(
-                DOMAIN, f"openapi_reset_prone_{entry.entry_id}"
-            )
-            is None
+            issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}") is None
         )
-

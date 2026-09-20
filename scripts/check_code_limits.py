@@ -84,9 +84,7 @@ def load_limits(root: Path, overrides: argparse.Namespace) -> Limits:
         max_file_lines=overrides.max_file_lines
         or _positive_int(config.get("max-file-lines"), DEFAULT_MAX_FILE_LINES),
         max_function_lines=overrides.max_function_lines
-        or _positive_int(
-            config.get("max-function-lines"), DEFAULT_MAX_FUNCTION_LINES
-        ),
+        or _positive_int(config.get("max-function-lines"), DEFAULT_MAX_FUNCTION_LINES),
         paths=tuple(paths),
         exclude=_str_tuple(config.get("exclude"), ()),
     )
@@ -155,9 +153,7 @@ def check_file(path: Path, limits: Limits) -> list[Violation]:
     return violations
 
 
-def _check_functions(
-    path: Path, tree: ast.Module, limits: Limits
-) -> Iterator[Violation]:
+def _check_functions(path: Path, tree: ast.Module, limits: Limits) -> Iterator[Violation]:
     """Yield a violation for every over-long function body in ``tree``."""
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):

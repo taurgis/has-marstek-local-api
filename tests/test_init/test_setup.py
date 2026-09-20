@@ -21,9 +21,7 @@ from tests.conftest import (
 )
 
 
-async def test_setup_and_unload(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_setup_and_unload(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
     """Test setup creates coordinator, platforms, and successful unload."""
     mock_config_entry.add_to_hass(hass)
 
@@ -40,9 +38,7 @@ async def test_setup_and_unload(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        assert (
-            hass.states.get("sensor.venus_battery_level") is not None
-        )
+        assert hass.states.get("sensor.venus_battery_level") is not None
 
         # Unload
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
@@ -210,7 +206,4 @@ async def test_remove_entry_cleans_stale_device(
     await hass.config_entries.async_remove(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert (
-        async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac))
-        is None
-    )
+    assert async_lookup_device_by_identifier(device_registry, (DOMAIN, formatted_mac)) is None

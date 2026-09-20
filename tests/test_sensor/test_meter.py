@@ -42,9 +42,7 @@ async def test_ct_connection_sensor_created(
         assert mock_config_entry.state == ConfigEntryState.LOADED
         # Sensor is disabled by default, check entity registry instead of state
         entity_registry = er.async_get(hass)
-        entry = entity_registry.async_get(
-            "binary_sensor.venus_ct_connection"
-        )
+        entry = entity_registry.async_get("binary_sensor.venus_ct_connection")
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
 
@@ -70,9 +68,7 @@ async def test_ct_connection_sensor_created_when_value_missing(
         await hass.async_block_till_done()
 
         entity_registry = er.async_get(hass)
-        entry = entity_registry.async_get(
-            "binary_sensor.venus_ct_connection"
-        )
+        entry = entity_registry.async_get("binary_sensor.venus_ct_connection")
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
 
@@ -99,9 +95,7 @@ async def test_ct_connection_sensor_disconnected(
 
         # Sensor is disabled by default, check entity registry instead of state
         entity_registry = er.async_get(hass)
-        entry = entity_registry.async_get(
-            "binary_sensor.venus_ct_connection"
-        )
+        entry = entity_registry.async_get("binary_sensor.venus_ct_connection")
         assert entry is not None
         assert entry.disabled_by is not None  # Disabled by default
 
@@ -144,9 +138,9 @@ async def test_em_sensors_omitted_when_firmware_is_not_a_meter_client(
         "em_output_energy",
     ):
         unique_id = f"{device_identifier}_{key}"
-        assert (
-            entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
-        ), f"{key} must not be created on a non-meter firmware"
+        assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None, (
+            f"{key} must not be created on a non-meter firmware"
+        )
 
 
 async def test_em_power_sensors_created_when_firmware_is_a_meter_client(
@@ -183,10 +177,9 @@ async def test_em_power_sensors_created_when_firmware_is_a_meter_client(
     device_identifier = get_device_identifier(mock_config_entry.data)
     for key in ("em_total_power", "em_a_power", "em_b_power", "em_c_power"):
         unique_id = f"{device_identifier}_{key}"
-        assert (
-            entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
-            is not None
-        ), f"{key} must exist on a meter-client firmware"
+        assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is not None, (
+            f"{key} must exist on a meter-client firmware"
+        )
 
 
 async def test_meter_energy_sensors_survive_pre_150_firmware(
@@ -225,10 +218,9 @@ async def test_meter_energy_sensors_survive_pre_150_firmware(
     device_identifier = get_device_identifier(mock_config_entry.data)
     for key in ("em_input_energy", "em_output_energy"):
         unique_id = f"{device_identifier}_{key}"
-        assert (
-            entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
-            is not None
-        ), f"{key} must survive on firmware that reports it unscaled"
+        assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is not None, (
+            f"{key} must survive on firmware that reports it unscaled"
+        )
 
 
 async def test_grid_total_power_sensor_created(

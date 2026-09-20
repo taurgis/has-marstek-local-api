@@ -191,9 +191,7 @@ class TestMergeDeviceStatus:
         assert result["device_mode"] == "auto"  # Preserved from previous
         assert result["battery_status"] == "idle"  # Preserved from previous
 
-    @pytest.mark.parametrize(
-        "poison", [float("nan"), float("inf"), float("-inf")]
-    )
+    @pytest.mark.parametrize("poison", [float("nan"), float("inf"), float("-inf")])
     def test_non_finite_values_never_enter_status(self, poison: float) -> None:
         """A non-finite reading must be dropped, not merged.
 
@@ -209,12 +207,8 @@ class TestMergeDeviceStatus:
         assert result["em_total_power"] == 120
         assert result["ct_connected"] is True
 
-    @pytest.mark.parametrize(
-        "poison", [float("nan"), float("inf"), float("-inf")]
-    )
-    def test_non_finite_values_are_not_carried_forward(
-        self, poison: float
-    ) -> None:
+    @pytest.mark.parametrize("poison", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_values_are_not_carried_forward(self, poison: float) -> None:
         """A poisoned previous_status must not survive into the next cycle."""
         result = merge_device_status(
             em_status_data=None,

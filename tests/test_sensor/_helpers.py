@@ -12,9 +12,7 @@ from custom_components.marstek.const import (
 from custom_components.marstek.device_info import get_device_identifier
 
 
-def _as_meter_client(
-    hass: HomeAssistant, entry: MockConfigEntry
-) -> None:
+def _as_meter_client(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """Make the entry a firmware that answers EM.GetStatus.
 
     The shared fixture is an unknown family, and the coordinator does not
@@ -26,9 +24,7 @@ def _as_meter_client(
     )
 
 
-def _em_state(
-    hass: HomeAssistant, entry: MockConfigEntry, key: str
-) -> str | None:
+def _em_state(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> str | None:
     """Return the state of the EM sensor with this description key."""
     entity_id = er.async_get(hass).async_get_entity_id(
         "sensor", DOMAIN, f"{get_device_identifier(entry.data)}_{key}"

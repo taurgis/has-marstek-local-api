@@ -135,10 +135,7 @@ async def test_options_flow_keeps_request_delay_visible_when_parallel_enabled(
         key for key in schema if getattr(key, "schema", None) == "network_settings"
     )
     network_schema = schema[network_section_key].schema.schema
-    network_field_names = {
-        getattr(key, "schema", None)
-        for key in network_schema
-    }
+    network_field_names = {getattr(key, "schema", None) for key in network_schema}
     assert CONF_REQUEST_DELAY in network_field_names
     assert CONF_PARALLEL_API_REQUESTS in network_field_names
 

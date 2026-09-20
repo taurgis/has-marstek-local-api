@@ -31,13 +31,17 @@ class TestAutomationWorkflows:
             assert mode1["mode"] == "Auto"
 
             # Switch to passive charging
-            device._build_response(2, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": -2500, "cd_time": 7200},
+            device._build_response(
+                2,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": -2500, "cd_time": 7200},
+                    },
                 },
-            })
+            )
 
             status2 = device._build_response(3, "ES.GetStatus", {})["result"]
             mode2 = device._build_response(3, "ES.GetMode", {})["result"]
@@ -51,10 +55,14 @@ class TestAutomationWorkflows:
             time.sleep(1.0)
 
             # Return to auto
-            device._build_response(5, "ES.SetMode", {
-                "id": 0,
-                "config": {"mode": "Auto"},
-            })
+            device._build_response(
+                5,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {"mode": "Auto"},
+                },
+            )
 
             status4 = device._build_response(6, "ES.GetStatus", {})["result"]
             mode4 = device._build_response(6, "ES.GetMode", {})["result"]
@@ -79,13 +87,17 @@ class TestAutomationWorkflows:
         try:
             time.sleep(0.3)
 
-            device._build_response(1, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": 2500, "cd_time": 1800},
+            device._build_response(
+                1,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": 2500, "cd_time": 1800},
+                    },
                 },
-            })
+            )
 
             status = device._build_response(2, "ES.GetStatus", {})["result"]
             mode = device._build_response(2, "ES.GetMode", {})["result"]
@@ -108,36 +120,44 @@ class TestAutomationWorkflows:
             time.sleep(0.3)
 
             # Set night charging schedule
-            device._build_response(1, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Manual",
-                    "manual_cfg": {
-                        "time_num": 0,
-                        "start_time": "00:00",
-                        "end_time": "06:00",
-                        "week_set": 127,
-                        "power": -2000,
-                        "enable": 1,
+            device._build_response(
+                1,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Manual",
+                        "manual_cfg": {
+                            "time_num": 0,
+                            "start_time": "00:00",
+                            "end_time": "06:00",
+                            "week_set": 127,
+                            "power": -2000,
+                            "enable": 1,
+                        },
                     },
                 },
-            })
+            )
 
             # Set day discharging schedule
-            device._build_response(2, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Manual",
-                    "manual_cfg": {
-                        "time_num": 1,
-                        "start_time": "07:00",
-                        "end_time": "22:00",
-                        "week_set": 127,
-                        "power": 1500,
-                        "enable": 1,
+            device._build_response(
+                2,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Manual",
+                        "manual_cfg": {
+                            "time_num": 1,
+                            "start_time": "07:00",
+                            "end_time": "22:00",
+                            "week_set": 127,
+                            "power": 1500,
+                            "enable": 1,
+                        },
                     },
                 },
-            })
+            )
 
             mode = device._build_response(3, "ES.GetMode", {})["result"]
 
@@ -214,13 +234,17 @@ class TestAutomationWorkflows:
         device.simulator.start()
 
         try:
-            device._build_response(1, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": -1500, "cd_time": 2},
+            device._build_response(
+                1,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": -1500, "cd_time": 2},
+                    },
                 },
-            })
+            )
 
             mode1 = device._build_response(2, "ES.GetMode", {})["result"]
             status1 = device._build_response(2, "ES.GetStatus", {})["result"]
@@ -252,13 +276,17 @@ class TestSOCEffects:
         device_low.simulator.start()
 
         try:
-            device_low._build_response(1, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": 2000, "cd_time": 3600},
+            device_low._build_response(
+                1,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": 2000, "cd_time": 3600},
+                    },
                 },
-            })
+            )
 
             status = device_low._build_response(2, "ES.GetStatus", {})["result"]
             assert abs(status["bat_power"]) < 100
@@ -276,13 +304,17 @@ class TestSOCEffects:
         device_high.simulator.start()
 
         try:
-            device_high._build_response(1, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": -2500, "cd_time": 3600},
+            device_high._build_response(
+                1,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": -2500, "cd_time": 3600},
+                    },
                 },
-            })
+            )
 
             status = device_high._build_response(2, "ES.GetStatus", {})["result"]
             assert abs(status["bat_power"]) < 1000
@@ -308,26 +340,34 @@ class TestGridPowerConsistency:
             time.sleep(0.3)
 
             # Test charging - grid import increases
-            device._build_response(1, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": -1500, "cd_time": 3600},
+            device._build_response(
+                1,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": -1500, "cd_time": 3600},
+                    },
                 },
-            })
+            )
 
             status1 = device._build_response(2, "ES.GetStatus", {})["result"]
             # API bat_power: positive = charging (internal power=-1500)
             assert status1["bat_power"] > 0
 
             # Test discharging - grid import decreases
-            device._build_response(3, "ES.SetMode", {
-                "id": 0,
-                "config": {
-                    "mode": "Passive",
-                    "passive_cfg": {"power": 1500, "cd_time": 3600},
+            device._build_response(
+                3,
+                "ES.SetMode",
+                {
+                    "id": 0,
+                    "config": {
+                        "mode": "Passive",
+                        "passive_cfg": {"power": 1500, "cd_time": 3600},
+                    },
                 },
-            })
+            )
 
             status2 = device._build_response(4, "ES.GetStatus", {})["result"]
             # API bat_power: negative = discharging (internal power=1500)
@@ -396,13 +436,17 @@ class TestConcurrentPolling:
                 device._build_response(poll * 10, "ES.GetStatus", {})
 
                 if poll == 2:
-                    device._build_response(100, "ES.SetMode", {
-                        "id": 0,
-                        "config": {
-                            "mode": "Passive",
-                            "passive_cfg": {"power": -1800, "cd_time": 3600},
+                    device._build_response(
+                        100,
+                        "ES.SetMode",
+                        {
+                            "id": 0,
+                            "config": {
+                                "mode": "Passive",
+                                "passive_cfg": {"power": -1800, "cd_time": 3600},
+                            },
                         },
-                    })
+                    )
 
                 time.sleep(0.2)
 

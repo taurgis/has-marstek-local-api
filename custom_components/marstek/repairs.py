@@ -59,9 +59,7 @@ class CannotConnectRepairFlow(RepairsFlow):
             else:
                 try:
                     async with discovery_lock(self.hass):
-                        udp_client = get_udp_client(
-                            self.hass, bind_port_for_host(host, port)
-                        )
+                        udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
                         device_info = await get_device_info(
                             host=host, port=port, udp_client=udp_client
                         )
@@ -110,9 +108,7 @@ class CannotConnectRepairFlow(RepairsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_HOST, default=entry.data.get(CONF_HOST, "")
-                    ): cv.string,
+                    vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): cv.string,
                     vol.Required(
                         CONF_PORT,
                         default=entry.data.get(CONF_PORT, DEFAULT_UDP_PORT),

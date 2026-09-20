@@ -269,9 +269,7 @@ class TestDeviceDiscovery:
         )
         unknown = device.build_response(5, "Set.Ver", {"ver": 153})
         status = device.build_response(6, "ES.GetStatus", {"id": 0})
-        wifi = device.build_response(
-            7, "Wifi.SetConfig", {"ssid": "HMG50-Open", "pass": "secret"}
-        )
+        wifi = device.build_response(7, "Wifi.SetConfig", {"ssid": "HMG50-Open", "pass": "secret"})
         assert em is not None
         assert em["error"]["code"] == -32601
         assert dod is not None

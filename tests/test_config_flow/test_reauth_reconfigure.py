@@ -24,9 +24,7 @@ from ._helpers import (
 )
 
 
-async def test_reauth_flow_success(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_reauth_flow_success(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
     """Test successful reauth flow."""
     mock_config_entry.add_to_hass(hass)
 
@@ -344,9 +342,7 @@ async def test_reconfigure_changed_entry_leaves_the_reload_to_the_listener(
             await hass.async_block_till_done()
 
     assert result["reason"] == "reconfigure_successful"
-    assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == (
-        "192.168.1.201"
-    )
+    assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == ("192.168.1.201")
     schedule_reload.assert_not_called()
 
 

@@ -32,9 +32,7 @@ def sys_write_target(config_entry: ConfigEntry) -> tuple[str, int]:
 
 def sys_write_timeout(config_entry: ConfigEntry) -> float:
     """Return the configured UDP timeout for a SYS write."""
-    return float(
-        config_entry.options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT)
-    )
+    return float(config_entry.options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT))
 
 
 def require_sys_write_ack(response: Any) -> None:

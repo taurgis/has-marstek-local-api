@@ -65,10 +65,6 @@ def pv_method_not_found_extra_data(profile: FirmwareProfile) -> int | None:
     150-only payload. Other non-PV families have no matching capture.
     """
     generation = profile.control_generation
-    if (
-        profile.family is DeviceFamily.VENUS_E
-        and generation is not None
-        and generation >= 150
-    ):
+    if profile.family is DeviceFamily.VENUS_E and generation is not None and generation >= 150:
         return 424
     return None

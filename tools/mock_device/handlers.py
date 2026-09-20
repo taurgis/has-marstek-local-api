@@ -212,7 +212,6 @@ def handle_pv_get_status(
         except (TypeError, ValueError):
             return value
 
-
     # If pv_channels is provided, return multi-channel format (pv1_..pv4_)
     pv_channels = state.get("pv_channels")
     if isinstance(pv_channels, list) and pv_channels:
@@ -441,9 +440,7 @@ def get_static_state(
         "total_grid_output_energy": int(totals.get("total_grid_output_energy", 0)),
         "total_grid_input_energy": int(totals.get("total_grid_input_energy", 0)),
         "total_load_energy": int(totals.get("total_load_energy", 0)),
-        "em_input_energy": totals.get(
-            "em_input_energy", totals.get("total_grid_input_energy", 0)
-        ),
+        "em_input_energy": totals.get("em_input_energy", totals.get("total_grid_input_energy", 0)),
         "em_output_energy": totals.get(
             "em_output_energy", totals.get("total_grid_output_energy", 0)
         ),

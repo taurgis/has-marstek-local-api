@@ -112,9 +112,7 @@ def test_resolve_entry_host_uses_ble_mac_when_get_single_omits_data() -> None:
         remembered={"01TESTENTRY": "172.28.0.22"},
     )
     assert remembered == "172.28.0.22"
-    wrapped = campaign.unwrap_config_entry(
-        {"config_entry": {"entry_id": "abc", "state": "loaded"}}
-    )
+    wrapped = campaign.unwrap_config_entry({"config_entry": {"entry_id": "abc", "state": "loaded"}})
     assert wrapped["entry_id"] == "abc"
     assert campaign.campaign_mac("02deadbeef02") == "02:de:ad:be:ef:02"
     assert campaign.campaign_mac("not-a-mac") is None

@@ -67,9 +67,7 @@ class MarstekSysSwitch(MarstekSysEntity, SwitchEntity, RestoreEntity):
         config_entry: ConfigEntry,
     ) -> None:
         """Initialize the SYS switch entity."""
-        super().__init__(
-            coordinator, device_info, description, udp_client, config_entry
-        )
+        super().__init__(coordinator, device_info, description, udp_client, config_entry)
         self._attr_is_on = None
 
     async def async_added_to_hass(self) -> None:

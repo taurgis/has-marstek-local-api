@@ -300,9 +300,7 @@ class TestGetDeviceStatus:
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
 
-        async def mock_send_request(
-            message: str, *args: Any, **kwargs: Any
-        ) -> dict[str, Any]:
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
             method = str(json.loads(message).get("method"))
             if method == "ES.GetMode":
                 raise ValidationError("reply failed validation")
@@ -337,9 +335,7 @@ class TestGetDeviceStatus:
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
 
-        async def mock_send_request(
-            message: str, *args: Any, **kwargs: Any
-        ) -> dict[str, Any]:
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
             method = str(json.loads(message).get("method"))
             if method == "Wifi.GetStatus":
                 raise RuntimeError("socket went away mid-poll")
@@ -546,17 +542,11 @@ class TestGetDeviceStatus:
                 )
 
         es_mode_data = parse_es_mode_response(es_mode_response) if es_mode_ok else None
-        es_status_data = (
-            parse_es_status_response(es_status_response) if es_status_ok else None
-        )
+        es_status_data = parse_es_status_response(es_status_response) if es_status_ok else None
         em_status_data = parse_em_status_response(em_status_response) if em_ok else None
         pv_status_data = parse_pv_status_response(pv_status_response) if pv_ok else None
-        wifi_status_data = (
-            parse_wifi_status_response(wifi_status_response) if wifi_ok else None
-        )
-        bat_status_data = (
-            parse_bat_status_response(bat_status_response) if bat_ok else None
-        )
+        wifi_status_data = parse_wifi_status_response(wifi_status_response) if wifi_ok else None
+        bat_status_data = parse_bat_status_response(bat_status_response) if bat_ok else None
 
         expected = merge_device_status(
             es_mode_data=es_mode_data,
@@ -569,9 +559,7 @@ class TestGetDeviceStatus:
             last_update=1000.0,
             previous_status=previous_status,
         )
-        expected["has_fresh_data"] = any(
-            (es_mode_ok, es_status_ok, em_ok, pv_ok, wifi_ok, bat_ok)
-        )
+        expected["has_fresh_data"] = any((es_mode_ok, es_status_ok, em_ok, pv_ok, wifi_ok, bat_ok))
 
         assert result == expected
 
@@ -764,9 +752,7 @@ class TestGetDeviceStatusTieredFailures:
 
         sent_methods: list[str] = []
 
-        async def mock_send_request(
-            message: str, *args: Any, **kwargs: Any
-        ) -> dict[str, Any]:
+        async def mock_send_request(message: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
             method = json.loads(message).get("method")
             sent_methods.append(method)
             return {"id": 1, "result": {"mode": 0, "soc": 50}}

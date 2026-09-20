@@ -133,15 +133,11 @@ class TestManualScheduleSlots:
             device_config={"device": device_type, "ver": 145},
         )
 
-        accepted = device.build_response(
-            1, "ES.SetMode", self._manual_request(accepted_slot)
-        )
+        accepted = device.build_response(1, "ES.SetMode", self._manual_request(accepted_slot))
         assert accepted is not None
         assert accepted["result"]["set_result"] is True
 
-        rejected = device.build_response(
-            2, "ES.SetMode", self._manual_request(rejected_slot)
-        )
+        rejected = device.build_response(2, "ES.SetMode", self._manual_request(rejected_slot))
         assert rejected is not None
         assert rejected["error"] == {"code": -32602, "message": "Invalid params"}
         mode = device.build_response(3, "ES.GetMode", {})

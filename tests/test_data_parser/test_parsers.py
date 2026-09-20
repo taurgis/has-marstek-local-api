@@ -321,9 +321,7 @@ class TestParseEsModeResponse:
             ("SelfUse", "selfuse"),
         ],
     )
-    def test_parse_integer_and_string_modes(
-        self, wire_mode: int | str, expected: str
-    ) -> None:
+    def test_parse_integer_and_string_modes(self, wire_mode: int | str, expected: str) -> None:
         """Reads accept Open API strings, integer codes, and our unknown-string lowercase."""
         result = parse_es_mode_response(
             {"id": 1, "result": {"mode": wire_mode, "bat_soc": 80, "ongrid_power": 0}}

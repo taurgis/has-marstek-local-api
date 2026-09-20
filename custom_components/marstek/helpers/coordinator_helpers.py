@@ -69,8 +69,7 @@ def raise_if_invalid_status(
 
     if device_mode in ("Unknown", "unknown"):
         logger.debug(
-            "Device %s reported device_mode=Unknown but other data is "
-            "present (soc=%s, power=%s)",
+            "Device %s reported device_mode=Unknown but other data is present (soc=%s, power=%s)",
             current_ip,
             battery_soc or 0,
             battery_power or 0,

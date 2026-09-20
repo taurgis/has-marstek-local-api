@@ -25,9 +25,7 @@ class OpenApiMarks:
         self._reset_prone_owners: dict[str, set[str]] = {}
         self._retransmit_safe: set[str] = set()
 
-    def set_reset_prone(
-        self, device_ip: str, prone: bool, *, owner: str | None = None
-    ) -> None:
+    def set_reset_prone(self, device_ip: str, prone: bool, *, owner: str | None = None) -> None:
         """Add or drop one owner's reset-prone mark for a device IP."""
         owner_key = owner or ANONYMOUS_OWNER
         owners = self._reset_prone_owners.setdefault(device_ip, set())

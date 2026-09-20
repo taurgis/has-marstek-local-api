@@ -208,23 +208,29 @@ class TestManualSchedules:
         """Test updating an existing manual schedule slot."""
         sim = BatterySimulator(initial_soc=50)
 
-        sim.set_mode(MODE_MANUAL, {
-            "time_num": 0,
-            "start_time": "08:00",
-            "end_time": "16:00",
-            "week_set": 127,
-            "power": -1000,
-            "enable": 1,
-        })
+        sim.set_mode(
+            MODE_MANUAL,
+            {
+                "time_num": 0,
+                "start_time": "08:00",
+                "end_time": "16:00",
+                "week_set": 127,
+                "power": -1000,
+                "enable": 1,
+            },
+        )
 
-        sim.set_mode(MODE_MANUAL, {
-            "time_num": 0,
-            "start_time": "10:00",
-            "end_time": "14:00",
-            "week_set": 31,
-            "power": -2000,
-            "enable": 1,
-        })
+        sim.set_mode(
+            MODE_MANUAL,
+            {
+                "time_num": 0,
+                "start_time": "10:00",
+                "end_time": "14:00",
+                "week_set": 31,
+                "power": -2000,
+                "enable": 1,
+            },
+        )
 
         assert len(sim.manual_schedules) == 1
         assert sim.manual_schedules[0]["power"] == -2000
@@ -234,21 +240,27 @@ class TestManualSchedules:
         """Test adding multiple manual schedule slots."""
         sim = BatterySimulator(initial_soc=50)
 
-        sim.set_mode(MODE_MANUAL, {
-            "time_num": 0,
-            "start_time": "08:00",
-            "end_time": "12:00",
-            "power": -1500,
-            "enable": 1,
-        })
+        sim.set_mode(
+            MODE_MANUAL,
+            {
+                "time_num": 0,
+                "start_time": "08:00",
+                "end_time": "12:00",
+                "power": -1500,
+                "enable": 1,
+            },
+        )
 
-        sim.set_mode(MODE_MANUAL, {
-            "time_num": 1,
-            "start_time": "18:00",
-            "end_time": "22:00",
-            "power": 800,
-            "enable": 1,
-        })
+        sim.set_mode(
+            MODE_MANUAL,
+            {
+                "time_num": 1,
+                "start_time": "18:00",
+                "end_time": "22:00",
+                "power": 800,
+                "enable": 1,
+            },
+        )
 
         assert len(sim.manual_schedules) == 2
         assert sim.manual_schedules[0]["time_num"] == 0
@@ -257,14 +269,16 @@ class TestManualSchedules:
     def test_schedule_matches_current_time(self) -> None:
         """Test schedule matching for current time."""
         sim = BatterySimulator(initial_soc=50)
-        sim.manual_schedules = [{
-            "time_num": 0,
-            "start_time": "00:00",
-            "end_time": "23:59",
-            "week_set": 127,
-            "power": -1500,
-            "enable": True,
-        }]
+        sim.manual_schedules = [
+            {
+                "time_num": 0,
+                "start_time": "00:00",
+                "end_time": "23:59",
+                "week_set": 127,
+                "power": -1500,
+                "enable": True,
+            }
+        ]
 
         schedule = sim._get_active_schedule()
         assert schedule is not None
@@ -273,28 +287,32 @@ class TestManualSchedules:
     def test_disabled_schedule_not_matched(self) -> None:
         """Test disabled schedule is not matched."""
         sim = BatterySimulator(initial_soc=50)
-        sim.manual_schedules = [{
-            "time_num": 0,
-            "start_time": "00:00",
-            "end_time": "23:59",
-            "week_set": 127,
-            "power": -1500,
-            "enable": False,
-        }]
+        sim.manual_schedules = [
+            {
+                "time_num": 0,
+                "start_time": "00:00",
+                "end_time": "23:59",
+                "week_set": 127,
+                "power": -1500,
+                "enable": False,
+            }
+        ]
 
         assert sim._get_active_schedule() is None
 
     def test_wrong_day_not_matched(self) -> None:
         """Test schedule on wrong day is not matched."""
         sim = BatterySimulator(initial_soc=50)
-        sim.manual_schedules = [{
-            "time_num": 0,
-            "start_time": "00:00",
-            "end_time": "23:59",
-            "week_set": 0,
-            "power": -1500,
-            "enable": True,
-        }]
+        sim.manual_schedules = [
+            {
+                "time_num": 0,
+                "start_time": "00:00",
+                "end_time": "23:59",
+                "week_set": 0,
+                "power": -1500,
+                "enable": True,
+            }
+        ]
 
         assert sim._get_active_schedule() is None
 
@@ -412,14 +430,17 @@ class TestImmediatePowerUpdates:
     def test_manual_active_schedule_immediate(self) -> None:
         """Test manual mode with active schedule immediately updates power."""
         sim = BatterySimulator(initial_soc=50)
-        sim.set_mode(MODE_MANUAL, {
-            "time_num": 0,
-            "start_time": "00:00",
-            "end_time": "23:59",
-            "week_set": 127,
-            "power": -1500,
-            "enable": 1,
-        })
+        sim.set_mode(
+            MODE_MANUAL,
+            {
+                "time_num": 0,
+                "start_time": "00:00",
+                "end_time": "23:59",
+                "week_set": 127,
+                "power": -1500,
+                "enable": 1,
+            },
+        )
         state = sim.get_state()
 
         assert state["mode"] == MODE_MANUAL

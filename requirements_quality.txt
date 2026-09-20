@@ -1,9 +1,11 @@
 # Static analysis run by .github/workflows/code-quality.yaml. Kept out of
 # requirements_test.txt so the test job does not pay for tools it never calls.
 #
-# ruff tracks the constraint in requirements_test.txt so both jobs agree on
-# what a lint failure is. The rest are pinned: a new release that changes
+# ruff tracks the pin in requirements_test.txt so both jobs agree on what a
+# lint failure is, and on what formatted code looks like: ``ruff format`` output
+# changes between releases, so an unpinned formatter makes CI and a contributor's
+# checkout disagree. Everything here is pinned: a new release that changes
 # defaults should arrive as a deliberate PR, not a surprise red build.
-ruff>=0.6.9
+ruff==0.16.8
 vulture==2.16
 jscpd==5.3.0
