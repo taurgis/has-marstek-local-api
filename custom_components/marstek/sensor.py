@@ -30,6 +30,11 @@ from .pymarstek.energy_guard import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Read-only platform: every value comes from the shared coordinator, so
+# Home Assistant never has to serialize updates for these entities.
+# https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/parallel-updates
+PARALLEL_UPDATES = 0
+
 
 class MarstekSensor(
     CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity

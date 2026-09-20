@@ -8,6 +8,7 @@ from typing import Any
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import format_mac
 
 # Preference order for a stable device identity: the BLE MAC is the unique id
@@ -158,3 +159,29 @@ def build_entry_data(host: str, port: int, device_info: dict[str, Any]) -> dict[
         "model": device_info.get("model"),
         "firmware": device_info.get("firmware"),
     }
+
+
+def async_apply_entry_update(
+    hass: HomeAssistant,
+    entry: config_entries.ConfigEntry,
+    data: Mapping[str, Any],
+) -> None:
+    """Write *data* onto *entry* and make sure exactly one reload follows.
+
+    A loaded entry carries this integration's update listener, and Home
+    Assistant fires it whenever ``async_update_entry`` actually changes
+    something -- that listener is what reloads the entry. Scheduling a reload
+    here as well would set the entry up twice, so the explicit reload is for
+    the two cases the listener cannot cover:
+
+    * nothing changed (a user resubmitting the same host to retry a device),
+      so no listener runs;
+    * the entry is not loaded, most often ``SETUP_RETRY`` after the device
+      went missing, where the listener was never registered. Without this the
+      corrected host would sit unused until Home Assistant's own setup-retry
+      backoff came round, which grows to ten minutes.
+    """
+    changed = hass.config_entries.async_update_entry(entry, data=dict(data))
+    if changed and entry.state is config_entries.ConfigEntryState.LOADED:
+        return
+    hass.config_entries.async_schedule_reload(entry.entry_id)

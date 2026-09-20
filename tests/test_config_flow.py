@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -1174,6 +1175,66 @@ async def test_reconfigure_changed_entry_leaves_the_reload_to_the_listener(
     }
 
     with (
+        patch_marstek_integration(),
+        patch_manual_connection(device_info=device_info),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+
+        with patch(
+            "homeassistant.config_entries.ConfigEntries.async_schedule_reload"
+        ) as schedule_reload:
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                user_input={"host": "192.168.1.201", "port": 30000},
+            )
+            await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == (
+        "192.168.1.201"
+    )
+    schedule_reload.assert_not_called()
+
+
+async def test_reconfigure_unloaded_entry_schedules_the_reload(
+    hass: HomeAssistant,
+) -> None:
+    """An entry that is not loaded carries no update listener.
+
+    Nothing would pick the corrected host up until Home Assistant's own
+    setup-retry backoff came round, which grows to ten minutes, so the flow
+    has to ask for the reload itself.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="AA:BB:CC:DD:EE:FF",
+        data={
+            "host": "192.168.1.200",
+            "port": 30000,
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "Venus C",
+            "version": 153,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+        data=None,
+    )
+
+    device_info = {
+        "ip": "192.168.1.201",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "Venus C",
+        "version": 153,
+    }
+
+    with (
         patch_manual_connection(device_info=device_info),
         patch(
             "homeassistant.config_entries.ConfigEntries.async_schedule_reload"
@@ -1186,10 +1247,8 @@ async def test_reconfigure_changed_entry_leaves_the_reload_to_the_listener(
         await hass.async_block_till_done()
 
     assert result["reason"] == "reconfigure_successful"
-    assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == (
-        "192.168.1.201"
-    )
-    schedule_reload.assert_not_called()
+    assert entry.data["host"] == "192.168.1.201"
+    schedule_reload.assert_called_once_with(entry.entry_id)
 
 
 async def test_reconfigure_confirm_form_snapshot(

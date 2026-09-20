@@ -429,17 +429,21 @@ async def test_integration_discovery_reloads_and_keeps_services(
             "port": 30000,
         }
 
-        original_schedule_reload = hass.config_entries.async_schedule_reload
+        original_reload = hass.config_entries.async_reload
 
-        def _schedule_reload(entry_id: str) -> None:
-            original_schedule_reload(entry_id)
-            hass.async_create_task(hass.config_entries.async_reload(entry_id))
+        async def _passthrough_reload(entry_id: str) -> bool:
+            return await original_reload(entry_id)
 
-        with patch.object(
-            hass.config_entries,
-            "async_schedule_reload",
-            side_effect=_schedule_reload,
-        ) as mock_schedule_reload:
+        with (
+            patch.object(
+                hass.config_entries,
+                "async_reload",
+                AsyncMock(side_effect=_passthrough_reload),
+            ) as mock_reload,
+            patch.object(
+                hass.config_entries, "async_schedule_reload"
+            ) as mock_schedule_reload,
+        ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN,
                 context={"source": "integration_discovery"},
@@ -450,7 +454,10 @@ async def test_integration_discovery_reloads_and_keeps_services(
             assert result["reason"] == "already_configured"
             await hass.async_block_till_done()
 
-        mock_schedule_reload.assert_called_once_with(mock_config_entry.entry_id)
+        # The update listener a loaded entry carries reloads it once. A second,
+        # explicitly scheduled reload would set the device up twice.
+        mock_reload.assert_called_once_with(mock_config_entry.entry_id)
+        mock_schedule_reload.assert_not_called()
         assert (
             hass.config_entries.async_get_entry(mock_config_entry.entry_id).data["host"]
             == "192.168.1.201"
@@ -488,17 +495,21 @@ async def test_dhcp_discovery_reloads_and_keeps_services(
             },
         )
 
-        original_schedule_reload = hass.config_entries.async_schedule_reload
+        original_reload = hass.config_entries.async_reload
 
-        def _schedule_reload(entry_id: str) -> None:
-            original_schedule_reload(entry_id)
-            hass.async_create_task(hass.config_entries.async_reload(entry_id))
+        async def _passthrough_reload(entry_id: str) -> bool:
+            return await original_reload(entry_id)
 
-        with patch.object(
-            hass.config_entries,
-            "async_schedule_reload",
-            side_effect=_schedule_reload,
-        ) as mock_schedule_reload:
+        with (
+            patch.object(
+                hass.config_entries,
+                "async_reload",
+                AsyncMock(side_effect=_passthrough_reload),
+            ) as mock_reload,
+            patch.object(
+                hass.config_entries, "async_schedule_reload"
+            ) as mock_schedule_reload,
+        ):
             result = await hass.config_entries.flow.async_init(
                 DOMAIN,
                 context={"source": "dhcp"},
@@ -509,7 +520,10 @@ async def test_dhcp_discovery_reloads_and_keeps_services(
             assert result["reason"] == "already_configured"
             await hass.async_block_till_done()
 
-        mock_schedule_reload.assert_called_once_with(mock_config_entry.entry_id)
+        # The update listener a loaded entry carries reloads it once. A second,
+        # explicitly scheduled reload would set the device up twice.
+        mock_reload.assert_called_once_with(mock_config_entry.entry_id)
+        mock_schedule_reload.assert_not_called()
         assert (
             hass.config_entries.async_get_entry(mock_config_entry.entry_id).data["host"]
             == "192.168.1.202"
@@ -1294,3 +1308,26 @@ async def test_existing_venus_e2_entry_fails_setup(
     assert entry.state == ConfigEntryState.SETUP_ERROR
     client.send_request.assert_not_called()
 
+
+
+def test_every_platform_declares_parallel_updates() -> None:
+    """Home Assistant needs the constant to know how to schedule updates.
+
+    Coordinator-driven read-only platforms need no serialization (0); the
+    write platforms keep one in-flight command at a time, because the device
+    answers a single UDP request at a time.
+    https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/parallel-updates
+    """
+    from custom_components.marstek import (
+        binary_sensor,
+        number,
+        select,
+        sensor,
+        switch,
+    )
+
+    assert binary_sensor.PARALLEL_UPDATES == 0
+    assert sensor.PARALLEL_UPDATES == 0
+    assert number.PARALLEL_UPDATES == 1
+    assert select.PARALLEL_UPDATES == 1
+    assert switch.PARALLEL_UPDATES == 1
