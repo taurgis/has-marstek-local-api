@@ -39,6 +39,8 @@ from .network import (
 )
 from .openapi_marks import OpenApiMarks
 from .poll_gate import PollGate
+from .response_router import ResponseRouter
+from .throttle import DeviceThrottle
 from .validators import (
     ValidationError,
     json_rpc_result_usable,
@@ -142,10 +144,7 @@ class MarstekUDPClient:
         self._bind_port = bind_port if bind_port is not None else port
         self._socket: socket.socket | None = None
         self._closed: bool = False
-        self._pending_requests: dict[
-            int | tuple[str, int], asyncio.Future[dict[str, Any]]
-        ] = {}
-        self._response_cache: dict[int | tuple[str, int], dict[str, Any]] = {}
+        self._router: ResponseRouter = ResponseRouter(self.loop_time)
         self._listen_task: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._receiver_pause_count: int = 0
@@ -168,20 +167,9 @@ class MarstekUDPClient:
         self._local_send_ip: str = "0.0.0.0"
         self._poll_gate: PollGate = PollGate()
         self._marks: OpenApiMarks = OpenApiMarks()
-        self._device_io_locks: dict[str, asyncio.Lock] = {}
 
-        # Rate limiting: track last request time per device IP
-        self._last_request_time: dict[str, float] = {}
-        self._rate_limit_locks: dict[str, asyncio.Lock] = {}  # Per-IP locks
-        self._rate_limit_meta_lock: asyncio.Lock = asyncio.Lock()  # For creating per-IP locks
-
-        # Cleanup: max tracked IPs before cleanup
-        self._max_tracked_ips: int = 100
-        self._rate_limit_cleanup_threshold: float = 300.0  # 5 minutes
-
-        # Response cache cleanup settings
-        self._response_cache_max_size: int = 50
-        self._response_cache_max_age: float = 30.0  # 30 seconds
+        # Per-device pacing and the locks that serialize their traffic
+        self._throttle: DeviceThrottle = DeviceThrottle(self.loop_time)
 
         # Command diagnostics (per method, optional per device IP)
         self._command_stats: CommandStats = CommandStats()
@@ -201,70 +189,6 @@ class MarstekUDPClient:
     def get_command_stats_for_ip(self, device_ip: str) -> dict[str, dict[str, Any]]:
         """Return snapshot of command stats for a specific device IP."""
         return self._command_stats.snapshot_for_ip(device_ip)
-
-    def _pending_key(
-        self, wire_id: int, device_ip: str | None
-    ) -> int | tuple[str, int]:
-        """Return the pending-request map key for a unicast or broadcast id."""
-        if device_ip is None:
-            return wire_id
-        return (device_ip, wire_id)
-
-    def _track_pending(
-        self, request_id: Any, *, device_ip: str | None = None
-    ) -> tuple[int, asyncio.Future[dict[str, Any]]]:
-        """Register a pending request using the firmware's uint16 JSON-RPC id."""
-        wire_id = json_rpc_wire_id(request_id)
-        if wire_id is None:
-            raise ValueError("Invalid message: missing id")
-        key = self._pending_key(wire_id, device_ip)
-        existing = self._pending_requests.get(key)
-        if existing is not None and not existing.done():
-            target = f" for {device_ip}" if device_ip else ""
-            raise ValueError(f"Duplicate pending JSON-RPC id {wire_id}{target}")
-        future: asyncio.Future[dict[str, Any]] = asyncio.Future()
-        self._pending_requests[key] = future
-        return wire_id, future
-
-    def _pop_pending_future(
-        self, request_id: int, *, source_ip: str | None = None
-    ) -> asyncio.Future[dict[str, Any]] | None:
-        """Resolve a pending future for a unicast reply or broadcast cache.
-
-        A source-tagged datagram may only complete the matching ``(ip, id)``
-        unicast or a generic broadcast request. Duplicate replies must not
-        complete another device's pending request that happens to share the
-        same JSON-RPC id.
-        """
-        if source_ip is not None:
-            future = self._pending_requests.pop((source_ip, request_id), None)
-            if future is not None:
-                return future
-        return self._pending_requests.pop(request_id, None)
-
-    def _pop_cached_responses_for_id(
-        self, request_id: int, *, since: float
-    ) -> list[dict[str, Any]]:
-        """Take cached replies for a JSON-RPC id from every source IP.
-
-        Only replies cached at or after *since* count. JSON-RPC ids are
-        uint16 on the wire and discovery reuses them, so a late datagram
-        answering the *previous* broadcast must not be handed to this one.
-        """
-        responses: list[dict[str, Any]] = []
-        for key in list(self._response_cache):
-            matches_id = key == request_id or (
-                isinstance(key, tuple) and len(key) == 2 and key[1] == request_id
-            )
-            if not matches_id:
-                continue
-            if self._response_cache[key].get("timestamp", 0.0) < since:
-                continue
-            cached = self._response_cache.pop(key)
-            response = cached.get("response")
-            if isinstance(response, dict):
-                responses.append(response)
-        return responses
 
     def loop_time(self) -> float:
         """Return the current clock reading of the configured loop."""
@@ -426,18 +350,11 @@ class MarstekUDPClient:
             self._socket.close()
             self._socket = None
 
-        pending = list(self._pending_requests.values())
-        self._pending_requests.clear()
-        for future in pending:
-            if not future.done():
-                future.cancel()
+        self._router.cancel_all()
 
         # Clear caches to prevent memory retention after cleanup
-        self._response_cache.clear()
         self._discovery_cache = None
-        self._last_request_time.clear()
-        self._rate_limit_locks.clear()
-        self._device_io_locks.clear()
+        self._throttle.clear()
         self._marks.clear()
         self._poll_gate.clear()
         async with self._exchange_gate:
@@ -505,20 +422,6 @@ class MarstekUDPClient:
         """
         return target_ip in self._broadcast_addresses
 
-    async def _get_rate_limit_lock(self, target_ip: str) -> asyncio.Lock:
-        """Get or create a per-IP rate limit lock."""
-        async with self._rate_limit_meta_lock:
-            if target_ip not in self._rate_limit_locks:
-                self._rate_limit_locks[target_ip] = asyncio.Lock()
-            return self._rate_limit_locks[target_ip]
-
-    async def _get_device_io_lock(self, target_ip: str) -> asyncio.Lock:
-        """Get or create a per-IP lock for reset-prone unicast exchanges."""
-        async with self._rate_limit_meta_lock:
-            if target_ip not in self._device_io_locks:
-                self._device_io_locks[target_ip] = asyncio.Lock()
-            return self._device_io_locks[target_ip]
-
     def set_openapi_reset_prone(
         self, device_ip: str, prone: bool, *, owner: str | None = None
     ) -> None:
@@ -556,102 +459,23 @@ class MarstekUDPClient:
         self._marks.transfer_reset_prone(old_ip, new_ip, owner=owner)
 
     async def _cleanup_rate_limit_tracking(self) -> None:
-        """Remove stale entries from rate limit tracking to prevent memory leaks."""
-        current_time = self.loop_time()
-
-        async with self._rate_limit_meta_lock:
-            if len(self._last_request_time) <= self._max_tracked_ips:
-                return
-
-            # Remove entries older than cleanup threshold
-            stale_ips = [
-                ip for ip, last_time in self._last_request_time.items()
-                if current_time - last_time > self._rate_limit_cleanup_threshold
-            ]
-
-            for ip in stale_ips:
-                self._last_request_time.pop(ip, None)
-                self._rate_limit_locks.pop(ip, None)
-                self._device_io_locks.pop(ip, None)
-                self._command_stats.forget_ip(ip)
-
-            if stale_ips:
-                _LOGGER.debug("Cleaned up rate limit tracking for %d stale IPs", len(stale_ips))
-
-    def _cleanup_response_cache(self) -> None:
-        """Remove stale entries from response cache to prevent memory leaks.
-
-        Called periodically during response listening to prevent unbounded growth
-        from late responses or orphaned cache entries.
-        """
-        if not self._response_cache:
-            return
-
-        current_time = self.loop_time()
-
-        # Remove entries older than max age
-        stale_ids = [
-            request_id for request_id, cached in self._response_cache.items()
-            if current_time - cached.get("timestamp", 0) > self._response_cache_max_age
-        ]
-
-        for request_id in stale_ids:
-            self._response_cache.pop(request_id, None)
-
-        # If still too large, remove oldest entries
-        if len(self._response_cache) > self._response_cache_max_size:
-            sorted_entries = sorted(
-                self._response_cache.items(),
-                key=lambda x: x[1].get("timestamp", 0)
-            )
-            # Remove oldest half
-            to_remove = len(self._response_cache) - self._response_cache_max_size // 2
-            for request_id, _ in sorted_entries[:to_remove]:
-                self._response_cache.pop(request_id, None)
-
-            # Reaching this branch means the cache is over the max size, so
-            # ``to_remove`` is always positive.
-            _LOGGER.debug(
-                "Cleaned up %d stale response cache entries",
-                to_remove + len(stale_ids),
-            )
+        """Forget devices quiet long enough to stop tracking, stats included."""
+        for device_ip in await self._throttle.prune():
+            self._command_stats.forget_ip(device_ip)
 
     async def _enforce_rate_limit(self, target_ip: str) -> None:
-        """Enforce minimum interval between requests to the same device.
+        """Enforce the minimum interval between requests to one device.
 
-        This prevents overwhelming Marstek devices which can be sensitive
-        to rapid request bursts. Uses per-IP locks to avoid blocking
-        requests to different devices.
+        Reset-prone Control builds get the stricter floor; everything else
+        gets the normal one.
         """
-        loop = self._configured_loop()
-
-        # Get per-IP lock (creates one if needed)
-        ip_lock = await self._get_rate_limit_lock(target_ip)
-
-        async with ip_lock:
-            current_time = loop.time()
-            last_time = self._last_request_time.get(target_ip, 0)
-            elapsed = current_time - last_time
-            min_interval = (
-                MIN_RESET_PRONE_REQUEST_INTERVAL
-                if self._marks.is_reset_prone(target_ip)
-                else MIN_REQUEST_INTERVAL
-            )
-
-            if elapsed < min_interval:
-                wait_time = min_interval - elapsed
-                _LOGGER.debug(
-                    "Rate limiting: waiting %.2fs before request to %s",
-                    wait_time,
-                    target_ip,
-                )
-                await asyncio.sleep(wait_time)
-
-            # Update last request time
-            self._last_request_time[target_ip] = loop.time()
-
-        # Periodically cleanup stale entries
-        if len(self._last_request_time) > self._max_tracked_ips:
+        min_interval = (
+            MIN_RESET_PRONE_REQUEST_INTERVAL
+            if self._marks.is_reset_prone(target_ip)
+            else MIN_REQUEST_INTERVAL
+        )
+        await self._throttle.wait_turn(target_ip, min_interval)
+        if self._throttle.is_crowded():
             await self._cleanup_rate_limit_tracking()
 
     async def _send_udp_message(
@@ -687,7 +511,7 @@ class MarstekUDPClient:
             # retransmit) leaves the clock stale and the *next* throttled
             # request believes the device has been idle. Same clock as
             # ``_enforce_rate_limit``, which reads the stamp back.
-            self._last_request_time[target_ip] = self.loop_time()
+            self._throttle.note_sent(target_ip)
         _LOGGER.debug("Send: %s:%d | %s", target_ip, target_port, message)
 
     def _wifi_reliability_enabled(self, target_ip: str, method_name: str) -> bool:
@@ -868,7 +692,7 @@ class MarstekUDPClient:
         # requests, so those IPs exchange under a per-device lock. Everything
         # else runs the same exchange unguarded.
         guard: AbstractAsyncContextManager[Any, None] = (
-            await self._get_device_io_lock(target_ip)
+            await self._throttle.io_lock(target_ip)
             if self._marks.is_reset_prone(target_ip)
             else nullcontext()
         )
@@ -900,7 +724,7 @@ class MarstekUDPClient:
         await self._enter_unicast_exchange()
         try:
             pending_ip = await self._resolve_unicast_ip(target_ip)
-            request_id, future = self._track_pending(request_id, device_ip=pending_ip)
+            request_id, future = self._router.track(request_id, device_ip=pending_ip)
 
             try:
                 self._ensure_listener()
@@ -984,7 +808,7 @@ class MarstekUDPClient:
                 )
                 raise
             finally:
-                self._pending_requests.pop((pending_ip, request_id), None)
+                self._router.drop_waiter(request_id, device_ip=pending_ip)
         finally:
             await self._exit_unicast_exchange()
 
@@ -1019,26 +843,13 @@ class MarstekUDPClient:
                 request_id = json_rpc_wire_id(raw_id)
                 _LOGGER.debug("Recv: %s:%d | %s", addr[0], addr[1], response)
                 if request_id is not None:
-                    self._response_cache[(addr[0], request_id)] = {
-                        "response": response,
-                        "addr": addr,
-                        "timestamp": loop.time(),
-                    }
-                    future = self._pop_pending_future(request_id, source_ip=addr[0])
-                    if future and not future.done():
-                        future.set_result(response)
-                    elif future is None:
-                        _LOGGER.debug(
-                            "Ignoring UDP response id=%s from %s; no matching pending request",
-                            request_id,
-                            addr[0],
-                        )
+                    self._router.deliver(request_id, response, addr)
 
                 # Periodically cleanup response cache to prevent memory leaks
                 cleanup_counter += 1
                 if cleanup_counter >= 10:  # Every 10 responses
                     cleanup_counter = 0
-                    self._cleanup_response_cache()
+                    self._router.evict_stale()
             except asyncio.CancelledError:
                 break
             except OSError as err:
@@ -1082,7 +893,7 @@ class MarstekUDPClient:
 
         try:
             message, request_id, _method_name = normalize_json_rpc_wire_message(message)
-            request_id, _future = self._track_pending(request_id)
+            request_id, _future = self._router.track(request_id)
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             _LOGGER.error("Invalid message for broadcast: %s", exc)
             return []
@@ -1109,10 +920,10 @@ class MarstekUDPClient:
                     break
                 await asyncio.sleep(min(BROADCAST_DRAIN_INTERVAL, remaining))
                 responses.extend(
-                    self._pop_cached_responses_for_id(request_id, since=start_time)
+                    self._router.take_cached(request_id, since=start_time)
                 )
         finally:
-            self._pending_requests.pop(request_id, None)
+            self._router.drop_waiter(request_id)
         _LOGGER.debug("Broadcast discovery completed, found %d device(s)", len(responses))
         return responses
 

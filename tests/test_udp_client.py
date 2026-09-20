@@ -38,7 +38,7 @@ def _complete_first_pending(
 ) -> None:
     """Complete the first unfinished pending unicast future."""
     payload = response if response is not None else {"id": 1, "result": {}}
-    for future in client._pending_requests.values():
+    for future in client._router.pending.values():
         if not future.done():
             future.set_result(payload)
             return
@@ -101,55 +101,55 @@ def setup_udp_client() -> MarstekUDPClient:
 
 
 class TestResponseCacheCleanup:
-    """Tests for _cleanup_response_cache method."""
+    """Tests for the response router's stale-entry eviction."""
 
     def test_cleanup_empty_cache(self, udp_client):
         """Test cleanup does nothing with empty cache."""
-        udp_client._response_cache = {}
-        udp_client._cleanup_response_cache()
-        assert udp_client._response_cache == {}
+        udp_client._router.cache = {}
+        udp_client._router.evict_stale()
+        assert udp_client._router.cache == {}
 
     def test_cleanup_removes_stale_entries(self, udp_client):
         """Test cleanup removes entries older than max age."""
         # Current time is 1000.0, max age is 30s
-        udp_client._response_cache = {
+        udp_client._router.cache = {
             1: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 900.0},  # 100s old - stale
             2: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 950.0},  # 50s old - stale
             3: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 980.0},  # 20s old - fresh
             4: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 995.0},  # 5s old - fresh
         }
 
-        udp_client._cleanup_response_cache()
+        udp_client._router.evict_stale()
 
         # Only fresh entries should remain
-        assert 1 not in udp_client._response_cache
-        assert 2 not in udp_client._response_cache
-        assert 3 in udp_client._response_cache
-        assert 4 in udp_client._response_cache
+        assert 1 not in udp_client._router.cache
+        assert 2 not in udp_client._router.cache
+        assert 3 in udp_client._router.cache
+        assert 4 in udp_client._router.cache
 
     def test_cleanup_caps_cache_size(self, udp_client):
         """Test cleanup removes oldest entries when cache exceeds max size."""
         # Set a smaller max size for testing
-        udp_client._response_cache_max_size = 5
-        udp_client._response_cache_max_age = 1000.0  # Don't expire by age
+        udp_client._router.max_cached = 5
+        udp_client._router.max_age = 1000.0  # Don't expire by age
 
         # Add more entries than max size (all fresh)
-        udp_client._response_cache = {
+        udp_client._router.cache = {
             i: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 990.0 + i}
             for i in range(10)
         }
 
-        udp_client._cleanup_response_cache()
+        udp_client._router.evict_stale()
 
         # Should be reduced to roughly half of max size
-        assert len(udp_client._response_cache) <= udp_client._response_cache_max_size
+        assert len(udp_client._router.cache) <= udp_client._router.max_cached
 
     def test_cleanup_preserves_newest_entries(self, udp_client):
         """Test cleanup preserves the newest entries when trimming."""
-        udp_client._response_cache_max_size = 4
-        udp_client._response_cache_max_age = 1000.0  # Don't expire by age
+        udp_client._router.max_cached = 4
+        udp_client._router.max_age = 1000.0  # Don't expire by age
 
-        udp_client._response_cache = {
+        udp_client._router.cache = {
             1: {"response": {"id": 1}, "addr": ("1.2.3.4", 30000), "timestamp": 100.0},  # oldest
             2: {"response": {"id": 2}, "addr": ("1.2.3.4", 30000), "timestamp": 200.0},
             3: {"response": {"id": 3}, "addr": ("1.2.3.4", 30000), "timestamp": 300.0},
@@ -157,10 +157,10 @@ class TestResponseCacheCleanup:
             5: {"response": {"id": 5}, "addr": ("1.2.3.4", 30000), "timestamp": 500.0},  # newest
         }
 
-        udp_client._cleanup_response_cache()
+        udp_client._router.evict_stale()
 
         # Newest entries should be preserved
-        assert 5 in udp_client._response_cache
+        assert 5 in udp_client._router.cache
 
 
 class TestAsyncCleanup:
@@ -171,11 +171,11 @@ class TestAsyncCleanup:
         client = MarstekUDPClient()
 
         # Populate caches
-        client._pending_requests = {1: asyncio.Future(), 2: asyncio.Future()}
-        client._response_cache = {1: {"response": {}}, 2: {"response": {}}}
+        client._router.pending = {1: asyncio.Future(), 2: asyncio.Future()}
+        client._router.cache = {1: {"response": {}}, 2: {"response": {}}}
         client._discovery_cache = [{"device": "test"}]
-        client._last_request_time = {"192.168.1.1": 1000.0}
-        client._rate_limit_locks = {"192.168.1.1": asyncio.Lock()}
+        client._throttle.last_request_time = {"192.168.1.1": 1000.0}
+        client._throttle.rate_limit_locks = {"192.168.1.1": asyncio.Lock()}
         await client.pause_polling("192.168.1.1")
         client._es_mode_device_ids = {"192.168.1.1": 1}
 
@@ -186,11 +186,11 @@ class TestAsyncCleanup:
         await client.async_cleanup()
 
         # All caches should be cleared
-        assert client._pending_requests == {}
-        assert client._response_cache == {}
+        assert client._router.pending == {}
+        assert client._router.cache == {}
         assert client._discovery_cache is None
-        assert client._last_request_time == {}
-        assert client._rate_limit_locks == {}
+        assert client._throttle.last_request_time == {}
+        assert client._throttle.rate_limit_locks == {}
         assert not client.is_polling_paused("192.168.1.1")
         assert client._es_mode_device_ids == {}
         assert client._socket is None
@@ -219,15 +219,15 @@ class TestRateLimitCleanup:
         client = MarstekUDPClient()
         client._loop = MagicMock()
         client._loop.time.return_value = 1000.0
-        client._max_tracked_ips = 2  # Low threshold to trigger cleanup
+        client._throttle.max_tracked_ips = 2  # Low threshold to trigger cleanup
 
         # Add old entries that should be cleaned up
-        client._last_request_time = {
+        client._throttle.last_request_time = {
             "192.168.1.1": 100.0,  # 900s old - stale
             "192.168.1.2": 200.0,  # 800s old - stale
             "192.168.1.3": 999.0,  # 1s old - fresh
         }
-        client._rate_limit_locks = {
+        client._throttle.rate_limit_locks = {
             "192.168.1.1": asyncio.Lock(),
             "192.168.1.2": asyncio.Lock(),
             "192.168.1.3": asyncio.Lock(),
@@ -236,10 +236,10 @@ class TestRateLimitCleanup:
         await client._cleanup_rate_limit_tracking()
 
         # Stale IPs should be removed
-        assert "192.168.1.1" not in client._last_request_time
-        assert "192.168.1.2" not in client._last_request_time
+        assert "192.168.1.1" not in client._throttle.last_request_time
+        assert "192.168.1.2" not in client._throttle.last_request_time
         # Fresh IP should remain
-        assert "192.168.1.3" in client._last_request_time
+        assert "192.168.1.3" in client._throttle.last_request_time
 
 
 class TestAsyncSetup:
@@ -1223,7 +1223,7 @@ class TestRateLimiting:
         
         # First call - no wait
         await client._enforce_rate_limit("192.168.1.100")
-        assert client._last_request_time.get("192.168.1.100") == 0.0
+        assert client._throttle.last_request_time.get("192.168.1.100") == 0.0
         
         # Second call - should wait (mocked)
         time_value = 0.1  # Only 100ms elapsed
@@ -1240,9 +1240,9 @@ class TestRateLimiting:
         """Test that per-IP locks are created."""
         client = MarstekUDPClient()
         
-        lock1 = await client._get_rate_limit_lock("192.168.1.100")
-        lock2 = await client._get_rate_limit_lock("192.168.1.100")
-        lock3 = await client._get_rate_limit_lock("192.168.1.101")
+        lock1 = await client._throttle.rate_limit_lock("192.168.1.100")
+        lock2 = await client._throttle.rate_limit_lock("192.168.1.100")
+        lock3 = await client._throttle.rate_limit_lock("192.168.1.101")
         
         # Same IP should get same lock
         assert lock1 is lock2
@@ -1912,7 +1912,7 @@ class TestListenForResponses:
         client._loop = loop
 
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        client._pending_requests[0] = future
+        client._router.pending[0] = future
 
         recv_calls = 0
         response = {"id": 0, "result": {"mode": "Auto"}}
@@ -1932,7 +1932,7 @@ class TestListenForResponses:
         assert recv_calls == 2
         assert future.done()
         assert future.result() == response
-        assert client._response_cache[("192.168.1.100", 0)]["response"] == response
+        assert client._router.cache[("192.168.1.100", 0)]["response"] == response
 
     async def test_ignores_empty_udp_datagram(self) -> None:
         """Empty datagrams must not be decoded; Control firmware freezes on them."""
@@ -1956,8 +1956,8 @@ class TestListenForResponses:
             await client._listen_for_responses()
 
         assert recv_calls == 2
-        assert client._pending_requests == {}
-        assert client._response_cache == {}
+        assert client._router.pending == {}
+        assert client._router.cache == {}
 
     async def test_ignores_malformed_utf8_datagram(self) -> None:
         """A non-UTF-8 datagram must not kill the UDP listener."""
@@ -1969,7 +1969,7 @@ class TestListenForResponses:
         recv_calls = 0
         response = {"id": 7, "result": {"mode": "Auto"}}
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        client._pending_requests[7] = future
+        client._router.pending[7] = future
 
         async def mock_recvfrom(
             sock: Any, bufsize: int
@@ -1999,7 +1999,7 @@ class TestListenForResponses:
         recv_calls = 0
         response = {"id": 8, "result": {"mode": "Auto"}}
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        client._pending_requests[8] = future
+        client._router.pending[8] = future
 
         async def mock_recvfrom(
             sock: Any, bufsize: int
@@ -2030,7 +2030,7 @@ class TestListenForResponses:
         client._loop = loop
 
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        client._pending_requests[1] = future
+        client._router.pending[1] = future
 
         recv_calls = 0
         response = {"id": 65537, "result": {"mode": "Auto"}}
@@ -2049,7 +2049,7 @@ class TestListenForResponses:
 
         assert future.done()
         assert future.result() == response
-        assert ("192.168.1.100", 1) in client._response_cache
+        assert ("192.168.1.100", 1) in client._router.cache
 
 
 class TestPsutilHandling:
@@ -2150,12 +2150,12 @@ class TestRateLimitCleanupEnforcement:
         client._socket = MagicMock()
         loop = asyncio.get_event_loop()
         client._loop = loop
-        client._max_tracked_ips = 3  # Small limit for test
-        client._rate_limit_cleanup_threshold = 50.0  # Short threshold for test
+        client._throttle.max_tracked_ips = 3  # Small limit for test
+        client._throttle.stale_after = 50.0  # Short threshold for test
         
         # Fill up the tracking dict with more IPs than limit
         current_time = loop.time()
-        client._last_request_time = {
+        client._throttle.last_request_time = {
             f"192.168.1.{i}": current_time - 100  # Old entries (older than threshold)
             for i in range(10)
         }
@@ -2164,7 +2164,7 @@ class TestRateLimitCleanupEnforcement:
         await client._enforce_rate_limit("192.168.1.200")
         
         # Should have cleaned up old entries
-        assert len(client._last_request_time) <= client._max_tracked_ips
+        assert len(client._throttle.last_request_time) <= client._throttle.max_tracked_ips
 
     async def test_rate_limit_skips_broadcast_addresses(self) -> None:
         """Test that rate limiting is skipped for broadcast addresses."""
@@ -2210,7 +2210,7 @@ class TestRateLimitCleanupEnforcement:
         client._enforce_rate_limit.assert_not_called()
         # The throttle was skipped, but the datagram still updates the clock
         # the next throttled request reads.
-        assert client._last_request_time["192.168.1.100"] == 1000.0
+        assert client._throttle.last_request_time["192.168.1.100"] == 1000.0
 
     async def test_reset_prone_ignores_bypass_rate_limit(self) -> None:
         """Reset-prone IPs keep the UDP floor even when bypass is requested."""
@@ -2262,13 +2262,13 @@ class TestRateLimitCleanupEnforcement:
             {"255.255.255.255", "192.168.1.255"}
         )
 
-        initial_time_tracking = dict(client._last_request_time)
+        initial_time_tracking = dict(client._throttle.last_request_time)
 
         with _patch_sock_sendto():
             await client._send_udp_message('{"test": 1}', "192.168.1.255", 30000)
 
         # No new entries should be tracked
-        assert client._last_request_time == initial_time_tracking
+        assert client._throttle.last_request_time == initial_time_tracking
 
     async def test_rate_limit_applies_to_host_ending_in_255(self) -> None:
         """A .255 host on a wider prefix is a device, not a broadcast.
@@ -2287,7 +2287,7 @@ class TestRateLimitCleanupEnforcement:
             await client._send_udp_message('{"test": 1}', "10.0.0.255", 30000)
 
         client._enforce_rate_limit.assert_awaited_once_with("10.0.0.255")
-        assert client._last_request_time["10.0.0.255"] == 1000.0
+        assert client._throttle.last_request_time["10.0.0.255"] == 1000.0
 
     async def test_broadcast_addresses_refresh_from_interface_table(self) -> None:
         """Enumerating broadcast targets updates the throttle exemption set."""
@@ -2781,7 +2781,7 @@ class TestPeriodicCleanup:
         client._loop = loop
         
         # Pre-populate with old cache entries
-        client._response_cache = {
+        client._router.cache = {
             i: {"response": {}, "addr": ("1.2.3.4", 30000), "timestamp": 0}
             for i in range(100)
         }
@@ -2817,12 +2817,12 @@ class TestPeriodicCleanup:
         current_time = loop.time()
         
         # Set a smaller cleanup threshold for testing
-        client._rate_limit_cleanup_threshold = 100.0
+        client._throttle.stale_after = 100.0
         # Set max_tracked_ips low so cleanup is triggered
-        client._max_tracked_ips = 2
+        client._throttle.max_tracked_ips = 2
         
         # Add entries with varying ages (need more than max_tracked_ips)
-        client._last_request_time = {
+        client._throttle.last_request_time = {
             "192.168.1.1": current_time - 500,   # Old (> cleanup threshold)
             "192.168.1.2": current_time - 200,   # Old (> cleanup threshold)
             "192.168.1.3": current_time - 10,    # Recent (< cleanup threshold)
@@ -2832,10 +2832,10 @@ class TestPeriodicCleanup:
         await client._cleanup_rate_limit_tracking()
         
         # Old entries should be removed, recent ones kept
-        assert "192.168.1.1" not in client._last_request_time
-        assert "192.168.1.2" not in client._last_request_time
-        assert "192.168.1.3" in client._last_request_time
-        assert "192.168.1.4" in client._last_request_time
+        assert "192.168.1.1" not in client._throttle.last_request_time
+        assert "192.168.1.2" not in client._throttle.last_request_time
+        assert "192.168.1.3" in client._throttle.last_request_time
+        assert "192.168.1.4" in client._throttle.last_request_time
 
 
 class TestSendRequestSkipValidation:
@@ -2949,9 +2949,9 @@ class TestResetProneRequestLock:
     async def test_device_io_lock_is_shared_per_ip(self) -> None:
         """The same IP reuses one lock; different IPs do not."""
         client = MarstekUDPClient()
-        lock1 = await client._get_device_io_lock("192.168.1.100")
-        lock2 = await client._get_device_io_lock("192.168.1.100")
-        lock3 = await client._get_device_io_lock("192.168.1.101")
+        lock1 = await client._throttle.io_lock("192.168.1.100")
+        lock2 = await client._throttle.io_lock("192.168.1.100")
+        lock3 = await client._throttle.io_lock("192.168.1.101")
         assert lock1 is lock2
         assert lock1 is not lock3
 
@@ -2971,7 +2971,7 @@ class TestResetProneRequestLock:
             nonlocal inflight, peak
             inflight += 1
             peak = max(peak, inflight)
-            for future in list(client._pending_requests.values()):
+            for future in list(client._router.pending.values()):
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
             await asyncio.sleep(0.05)
@@ -3014,7 +3014,7 @@ class TestResetProneRequestLock:
             nonlocal inflight, peak
             inflight += 1
             peak = max(peak, inflight)
-            for future in list(client._pending_requests.values()):
+            for future in list(client._router.pending.values()):
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
             started.set()
@@ -3096,7 +3096,7 @@ class TestResetProneRequestLock:
         async def slow_send(*args: Any, **kwargs: Any) -> None:
             entered.set()
             await release_send.wait()
-            for future in list(client._pending_requests.values()):
+            for future in list(client._router.pending.values()):
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
 
@@ -3132,7 +3132,7 @@ class TestResetProneRequestLock:
         async def slow_send(*args: Any, **kwargs: Any) -> None:
             entered.set()
             await release_send.wait()
-            for future in list(client._pending_requests.values()):
+            for future in list(client._router.pending.values()):
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
 
@@ -3174,7 +3174,7 @@ class TestResetProneRequestLock:
         async def slow_send(*args: Any, **kwargs: Any) -> None:
             entered.set()
             await release_send.wait()
-            for future in list(client._pending_requests.values()):
+            for future in list(client._router.pending.values()):
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
 
@@ -3240,9 +3240,9 @@ class TestResetProneRequestLock:
                 )
             )
             await started.wait()
-            assert ("192.168.1.100", 1) in client._pending_requests
-            assert ("192.168.1.101", 1) in client._pending_requests
-            for future in client._pending_requests.values():
+            assert ("192.168.1.100", 1) in client._router.pending
+            assert ("192.168.1.101", 1) in client._router.pending
+            for future in client._router.pending.values():
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
             release.set()
@@ -3251,14 +3251,14 @@ class TestResetProneRequestLock:
     def test_duplicate_reply_does_not_steal_other_device_future(self) -> None:
         """A duplicate reply from device A must not complete device B's request."""
         client = MarstekUDPClient()
-        _, future_a = client._track_pending(0, device_ip="192.168.1.10")
-        _, future_b = client._track_pending(0, device_ip="192.168.1.20")
+        _, future_a = client._router.track(0, device_ip="192.168.1.10")
+        _, future_b = client._router.track(0, device_ip="192.168.1.20")
 
-        popped_a = client._pop_pending_future(0, source_ip="192.168.1.10")
+        popped_a = client._router.pop_waiter(0, source_ip="192.168.1.10")
         assert popped_a is future_a
-        duplicate = client._pop_pending_future(0, source_ip="192.168.1.10")
+        duplicate = client._router.pop_waiter(0, source_ip="192.168.1.10")
         assert duplicate is None
-        assert client._pending_requests[("192.168.1.20", 0)] is future_b
+        assert client._router.pending[("192.168.1.20", 0)] is future_b
 
     async def test_hostname_pending_key_uses_resolved_ip(self) -> None:
         """Replies are sourced from the resolved IPv4, not the hostname."""
@@ -3286,8 +3286,8 @@ class TestResetProneRequestLock:
                 )
             )
             await started.wait()
-            assert ("192.168.1.50", 1) in client._pending_requests
-            future = client._pending_requests[("192.168.1.50", 1)]
+            assert ("192.168.1.50", 1) in client._router.pending
+            future = client._router.pending[("192.168.1.50", 1)]
             future.set_result({"id": 1, "result": {}})
             release.set()
             await task
@@ -3343,7 +3343,7 @@ class TestResetProneRequestLock:
                     timeout=1.0,
                     validate=False,
                 )
-            for future in list(client._pending_requests.values()):
+            for future in list(client._router.pending.values()):
                 if not future.done():
                     future.set_result({"id": 1, "result": {}})
             release.set()
