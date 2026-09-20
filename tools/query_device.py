@@ -54,7 +54,7 @@ async def query_device(host: str, port: int = 30000, timeout: float = 5.0):
             elif "method" in response and "params" in response:
                 print("   (echo of our request, continuing...)")
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
 
     sock.close()

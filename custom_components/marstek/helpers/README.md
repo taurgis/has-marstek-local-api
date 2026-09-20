@@ -5,15 +5,20 @@ Small, focused modules used by the Marstek integration. Keep entity and flow fil
 ## Modules
 
 - binary_sensor_descriptions.py: Binary sensor EntityDescription definitions.
+- command_retry.py: Shared retry loop for device writes over UDP.
 - coordinator_helpers.py: Coordinator validation helpers.
+- device_lookup.py: Device registry lookups and loaded-entry resolution.
 - flow_helpers.py: Config flow data helpers.
 - flow_schemas.py: Config flow and options schemas.
 - number_descriptions.py: Number EntityDescription definitions for SYS DOD.
+- polling.py: `polling_paused()` context manager held around device writes.
+- ports.py: Open API bind port helpers shared by setup and the flows.
 - select_descriptions.py: Select EntityDescription definitions.
-- select_helpers.py: Select mode change retry helpers.
 - sensor_descriptions.py: Sensor EntityDescription definitions.
 - sensor_stats.py: API stats helpers for sensors.
 - service_helpers.py: Service schemas and schedule helpers.
-- service_retry.py: Service mode command retry helpers.
+- service_retry.py: Service mode command retries with pause and error mapping.
 - switch_descriptions.py: Switch EntityDescription definitions for SYS BLE/LED.
-- sys_write.py: Pause/resume SYS writes and set_result acknowledgement.
+- sys_entity.py: Shared base for the optimistic, write-only SYS entities.
+- sys_write.py: SYS write transport plus set_result acknowledgement.
+- udp_clients.py: Per-bind-port `MarstekUDPClient` pool stored on `hass.data`.
