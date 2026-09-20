@@ -15,6 +15,7 @@ from .helpers.device_lookup import (
     async_resolve_marstek_device,
     require_loaded_marstek_entry,
 )
+from .helpers.polling import polling_paused
 from .helpers.service_helpers import (
     ATTR_DAYS,
     ATTR_DEVICE_ID,
@@ -226,9 +227,7 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
     )
 
     # Pause polling once for the full batch
-    await udp_client.pause_polling(host)
-
-    try:
+    async with polling_paused(udp_client, host):
         # Clear every profile-supported slot by setting it to disabled
         for slot in range(slot_count):
             config = build_manual_mode_config(
@@ -254,8 +253,6 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
                 slot_count,
                 device_id,
             )
-    finally:
-        await udp_client.resume_polling(host)
 
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
@@ -275,9 +272,7 @@ async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> 
     for schedule in schedules:
         _validate_schedule_slot_for_device(schedule[ATTR_SCHEDULE_SLOT], entry)
     # Pause polling once for all schedule commands
-    await udp_client.pause_polling(host)
-
-    try:
+    async with polling_paused(udp_client, host):
         for schedule in schedules:
             schedule_slot = schedule[ATTR_SCHEDULE_SLOT]
             start_time_raw = schedule[ATTR_START_TIME]
@@ -313,8 +308,6 @@ async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> 
                 enable,
                 device_id,
             )
-    finally:
-        await udp_client.resume_polling(host)
 
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
@@ -410,15 +403,3 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             schema=SERVICE_REQUEST_DATA_SYNC_SCHEMA,
         )
 
-
-async def async_unload_services(hass: HomeAssistant) -> None:
-    """Unload Marstek services."""
-    for service_name in (
-        SERVICE_SET_PASSIVE_MODE,
-        SERVICE_SET_MANUAL_SCHEDULE,
-        SERVICE_SET_MANUAL_SCHEDULES,
-        SERVICE_CLEAR_MANUAL_SCHEDULES,
-        SERVICE_REQUEST_DATA_SYNC,
-    ):
-        if hass.services.has_service(DOMAIN, service_name):
-            hass.services.async_remove(DOMAIN, service_name)

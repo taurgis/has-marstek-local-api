@@ -24,11 +24,12 @@ from .const import (
 )
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import build_device_info, get_device_identifier
+from .helpers.command_retry import send_command_with_retries
+from .helpers.polling import polling_paused
 from .helpers.select_descriptions import (
     SELECT_ENTITIES,
     MarstekSelectEntityDescription,
 )
-from .helpers.select_helpers import send_mode_command_with_retries
 from .mode_config import build_mode_config
 from .pymarstek import MarstekUDPClient, build_command
 
@@ -146,24 +147,25 @@ class MarstekOperatingModeSelect(
         command = build_command(CMD_ES_SET_MODE, {"id": 0, "config": config})
 
         # Pause polling while sending command
-        await self._udp_client.pause_polling(host)
-
-        try:
-            last_error = await send_mode_command_with_retries(
-                self._udp_client, command, host, port, option, logger=_LOGGER
+        async with polling_paused(self._udp_client, host):
+            last_error = await send_command_with_retries(
+                self._udp_client,
+                command,
+                host,
+                port,
+                description=f"mode command for {option}",
+                logger=_LOGGER,
             )
 
-            if last_error is not None:
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="mode_change_failed",
-                    translation_placeholders={
-                        "mode": option,
-                        "error": last_error,
-                    },
-                )
-        finally:
-            await self._udp_client.resume_polling(host)
+        if last_error is not None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="mode_change_failed",
+                translation_placeholders={
+                    "mode": option,
+                    "error": last_error,
+                },
+            )
 
         # Refresh after polling resumes so begin_poll_cycle is not skipped.
         await self.coordinator.async_request_refresh()

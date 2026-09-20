@@ -10,22 +10,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
 from .const import DOMAIN
 from .coordinator import MarstekDataUpdateCoordinator
-from .device_info import build_device_info, get_device_identifier
 from .helpers.number_descriptions import (
     NUMBER_ENTITIES,
     MarstekNumberEntityDescription,
 )
-from .helpers.sys_write import (
-    async_send_sys_write,
-    sys_write_target,
-    sys_write_timeout,
-)
-from .pymarstek import MarstekUDPClient, build_command
+from .helpers.sys_entity import MarstekSysEntity
+from .pymarstek import MarstekUDPClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,13 +95,9 @@ async def async_setup_entry(
     )
 
 
-class MarstekSysNumber(
-    CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreNumber
-):
+class MarstekSysNumber(MarstekSysEntity, RestoreNumber):
     """Optimistic number entity for a write-only SYS setting."""
 
-    _attr_has_entity_name = True
-    _attr_assumed_state = True
     _attr_suggested_display_precision = 0
     entity_description: MarstekNumberEntityDescription
 
@@ -120,14 +110,9 @@ class MarstekSysNumber(
         config_entry: ConfigEntry,
     ) -> None:
         """Initialize the SYS number entity."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._udp_client = udp_client
-        self._config_entry = config_entry
-        self._attr_unique_id = (
-            f"{get_device_identifier(device_info)}_{description.key}"
+        super().__init__(
+            coordinator, device_info, description, udp_client, config_entry
         )
-        self._attr_device_info = build_device_info(device_info)
         self._attr_native_value = float(description.default_value)
 
     @property
@@ -150,16 +135,8 @@ class MarstekSysNumber(
     async def async_set_native_value(self, value: float) -> None:
         """Send DOD.SET and publish the requested value after acknowledgement."""
         int_value = _coerce_dod_int(value, self.entity_description)
-        host, port = sys_write_target(self._config_entry)
-        command = build_command(
+        await self._async_sys_write(
             self.entity_description.method, {"value": int_value}
-        )
-        await async_send_sys_write(
-            self._udp_client,
-            command,
-            host,
-            port,
-            sys_write_timeout(self._config_entry),
         )
         self._attr_native_value = float(int_value)
         self.async_write_ha_state()

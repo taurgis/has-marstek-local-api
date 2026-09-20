@@ -91,9 +91,18 @@ def _exists_present_value(key: str, data: dict[str, Any]) -> bool:
     return data.get(key) is not None
 
 
-def _api_success_rate_sensor(
-    method: str, translation_key: str
+def _success_rate_sensor(
+    translation_key: str,
+    value_fn: Callable[
+        [MarstekDataUpdateCoordinator, dict[str, Any], ConfigEntry | None],
+        StateType,
+    ],
+    attributes_fn: Callable[
+        [MarstekDataUpdateCoordinator, dict[str, Any], ConfigEntry | None],
+        dict[str, Any] | None,
+    ],
 ) -> MarstekSensorEntityDescription:
+    """Build a diagnostic percentage sensor over the command statistics."""
     return MarstekSensorEntityDescription(
         key=translation_key,
         translation_key=translation_key,
@@ -102,11 +111,19 @@ def _api_success_rate_sensor(
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         suggested_display_precision=1,
-        value_fn=lambda coordinator, _info, _entry, method=method: (  # type: ignore[misc]
-            command_success_rate(coordinator, method)
-        ),
-        attributes_fn=lambda coordinator, _info, _entry, method=method: (  # type: ignore[misc]
-            command_stats_attributes(coordinator, method)
+        value_fn=value_fn,
+        attributes_fn=attributes_fn,
+    )
+
+
+def _api_success_rate_sensor(
+    method: str, translation_key: str
+) -> MarstekSensorEntityDescription:
+    return _success_rate_sensor(
+        translation_key,
+        lambda coordinator, _info, _entry: command_success_rate(coordinator, method),
+        lambda coordinator, _info, _entry: command_stats_attributes(
+            coordinator, method
         ),
     )
 
@@ -114,19 +131,11 @@ def _api_success_rate_sensor(
 def _overall_success_rate_sensor(
     translation_key: str,
 ) -> MarstekSensorEntityDescription:
-    return MarstekSensorEntityDescription(
-        key=translation_key,
-        translation_key=translation_key,
-        native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        suggested_display_precision=1,
-        value_fn=lambda coordinator, _info, _entry: (
-            overall_command_success_rate(coordinator)
-        ),
-        attributes_fn=lambda coordinator, _info, _entry: (
-            overall_command_stats_attributes(coordinator)
+    return _success_rate_sensor(
+        translation_key,
+        lambda coordinator, _info, _entry: overall_command_success_rate(coordinator),
+        lambda coordinator, _info, _entry: overall_command_stats_attributes(
+            coordinator
         ),
     )
 

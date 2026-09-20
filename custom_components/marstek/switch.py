@@ -11,21 +11,15 @@ from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import MarstekConfigEntry
 from .coordinator import MarstekDataUpdateCoordinator
-from .device_info import build_device_info, get_device_identifier
 from .helpers.switch_descriptions import (
     SWITCH_ENTITIES,
     MarstekSwitchEntityDescription,
 )
-from .helpers.sys_write import (
-    async_send_sys_write,
-    sys_write_target,
-    sys_write_timeout,
-)
-from .pymarstek import MarstekUDPClient, build_command
+from .helpers.sys_entity import MarstekSysEntity
+from .pymarstek import MarstekUDPClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,13 +53,9 @@ async def async_setup_entry(
     )
 
 
-class MarstekSysSwitch(
-    CoordinatorEntity[MarstekDataUpdateCoordinator], SwitchEntity, RestoreEntity
-):
+class MarstekSysSwitch(MarstekSysEntity, SwitchEntity, RestoreEntity):
     """Optimistic switch entity for a write-only SYS setting."""
 
-    _attr_has_entity_name = True
-    _attr_assumed_state = True
     entity_description: MarstekSwitchEntityDescription
 
     def __init__(
@@ -77,14 +67,9 @@ class MarstekSysSwitch(
         config_entry: ConfigEntry,
     ) -> None:
         """Initialize the SYS switch entity."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._udp_client = udp_client
-        self._config_entry = config_entry
-        self._attr_unique_id = (
-            f"{get_device_identifier(device_info)}_{description.key}"
+        super().__init__(
+            coordinator, device_info, description, udp_client, config_entry
         )
-        self._attr_device_info = build_device_info(device_info)
         self._attr_is_on = None
 
     async def async_added_to_hass(self) -> None:
@@ -108,17 +93,9 @@ class MarstekSysSwitch(
 
     async def _async_set_is_on(self, is_on: bool, wire_value: int) -> None:
         """Send the SYS write and publish state after acknowledgement."""
-        host, port = sys_write_target(self._config_entry)
-        command = build_command(
+        await self._async_sys_write(
             self.entity_description.method,
             {self.entity_description.param_key: wire_value},
-        )
-        await async_send_sys_write(
-            self._udp_client,
-            command,
-            host,
-            port,
-            sys_write_timeout(self._config_entry),
         )
         self._attr_is_on = is_on
         self.async_write_ha_state()

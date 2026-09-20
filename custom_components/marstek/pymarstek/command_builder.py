@@ -164,8 +164,12 @@ def get_pv_status(device_id: int = 0) -> str:
     return build_command(CMD_PV_GET_STATUS, {"id": device_id})
 
 
-def set_es_mode_manual_charge(device_id: int = 0, power: int = -1300) -> str:
-    """Create a manual charge command."""
+def _set_es_mode_manual(device_id: int, power: int) -> str:
+    """Create an always-on Manual mode command for *power*.
+
+    Charging and discharging differ only in the sign of ``power``: the
+    firmware reads negative as charge and positive as discharge.
+    """
     config = {
         "mode": "Manual",
         "manual_cfg": {
@@ -178,22 +182,16 @@ def set_es_mode_manual_charge(device_id: int = 0, power: int = -1300) -> str:
         },
     }
     return build_command(CMD_ES_SET_MODE, {"id": device_id, "config": config})
+
+
+def set_es_mode_manual_charge(device_id: int = 0, power: int = -1300) -> str:
+    """Create a manual charge command."""
+    return _set_es_mode_manual(device_id, power)
 
 
 def set_es_mode_manual_discharge(device_id: int = 0, power: int = 1300) -> str:
     """Create a manual discharge command."""
-    config = {
-        "mode": "Manual",
-        "manual_cfg": {
-            "time_num": 0,
-            "start_time": "00:00",
-            "end_time": "23:59",
-            "week_set": 127,
-            "power": power,
-            "enable": 1,
-        },
-    }
-    return build_command(CMD_ES_SET_MODE, {"id": device_id, "config": config})
+    return _set_es_mode_manual(device_id, power)
 
 
 def get_wifi_status(device_id: int = 0) -> str:

@@ -15,6 +15,7 @@ from ..const import (
     DOMAIN,
 )
 from ..pymarstek import MarstekUDPClient, ValidationError
+from .polling import polling_paused
 
 
 def sys_write_target(config_entry: ConfigEntry) -> tuple[str, int]:
@@ -72,8 +73,7 @@ async def async_send_sys_write(
     timeout: float,
 ) -> None:
     """Pause polling, send a SYS write, and require set_result acknowledgement."""
-    await udp_client.pause_polling(host)
-    try:
+    async with polling_paused(udp_client, host):
         try:
             response = await udp_client.send_request(
                 command,
@@ -99,5 +99,3 @@ async def async_send_sys_write(
                 translation_placeholders={"error": str(err)},
             ) from err
         require_sys_write_ack(response)
-    finally:
-        await udp_client.resume_polling(host)

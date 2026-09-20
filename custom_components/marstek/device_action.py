@@ -35,6 +35,7 @@ from .helpers.device_lookup import (
     async_find_marstek_device,
     async_get_marstek_entry,
 )
+from .helpers.polling import polling_paused
 from .helpers.udp_clients import get_udp_client_for_entry
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
@@ -138,25 +139,23 @@ async def _send_action_command(
     attempt_idx: int,
 ) -> None:
     """Send ES.SetMode command with polling pause and logging."""
-    await udp_client.pause_polling(host)
-    try:
-        await udp_client.send_request(
-            command,
-            host,
-            port,
-            timeout=request_timeout,
-            quiet_on_timeout=True,
-        )
-    except (TimeoutError, OSError, ValueError) as err:
-        _LOGGER.debug(
-            "ES.SetMode send attempt %d/%d failed for %s: %s",
-            attempt_idx,
-            MAX_RETRY_ATTEMPTS,
-            host,
-            err,
-        )
-    finally:
-        await udp_client.resume_polling(host)
+    async with polling_paused(udp_client, host):
+        try:
+            await udp_client.send_request(
+                command,
+                host,
+                port,
+                timeout=request_timeout,
+                quiet_on_timeout=True,
+            )
+        except (TimeoutError, OSError, ValueError) as err:
+            _LOGGER.debug(
+                "ES.SetMode send attempt %d/%d failed for %s: %s",
+                attempt_idx,
+                MAX_RETRY_ATTEMPTS,
+                host,
+                err,
+            )
 
 
 async def _verify_action_command(
@@ -171,28 +170,26 @@ async def _verify_action_command(
     attempt_idx: int,
 ) -> bool:
     """Verify ES.SetMode outcome with polling pause and logging."""
-    await udp_client.pause_polling(host)
-    try:
-        return await _verify_es_mode_quick(
-            hass,
-            host,
-            port,
-            enable,
-            power,
-            udp_client,
-            request_timeout=request_timeout,
-        )
-    except (TimeoutError, OSError, ValueError) as err:
-        _LOGGER.debug(
-            "ES.SetMode verification attempt %d/%d failed for %s: %s",
-            attempt_idx,
-            MAX_RETRY_ATTEMPTS,
-            host,
-            err,
-        )
-        return False
-    finally:
-        await udp_client.resume_polling(host)
+    async with polling_paused(udp_client, host):
+        try:
+            return await _verify_es_mode_quick(
+                hass,
+                host,
+                port,
+                enable,
+                power,
+                udp_client,
+                request_timeout=request_timeout,
+            )
+        except (TimeoutError, OSError, ValueError) as err:
+            _LOGGER.debug(
+                "ES.SetMode verification attempt %d/%d failed for %s: %s",
+                attempt_idx,
+                MAX_RETRY_ATTEMPTS,
+                host,
+                err,
+            )
+            return False
 
 
 async def async_validate_action_config(
@@ -202,13 +199,7 @@ async def async_validate_action_config(
     device_id: str = config[CONF_DEVICE_ID]
     action_type: str = config[CONF_TYPE]
 
-    entry = _get_entry_from_device_id(hass, device_id, require_loaded=False)
-    if not entry:
-        raise InvalidDeviceAutomationConfig(
-            translation_domain=DOMAIN,
-            translation_key="no_config_entry",
-            translation_placeholders={"device_id": device_id},
-        )
+    entry = _require_entry_from_device_id(hass, device_id, require_loaded=False)
 
     action_power = config.get(ATTR_POWER)
     power, enable = _resolve_action_settings(action_type, action_power, entry)
@@ -257,13 +248,7 @@ async def async_call_action_from_config(
 
     host, port = host_port
 
-    entry = _get_entry_from_device_id(hass, device_id)
-    if not entry:
-        raise InvalidDeviceAutomationConfig(
-            translation_domain=DOMAIN,
-            translation_key="no_config_entry",
-            translation_placeholders={"device_id": device_id},
-        )
+    entry = _require_entry_from_device_id(hass, device_id)
 
     # Get power from action config or fall back to options
     action_power = config.get(ATTR_POWER)
@@ -536,3 +521,17 @@ def _get_entry_from_device_id(
     if not device:
         return None
     return async_get_marstek_entry(hass, device, require_loaded=require_loaded)
+
+
+def _require_entry_from_device_id(
+    hass: HomeAssistant, device_id: str, *, require_loaded: bool = True
+) -> ConfigEntry:
+    """Get the config entry for a device ID, or raise for the automation UI."""
+    entry = _get_entry_from_device_id(hass, device_id, require_loaded=require_loaded)
+    if not entry:
+        raise InvalidDeviceAutomationConfig(
+            translation_domain=DOMAIN,
+            translation_key="no_config_entry",
+            translation_placeholders={"device_id": device_id},
+        )
+    return entry
