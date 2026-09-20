@@ -284,8 +284,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         return self._has_enabled_entities(BAT_STATUS_KEYS)
 
-    def _sync_reset_prone_udp_flag(self) -> None:
-        """Keep the UDP client's per-IP serialization flag aligned with this device."""
+    def _sync_openapi_udp_marks(self) -> None:
+        """Align the UDP client's per-IP Open API marks with this device.
+
+        Two marks, both keyed by IP: reset-prone (serialize every request) and
+        retransmit-safe (a Wi-Fi copy is allowed). An IP change moves both.
+        """
         current_ip = self.device_ip
         previous = self._marked_reset_prone_ip
         previous_safe = self._marked_retransmit_safe_ip
@@ -340,7 +344,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         current_port = self.device_port
         self.last_update_attempt_time = dt_util.now()
         _LOGGER.debug("Start polling device: %s:%s", current_ip, current_port)
-        self._sync_reset_prone_udp_flag()
+        self._sync_openapi_udp_marks()
 
         if not await self.udp_client.begin_poll_cycle(current_ip):
             _LOGGER.debug("Polling paused for device: %s, skipping update", current_ip)
@@ -442,11 +446,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ip, owner=self._entry.entry_id
                 )
                 self.udp_client.set_openapi_retransmit_safe(ip, False)
-        clear_owner = getattr(
-            self.udp_client, "clear_openapi_reset_prone_owner", None
-        )
-        if callable(clear_owner):
-            clear_owner(self._entry.entry_id)
+        self.udp_client.clear_openapi_reset_prone_owner(self._entry.entry_id)
         self._marked_reset_prone_ip = None
         self._marked_retransmit_safe_ip = None
 

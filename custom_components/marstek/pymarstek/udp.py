@@ -16,7 +16,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, nullcontext, suppress
 from typing import Any, cast
 
-from ..firmware_profile import FirmwareProfile, extract_discovery_version
+from ..firmware_profile import FirmwareProfile
 from .command_builder import (
     discover,
     get_battery_status,
@@ -46,11 +46,11 @@ from .data_parser import (
     parse_pv_status_response,
     parse_wifi_status_response,
 )
+from .device_info import build_device_info, non_empty_str
 from .network import (
     PsutilModule,
     create_udp_socket,
     get_broadcast_addresses,
-    mac_from_openapi_src,
 )
 from .validators import (
     ValidationError,
@@ -132,36 +132,6 @@ def _new_command_stats() -> dict[str, Any]:
         "last_updated": None,
     }
 
-
-def _non_empty_str(value: Any) -> str:
-    """Return a stripped string, or empty when the value is missing."""
-    if not isinstance(value, str):
-        return ""
-    return value.strip()
-
-
-def _build_discovered_device(
-    result: dict[str, Any], *, src: str = ""
-) -> dict[str, Any]:
-    """Build device info dict from discovery response."""
-    device_ip = result.get("ip", "")
-    version = extract_discovery_version(result)
-    ble_mac = _non_empty_str(result.get("ble_mac"))
-    wifi_mac = _non_empty_str(result.get("wifi_mac"))
-    if not ble_mac and not wifi_mac:
-        ble_mac = mac_from_openapi_src(src)
-    return {
-        "id": result.get("id", 0),
-        "device_type": result.get("device", "Unknown"),
-        "version": version,
-        "wifi_name": result.get("wifi_name", ""),
-        "ip": device_ip,
-        "wifi_mac": wifi_mac,
-        "ble_mac": ble_mac,
-        "mac": wifi_mac or ble_mac,
-        "model": result.get("device", "Unknown"),
-        "firmware": "" if version is None else str(version),
-    }
 
 
 class MarstekUDPClient:
@@ -1303,8 +1273,8 @@ class MarstekUDPClient:
 
             src = ""
             if isinstance(response, dict):
-                src = _non_empty_str(response.get("src"))
-            devices.append(_build_discovered_device(result, src=src))
+                src = non_empty_str(response.get("src"))
+            devices.append(build_device_info(result, src=src))
 
         self._discovery_cache = devices.copy()
         self._cache_timestamp = loop.time()

@@ -30,8 +30,6 @@ from .pymarstek.energy_guard import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_RESTORED_ENERGY_TOTAL_KEYS = ENERGY_TOTAL_KEYS
-
 
 class MarstekSensor(
     CoordinatorEntity[MarstekDataUpdateCoordinator], RestoreSensor, SensorEntity
@@ -61,7 +59,7 @@ class MarstekSensor(
         """Restore last good energy totals so total_increasing stays monotonic."""
         await super().async_added_to_hass()
 
-        if self.entity_description.key not in _RESTORED_ENERGY_TOTAL_KEYS:
+        if self.entity_description.key not in ENERGY_TOTAL_KEYS:
             return
 
         restored_data = await self.async_get_last_sensor_data()

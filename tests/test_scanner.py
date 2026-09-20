@@ -17,6 +17,7 @@ from homeassistant.helpers.device_registry import format_mac
 from custom_components.marstek import MarstekRuntimeData
 from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
 from custom_components.marstek.helpers.device_lookup import async_lookup_device_by_identifier
+from custom_components.marstek.helpers.flow_helpers import identity_macs_from_mapping
 from custom_components.marstek.scanner import MarstekScanner, _build_discovery_flow_data
 
 
@@ -524,13 +525,20 @@ async def test_scanner_skips_metadata_when_unchanged(
 async def test_scanner_invalid_mac_skips_registry_update(
     hass: HomeAssistant, mock_config_entry
 ) -> None:
-    """Test scanner handles invalid MAC addresses safely."""
+    """Test scanner handles invalid MAC addresses safely.
+
+    Entry metadata is still refreshed, but with no field holding a valid
+    6-octet MAC there is no stable identifier to look the device up by, so
+    the registry is left alone rather than touched under a made-up id.
+    """
     bad_entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="aa:bb:cc:dd:ee:ff",
         data={
             **mock_config_entry.data,
             "ble_mac": "not-a-mac",
+            "mac": "",
+            "wifi_mac": "still-not-a-mac",
         },
     )
     bad_entry.add_to_hass(hass)
@@ -545,13 +553,35 @@ async def test_scanner_invalid_mac_skips_registry_update(
 
     with (
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
-        patch("custom_components.marstek.scanner.format_mac", side_effect=ValueError),
         patch("custom_components.marstek.scanner.dr.async_get") as mock_dr_get,
     ):
         scanner._maybe_update_entry_metadata(bad_entry, updates_device)
 
     mock_update.assert_called_once()
     mock_dr_get.assert_not_called()
+
+
+async def test_scanner_registry_update_falls_back_to_next_mac_field(
+    hass: HomeAssistant, mock_config_entry
+) -> None:
+    """A junk ble_mac does not lose the device; the next identity field wins."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={**mock_config_entry.data, "ble_mac": "not-a-mac"},
+    )
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+
+    scanner = MarstekScanner(hass)
+
+    with (
+        patch.object(hass.config_entries, "async_update_entry"),
+        patch("custom_components.marstek.scanner.dr.async_get") as mock_dr_get,
+    ):
+        scanner._maybe_update_entry_metadata(entry, {"version": 150})
+
+    mock_dr_get.assert_called_once()
 
 
 async def test_scanner_skips_registry_update_when_device_missing(
@@ -753,8 +783,8 @@ async def test_scanner_scan_impl_exception_handling(hass: HomeAssistant):
         await scanner._async_scan_impl()
 
 
-async def test_scanner_find_device_by_ble_mac_found(hass: HomeAssistant):
-    """Test _find_device_by_ble_mac finds matching device."""
+async def test_scanner_find_device_by_identity_found(hass: HomeAssistant):
+    """Test _find_device_by_identity finds matching device."""
     scanner = MarstekScanner(hass)
 
     devices = [
@@ -762,14 +792,18 @@ async def test_scanner_find_device_by_ble_mac_found(hass: HomeAssistant):
         {"ip": "5.6.7.8", "ble_mac": "11:22:33:44:55:66"},
     ]
 
-    result = scanner._find_device_by_ble_mac(devices, "AA:BB:CC:DD:EE:FF", "Test Entry")
+    result = scanner._find_device_by_identity(
+        devices,
+        identity_macs_from_mapping({"ble_mac": "AA:BB:CC:DD:EE:FF"}),
+        "Test Entry",
+    )
 
     assert result is not None
     assert result["ip"] == "1.2.3.4"
 
 
-async def test_scanner_find_device_by_ble_mac_case_insensitive(hass: HomeAssistant):
-    """Test _find_device_by_ble_mac is case insensitive."""
+async def test_scanner_find_device_by_identity_case_insensitive(hass: HomeAssistant):
+    """Test _find_device_by_identity is case insensitive."""
     scanner = MarstekScanner(hass)
 
     devices = [
@@ -777,29 +811,37 @@ async def test_scanner_find_device_by_ble_mac_case_insensitive(hass: HomeAssista
     ]
 
     # Search with uppercase
-    result = scanner._find_device_by_ble_mac(devices, "AA:BB:CC:DD:EE:FF", "Test Entry")
+    result = scanner._find_device_by_identity(
+        devices,
+        identity_macs_from_mapping({"ble_mac": "AA:BB:CC:DD:EE:FF"}),
+        "Test Entry",
+    )
 
     assert result is not None
     assert result["ip"] == "1.2.3.4"
 
 
-async def test_scanner_find_device_by_ble_mac_not_found(hass: HomeAssistant):
-    """Test _find_device_by_ble_mac returns None when not found."""
+async def test_scanner_find_device_by_identity_not_found(hass: HomeAssistant):
+    """Test _find_device_by_identity returns None when not found."""
     scanner = MarstekScanner(hass)
 
     devices = [
         {"ip": "1.2.3.4", "ble_mac": "11:22:33:44:55:66"},
     ]
 
-    result = scanner._find_device_by_ble_mac(devices, "AA:BB:CC:DD:EE:FF", "Test Entry")
+    result = scanner._find_device_by_identity(
+        devices,
+        identity_macs_from_mapping({"ble_mac": "AA:BB:CC:DD:EE:FF"}),
+        "Test Entry",
+    )
 
     assert result is None
 
 
-async def test_scanner_find_device_by_ble_mac_device_without_ble_mac(
+async def test_scanner_find_device_by_identity_device_without_ble_mac(
     hass: HomeAssistant,
 ):
-    """Test _find_device_by_ble_mac skips devices without ble_mac."""
+    """Test _find_device_by_identity skips devices without ble_mac."""
     scanner = MarstekScanner(hass)
 
     devices = [
@@ -807,7 +849,11 @@ async def test_scanner_find_device_by_ble_mac_device_without_ble_mac(
         {"ip": "5.6.7.8", "ble_mac": None},  # ble_mac is None
     ]
 
-    result = scanner._find_device_by_ble_mac(devices, "AA:BB:CC:DD:EE:FF", "Test Entry")
+    result = scanner._find_device_by_identity(
+        devices,
+        identity_macs_from_mapping({"ble_mac": "AA:BB:CC:DD:EE:FF"}),
+        "Test Entry",
+    )
 
     assert result is None
 

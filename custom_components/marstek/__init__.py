@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
@@ -28,9 +28,11 @@ from .helpers.device_lookup import (
     async_lookup_device_by_identifier,
     iter_device_config_entry_ids,
 )
+from .helpers.flow_helpers import get_unique_id_from_device_info
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
 from .helpers.udp_clients import (
+    ACTIVE_ENTRY_STATES,
     acquire_udp_client_lease,
     async_cleanup_all_udp_clients,
     async_release_udp_client_for_entry,
@@ -470,6 +472,26 @@ def _clear_entry_reset_prone_flag(
     clear_reset_prone_owner_from_pool(hass, entry.entry_id)
 
 
+async def _async_release_entry_resources(
+    hass: HomeAssistant, entry: MarstekConfigEntry
+) -> None:
+    """Drop this entry's UDP lease and tear down shared state if it was last.
+
+    Unload and remove both end here: releasing the lease can free the pooled
+    socket, and the domain-wide services and scanner only make sense while at
+    least one entry is still alive.
+    """
+    await async_release_udp_client_for_entry(hass, entry)
+    if domain_has_udp_leases(hass):
+        return
+    if any(
+        other.entry_id != entry.entry_id and other.state in ACTIVE_ENTRY_STATES
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        return
+    await _async_cleanup_last_entry(hass)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.info("Unloading Marstek config entry: %s", entry.title)
@@ -488,61 +510,24 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
 
-    await async_release_udp_client_for_entry(hass, entry)
-    if not domain_has_udp_leases(hass):
-        remaining_entries = [
-            e
-            for e in hass.config_entries.async_entries(DOMAIN)
-            if e.entry_id != entry.entry_id
-            and e.state
-            in (
-                ConfigEntryState.LOADED,
-                ConfigEntryState.SETUP_RETRY,
-                ConfigEntryState.SETUP_IN_PROGRESS,
-            )
-        ]
-        if not remaining_entries:
-            await _async_cleanup_last_entry(hass)
+    await _async_release_entry_resources(hass, entry)
 
     return True
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:
     """Remove a config entry and clean up stale devices."""
-    from homeassistant.helpers.device_registry import format_mac
-
     _clear_entry_reset_prone_flag(hass, entry)
 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
 
-    await async_release_udp_client_for_entry(hass, entry)
-    if not domain_has_udp_leases(hass):
-        remaining_active = [
-            e
-            for e in hass.config_entries.async_entries(DOMAIN)
-            if e.entry_id != entry.entry_id
-            and e.state
-            in (
-                ConfigEntryState.LOADED,
-                ConfigEntryState.SETUP_RETRY,
-                ConfigEntryState.SETUP_IN_PROGRESS,
-            )
-        ]
-        if not remaining_active:
-            await _async_cleanup_last_entry(hass)
+    await _async_release_entry_resources(hass, entry)
 
-    device_identifier_raw = (
-        entry.data.get("ble_mac")
-        or entry.data.get("mac")
-        or entry.data.get("wifi_mac")
-    )
-    if not device_identifier_raw:
+    device_identifier = get_unique_id_from_device_info(entry.data)
+    if device_identifier is None:
         return
-
-    # Use format_mac for consistency with build_device_info
-    device_identifier = format_mac(device_identifier_raw)
 
     device_registry = dr.async_get(hass)
     device = async_lookup_device_by_identifier(

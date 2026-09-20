@@ -1536,24 +1536,24 @@ def test_is_loopback_host() -> None:
 
 def test_mac_from_src_compact() -> None:
     """Test compact hex MAC embedded in GetDevice src."""
-    from custom_components.marstek.discovery import _mac_from_src
+    from custom_components.marstek.pymarstek.network import mac_from_openapi_src
 
-    assert _mac_from_src("VenusC-AABBCCDDEEFF") == "AA:BB:CC:DD:EE:FF"
+    assert mac_from_openapi_src("VenusC-AABBCCDDEEFF") == "AA:BB:CC:DD:EE:FF"
 
 
 def test_mac_from_src_separated() -> None:
     """Test colon-separated MAC embedded in GetDevice src."""
-    from custom_components.marstek.discovery import _mac_from_src
+    from custom_components.marstek.pymarstek.network import mac_from_openapi_src
 
-    assert _mac_from_src("VenusC-AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
+    assert mac_from_openapi_src("VenusC-AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
 
 
 def test_mac_from_src_missing() -> None:
     """Test src without a MAC returns empty."""
-    from custom_components.marstek.discovery import _mac_from_src
+    from custom_components.marstek.pymarstek.network import mac_from_openapi_src
 
-    assert _mac_from_src("VenusC") == ""
-    assert _mac_from_src(None) == ""
+    assert mac_from_openapi_src("VenusC") == ""
+    assert mac_from_openapi_src(None) == ""
 
 
 def test_build_device_info_uses_src_mac_when_result_omits_mac() -> None:

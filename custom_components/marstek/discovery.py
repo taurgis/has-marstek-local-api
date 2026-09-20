@@ -16,14 +16,13 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
-from .firmware_profile import extract_discovery_version
 from .pymarstek import ValidationError, discover
+from .pymarstek.device_info import build_device_info, non_empty_str
 from .pymarstek.network import (
     async_resolve_host_ipv4,
     create_udp_socket,
     get_broadcast_addresses,
     is_loopback_host,
-    mac_from_openapi_src,
     udp_source_matches_host,
 )
 
@@ -56,18 +55,6 @@ def _build_discovery_message() -> bytes:
     return json.dumps(request).encode("utf-8")
 
 
-def _non_empty_str(value: Any) -> str:
-    """Return a stripped string, or empty when the value is missing."""
-    if not isinstance(value, str):
-        return ""
-    return value.strip()
-
-
-def _mac_from_src(src: Any) -> str:
-    """Extract a MAC address from a GetDevice ``src`` field."""
-    return mac_from_openapi_src(src)
-
-
 def _build_device_info(
     result: dict[str, Any],
     device_ip: str,
@@ -76,24 +63,7 @@ def _build_device_info(
     src: str = "",
 ) -> dict[str, Any]:
     """Build device info dict from discovery response result."""
-    version = extract_discovery_version(result)
-    ble_mac = _non_empty_str(result.get("ble_mac"))
-    wifi_mac = _non_empty_str(result.get("wifi_mac"))
-    if not ble_mac and not wifi_mac:
-        ble_mac = _mac_from_src(src)
-    return {
-        "id": result.get("id", 0),
-        "device_type": result.get("device", "Unknown"),
-        "version": version,
-        "wifi_name": result.get("wifi_name", ""),
-        "ip": device_ip,
-        "port": device_port,
-        "wifi_mac": wifi_mac,
-        "ble_mac": ble_mac,
-        "mac": wifi_mac or ble_mac,
-        "model": result.get("device", "Unknown"),
-        "firmware": "" if version is None else str(version),
-    }
+    return build_device_info(result, ip=device_ip, port=device_port, src=src)
 
 
 def _is_echo_response(response: dict[str, Any]) -> bool:
@@ -145,7 +115,7 @@ def _device_info_from_response(
         result,
         _normalize_ip(result.get("ip", host)),
         port,
-        src=_non_empty_str(response.get("src")),
+        src=non_empty_str(response.get("src")),
     )
 
 
@@ -335,7 +305,7 @@ async def discover_devices(
                     continue
 
                 seen_ips.add(device_ip)
-                src = _non_empty_str(response.get("src"))
+                src = non_empty_str(response.get("src"))
                 device = _build_device_info(result, device_ip, sender_port, src=src)
                 devices.append(device)
                 _LOGGER.info(

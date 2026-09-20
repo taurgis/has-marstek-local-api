@@ -59,6 +59,7 @@ from .helpers.flow_schemas import (
     build_polling_schema,
     build_power_schema,
 )
+from .helpers.ports import discovery_scan_ports
 from .helpers.udp_clients import (
     async_paused_udp_receivers,
     bind_port_for_host,
@@ -77,7 +78,6 @@ class DhcpServiceInfoLike(Protocol):
 
 _LOGGER = logging.getLogger(__name__)
 
-_COMMON_CUSTOM_PORTS: tuple[int, ...] = (30001, 30002, 30003, 30004, 30030)
 _MANUAL_DEVICE_OPTION = "__manual__"
 
 
@@ -304,17 +304,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _build_discovery_ports(self) -> list[int]:
         """Build UDP ports to probe during initial config flow discovery."""
-        ports: set[int] = {DEFAULT_UDP_PORT, *_COMMON_CUSTOM_PORTS}
-
-        for entry in self._async_current_entries(include_ignore=False):
-            try:
-                configured_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
-            except (TypeError, ValueError):
-                continue
-            if 1 <= configured_port <= 65535:
-                ports.add(configured_port)
-
-        return sorted(ports)
+        return discovery_scan_ports(
+            self._async_current_entries(include_ignore=False)
+        )
 
     async def _async_get_device_info(
         self, host: str, port: int
@@ -562,7 +554,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         for entry in self._async_current_entries(include_ignore=False):
             # Check if unique_id matches
-            if not self._entry_matches_unique_id(entry):
+            if not self._entry_matches_flow_identity(entry):
                 continue
 
             reload = entry.state == ConfigEntryState.SETUP_RETRY
@@ -682,8 +674,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except (OSError, TimeoutError, ValueError):
             return None, "cannot_connect"
 
-    def _entry_matches_unique_id(self, entry: config_entries.ConfigEntry) -> bool:
-        """Return True if entry shares any stable MAC with this flow."""
+    def _entry_matches_flow_identity(
+        self, entry: config_entries.ConfigEntry
+    ) -> bool:
+        """Return True if entry shares any stable MAC with this flow.
+
+        Wider than the unique id alone: the entry's BLE, Wi-Fi and legacy MACs
+        are all compared against everything this flow has learned, so the same
+        hardware is recognised whichever field the firmware filled in.
+        """
         entry_macs = identity_macs_from_entry(entry)
         discovered = set(self._discovered_identity_macs or ())
         unique_id_mac = formatted_mac_or_none(self.unique_id)
@@ -701,7 +700,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         self._abort_if_unique_id_configured()
         for entry in self._async_current_entries(include_ignore=False):
-            if self._entry_matches_unique_id(entry):
+            if self._entry_matches_flow_identity(entry):
                 raise AbortFlow("already_configured")
 
     @staticmethod

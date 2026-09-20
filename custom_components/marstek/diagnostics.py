@@ -45,11 +45,15 @@ TO_REDACT = {
     "SSID",
 }
 
+# An IPv6 address needs at least four hextets to be distinguishable from a
+# timestamp: ``12:34:56`` in a redacted traceback is a clock reading, not an
+# address, and redacting it hides the very detail the report is for.
+# Compressed forms (``::1``, ``fe80::1``) are matched by their own pattern.
 _REDACT_PATTERNS = (
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b"),
     re.compile(r"\b[0-9A-Fa-f]{12}\b"),
-    re.compile(r"\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){2,7}\b"),
+    re.compile(r"\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){3,7}\b"),
     re.compile(r"\b(?:[0-9A-Fa-f]{1,4}:){1,7}:[0-9A-Fa-f]{0,4}\b"),
     re.compile(r"\b(?:[A-Za-z0-9-]+\.)+local\b"),
 )
