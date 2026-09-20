@@ -86,6 +86,18 @@ def json_rpc_wire_id(value: Any) -> int | None:
     return value & MAX_JSON_RPC_ID
 
 
+def json_rpc_result_usable(response: dict[str, Any]) -> bool:
+    """Return True when the payload carries a JSON-RPC result, not an error.
+
+    A result dict — even an empty one — is the success path. Callers that
+    probe alternative params retry only on a JSON-RPC error or a
+    missing/non-dict result.
+    """
+    if "error" in response:
+        return False
+    return isinstance(response.get("result"), dict)
+
+
 def normalize_json_rpc_wire_message(message: str) -> tuple[str, int, str]:
     """Rewrite a JSON-RPC payload to the uint16 id Control firmware stores.
 

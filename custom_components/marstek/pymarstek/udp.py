@@ -12,20 +12,12 @@ import json
 import logging
 import socket
 import time
-from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, nullcontext, suppress
 from typing import Any, cast
 
 from ..firmware_profile import FirmwareProfile
-from .command_builder import (
-    discover,
-    get_battery_status,
-    get_em_status,
-    get_es_mode,
-    get_es_status,
-    get_pv_status,
-    get_wifi_status,
-)
+from .command_builder import discover, get_es_mode
+from .command_stats import CommandStats
 from .const import (
     CMD_BATTERY_STATUS,
     CMD_DISCOVER,
@@ -37,23 +29,19 @@ from .const import (
     DEFAULT_UDP_PORT,
     DISCOVERY_TIMEOUT,
 )
-from .data_parser import (
-    merge_device_status,
-    parse_bat_status_response,
-    parse_em_status_response,
-    parse_es_mode_response,
-    parse_es_status_response,
-    parse_pv_status_response,
-    parse_wifi_status_response,
-)
+from .data_parser import parse_es_mode_response
 from .device_info import build_device_info, non_empty_str
+from .device_status import fetch_device_status
 from .network import (
     PsutilModule,
     create_udp_socket,
     get_broadcast_addresses,
 )
+from .openapi_marks import OpenApiMarks
+from .poll_gate import PollGate
 from .validators import (
     ValidationError,
+    json_rpc_result_usable,
     json_rpc_wire_id,
     normalize_json_rpc_wire_message,
     validate_json_message,
@@ -178,14 +166,8 @@ class MarstekUDPClient:
         )
 
         self._local_send_ip: str = "0.0.0.0"
-        self._polling_paused: dict[str, bool] = {}
-        self._polling_pause_counts: dict[str, int] = {}
-        self._poll_cycle_counts: dict[str, int] = {}
-        self._poll_cycle_idle: dict[str, asyncio.Event] = {}
-        self._polling_lock: asyncio.Lock = asyncio.Lock()
-        self._reset_prone_ips: set[str] = set()
-        self._reset_prone_owners: dict[str, set[str]] = {}
-        self._retransmit_safe_ips: set[str] = set()
+        self._poll_gate: PollGate = PollGate()
+        self._marks: OpenApiMarks = OpenApiMarks()
         self._device_io_locks: dict[str, asyncio.Lock] = {}
 
         # Rate limiting: track last request time per device IP
@@ -202,8 +184,7 @@ class MarstekUDPClient:
         self._response_cache_max_age: float = 30.0  # 30 seconds
 
         # Command diagnostics (per method, optional per device IP)
-        self._command_stats: dict[str, dict[str, Any]] = {}
-        self._command_stats_by_ip: dict[str, dict[str, dict[str, Any]]] = {}
+        self._command_stats: CommandStats = CommandStats()
 
         # Working ES.GetMode params.id per device IP (0 or 1)
         self._es_mode_device_ids: dict[str, int] = {}
@@ -213,60 +194,13 @@ class MarstekUDPClient:
         """Return the local UDP port this client is bound to."""
         return self._bind_port
 
-    def _get_command_stats_bucket(
-        self, method: str, *, device_ip: str | None = None
-    ) -> dict[str, Any]:
-        """Get or create a command stats bucket."""
-        if device_ip is None:
-            stats = self._command_stats.setdefault(method, _new_command_stats())
-            return stats
-
-        per_ip = self._command_stats_by_ip.setdefault(device_ip, {})
-        stats = per_ip.setdefault(method, _new_command_stats())
-        return stats
-
-    def _record_command_result(
-        self,
-        method: str,
-        *,
-        device_ip: str | None,
-        success: bool,
-        timeout: bool,
-        latency: float | None,
-        error: str | None,
-        retransmitted: bool = False,
-    ) -> None:
-        """Record command outcome for diagnostics."""
-        for bucket in (
-            self._get_command_stats_bucket(method, device_ip=device_ip),
-            self._get_command_stats_bucket(method, device_ip=None),
-        ):
-            bucket["total_attempts"] += 1
-            if success:
-                bucket["total_success"] += 1
-            elif timeout:
-                bucket["total_timeouts"] += 1
-            else:
-                bucket["total_failures"] += 1
-            if retransmitted:
-                bucket["total_retransmits"] += 1
-
-            bucket["last_success"] = success
-            bucket["last_latency"] = latency
-            bucket["last_timeout"] = timeout
-            bucket["last_error"] = error
-            bucket["last_updated"] = time.time()
-
     def get_command_stats(self) -> dict[str, dict[str, Any]]:
         """Return snapshot of command stats for all methods."""
-        return {method: dict(stats) for method, stats in self._command_stats.items()}
+        return self._command_stats.snapshot()
 
     def get_command_stats_for_ip(self, device_ip: str) -> dict[str, dict[str, Any]]:
         """Return snapshot of command stats for a specific device IP."""
-        return {
-            method: dict(stats)
-            for method, stats in self._command_stats_by_ip.get(device_ip, {}).items()
-        }
+        return self._command_stats.snapshot_for_ip(device_ip)
 
     def _pending_key(
         self, wire_id: int, device_ip: str | None
@@ -331,6 +265,19 @@ class MarstekUDPClient:
             if isinstance(response, dict):
                 responses.append(response)
         return responses
+
+    def loop_time(self) -> float:
+        """Return the current clock reading of the configured loop."""
+        return self._configured_loop().time()
+
+    def _configured_loop(self) -> asyncio.AbstractEventLoop:
+        """Return whatever loop the client was given, else the running one.
+
+        Timing and task creation go through here so a caller that installed
+        its own loop keeps its clock. Socket I/O uses :meth:`_event_loop`,
+        which insists on a genuine event loop.
+        """
+        return self._loop or asyncio.get_running_loop()
 
     def _event_loop(self) -> asyncio.AbstractEventLoop:
         """Return the client loop when it is a real event loop."""
@@ -491,20 +438,12 @@ class MarstekUDPClient:
         self._last_request_time.clear()
         self._rate_limit_locks.clear()
         self._device_io_locks.clear()
-        self._reset_prone_ips.clear()
-        self._reset_prone_owners.clear()
-        self._retransmit_safe_ips.clear()
-        self._polling_paused.clear()
-        self._polling_pause_counts.clear()
-        self._poll_cycle_counts.clear()
-        for idle in self._poll_cycle_idle.values():
-            idle.set()
-        self._poll_cycle_idle.clear()
+        self._marks.clear()
+        self._poll_gate.clear()
         async with self._exchange_gate:
             self._in_flight_exchanges = 0
             self._exchange_gate.notify_all()
         self._command_stats.clear()
-        self._command_stats_by_ip.clear()
         self._es_mode_device_ids.clear()
 
     async def _ensure_socket(self) -> socket.socket:
@@ -528,14 +467,13 @@ class MarstekUDPClient:
         if self._receiver_pause_count > 0:
             return
         if not self._listen_task or self._listen_task.done():
-            loop = self._loop or asyncio.get_running_loop()
+            loop = self._configured_loop()
             self._listen_task = loop.create_task(self._listen_for_responses())
 
     def _is_cache_valid(self) -> bool:
         if self._discovery_cache is None:
             return False
-        loop = self._loop or asyncio.get_running_loop()
-        return (loop.time() - self._cache_timestamp) < self._cache_duration
+        return (self.loop_time() - self._cache_timestamp) < self._cache_duration
 
     def clear_discovery_cache(self) -> None:
         self._discovery_cache = None
@@ -584,99 +522,42 @@ class MarstekUDPClient:
     def set_openapi_reset_prone(
         self, device_ip: str, prone: bool, *, owner: str | None = None
     ) -> None:
-        """Enable or disable per-request serialization for a device IP.
-
-        Marks are reference-counted by *owner* (config entry id) so a
-        SETUP_RETRY IP change cannot leave a stale mark that later serializes
-        an unrelated 150+ device that reused the address.
-        """
-        owner_key = owner or _ANONYMOUS_RESET_PRONE_OWNER
-        owners = self._reset_prone_owners.setdefault(device_ip, set())
-        if prone:
-            owners.add(owner_key)
-            self._reset_prone_ips.add(device_ip)
-            self._retransmit_safe_ips.discard(device_ip)
-            return
-        owners.discard(owner_key)
-        if not owners:
-            self._reset_prone_owners.pop(device_ip, None)
-            self._reset_prone_ips.discard(device_ip)
+        """Enable or disable per-request serialization for a device IP."""
+        self._marks.set_reset_prone(device_ip, prone, owner=owner)
 
     def set_openapi_retransmit_safe(self, device_ip: str, enabled: bool) -> None:
-        """Allow or deny Wi-Fi silent-wait retransmission for a device IP.
-
-        Opt-in only after ``FirmwareProfile.openapi_wifi_retransmit_safe``.
-        Reset-prone marks always win and drop this flag.
-        """
-        if enabled and device_ip not in self._reset_prone_ips:
-            self._retransmit_safe_ips.add(device_ip)
-            return
-        self._retransmit_safe_ips.discard(device_ip)
+        """Allow or deny Wi-Fi silent-wait retransmission for a device IP."""
+        self._marks.set_retransmit_safe(device_ip, enabled)
 
     def is_openapi_retransmit_safe(self, device_ip: str) -> bool:
         """Return True when *device_ip* may receive extra read-only unicasts."""
-        return (
-            device_ip in self._retransmit_safe_ips
-            and device_ip not in self._reset_prone_ips
-        )
+        return self._marks.is_retransmit_safe(device_ip)
 
     def clear_openapi_reset_prone(
         self, device_ip: str, *, owner: str | None = None
     ) -> None:
         """Stop serializing Open API traffic for a device IP."""
-        if owner is None:
-            self._reset_prone_owners.pop(device_ip, None)
-            self._reset_prone_ips.discard(device_ip)
-            return
-        self.set_openapi_reset_prone(device_ip, False, owner=owner)
+        self._marks.clear_reset_prone(device_ip, owner=owner)
 
     def is_openapi_reset_prone(
         self, device_ip: str, *, owner: str | None = None
     ) -> bool:
         """Return True when *device_ip* is marked reset-prone for *owner*."""
-        if device_ip not in self._reset_prone_ips:
-            return False
-        if owner is None:
-            return True
-        owners = self._reset_prone_owners.get(device_ip, set())
-        return (
-            owner in owners
-            or _ANONYMOUS_RESET_PRONE_OWNER in owners
-            or not owners
-        )
+        return self._marks.is_reset_prone(device_ip, owner=owner)
 
     def clear_openapi_reset_prone_owner(self, owner: str) -> None:
         """Drop every reset-prone mark owned by a config entry."""
-        for device_ip in list(self._reset_prone_owners):
-            self.set_openapi_reset_prone(device_ip, False, owner=owner)
+        self._marks.clear_owner(owner)
 
     def transfer_openapi_reset_prone(
         self, old_ip: str, new_ip: str, *, owner: str
     ) -> None:
         """Move one owner's reset-prone mark when a device changes IP."""
-        if old_ip == new_ip:
-            return
-        owners = self._reset_prone_owners.get(old_ip, set())
-        marked = (
-            owner in owners
-            or _ANONYMOUS_RESET_PRONE_OWNER in owners
-            or (old_ip in self._reset_prone_ips and not owners)
-        )
-        if not marked:
-            return
-        self.set_openapi_reset_prone(old_ip, False, owner=owner)
-        if _ANONYMOUS_RESET_PRONE_OWNER in self._reset_prone_owners.get(old_ip, set()):
-            self.set_openapi_reset_prone(
-                old_ip, False, owner=_ANONYMOUS_RESET_PRONE_OWNER
-            )
-        elif old_ip in self._reset_prone_ips and old_ip not in self._reset_prone_owners:
-            self.clear_openapi_reset_prone(old_ip)
-        self.set_openapi_reset_prone(new_ip, True, owner=owner)
+        self._marks.transfer_reset_prone(old_ip, new_ip, owner=owner)
 
     async def _cleanup_rate_limit_tracking(self) -> None:
         """Remove stale entries from rate limit tracking to prevent memory leaks."""
-        loop = self._loop or asyncio.get_running_loop()
-        current_time = loop.time()
+        current_time = self.loop_time()
 
         async with self._rate_limit_meta_lock:
             if len(self._last_request_time) <= self._max_tracked_ips:
@@ -692,7 +573,7 @@ class MarstekUDPClient:
                 self._last_request_time.pop(ip, None)
                 self._rate_limit_locks.pop(ip, None)
                 self._device_io_locks.pop(ip, None)
-                self._command_stats_by_ip.pop(ip, None)
+                self._command_stats.forget_ip(ip)
 
             if stale_ips:
                 _LOGGER.debug("Cleaned up rate limit tracking for %d stale IPs", len(stale_ips))
@@ -706,8 +587,7 @@ class MarstekUDPClient:
         if not self._response_cache:
             return
 
-        loop = self._loop or asyncio.get_running_loop()
-        current_time = loop.time()
+        current_time = self.loop_time()
 
         # Remove entries older than max age
         stale_ids = [
@@ -743,7 +623,7 @@ class MarstekUDPClient:
         to rapid request bursts. Uses per-IP locks to avoid blocking
         requests to different devices.
         """
-        loop = self._loop or asyncio.get_running_loop()
+        loop = self._configured_loop()
 
         # Get per-IP lock (creates one if needed)
         ip_lock = await self._get_rate_limit_lock(target_ip)
@@ -754,7 +634,7 @@ class MarstekUDPClient:
             elapsed = current_time - last_time
             min_interval = (
                 MIN_RESET_PRONE_REQUEST_INTERVAL
-                if target_ip in self._reset_prone_ips
+                if self._marks.is_reset_prone(target_ip)
                 else MIN_REQUEST_INTERVAL
             )
 
@@ -789,7 +669,7 @@ class MarstekUDPClient:
         # keep the floor even when a caller asks to bypass (GetDevice, retries).
         if is_broadcast:
             pass
-        elif target_ip in self._reset_prone_ips or not bypass_rate_limit:
+        elif self._marks.is_reset_prone(target_ip) or not bypass_rate_limit:
             await self._enforce_rate_limit(target_ip)
 
         data = message.encode("utf-8")
@@ -807,8 +687,7 @@ class MarstekUDPClient:
             # retransmit) leaves the clock stale and the *next* throttled
             # request believes the device has been idle. Same clock as
             # ``_enforce_rate_limit``, which reads the stamp back.
-            clock = self._loop or asyncio.get_running_loop()
-            self._last_request_time[target_ip] = clock.time()
+            self._last_request_time[target_ip] = self.loop_time()
         _LOGGER.debug("Send: %s:%d | %s", target_ip, target_port, message)
 
     def _wifi_reliability_enabled(self, target_ip: str, method_name: str) -> bool:
@@ -980,7 +859,7 @@ class MarstekUDPClient:
                 raise
 
         message, request_id, method_name = normalize_json_rpc_wire_message(message)
-        if method_name == CMD_BATTERY_STATUS and target_ip in self._reset_prone_ips:
+        if method_name == CMD_BATTERY_STATUS and self._marks.is_reset_prone(target_ip):
             raise ValidationError(
                 "Bat.GetStatus is blocked on reset-prone firmware",
                 field="method",
@@ -990,7 +869,7 @@ class MarstekUDPClient:
         # else runs the same exchange unguarded.
         guard: AbstractAsyncContextManager[Any, None] = (
             await self._get_device_io_lock(target_ip)
-            if target_ip in self._reset_prone_ips
+            if self._marks.is_reset_prone(target_ip)
             else nullcontext()
         )
         async with guard:
@@ -1055,7 +934,7 @@ class MarstekUDPClient:
                             target_port,
                             method_name,
                         )
-                    self._record_command_result(
+                    self._command_stats.record(
                         method_name,
                         device_ip=target_ip,
                         success=False,
@@ -1081,7 +960,7 @@ class MarstekUDPClient:
                 # Counting it as one hides "method not found" storms behind a
                 # 100% success rate in diagnostics.
                 error = response.get("error")
-                self._record_command_result(
+                self._command_stats.record(
                     method_name,
                     device_ip=target_ip,
                     success=error is None,
@@ -1095,7 +974,7 @@ class MarstekUDPClient:
             except TimeoutError:
                 raise
             except (OSError, ValueError) as err:
-                self._record_command_result(
+                self._command_stats.record(
                     method_name,
                     device_ip=target_ip,
                     success=False,
@@ -1111,7 +990,7 @@ class MarstekUDPClient:
 
     async def _listen_for_responses(self) -> None:
         assert self._socket is not None
-        loop = self._loop or asyncio.get_running_loop()
+        loop = self._configured_loop()
         cleanup_counter = 0
         while True:
             try:
@@ -1209,7 +1088,7 @@ class MarstekUDPClient:
             return []
 
         responses: list[dict[str, Any]] = []
-        loop = self._loop or asyncio.get_running_loop()
+        loop = self._configured_loop()
         start_time = loop.time()
 
         try:
@@ -1254,7 +1133,7 @@ class MarstekUDPClient:
             _LOGGER.error("Device discovery failed: %s", err)
             responses = []
 
-        loop = self._loop or asyncio.get_running_loop()
+        loop = self._configured_loop()
 
         for response in responses:
             result = response.get("result") if isinstance(response, dict) else None
@@ -1283,61 +1162,28 @@ class MarstekUDPClient:
             _LOGGER.debug("Found device: %s at %s", device.get("device_type"), device.get("ip"))
         return devices
 
-    def _poll_cycle_idle_event(self, device_ip: str) -> asyncio.Event:
-        """Return the idle event for a device poll cycle, creating it if needed."""
-        event = self._poll_cycle_idle.get(device_ip)
-        if event is None:
-            event = asyncio.Event()
-            event.set()
-            self._poll_cycle_idle[device_ip] = event
-        return event
-
     async def begin_poll_cycle(self, device_ip: str) -> bool:
         """Mark a coordinator poll cycle as running.
 
         Returns False when polling is paused so the coordinator can skip.
         """
-        async with self._polling_lock:
-            if self._polling_paused.get(device_ip, False):
-                return False
-            count = self._poll_cycle_counts.get(device_ip, 0) + 1
-            self._poll_cycle_counts[device_ip] = count
-            self._poll_cycle_idle_event(device_ip).clear()
-            return True
+        return await self._poll_gate.begin_cycle(device_ip)
 
     async def end_poll_cycle(self, device_ip: str) -> None:
-        """Mark a coordinator poll cycle finished so paused writers can proceed."""
-        async with self._polling_lock:
-            count = self._poll_cycle_counts.get(device_ip, 0) - 1
-            if count <= 0:
-                self._poll_cycle_counts.pop(device_ip, None)
-                self._poll_cycle_idle_event(device_ip).set()
-                return
-            self._poll_cycle_counts[device_ip] = count
+        """Mark a coordinator poll cycle finished so paused writers proceed."""
+        await self._poll_gate.end_cycle(device_ip)
 
     async def pause_polling(self, device_ip: str) -> None:
-        async with self._polling_lock:
-            count = self._polling_pause_counts.get(device_ip, 0) + 1
-            self._polling_pause_counts[device_ip] = count
-            self._polling_paused[device_ip] = True
-            idle = self._poll_cycle_idle_event(device_ip)
-        try:
-            await idle.wait()
-        except BaseException:
-            await self.resume_polling(device_ip)
-            raise
+        """Hold off polls for a device and wait for the running cycle."""
+        await self._poll_gate.pause(device_ip)
 
     async def resume_polling(self, device_ip: str) -> None:
-        async with self._polling_lock:
-            count = self._polling_pause_counts.get(device_ip, 0) - 1
-            if count <= 0:
-                self._polling_pause_counts.pop(device_ip, None)
-                self._polling_paused[device_ip] = False
-                return
-            self._polling_pause_counts[device_ip] = count
+        """Release one pause taken by :meth:`pause_polling`."""
+        await self._poll_gate.resume(device_ip)
 
     def is_polling_paused(self, device_ip: str) -> bool:
-        return self._polling_paused.get(device_ip, False)
+        """Return True while a writer holds polling paused for a device."""
+        return self._poll_gate.is_paused(device_ip)
 
     async def send_request_with_polling_control(
         self,
@@ -1378,18 +1224,6 @@ class MarstekUDPClient:
             return (1, 0)
         return _ES_MODE_INSTANCE_IDS
 
-    @staticmethod
-    def _json_rpc_result_usable(response: dict[str, Any]) -> bool:
-        """Return True when the payload is a JSON-RPC result, not an error.
-
-        A result dict — even empty — is the success path. ES.GetMode retries
-        the other instance id only on transport failure, a JSON-RPC error, or
-        a missing/non-dict result (the vendor library's id=1 probe).
-        """
-        if "error" in response:
-            return False
-        return isinstance(response.get("result"), dict)
-
     async def fetch_es_mode(
         self,
         device_ip: str,
@@ -1424,7 +1258,7 @@ class MarstekUDPClient:
                     err,
                 )
                 continue
-            if not self._json_rpc_result_usable(response):
+            if not json_rpc_result_usable(response):
                 _LOGGER.debug(
                     "ES.GetMode id=%s returned no usable result for %s: %s",
                     instance_id,
@@ -1456,322 +1290,22 @@ class MarstekUDPClient:
         previous_status: dict[str, Any] | None = None,
         profile: FirmwareProfile | None = None,
     ) -> dict[str, Any]:
-        """Get complete device status including battery, PV, WiFi, and EM data.
+        """Return a merged status snapshot for one device.
 
-        Calls ES.GetMode for device mode, ES.GetStatus for battery power/status,
-        and optionally PV.GetStatus, Wifi.GetStatus, EM.GetStatus, Bat.GetStatus.
-
-        Args:
-            device_ip: IP address of the device
-            port: UDP port (default: DEFAULT_UDP_PORT)
-            timeout: Request timeout in seconds
-            include_pv: Whether to include PV status data
-            include_wifi: Whether to include WiFi status (RSSI)
-            include_em: Whether to include Energy Meter/CT data
-            include_bat: Whether to include detailed battery data
-            parallel_requests: If True, request all enabled APIs concurrently
-                without delay between calls
-            delay_between_requests: Delay between requests in seconds
-            previous_status: Previous device status to preserve values when
-                individual requests fail (prevents intermittent "Unknown" states)
-
-        Returns:
-            Dictionary with complete device status
+        See :func:`.device_status.fetch_device_status` for how the individual
+        Open API reads are chosen, paced and merged.
         """
-        es_mode_data: dict[str, Any] | None = None
-        es_status_data: dict[str, Any] | None = None
-        pv_status_data: dict[str, Any] | None = None
-        wifi_status_data: dict[str, Any] | None = None
-        em_status_data: dict[str, Any] | None = None
-        bat_status_data: dict[str, Any] | None = None
-
-        def _parse_es_status(response: dict[str, Any]) -> dict[str, Any]:
-            return parse_es_status_response(response, profile)
-
-        def _parse_pv_status(response: dict[str, Any]) -> dict[str, Any]:
-            return parse_pv_status_response(response, profile)
-
-        def _parse_em_status(response: dict[str, Any]) -> dict[str, Any]:
-            return parse_em_status_response(response, profile)
-
-        # Track if we've made a request (to know when to add delay)
-        made_request = False
-        # Track if any request returned data
-        has_fresh_data = False
-
-        async def _request_and_parse(
-            command: str,
-            parser: Callable[[dict[str, Any]], dict[str, Any]],
-            *,
-            success_log: Callable[[dict[str, Any]], None],
-            failure_log: str,
-            apply_delay: bool,
-            bypass_rate_limit: bool,
-        ) -> dict[str, Any] | None:
-            """Send a request and parse response with shared error handling."""
-            nonlocal made_request, has_fresh_data
-            if apply_delay and made_request:
-                await asyncio.sleep(delay_between_requests)
-            try:
-                response = await self.send_request(
-                    command,
-                    device_ip,
-                    port,
-                    timeout=timeout,
-                    bypass_rate_limit=bypass_rate_limit,
-                )
-            except (TimeoutError, OSError, ValueError, ValidationError) as err:
-                made_request = True
-                _LOGGER.debug(failure_log, device_ip, err)
-                return None
-            made_request = True
-            if not self._json_rpc_result_usable(response):
-                _LOGGER.debug(
-                    failure_log,
-                    device_ip,
-                    response.get("error", "missing result"),
-                )
-                return None
-            parsed = parser(response)
-            has_fresh_data = True
-            success_log(parsed)
-            return parsed
-
-        async def _request_es_mode(
-            *,
-            apply_delay: bool,
-            bypass_rate_limit: bool,
-        ) -> dict[str, Any] | None:
-            """Fetch ES.GetMode with instance-id fallback and shared logging."""
-            nonlocal made_request, has_fresh_data
-            if apply_delay and made_request:
-                await asyncio.sleep(delay_between_requests)
-            parsed = await self.fetch_es_mode(
-                device_ip,
-                port,
-                timeout,
-                profile=profile,
-                bypass_rate_limit=bypass_rate_limit,
-            )
-            made_request = True
-            if parsed is None:
-                _LOGGER.debug("ES.GetMode failed for %s: no usable result", device_ip)
-                return None
-            has_fresh_data = True
-            _log_es_mode(parsed)
-            return parsed
-
-        def _log_es_mode(data: dict[str, Any]) -> None:
-            _LOGGER.debug(
-                "ES.GetMode parsed for %s: Mode=%s, GridPower=%sW",
-                device_ip,
-                data.get("device_mode"),
-                data.get("ongrid_power"),
-            )
-
-        def _log_es_status(data: dict[str, Any]) -> None:
-            _LOGGER.debug(
-                "ES.GetStatus parsed for %s: SOC=%s%%, BattPower=%sW, Status=%s",
-                device_ip,
-                data.get("battery_soc"),
-                data.get("battery_power"),
-                data.get("battery_status"),
-            )
-
-        def _log_em_status(data: dict[str, Any]) -> None:
-            _LOGGER.debug(
-                "EM.GetStatus parsed for %s: CT=%s, TotalPower=%sW",
-                device_ip,
-                "Connected" if data.get("ct_connected") else "Not connected",
-                data.get("em_total_power"),
-            )
-
-        def _log_pv_status(data: dict[str, Any]) -> None:
-            _LOGGER.debug(
-                "PV.GetStatus parsed for %s: PV1=%sW, PV2=%sW, PV3=%sW, PV4=%sW",
-                device_ip,
-                data.get("pv1_power"),
-                data.get("pv2_power"),
-                data.get("pv3_power"),
-                data.get("pv4_power"),
-            )
-
-        def _log_wifi_status(data: dict[str, Any]) -> None:
-            _LOGGER.debug(
-                "Wifi.GetStatus parsed for %s: RSSI=%s dBm, SSID=%s",
-                device_ip,
-                data.get("wifi_rssi"),
-                data.get("wifi_ssid"),
-            )
-
-        def _log_bat_status(data: dict[str, Any]) -> None:
-            _LOGGER.debug(
-                "Bat.GetStatus parsed for %s: Temp=%s°C, ChargFlag=%s, DischrgFlag=%s",
-                device_ip,
-                data.get("bat_temp"),
-                data.get("bat_charg_flag"),
-                data.get("bat_dischrg_flag"),
-            )
-
-        if parallel_requests:
-            request_keys: list[str] = []
-            request_tasks: list[asyncio.Task[dict[str, Any] | None]] = []
-
-            def _schedule_request(
-                key: str,
-                command: str,
-                parser: Callable[[dict[str, Any]], dict[str, Any]],
-                success_log: Callable[[dict[str, Any]], None],
-                failure_log: str,
-            ) -> None:
-                request_keys.append(key)
-                request_tasks.append(
-                    asyncio.create_task(
-                        _request_and_parse(
-                            command,
-                            parser,
-                            success_log=success_log,
-                            failure_log=failure_log,
-                            apply_delay=False,
-                            bypass_rate_limit=True,
-                        )
-                    )
-                )
-
-            request_keys.append("es_mode")
-            request_tasks.append(
-                asyncio.create_task(
-                    _request_es_mode(apply_delay=False, bypass_rate_limit=True)
-                )
-            )
-            _schedule_request(
-                "es_status",
-                get_es_status(0),
-                _parse_es_status,
-                _log_es_status,
-                "ES.GetStatus failed for %s: %s",
-            )
-            if include_em:
-                _schedule_request(
-                    "em_status",
-                    get_em_status(0),
-                    _parse_em_status,
-                    _log_em_status,
-                    "EM.GetStatus failed for %s: %s",
-                )
-            if include_pv:
-                _schedule_request(
-                    "pv_status",
-                    get_pv_status(0),
-                    _parse_pv_status,
-                    _log_pv_status,
-                    "PV.GetStatus failed for %s: %s",
-                )
-            if include_wifi:
-                _schedule_request(
-                    "wifi_status",
-                    get_wifi_status(0),
-                    parse_wifi_status_response,
-                    _log_wifi_status,
-                    "Wifi.GetStatus failed for %s: %s",
-                )
-            if include_bat:
-                _schedule_request(
-                    "bat_status",
-                    get_battery_status(0),
-                    parse_bat_status_response,
-                    _log_bat_status,
-                    "Bat.GetStatus failed for %s: %s",
-                )
-
-            results = await asyncio.gather(*request_tasks)
-            for key, result in zip(request_keys, results, strict=True):
-                if key == "es_mode":
-                    es_mode_data = result
-                elif key == "es_status":
-                    es_status_data = result
-                elif key == "em_status":
-                    em_status_data = result
-                elif key == "pv_status":
-                    pv_status_data = result
-                elif key == "wifi_status":
-                    wifi_status_data = result
-                elif key == "bat_status":
-                    bat_status_data = result
-        else:
-            # Get ES mode (device_mode, ongrid_power) - always fetched (fast tier)
-            es_mode_data = await _request_es_mode(
-                apply_delay=True,
-                bypass_rate_limit=False,
-            )
-
-            # Get ES status (battery_power, battery_status) - always fetched (fast tier)
-            es_status_data = await _request_and_parse(
-                get_es_status(0),
-                _parse_es_status,
-                success_log=_log_es_status,
-                failure_log="ES.GetStatus failed for %s: %s",
-                apply_delay=True,
-                bypass_rate_limit=False,
-            )
-
-            # Get EM status (CT/energy meter) - always fetched (fast tier)
-            if include_em:
-                em_status_data = await _request_and_parse(
-                    get_em_status(0),
-                    _parse_em_status,
-                    success_log=_log_em_status,
-                    failure_log="EM.GetStatus failed for %s: %s",
-                    apply_delay=True,
-                    bypass_rate_limit=False,
-                )
-
-            # Get PV status if requested (medium tier)
-            if include_pv:
-                pv_status_data = await _request_and_parse(
-                    get_pv_status(0),
-                    _parse_pv_status,
-                    success_log=_log_pv_status,
-                    failure_log="PV.GetStatus failed for %s: %s",
-                    apply_delay=True,
-                    bypass_rate_limit=False,
-                )
-
-            # Get WiFi status (slow tier - RSSI signal strength)
-            if include_wifi:
-                wifi_status_data = await _request_and_parse(
-                    get_wifi_status(0),
-                    parse_wifi_status_response,
-                    success_log=_log_wifi_status,
-                    failure_log="Wifi.GetStatus failed for %s: %s",
-                    apply_delay=True,
-                    bypass_rate_limit=False,
-                )
-
-            # Get detailed battery status (slow tier - temperature, charge flags)
-            if include_bat:
-                bat_status_data = await _request_and_parse(
-                    get_battery_status(0),
-                    parse_bat_status_response,
-                    success_log=_log_bat_status,
-                    failure_log="Bat.GetStatus failed for %s: %s",
-                    apply_delay=True,
-                    bypass_rate_limit=False,
-                )
-
-        # Merge data (ES.GetStatus has priority for battery data)
-        # Pass previous_status to preserve values when individual requests fail
-        loop = self._loop or asyncio.get_running_loop()
-        status = merge_device_status(
-            es_mode_data=es_mode_data,
-            es_status_data=es_status_data,
-            pv_status_data=pv_status_data,
-            wifi_status_data=wifi_status_data,
-            em_status_data=em_status_data,
-            bat_status_data=bat_status_data,
-            device_ip=device_ip,
-            last_update=loop.time(),
+        return await fetch_device_status(
+            self,
+            device_ip,
+            port,
+            timeout,
+            include_pv=include_pv,
+            include_wifi=include_wifi,
+            include_em=include_em,
+            include_bat=include_bat,
+            parallel_requests=parallel_requests,
+            delay_between_requests=delay_between_requests,
             previous_status=previous_status,
+            profile=profile,
         )
-        status["has_fresh_data"] = has_fresh_data
-        return status

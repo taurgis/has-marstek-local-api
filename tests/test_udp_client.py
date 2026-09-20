@@ -176,7 +176,7 @@ class TestAsyncCleanup:
         client._discovery_cache = [{"device": "test"}]
         client._last_request_time = {"192.168.1.1": 1000.0}
         client._rate_limit_locks = {"192.168.1.1": asyncio.Lock()}
-        client._polling_paused = {"192.168.1.1": True}
+        await client.pause_polling("192.168.1.1")
         client._es_mode_device_ids = {"192.168.1.1": 1}
 
         # Mock socket to avoid actual network operations
@@ -191,7 +191,7 @@ class TestAsyncCleanup:
         assert client._discovery_cache is None
         assert client._last_request_time == {}
         assert client._rate_limit_locks == {}
-        assert client._polling_paused == {}
+        assert not client.is_polling_paused("192.168.1.1")
         assert client._es_mode_device_ids == {}
         assert client._socket is None
 
@@ -3381,14 +3381,14 @@ class TestResetProneOwners:
         client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-a")
         client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-b")
         client.set_openapi_reset_prone("1.2.3.4", False, owner="entry-a")
-        assert "1.2.3.4" in client._reset_prone_ips
+        assert client.is_openapi_reset_prone("1.2.3.4")
 
         client.transfer_openapi_reset_prone("1.2.3.4", "5.6.7.8", owner="entry-b")
-        assert "1.2.3.4" not in client._reset_prone_ips
-        assert "5.6.7.8" in client._reset_prone_ips
+        assert not client.is_openapi_reset_prone("1.2.3.4")
+        assert client.is_openapi_reset_prone("5.6.7.8")
 
         client.clear_openapi_reset_prone("5.6.7.8", owner="entry-b")
-        assert "5.6.7.8" not in client._reset_prone_ips
+        assert not client.is_openapi_reset_prone("5.6.7.8")
 
     def test_clear_owner_drops_marks_across_ips(self) -> None:
         """Unload must drop every IP this config entry marked."""
@@ -3397,8 +3397,8 @@ class TestResetProneOwners:
         client.set_openapi_reset_prone("5.6.7.8", True, owner="entry-a")
         client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-b")
         client.clear_openapi_reset_prone_owner("entry-a")
-        assert "5.6.7.8" not in client._reset_prone_ips
-        assert "1.2.3.4" in client._reset_prone_ips
+        assert not client.is_openapi_reset_prone("5.6.7.8")
+        assert client.is_openapi_reset_prone("1.2.3.4")
         assert client.is_openapi_reset_prone("1.2.3.4", owner="entry-b")
 
     def test_clear_without_owner_drops_all_marks(self) -> None:
@@ -3406,7 +3406,7 @@ class TestResetProneOwners:
         client = MarstekUDPClient()
         client.set_openapi_reset_prone("1.2.3.4", True, owner="entry-a")
         client.clear_openapi_reset_prone("1.2.3.4")
-        assert "1.2.3.4" not in client._reset_prone_ips
+        assert not client.is_openapi_reset_prone("1.2.3.4")
 
     def test_reset_prone_mark_drops_retransmit_safe(self) -> None:
         """A later reset-prone mark must cancel Wi-Fi copies on that IP."""
