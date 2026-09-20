@@ -1055,6 +1055,97 @@ async def test_reset_prone_setup_removes_bat_status_entities(
     assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
 
 
+async def test_non_meter_firmware_removes_em_status_entities(
+    hass: HomeAssistant,
+) -> None:
+    """EM entities left by an older release are dropped, not left unavailable.
+
+    The sensor platform stops adding them on firmware that is not an Open API
+    meter client, so a registry entry that survives the upgrade would be
+    restored as permanently unavailable.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusC",
+            "version": 153,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    em_unique_id = "aa:bb:cc:dd:ee:ff_em_total_power"
+    kept_unique_id = "aa:bb:cc:dd:ee:ff_battery_soc"
+    for unique_id in (em_unique_id, kept_unique_id):
+        entity_registry.async_get_or_create(
+            domain="sensor",
+            platform=DOMAIN,
+            unique_id=unique_id,
+            config_entry=entry,
+        )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.LOADED
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is None
+    assert (
+        entity_registry.async_get_entity_id("sensor", DOMAIN, kept_unique_id)
+        is not None
+    )
+
+
+async def test_meter_firmware_keeps_em_status_entities(
+    hass: HomeAssistant,
+) -> None:
+    """Firmware that does answer EM.GetStatus keeps its meter entities."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 150,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    em_unique_id = "aa:bb:cc:dd:ee:ff_em_total_power"
+    entity_registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=em_unique_id,
+        config_entry=entry,
+    )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state == ConfigEntryState.LOADED
+    assert (
+        entity_registry.async_get_entity_id("sensor", DOMAIN, em_unique_id) is not None
+    )
+
+
 async def test_remove_entry_cleans_stale_device(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

@@ -16,7 +16,14 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
-from .const import BAT_STATUS_KEYS, DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN, PLATFORMS
+from .const import (
+    BAT_STATUS_KEYS,
+    DATA_SUPPRESS_RELOADS,
+    DEFAULT_UDP_PORT,
+    DOMAIN,
+    EM_STATUS_KEYS,
+    PLATFORMS,
+)
 from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier
 from .firmware_profile import (
@@ -170,15 +177,25 @@ def _async_remove_unsupported_capability_entities(
             if entity_id is not None:
                 registry.async_remove(entity_id)
 
+    def _remove_keys(keys: frozenset[str]) -> None:
+        for key in keys:
+            for platform in (Platform.SENSOR, Platform.BINARY_SENSOR):
+                unique_id = f"{device_identifier}_{key}"
+                entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+                if entity_id is not None:
+                    registry.async_remove(entity_id)
+
+    # Firmware that is not an Open API meter client never answers
+    # EM.GetStatus, so the sensor platform stops adding these. Without the
+    # removal an upgrading install keeps the registry entry, and HA restores
+    # it as permanently unavailable instead of dropping it.
+    if not profile.supports_em_status:
+        _remove_keys(EM_STATUS_KEYS)
+
     if not profile.openapi_reset_prone:
         return
 
-    for key in BAT_STATUS_KEYS:
-        for platform in (Platform.SENSOR, Platform.BINARY_SENSOR):
-            unique_id = f"{device_identifier}_{key}"
-            entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-            if entity_id is not None:
-                registry.async_remove(entity_id)
+    _remove_keys(BAT_STATUS_KEYS)
 
 
 async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
