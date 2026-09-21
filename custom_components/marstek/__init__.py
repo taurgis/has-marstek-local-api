@@ -18,7 +18,6 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     BAT_STATUS_KEYS,
-    DATA_SUPPRESS_RELOADS,
     DEFAULT_UDP_PORT,
     DOMAIN,
     EM_STATUS_KEYS,
@@ -35,6 +34,7 @@ from .helpers.device_lookup import (
     async_lookup_device_by_identifier,
     iter_device_config_entry_ids,
 )
+from .helpers.domain_data import MARSTEK_DATA, peek_domain_data
 from .helpers.flow_helpers import get_unique_id_from_device_info
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
@@ -202,7 +202,7 @@ async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
     MarstekScanner.async_reset()
 
     # Remove domain data entirely when last entry is unloaded
-    hass.data.pop(DOMAIN, None)
+    hass.data.pop(MARSTEK_DATA, None)
 
 
 async def _get_or_create_udp_client(
@@ -569,9 +569,9 @@ async def async_remove_config_entry_device(
 
 async def _async_update_listener(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:
     """Handle options updates by reloading the entry."""
-    suppress = hass.data.get(DOMAIN, {}).get(DATA_SUPPRESS_RELOADS)
-    if suppress and entry.entry_id in suppress:
-        suppress.discard(entry.entry_id)
+    data = peek_domain_data(hass)
+    if data is not None and entry.entry_id in data.suppress_reloads:
+        data.suppress_reloads.discard(entry.entry_id)
         _LOGGER.debug("Skipping reload for entry %s (metadata-only update)", entry.entry_id)
         return
     await hass.config_entries.async_reload(entry.entry_id)

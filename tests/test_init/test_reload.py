@@ -10,10 +10,8 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek import _async_update_listener
-from custom_components.marstek.const import (
-    DATA_SUPPRESS_RELOADS,
-    DOMAIN,
-)
+from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.helpers.domain_data import domain_data
 from tests.conftest import (
     create_mock_client,
     patch_manual_connection,
@@ -26,13 +24,13 @@ async def test_update_listener_suppresses_reload(
 ) -> None:
     """Test update listener skips reload when suppression is set."""
     mock_config_entry.add_to_hass(hass)
-    hass.data[DOMAIN] = {DATA_SUPPRESS_RELOADS: {mock_config_entry.entry_id}}
+    domain_data(hass).suppress_reloads.add(mock_config_entry.entry_id)
 
     with patch.object(hass.config_entries, "async_reload", AsyncMock()) as mock_reload:
         await _async_update_listener(hass, mock_config_entry)
 
     mock_reload.assert_not_called()
-    assert mock_config_entry.entry_id not in hass.data[DOMAIN][DATA_SUPPRESS_RELOADS]
+    assert mock_config_entry.entry_id not in domain_data(hass).suppress_reloads
 
 
 async def test_update_listener_triggers_reload_when_not_suppressed(
@@ -40,7 +38,7 @@ async def test_update_listener_triggers_reload_when_not_suppressed(
 ) -> None:
     """Test update listener reloads entry when not suppressed."""
     mock_config_entry.add_to_hass(hass)
-    hass.data.setdefault(DOMAIN, {})
+    domain_data(hass)
 
     with patch.object(hass.config_entries, "async_reload", AsyncMock()) as mock_reload:
         await _async_update_listener(hass, mock_config_entry)

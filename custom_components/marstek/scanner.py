@@ -19,7 +19,7 @@ from homeassistant.helpers import discovery_flow
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .const import DATA_SUPPRESS_RELOADS, DEFAULT_UDP_PORT, DOMAIN
+from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
 from .firmware_profile import (
     is_unsupported_venus_e2,
@@ -27,6 +27,7 @@ from .firmware_profile import (
 )
 from .helpers.broadcast import async_broadcast_addresses
 from .helpers.device_lookup import async_lookup_device_by_identifier
+from .helpers.domain_data import domain_data
 from .helpers.flow_helpers import (
     formatted_mac_or_none,
     get_unique_id_from_device_info,
@@ -389,9 +390,7 @@ class MarstekScanner:
 
     def _mark_suppress_reload(self, entry_id: str) -> None:
         """Suppress a reload for a metadata-only config entry update."""
-        domain_data = self._hass.data.setdefault(DOMAIN, {})
-        suppress: set[str] = domain_data.setdefault(DATA_SUPPRESS_RELOADS, set())
-        suppress.add(entry_id)
+        domain_data(self._hass).suppress_reloads.add(entry_id)
 
     def _update_device_registry(
         self,

@@ -10,22 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from typing import cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
-from ..const import (
-    DATA_DISCOVERY_LOCK,
-    DATA_ENTRY_BIND_PORTS,
-    DATA_UDP_CLIENT_OWNERS,
-    DATA_UDP_CLIENTS,
-    DATA_UDP_CLIENTS_LOCK,
-    DOMAIN,
-)
+from ..const import DOMAIN
 from ..pymarstek import MarstekUDPClient
+from .domain_data import domain_data
 
 # Re-exported so callers that already reach for the pool keep one import.
 from .ports import bind_port_for_host, configured_device_port, entry_bind_port
@@ -67,56 +61,29 @@ ACTIVE_ENTRY_STATES = frozenset(
 )
 
 
-def _domain_singleton[T](
-    hass: HomeAssistant, key: str, kind: type[T], factory: Callable[[], T]
-) -> T:
-    """Return ``hass.data[DOMAIN][key]``, creating it when absent or wrong.
-
-    Everything the integration keeps in ``hass.data`` is fetched this way, so
-    a value left behind by an older version (or by a test) is replaced rather
-    than used at the wrong type.
-    """
-    domain_data: dict[str, Any] = hass.data.setdefault(DOMAIN, {})
-    existing = domain_data.get(key)
-    if isinstance(existing, kind):
-        return existing
-    created = factory()
-    domain_data[key] = created
-    return created
-
-
 def udp_client_pool(hass: HomeAssistant) -> dict[int, MarstekUDPClient]:
     """Return the per-bind-port UDP client pool, creating it if needed."""
-    return cast(
-        "dict[int, MarstekUDPClient]",
-        _domain_singleton(hass, DATA_UDP_CLIENTS, dict, dict),
-    )
+    return domain_data(hass).udp_clients
 
 
 def udp_client_lock(hass: HomeAssistant) -> asyncio.Lock:
     """Return the lock that serializes pool mutations."""
-    return _domain_singleton(hass, DATA_UDP_CLIENTS_LOCK, asyncio.Lock, asyncio.Lock)
+    return domain_data(hass).udp_clients_lock
 
 
 def discovery_lock(hass: HomeAssistant) -> asyncio.Lock:
     """Return the lock that serializes broadcast discovery vs pool changes."""
-    return _domain_singleton(hass, DATA_DISCOVERY_LOCK, asyncio.Lock, asyncio.Lock)
+    return domain_data(hass).discovery_lock
 
 
 def _udp_client_owners(hass: HomeAssistant) -> dict[int, set[str]]:
     """Return bind-port → config-entry owner ids."""
-    return cast(
-        "dict[int, set[str]]",
-        _domain_singleton(hass, DATA_UDP_CLIENT_OWNERS, dict, dict),
-    )
+    return domain_data(hass).udp_client_owners
 
 
 def _entry_bind_ports(hass: HomeAssistant) -> dict[str, int]:
     """Return config-entry id → leased bind port."""
-    return cast(
-        "dict[str, int]",
-        _domain_singleton(hass, DATA_ENTRY_BIND_PORTS, dict, dict),
-    )
+    return domain_data(hass).entry_bind_ports
 
 
 def domain_has_udp_leases(hass: HomeAssistant) -> bool:
