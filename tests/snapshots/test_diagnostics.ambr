@@ -66,6 +66,7 @@
       'openapi_reset_prone': False,
       'openapi_wifi_retransmit_safe': False,
       'parallel_requests_safe': True,
+      'shared_meter_udp_channel': False,
       'supports_em_status': False,
       'supports_pv': False,
       'supports_sys_ble_advertising': False,

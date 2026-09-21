@@ -10,9 +10,16 @@ firmware** defect. Venus E 3.0 Control **150** is the vendor fix
 and [sphings79/marstek-firmware-archiv](https://github.com/sphings79/marstek-firmware-archiv).
 Blobs stay local-only. Use `fetch_firmware.py` to download them.
 
+Issue [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)
+(Venus C 2.0 stops self-consumption charging while Home Assistant polls) is a
+second, separate Control defect: HMG-50 shares one Wi-Fi receive channel
+between the Local API server and the device's own CT / P1 meter reader. No
+HMG-50 build fixes it, 156 included. See `HMG50_METER_CHANNEL.md`.
+
 | File | Purpose |
 |------|---------|
 | `ANALYSIS.md` | What 144 / 1476 / 148 / 150 contain and what 150 changed |
+| `HMG50_METER_CHANNEL.md` | Why Open API polling costs HMG-50 (Venus C 2.0 / E 2.0) its meter |
 | `WIFI_UDP_RELIABILITY.md` | Why Wi-Fi Open API still times out on 150; RFC/Quectel/HA sources |
 | `catalog.json` | SHA-256, OTA URLs, build stamps, initial SP |
 | `fetch_firmware.py` | Download catalog images into `blobs/` and verify hashes |

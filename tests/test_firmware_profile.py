@@ -11,6 +11,7 @@ from custom_components.marstek.const import (
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
+    firmware_profile_diagnostics,
     is_unsupported_venus_e2,
     resolve_firmware_profile,
     resolve_firmware_profile_from_metadata,
@@ -384,7 +385,7 @@ def test_vnse3_1476_is_legacy_reset_prone() -> None:
         ("Marstek Energy Storage", 150, False),
         ("Venus", 3, False),
         ("VenusC", 155, False),
-        ("VenusC", 156, True),
+        ("VenusC", 156, False),
         ("Venus E mini", 150, True),
     ],
 )
@@ -438,9 +439,11 @@ def test_openapi_reset_prone_follows_control_generation(
     profile = resolve_firmware_profile(device_type, version)
 
     assert profile.openapi_reset_prone is reset_prone
-    assert profile.parallel_requests_safe is not reset_prone
-    if reset_prone:
+    if reset_prone or profile.shared_meter_udp_channel:
+        assert profile.parallel_requests_safe is False
         assert profile.openapi_wifi_retransmit_safe is False
+    else:
+        assert profile.parallel_requests_safe is True
 
 
 @pytest.mark.parametrize(
@@ -526,6 +529,11 @@ def test_venus_c_155_plus_serves_em_without_sys(version: int) -> None:
     assert profile.supports_sys_dod is False
     assert profile.supports_ups is False
     assert profile.openapi_reset_prone is (version < 156)
+    # Issue #82: the 156 Open API stability fix does not split the Local API
+    # socket from the meter reader's, so traffic stays minimal either way.
+    assert profile.shared_meter_udp_channel is True
+    assert profile.parallel_requests_safe is False
+    assert profile.openapi_wifi_retransmit_safe is False
 
 
 def test_hmg50_venuse_153_is_reset_prone_without_em_server() -> None:
@@ -536,6 +544,49 @@ def test_hmg50_venuse_153_is_reset_prone_without_em_server() -> None:
     assert profile.hmg50_control is True
     assert profile.supports_em_status is False
     assert profile.openapi_reset_prone is True
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "shared_channel"),
+    [
+        ("VenusC", 153, True),
+        ("VenusC", 155, True),
+        ("VenusC", 156, True),
+        ("VenusC", 157, True),
+        ("VenusE", 156, True),
+        ("HMG-50", 156, True),
+        ("Venus E2.0", 156, True),
+        # Not HMG-50: Venus C below the HMG-50 floor, and the other lines,
+        # which gained a second Wi-Fi receive channel at Control 149.
+        ("VenusC", 150, False),
+        ("VenusE 3.0", 150, False),
+        ("VenusA", 1509, False),
+        ("VenusD", 150, False),
+        ("Venus E mini", 150, False),
+        ("Marstek Energy Storage", 150, False),
+    ],
+)
+def test_shared_meter_channel_tracks_hmg50_control(
+    device_type: str, version: int, shared_channel: bool
+) -> None:
+    """Issue #82: HMG-50 shares one Wi-Fi receive channel with its own meter."""
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.shared_meter_udp_channel is shared_channel
+    assert profile.hmg50_control is shared_channel
+    if shared_channel:
+        assert profile.parallel_requests_safe is False
+        assert profile.openapi_wifi_retransmit_safe is False
+
+
+def test_shared_meter_channel_appears_in_diagnostics() -> None:
+    """Diagnostics must show why parallel and retransmit stay off on HMG-50."""
+    diagnostics = firmware_profile_diagnostics(resolve_firmware_profile("VenusC", 156))
+
+    assert diagnostics["shared_meter_udp_channel"] is True
+    assert diagnostics["openapi_reset_prone"] is False
+    assert diagnostics["parallel_requests_safe"] is False
+    assert diagnostics["openapi_wifi_retransmit_safe"] is False
 
 
 def test_venuse_pro_1508_is_unknown_not_venus_a() -> None:

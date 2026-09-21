@@ -44,6 +44,17 @@ _UNKNOWN_CONTROL_GENERATION_MIN = 100
 _HMG50_CONTROL_MIN_GENERATION = 153
 _HMG50_EM_SERVER_GENERATION = 155
 _HMG50_OPENAPI_STABLE_GENERATION = 156
+# HMG-50 Control shares one Wi-Fi receive channel between the Local API
+# server and its own CT / P1 meter reader, so Open API traffic competes with
+# the regulation loop that Auto mode depends on. See
+# ``tools/firmware/HMG50_METER_CHANNEL.md`` for the string evidence: every
+# archived HMG-50 image (153/155/156) filters exactly one Quectel URC,
+# ``+QIURC: "recv",3`` -- the same connect id the Local API server opens
+# (``+QIOPEN: 3,0`` next to ``UDP server open!``) -- and drains it with
+# buffered ``AT+QIRD``. VNSE3-0 / VNSA-0 / VNSD-0 carry a generic
+# ``+QIURC: "recv",%d,`` parser and, from Control generation 149, a second
+# hard-coded channel (``+QIURC: "recv",11``). No HMG-50 build has it, 156
+# included, so this is not something a firmware update has cleared.
 # Venus E 2.x / HMG-50 is not Venus E 3.x. HMG-50 Control 153+ Open API
 # GetDevice reports ``device: "VenusE"`` (src ``VenusE-%s``), not
 # ``Venus E2.0`` / ``VNSE2``. Bare ``VenusE`` without 3.x must not unlock
@@ -147,8 +158,24 @@ class FirmwareProfile:
         return generation < 150
 
     @property
+    def shared_meter_udp_channel(self) -> bool:
+        """Return whether Open API reads contend with the device meter reader.
+
+        HMG-50 Control (Venus C 2.0 and the bare ``VenusE`` of Venus E 2.0)
+        has a single inbound Wi-Fi channel for both the Local API server and
+        its own CT / P1 meter polling. Losing meter samples to Open API
+        traffic is what makes the device declare the meter gone and stop
+        self-consumption charging (issue #82), and it is the same defect
+        behind Marstek's own "Venus E2.0 may disconnect from CT003" warning.
+        Nothing in the client can repair it; keep the traffic minimal.
+        """
+        return self.hmg50_control
+
+    @property
     def parallel_requests_safe(self) -> bool:
         """Return whether parallel Open API calls are safe on this firmware."""
+        if self.shared_meter_udp_channel:
+            return False
         return not self.openapi_reset_prone
 
     @property
@@ -159,9 +186,10 @@ class FirmwareProfile:
         what reset-prone Control used to disable Local API. Opt in only
         after a known family and Control generation that this profile
         already treats as not reset-prone. Unknown models and missing
-        ``ver`` stay one-shot.
+        ``ver`` stay one-shot, and so does HMG-50 Control: a second copy
+        there lands on the channel its meter reader is sharing.
         """
-        if self.openapi_reset_prone:
+        if self.openapi_reset_prone or self.shared_meter_udp_channel:
             return False
         if self.family not in _KNOWN_FAMILIES:
             return False
@@ -367,4 +395,5 @@ def firmware_profile_diagnostics(profile: FirmwareProfile) -> dict[str, Any]:
         "openapi_reset_prone": profile.openapi_reset_prone,
         "parallel_requests_safe": profile.parallel_requests_safe,
         "openapi_wifi_retransmit_safe": profile.openapi_wifi_retransmit_safe,
+        "shared_meter_udp_channel": profile.shared_meter_udp_channel,
     }

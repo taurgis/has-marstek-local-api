@@ -354,6 +354,7 @@ async def test_diagnostics_follow_live_firmware_transition(hass: HomeAssistant) 
             "openapi_reset_prone": True,
             "parallel_requests_safe": False,
             "openapi_wifi_retransmit_safe": False,
+            "shared_meter_udp_channel": False,
         }
 
         await _scan_devices(hass, [_discovered_device(version=150, firmware="150")])
@@ -374,6 +375,7 @@ async def test_diagnostics_follow_live_firmware_transition(hass: HomeAssistant) 
             "openapi_reset_prone": False,
             "parallel_requests_safe": True,
             "openapi_wifi_retransmit_safe": True,
+            "shared_meter_udp_channel": False,
         }
 
 

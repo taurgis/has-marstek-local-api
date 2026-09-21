@@ -104,6 +104,7 @@ async def test_async_get_config_entry_diagnostics(
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
         "openapi_wifi_retransmit_safe": False,
+        "shared_meter_udp_channel": False,
     }
 
     # Verify polling_config has expected keys with defaults
@@ -153,6 +154,7 @@ async def test_diagnostics_reports_capable_firmware_profile(
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
         "openapi_wifi_retransmit_safe": True,
+        "shared_meter_udp_channel": False,
     }
 
 

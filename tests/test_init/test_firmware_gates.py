@@ -141,6 +141,88 @@ async def test_openapi_reset_issue_skipped_for_firmware_150(
     client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", True)
 
 
+async def test_meter_channel_issue_created_for_hmg50_156(
+    hass: HomeAssistant,
+) -> None:
+    """Venus C 156 still shares its meter channel, so the warning stays up (#82)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusC",
+            "version": 156,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        issue_registry = ir.async_get(hass)
+        issue_id = f"shared_meter_udp_channel_{entry.entry_id}"
+        issue = issue_registry.async_get_issue(DOMAIN, issue_id)
+        assert issue is not None
+        assert issue.translation_key == "shared_meter_udp_channel"
+        assert issue.severity is ir.IssueSeverity.WARNING
+        assert issue.is_fixable is False
+        assert issue.translation_placeholders == {
+            "family": "Venus C",
+            "firmware": "156",
+        }
+        # The 156 Open API stability fix clears the reset warning, not this one.
+        assert (
+            issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}") is None
+        )
+        # A retransmit would put a second copy on the meter's channel.
+        client.set_openapi_retransmit_safe.assert_called_with("1.2.3.4", False)
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_meter_channel_issue_skipped_for_venus_e3(
+    hass: HomeAssistant,
+) -> None:
+    """Non-HMG-50 lines split the meter channel at Control 149; no warning."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE 3.0",
+            "version": 150,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    assert (
+        issue_registry.async_get_issue(DOMAIN, f"shared_meter_udp_channel_{entry.entry_id}") is None
+    )
+
+
 async def test_openapi_reset_issue_created_when_connection_fails(
     hass: HomeAssistant,
 ) -> None:

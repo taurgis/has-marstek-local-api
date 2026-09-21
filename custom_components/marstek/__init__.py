@@ -82,6 +82,39 @@ def _openapi_reset_issue_id(entry: ConfigEntry) -> str:
     return f"openapi_reset_prone_{entry.entry_id}"
 
 
+def _meter_channel_issue_id(entry: ConfigEntry) -> str:
+    """Build the shared meter-channel warning id for a config entry."""
+    return f"shared_meter_udp_channel_{entry.entry_id}"
+
+
+def _sync_meter_channel_issue(
+    hass: HomeAssistant, entry: ConfigEntry, profile: FirmwareProfile
+) -> None:
+    """Warn when Open API polling can cost the device its own meter samples."""
+    issue_id = _meter_channel_issue_id(entry)
+    issue_registry = ir.async_get(hass)
+    if not profile.shared_meter_udp_channel:
+        if issue_registry.async_get_issue(DOMAIN, issue_id):
+            issue_registry.async_delete(DOMAIN, issue_id)
+        return
+
+    firmware = str(profile.firmware_version) if profile.firmware_version is not None else "unknown"
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        is_persistent=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="shared_meter_udp_channel",
+        translation_placeholders={
+            "family": profile.family.value,
+            "firmware": firmware,
+        },
+        learn_more_url="https://github.com/taurgis/has-marstek-local-api/issues/82",
+    )
+
+
 def _sync_openapi_reset_issue(
     hass: HomeAssistant, entry: ConfigEntry, profile: FirmwareProfile
 ) -> None:
@@ -138,6 +171,14 @@ def _clear_openapi_reset_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Clear the Local API firmware-reset warning if present."""
     issue_registry = ir.async_get(hass)
     issue_id = _openapi_reset_issue_id(entry)
+    if issue_registry.async_get_issue(DOMAIN, issue_id):
+        issue_registry.async_delete(DOMAIN, issue_id)
+
+
+def _clear_meter_channel_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear the shared meter-channel warning if present."""
+    issue_registry = ir.async_get(hass)
+    issue_id = _meter_channel_issue_id(entry)
     if issue_registry.async_get_issue(DOMAIN, issue_id):
         issue_registry.async_delete(DOMAIN, issue_id)
 
@@ -401,6 +442,7 @@ async def _async_setup_entry_with_client(
         device_info_dict.get("version"),
     )
     _sync_openapi_reset_issue(hass, entry, profile)
+    _sync_meter_channel_issue(hass, entry, profile)
     udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone, owner=entry.entry_id)
     udp_client.set_openapi_retransmit_safe(stored_ip, profile.openapi_wifi_retransmit_safe)
 
@@ -438,6 +480,7 @@ async def _async_setup_entry_with_client(
     # Clear any prior connection issue after successful setup
     _clear_connection_issue(hass, entry)
     _sync_openapi_reset_issue(hass, entry, coordinator.profile)
+    _sync_meter_channel_issue(hass, entry, coordinator.profile)
 
     # Store coordinator and device_info in runtime_data.
     # UDP clients are pooled per Open API bind port in hass.data.
@@ -510,6 +553,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     # Clear any repair issues tied to this entry
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
+    _clear_meter_channel_issue(hass, entry)
 
     await _async_release_entry_resources(hass, entry)
 
@@ -523,6 +567,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
+    _clear_meter_channel_issue(hass, entry)
 
     await _async_release_entry_resources(hass, entry)
 
