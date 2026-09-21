@@ -1,6 +1,6 @@
 ---
 name: homeassistant-chrome-ui-testing
-description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, disable, connection-loss repairs, Ignore discovery, system options, registry/hide, history, energy, Assist expose, actions, automations) and walkthroughs.
+description: Drive Docker Home Assistant in Chrome via CDP (not screenshot pixels). Restores Chrome DevTools when /json/version dies (Chrome 136+ default profile, ProcessSingleton). Covers the Cursor cloud VM and the headless Claude Code sandbox, where dockerd must be started by hand and only Playwright's Chromium exists. Use for Marstek config-flow UI tests (discovery, Confirm device, manual IP/port, delete/re-add, disable, connection-loss repairs, Ignore discovery, system options, registry/hide, history, energy, Assist expose, actions, automations) and walkthroughs.
 ---
 
 # Home Assistant Chrome UI testing
@@ -9,13 +9,37 @@ Use this when exercising the Marstek custom integration in Chrome against `.devc
 
 **Drive the UI with CDP. Do not click screenshot coordinates.** Pixel clicks miss Ignore vs Add, Submit, IP focus, overflow Menu, and the wrong Chrome tab. `xdotool` guessed `x,y` and computerUse screenshot clicks are forbidden for HA dialogs.
 
+## Pick your sandbox
+
+Two environments run this skill and four things differ. Detect, do not assume:
+
+```bash
+docker info >/dev/null 2>&1 && echo daemon-up || echo daemon-down
+command -v google-chrome >/dev/null && echo chrome || echo playwright-chromium
+[ -n "$DISPLAY" ] && echo windowed || echo headless
+```
+
+| | Cursor cloud VM | Claude Code sandbox |
+|---|---|---|
+| Docker | service already running, needs `sudo` | **start `dockerd` yourself**, already root |
+| Browser | `/opt/google/chrome/chrome`, windowed | Playwright Chromium, **headless** |
+| Python | `python3` | `.venv/bin/python` (system `python3` lacks `aiohttp`) |
+| Localhost HTTP | direct | export `NO_PROXY='*' no_proxy='*'` |
+
+`ha_cdp.py` resolves the browser and headless mode on its own — `status` and
+`ensure` report the `chrome_bin` and `headless` they picked. Override with
+`HA_CHROME_BIN` / `HA_CHROME_HEADLESS`. Everything after bring-up is the same
+on both. Details, including the Docker ICC rules that apply to the Cursor VM
+**only**, are in [references/SANDBOXES.md](references/SANDBOXES.md).
+
 ## Restore DevTools first
 
-Chrome 148 in this environment is past **Chrome 136**. `--remote-debugging-port` is **ignored** on the default profile (`~/.config/google-chrome`). A second `google-chrome … --remote-debugging-port=9222` does **not** enable CDP either: Chromium `ProcessSingleton` attaches to the existing process and swallows the new flags.
+Both sandboxes run Chrome past **Chrome 136** (Chrome 148 on the Cursor VM, Playwright's Chromium 141 in the Claude Code sandbox), so `--remote-debugging-port` is **ignored** on the default profile (`~/.config/google-chrome`). A second launch does **not** enable CDP either: Chromium `ProcessSingleton` attaches to the existing process and swallows the new flags. Headless changes none of this.
 
 Always verify, then fix with the helper (do not relaunch by hand unless the helper fails):
 
 ```bash
+# Claude Code sandbox: .venv/bin/python, and export NO_PROXY='*' no_proxy='*' first
 python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py status
 # If ok=false:
 python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py ensure
@@ -27,6 +51,8 @@ python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py ensure
 --remote-debugging-port=9222
 --remote-allow-origins=*
 --user-data-dir=/tmp/chrome-ha-debug
+--no-sandbox
+--headless=new --disable-gpu   # only when no DISPLAY
 ```
 
 Success is `GET http://127.0.0.1:9222/json/version` returning `webSocketDebuggerUrl`. If that URL 404s/refuses, CDP is down — do not fall back to pixels.
@@ -37,6 +63,8 @@ Success is `GET http://127.0.0.1:9222/json/version` returning `webSocketDebugger
 | Second Chrome command exits immediately; 9222 still closed | `ProcessSingleton` reused the live instance | Quit those PIDs, then `ensure` |
 | HTTP 9222 works, WebSocket 403 | Client sent `Origin`; flag missing | Relaunch with `--remote-allow-origins=*` |
 | `ensure` still fails | Stale singleton files in the debug profile | Helper deletes `SingletonLock/Cookie/Socket` |
+| `ensure` reports the wrong `chrome_bin` | No browser at the paths the helper probes | Set `HA_CHROME_BIN` to the binary you have |
+| Everything times out against `127.0.0.1` | Agent HTTPS proxy intercepting localhost | `export NO_PROXY='*' no_proxy='*'` |
 
 Official notes: [Chrome 136 remote-debugging-port](https://developer.chrome.com/blog/remote-debugging-port), [CDP HTTP endpoints](https://chromedevtools.github.io/devtools-protocol/). Details in [references/CHROME_DEVTOOLS.md](references/CHROME_DEVTOOLS.md).
 
@@ -124,19 +152,36 @@ Rules:
 
 ## Bring-up
 
-From `.devcontainer/`:
+Claude Code sandbox only — no daemon runs at boot, and you are root:
+
+```bash
+nohup dockerd > /tmp/dockerd.log 2>&1 &
+until docker info >/dev/null 2>&1; do sleep 1; done
+```
+
+Then from `.devcontainer/` (drop `sudo` when you are root):
 
 ```bash
 sudo docker compose up -d --build
 ```
 
-Wait until `http://127.0.0.1:8123/api/onboarding` responds. On this Cloud VM, `iptables-legacy` FORWARD may drop Docker ICC; if HA cannot ping `172.28.0.26`:
+Naming services (`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-6`)
+builds three mock images instead of twenty and is enough for same-port pooling
+plus one unique-port device. Wait until `http://127.0.0.1:8123/api/onboarding`
+responds.
+
+Cursor VM only: its `iptables-legacy` FORWARD policy may drop Docker ICC; if HA
+cannot ping `172.28.0.26`:
 
 ```bash
 sudo iptables-legacy -P FORWARD ACCEPT
 sudo iptables-legacy -I FORWARD -i br-+ -j ACCEPT
 sudo iptables-legacy -I FORWARD -o br-+ -j ACCEPT
 ```
+
+Docker 29 in the Claude Code sandbox routes container-to-container traffic with
+`FORWARD` left at `DROP`. Do not copy those rules there — they fix nothing and
+mask the real fault.
 
 Mock image must COPY `custom_components/marstek/firmware_profile.py` and `custom_components/marstek/pymarstek/const.py` or every mock exits on import.
 
@@ -156,7 +201,9 @@ Dismiss the browser “save password” bubble immediately. Skip area assignment
 
 Reuse a refresh token instead of typing the password. After login, `ha_cdp.py token` writes `/tmp/ha_access_token.txt` from the live page (REST tokens expire).
 
-Onboard via REST when the UI wizard would waste recording time (`POST /api/onboarding/users`, `core_config`, `analytics`, then `integration` with `redirect_uri`).
+Onboard via REST when the UI wizard would waste recording time (`POST /api/onboarding/users`, `core_config`, `analytics`, then `integration` with `redirect_uri`). Required in the headless sandbox, where there is no window to type into.
+
+REST onboarding authenticates your shell, **not the tab** — `ha_cdp.py` then fails with `Home Assistant is not ready on this tab`. Seed the frontend by writing the returned tokens to `localStorage.hassTokens` over CDP and reloading; see [references/SANDBOXES.md](references/SANDBOXES.md).
 
 ## Fast routes
 
@@ -195,6 +242,7 @@ sudo docker exec -i marstek-ha-dev python3 - <<'PY'
 import json, socket
 cmd = json.dumps({"id": 1, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}).encode()
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); sock.settimeout(3)
+sock.bind(("0.0.0.0", 30000))  # firmware replies to the listen port, not the source port
 sock.sendto(cmd, ("172.28.0.26", 30000))
 print(sock.recvfrom(4096)[0])
 PY
@@ -522,6 +570,8 @@ Manual CDP leftovers (when recording, not when running `campaign`):
 Do not cite 0-byte `mp4` files. Discard failed recordings.
 
 ## Recording
+
+Needs a visible window, so **Cursor VM only**. In the headless Claude Code sandbox use `ha_cdp.py screenshot` (CDP captures the page, not the screen), or start `Xvfb :1` and rerun with `DISPLAY=:1 HA_CHROME_HEADLESS=0`.
 
 1. `ha_cdp.py ensure` and land on `/config/integrations/dashboard` **before** `START_RECORDING`.
 2. Record only the add/confirm/entity proof. Drive clicks with `ha_cdp.py` while the screen records.
