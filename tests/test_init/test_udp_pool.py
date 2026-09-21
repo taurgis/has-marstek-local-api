@@ -12,11 +12,8 @@ from homeassistant.helpers import (
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.marstek.const import (
-    DATA_ENTRY_BIND_PORTS,
-    DATA_UDP_CLIENTS,
-    DOMAIN,
-)
+from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.helpers.domain_data import domain_data, peek_domain_data
 from tests.conftest import (
     create_mock_client,
     create_mock_scanner,
@@ -132,11 +129,10 @@ async def test_multiple_entries_share_udp_client(
         await hass.async_block_till_done()
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
-        assert DOMAIN in hass.data
-        assert DATA_UDP_CLIENTS in hass.data[DOMAIN]
+        assert 30000 in domain_data(hass).udp_clients
 
         # Store reference to the shared client
-        shared_client = hass.data[DOMAIN][DATA_UDP_CLIENTS][30000]
+        shared_client = domain_data(hass).udp_clients[30000]
 
         # Create and add second entry AFTER first is setup
         second_entry = MockConfigEntry(
@@ -158,7 +154,7 @@ async def test_multiple_entries_share_udp_client(
 
         assert second_entry.state == ConfigEntryState.LOADED
         # Verify both entries use the SAME UDP client instance
-        assert hass.data[DOMAIN][DATA_UDP_CLIENTS][30000] is shared_client
+        assert domain_data(hass).udp_clients[30000] is shared_client
 
         # Cleanup
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
@@ -182,7 +178,7 @@ async def test_partial_unload_preserves_shared_client(
         await hass.async_block_till_done()
 
         # Store reference to verify it persists
-        shared_client = hass.data[DOMAIN][DATA_UDP_CLIENTS][30000]
+        shared_client = domain_data(hass).udp_clients[30000]
 
         # Create and add second entry AFTER first is setup
         second_entry = MockConfigEntry(
@@ -213,9 +209,7 @@ async def test_partial_unload_preserves_shared_client(
         assert second_entry.state == ConfigEntryState.LOADED
 
         # Shared client should still exist for the remaining entry
-        assert DOMAIN in hass.data
-        assert DATA_UDP_CLIENTS in hass.data[DOMAIN]
-        assert hass.data[DOMAIN][DATA_UDP_CLIENTS][30000] is shared_client
+        assert domain_data(hass).udp_clients[30000] is shared_client
 
         # Services should still be registered (other entry still loaded)
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
@@ -263,17 +257,15 @@ async def test_last_entry_unload_cleans_up_shared_client(
         await hass.async_block_till_done()
 
         # Client should still exist
-        assert DOMAIN in hass.data
-        assert DATA_UDP_CLIENTS in hass.data[DOMAIN]
+        assert 30000 in domain_data(hass).udp_clients
 
         # Unload last entry
         await hass.config_entries.async_unload(second_entry.entry_id)
         await hass.async_block_till_done()
 
-        # UDP client should be cleaned up (either key removed or no client in it)
-        marstek_data = hass.data.get(DOMAIN)
-        if marstek_data is not None:
-            assert DATA_UDP_CLIENTS not in marstek_data
+        # UDP client should be cleaned up (container dropped, or pool emptied)
+        marstek_data = peek_domain_data(hass)
+        assert marstek_data is None or not marstek_data.udp_clients
         # Services remain registered for the integration lifetime
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
 
@@ -337,7 +329,7 @@ async def test_entries_on_different_ports_use_separate_udp_clients(
 
         assert first_entry.state == ConfigEntryState.LOADED
         assert second_entry.state == ConfigEntryState.LOADED
-        pool = hass.data[DOMAIN][DATA_UDP_CLIENTS]
+        pool = domain_data(hass).udp_clients
         assert set(pool) == {30000, 30003}
         first_client = pool[30000]
         second_client = pool[30003]
@@ -348,8 +340,8 @@ async def test_entries_on_different_ports_use_separate_udp_clients(
         await hass.config_entries.async_unload(second_entry.entry_id)
         await hass.async_block_till_done()
 
-        assert 30003 not in hass.data[DOMAIN][DATA_UDP_CLIENTS]
-        assert hass.data[DOMAIN][DATA_UDP_CLIENTS][30000] is first_client
+        assert 30003 not in domain_data(hass).udp_clients
+        assert domain_data(hass).udp_clients[30000] is first_client
         second_client.async_cleanup.assert_awaited()
 
         await hass.config_entries.async_unload(first_entry.entry_id)
@@ -367,13 +359,14 @@ async def test_remove_setup_retry_entry_releases_udp_client(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
         assert mock_config_entry.state == ConfigEntryState.SETUP_RETRY
-        assert DATA_UDP_CLIENTS in hass.data.get(DOMAIN, {})
+        assert domain_data(hass).udp_clients
 
         await hass.config_entries.async_remove(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
     client.async_cleanup.assert_awaited()
-    assert DOMAIN not in hass.data or DATA_UDP_CLIENTS not in hass.data.get(DOMAIN, {})
+    remaining = peek_domain_data(hass)
+    assert remaining is None or not remaining.udp_clients
 
 
 async def test_setup_error_after_lease_releases_udp_client(
@@ -395,9 +388,9 @@ async def test_setup_error_after_lease_releases_udp_client(
 
     assert mock_config_entry.state == ConfigEntryState.SETUP_ERROR
     client.async_cleanup.assert_awaited()
-    domain_data = hass.data.get(DOMAIN, {})
-    assert not domain_data.get(DATA_UDP_CLIENTS)
-    assert not domain_data.get(DATA_ENTRY_BIND_PORTS)
+    remaining = peek_domain_data(hass)
+    assert remaining is None or not remaining.udp_clients
+    assert remaining is None or not remaining.entry_bind_ports
 
 
 async def test_failed_unload_keeps_reset_prone_protection(

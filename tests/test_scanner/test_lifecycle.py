@@ -10,7 +10,8 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.helpers.domain_data import domain_data
 from custom_components.marstek.scanner import MarstekScanner
 
 
@@ -141,7 +142,7 @@ async def test_scanner_pauses_shared_receiver_during_scan(hass: HomeAssistant) -
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()
-    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client}}
+    domain_data(hass).udp_clients[30000] = client
     scanner = MarstekScanner(hass)
 
     with patch(
@@ -162,7 +163,7 @@ async def test_scanner_pauses_all_port_clients_during_scan(hass: HomeAssistant) 
     client_b = MagicMock()
     client_b.async_pause_receiver = AsyncMock()
     client_b.async_resume_receiver = AsyncMock()
-    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client_a, 30003: client_b}}
+    domain_data(hass).udp_clients.update({30000: client_a, 30003: client_b})
     scanner = MarstekScanner(hass)
 
     with patch(
@@ -184,7 +185,7 @@ async def test_scanner_resumes_shared_receiver_after_scan_error(
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()
-    hass.data[DOMAIN] = {DATA_UDP_CLIENTS: {30000: client}}
+    domain_data(hass).udp_clients[30000] = client
     scanner = MarstekScanner(hass)
 
     with patch(

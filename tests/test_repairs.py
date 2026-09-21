@@ -6,7 +6,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.marstek.const import DATA_UDP_CLIENTS, DOMAIN
+from custom_components.marstek.const import DOMAIN
+from custom_components.marstek.helpers.domain_data import domain_data
 from custom_components.marstek.repairs import (
     CannotConnectRepairFlow,
     async_create_fix_flow,
@@ -247,7 +248,7 @@ async def test_repair_flow_reuses_pooled_udp_client(
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()
-    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENTS] = {30000: client}
+    domain_data(hass).udp_clients[30000] = client
 
     flow = CannotConnectRepairFlow()
     flow.hass = hass

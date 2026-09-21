@@ -15,6 +15,7 @@ import base64
 import contextlib
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -33,7 +34,50 @@ USER_DATA_DIR = os.environ.get("HA_CHROME_USER_DATA_DIR", "/tmp/chrome-ha-debug"
 DEFAULT_URL = os.environ.get(
     "HA_URL", "http://127.0.0.1:8123/config/integrations/dashboard"
 )
-CHROME_BIN = os.environ.get("HA_CHROME_BIN", "/opt/google/chrome/chrome")
+
+
+def _resolve_chrome_bin() -> str:
+    """Find a Chrome/Chromium binary for whichever sandbox we are in.
+
+    The Cursor cloud VM ships Google Chrome at the Debian package path. The
+    Claude Code sandbox has no ``google-chrome`` at all, only Playwright's
+    bundled Chromium under ``PLAYWRIGHT_BROWSERS_PATH``. CDP is identical on
+    both, so pick the first binary that exists instead of hardcoding one.
+    """
+    pw_root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
+    candidates: list[str | None] = [
+        "/opt/google/chrome/chrome",
+        shutil.which("google-chrome"),
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+        *sorted(
+            (str(path) for path in pw_root.glob("chromium-*/chrome-linux/chrome")),
+            reverse=True,
+        ),
+    ]
+    for candidate in candidates:
+        if candidate and os.access(candidate, os.X_OK):
+            return candidate
+    return "/opt/google/chrome/chrome"
+
+
+def _resolve_headless() -> bool:
+    """Run headless when there is no X server to draw into.
+
+    ``HA_CHROME_HEADLESS=1`` / ``0`` forces it either way; the default
+    ``auto`` keeps the Cursor VM windowed (so recordings still work) and
+    makes the display-less Claude Code sandbox headless.
+    """
+    raw = os.environ.get("HA_CHROME_HEADLESS", "auto").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return not os.environ.get("DISPLAY") and not Path("/tmp/.X11-unix").exists()
+
+
+CHROME_BIN = os.environ.get("HA_CHROME_BIN") or _resolve_chrome_bin()
+HEADLESS = _resolve_headless()
 DISPLAY = os.environ.get("DISPLAY", ":1")
 
 # Injected into the page. Walks open shadow roots (HA Lit).
@@ -539,12 +583,13 @@ def _http_json(path: str) -> Any:
 
 
 def devtools_status() -> dict[str, Any]:
+    env = {"chrome_bin": CHROME_BIN, "headless": HEADLESS}
     try:
         version = _http_json("/json/version")
         pages = _http_json("/json/list")
-        return {"ok": True, "version": version, "pages": pages}
+        return {"ok": True, "version": version, "pages": pages, **env}
     except (URLError, TimeoutError, OSError, json.JSONDecodeError) as err:
-        return {"ok": False, "error": str(err)}
+        return {"ok": False, "error": str(err), **env}
 
 
 def chrome_main_pids() -> list[int]:
@@ -615,6 +660,7 @@ def launch_chrome(url: str) -> subprocess.Popen[bytes]:
         CHROME_BIN,
         "--no-sandbox",
         "--test-type",
+        *(["--headless=new", "--disable-gpu"] if HEADLESS else []),
         "--disable-dev-shm-usage",
         "--use-gl=angle",
         "--use-angle=swiftshader-webgl",
@@ -665,9 +711,11 @@ def ensure_chrome(url: str, restart: bool = False) -> dict[str, Any]:
             "hint": (
                 "Chrome 136+ ignores --remote-debugging-port on the default "
                 "profile. This helper launches with "
-                f"--user-data-dir={USER_DATA_DIR}. If a previous Chrome was "
+                f"--user-data-dir={USER_DATA_DIR} using {CHROME_BIN} "
+                f"(headless={HEADLESS}). If a previous Chrome was "
                 "still running, ProcessSingleton swallowed the new flags — "
-                "quit those PIDs and retry."
+                "quit those PIDs and retry. If the binary is wrong for this "
+                "sandbox, set HA_CHROME_BIN."
             ),
             **status,
         }

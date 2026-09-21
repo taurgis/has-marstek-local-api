@@ -516,6 +516,15 @@
     },
     "unsupported_device": {
       "message": "Venus E2.0 is not supported by this integration"
+    },
+    "setup_cannot_connect": {
+      "message": "Unable to connect to the Marstek device at {host} ({error}). Home Assistant will retry, and the scanner updates the address automatically if the device moved."
+    },
+    "setup_no_data": {
+      "message": "The Marstek device at {host} answered the connection check but returned no status data: {error}"
+    },
+    "update_failed": {
+      "message": "Polling the Marstek device at {host} failed (attempt #{attempt}): {error}"
     }
   },
   "issues": {

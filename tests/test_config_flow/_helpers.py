@@ -8,10 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 
-from custom_components.marstek.const import (
-    DATA_UDP_CLIENTS,
-    DOMAIN,
-)
+from custom_components.marstek.helpers.domain_data import domain_data
 
 
 def _get_schema_field_default(result: dict[str, Any], field_name: str) -> Any:
@@ -29,5 +26,5 @@ def _pooled_udp_client(hass: HomeAssistant) -> MagicMock:
     client = MagicMock()
     client.async_pause_receiver = AsyncMock()
     client.async_resume_receiver = AsyncMock()
-    hass.data.setdefault(DOMAIN, {})[DATA_UDP_CLIENTS] = {30000: client}
+    domain_data(hass).udp_clients[30000] = client
     return client

@@ -181,7 +181,13 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             scanner.async_request_scan()
             # Mark update as failed so entities become unavailable
             raise UpdateFailed(
-                f"Polling failed for {current_ip} (attempt #{self.consecutive_failures}): {err}"
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+                translation_placeholders={
+                    "host": current_ip,
+                    "attempt": str(self.consecutive_failures),
+                    "error": str(err),
+                },
             ) from err
 
         # Below threshold with a cache - keep entities available
