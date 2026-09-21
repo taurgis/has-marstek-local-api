@@ -43,6 +43,9 @@ class TestAutomationWorkflows:
                 },
             )
 
+            # The inverter ramps to a new setpoint instead of stepping, so
+            # give it the seconds a real unit needs before reading it back.
+            device.simulator.settle(5.0)
             status2 = device._build_response(3, "ES.GetStatus", {})["result"]
             mode2 = device._build_response(3, "ES.GetMode", {})["result"]
 
@@ -51,8 +54,6 @@ class TestAutomationWorkflows:
             # Internal power=-2500 (charging) -> API bat_power=+2500
             assert status2["bat_power"] > 0
             assert 2200 < status2["bat_power"] < 2700
-
-            time.sleep(1.0)
 
             # Return to auto
             device._build_response(
@@ -64,6 +65,10 @@ class TestAutomationWorkflows:
                 },
             )
 
+            # Auto is a closed loop on the meter: with a 2 kW cooking load and
+            # no sun pinned in, it has to settle on discharging.
+            device.simulator.set_house_pv(0)
+            device.simulator.settle(20.0)
             status4 = device._build_response(6, "ES.GetStatus", {})["result"]
             mode4 = device._build_response(6, "ES.GetMode", {})["result"]
 
@@ -99,6 +104,7 @@ class TestAutomationWorkflows:
                 },
             )
 
+            device.simulator.settle(5.0)
             status = device._build_response(2, "ES.GetStatus", {})["result"]
             mode = device._build_response(2, "ES.GetMode", {})["result"]
 
@@ -352,7 +358,9 @@ class TestGridPowerConsistency:
                 },
             )
 
+            device.simulator.settle(5.0)
             status1 = device._build_response(2, "ES.GetStatus", {})["result"]
+            meter1 = device._build_response(2, "EM.GetStatus", {})["result"]
             # API bat_power: positive = charging (internal power=-1500)
             assert status1["bat_power"] > 0
 
@@ -369,10 +377,17 @@ class TestGridPowerConsistency:
                 },
             )
 
+            device.simulator.settle(5.0)
             status2 = device._build_response(4, "ES.GetStatus", {})["result"]
+            meter2 = device._build_response(4, "EM.GetStatus", {})["result"]
             # API bat_power: negative = discharging (internal power=1500)
             assert status2["bat_power"] < 0
-            assert status2["ongrid_power"] < status1["ongrid_power"]
+            # ongrid_power is the inverter's own AC port, positive when the
+            # unit pushes power out, so discharging must read higher than
+            # charging. The meter moves the other way: a discharging battery
+            # covers load the house would otherwise import.
+            assert status2["ongrid_power"] > status1["ongrid_power"]
+            assert meter2["total_power"] < meter1["total_power"]
         finally:
             device.simulator.stop()
 

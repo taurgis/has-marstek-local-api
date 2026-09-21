@@ -2,6 +2,13 @@
 
 from .battery import BatterySimulator
 from .household import HouseholdSimulator
+from .solar import PVChannelSimulator, SolarSimulator
 from .wifi import WiFiSimulator
 
-__all__ = ["BatterySimulator", "HouseholdSimulator", "WiFiSimulator"]
+__all__ = [
+    "BatterySimulator",
+    "HouseholdSimulator",
+    "PVChannelSimulator",
+    "SolarSimulator",
+    "WiFiSimulator",
+]

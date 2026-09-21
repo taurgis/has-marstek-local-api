@@ -6,6 +6,7 @@ import time
 
 from mock_device import BatterySimulator
 from mock_device.const import (
+    AUTO_DEADBAND_W,
     MODE_AI,
     MODE_AUTO,
     MODE_MANUAL,
@@ -136,25 +137,56 @@ class TestAutoModeBehavior:
     """Tests for Auto mode power calculations."""
 
     def test_discharges_to_cover_household(self) -> None:
-        """Test auto mode discharges to cover household consumption."""
+        """Auto mode regulates the meter toward zero, covering the house."""
         sim = BatterySimulator(initial_soc=50)
-        sim.gross_household_consumption = 500
-        target = sim._calculate_target_power()
-        assert target == 500
+        sim.set_house_pv(0)
+        sim.set_house_load(500)
+        sim.settle(60.0)
+
+        # The loop targets net-zero at the meter, so the battery ends up
+        # supplying the house load plus the unit's own standby draw.
+        assert abs(sim.grid_power) <= AUTO_DEADBAND_W + 30
+        assert 450 < sim.actual_power < 600
+
+    def test_charges_on_rooftop_surplus(self) -> None:
+        """A PV surplus pushes the meter negative, so Auto mode charges."""
+        sim = BatterySimulator(initial_soc=50)
+        sim.set_house_load(300)
+        sim.set_house_pv(2000)
+        sim.settle(60.0)
+
+        assert sim.actual_power < -1000
+        assert abs(sim.grid_power) <= AUTO_DEADBAND_W + 30
 
     def test_limited_by_max_discharge(self) -> None:
         """Test auto mode is limited by max discharge power."""
         sim = BatterySimulator(initial_soc=50, max_discharge_power=2500)
-        sim.gross_household_consumption = 5000
-        target = sim._calculate_target_power()
-        assert target == 2500
+        sim.set_house_pv(0)
+        sim.set_house_load(5000)
+        sim.settle(60.0)
+
+        assert sim.setpoint_power == 2500
+        # The house still imports what the battery cannot cover.
+        assert sim.grid_power > 2000
+
+    def test_idles_without_a_ct(self) -> None:
+        """Without a CT reference the unit idles instead of guessing."""
+        sim = BatterySimulator(initial_soc=50)
+        sim.ct_connected = False
+        sim.set_house_pv(0)
+        sim.set_house_load(1500)
+        sim.settle(30.0)
+
+        assert sim.actual_power == 0
 
     def test_no_discharge_when_soc_low(self) -> None:
         """Test auto mode doesn't discharge when SOC is below reserve (10%)."""
         sim = BatterySimulator(initial_soc=8)
-        sim.gross_household_consumption = 1000
-        target = sim._calculate_target_power()
-        assert target == 0
+        sim.set_house_pv(0)
+        sim.set_house_load(1000)
+        sim.settle(30.0)
+
+        assert sim.actual_power == 0
 
 
 class TestPassiveModeBehavior:
@@ -349,15 +381,21 @@ class TestSOCChanges:
         """Test SOC increases when charging."""
         sim = BatterySimulator(initial_soc=50, capacity_wh=5120)
         sim.set_mode(MODE_PASSIVE, {"power": -2560, "cd_time": 7200})
-        sim._update_state(3600)
-        assert sim.soc > 95
+        sim.settle(3600.0, step=60.0)
+
+        # An hour at the inverter's ceiling nearly fills a 5.12 kWh pack.
+        # Conversion losses and the taper above 90% keep it short of full,
+        # which is what a real unit does too.
+        assert 85 < sim.soc < 100
 
     def test_soc_decreases_when_discharging(self) -> None:
         """Test SOC decreases when discharging."""
         sim = BatterySimulator(initial_soc=50, capacity_wh=5120)
         sim.set_mode(MODE_PASSIVE, {"power": 2560, "cd_time": 7200})
-        sim._update_state(3600)
-        assert sim.soc < 5
+        sim.settle(3600.0, step=60.0)
+
+        # Discharge tapers below 10% and stops at the 5% floor.
+        assert 4 <= sim.soc < 10
 
 
 class TestThreadSafety:
@@ -422,6 +460,9 @@ class TestImmediatePowerUpdates:
         sim = BatterySimulator(initial_soc=50)
         sim.set_mode(MODE_PASSIVE, {"power": 2000, "cd_time": 3600})
         sim.set_mode(MODE_PASSIVE, {"power": 0, "cd_time": 3600})
+        # Coming to a standstill from 2 kW takes the inverter a moment
+        # longer than the mode change itself.
+        sim.settle(2.0)
         state = sim.get_state()
 
         assert state["power"] == 0

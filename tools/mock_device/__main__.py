@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from .const import DEFAULT_CONFIG, DEFAULT_UDP_PORT
+from .const import DEFAULT_CONFIG, DEFAULT_HOUSE_PV_WP, DEFAULT_PHASE_COUNT, DEFAULT_UDP_PORT
 from .device import DEFAULT_STATUS_INTERVAL, MockMarstekDevice
 from .utils import DEFAULT_STATE_DIR
 
@@ -54,6 +54,26 @@ def main() -> None:
             "Optional PV channel values for VenusD in the format "
             "'power:voltage:current, ...' (up to 4 channels). "
             "Example: '300:40:7.5,250:38:6.6,200:36:5.5,0:0:0'"
+        ),
+    )
+    parser.add_argument(
+        "--house-pv-wp",
+        type=int,
+        default=None,
+        help=(
+            "Rooftop PV peak power in watts for the simulated home "
+            f"(default: {DEFAULT_HOUSE_PV_WP}, or 0 when --pv-channels is given; "
+            "0 disables rooftop solar)"
+        ),
+    )
+    parser.add_argument(
+        "--phases",
+        type=int,
+        choices=(1, 3),
+        default=DEFAULT_PHASE_COUNT,
+        help=(
+            "Phases the home is supplied on. The Venus is single-phase either "
+            f"way; on 3 it only offsets phase A (default: {DEFAULT_PHASE_COUNT})"
         ),
     )
     parser.add_argument(
@@ -129,6 +149,8 @@ def main() -> None:
         reset_state=args.reset_state,
         verbose=not args.quiet,
         status_interval=args.status_interval,
+        house_pv_wp=args.house_pv_wp,
+        phases=args.phases,
     )
     device.start()
 

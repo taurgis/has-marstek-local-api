@@ -24,6 +24,7 @@ from custom_components.marstek.pymarstek.validators import json_rpc_wire_id
 
 from .const import (
     DEFAULT_CONFIG,
+    DEFAULT_PHASE_COUNT,
     DEFAULT_UDP_PORT,
     MODE_AI,
     MODE_AUTO,
@@ -87,6 +88,8 @@ class MockMarstekDevice:
         reset_state: bool = False,
         verbose: bool = True,
         status_interval: float = DEFAULT_STATUS_INTERVAL,
+        house_pv_wp: int | None = None,
+        phases: int = DEFAULT_PHASE_COUNT,
     ) -> None:
         self.port = port
         self.config = {**DEFAULT_CONFIG, **(device_config or {})}
@@ -115,10 +118,17 @@ class MockMarstekDevice:
             else None
         )
 
-        # Battery simulator (tracks energy stats internally)
+        # Battery simulator (tracks energy stats internally). Capacity and
+        # power limits follow the device family so a Venus A never reports a
+        # Venus E sized pack.
+        pv_channels = self.config.get("pv_channels")
         self.simulator = BatterySimulator(
             initial_soc=initial_soc,
             persist_callback=self._persist_state if self._state_dir is not None else None,
+            device_type=self.config.get("device"),
+            pv_channels=pv_channels if isinstance(pv_channels, list) else None,
+            house_pv_wp=house_pv_wp,
+            phases=phases,
         )
         self.simulate = simulate
 
@@ -193,12 +203,22 @@ class MockMarstekDevice:
         print(f"Listening on UDP port {self.port}")
         print(f"Simulation: {'ENABLED' if self.simulate else 'DISABLED'}")
         print(f"Initial SOC: {self.simulator.soc}%")
+        print(
+            f"Pack: {self.simulator.capacity_wh} Wh, "
+            f"charge {self.simulator.max_charge_power} W / "
+            f"discharge {self.simulator.max_discharge_power} W"
+        )
+        print(
+            f"Home: {self.simulator.solar.peak_power_w} Wp rooftop PV, "
+            f"{self.simulator.phases}-phase supply"
+        )
         print("=" * 60)
         print("Mode behaviors:")
-        print("  Auto: Discharges to offset household consumption (P1 meter = 0)")
-        print("  AI: Time-based strategy (charges at night, conservative during day)")
+        print("  Auto: Regulates against the CT to hold the P1 meter at zero")
+        print("  AI: Cheap-window grid charging, then self-consumption")
         print("  Manual: Follows scheduled charge/discharge times")
         print("  Passive: Fixed power for set duration")
+        print("  UPS: Charges to full and holds the pack as backup")
         print("=" * 60)
         print()
 
@@ -228,9 +248,14 @@ class MockMarstekDevice:
             if state["mode"] == MODE_PASSIVE and state["passive_remaining"] > 0:
                 passive_info = f" | ⏱️ {state['passive_remaining']}s left"
 
+            solar_info = ""
+            if state["house_pv_power"] or state["pv_power"]:
+                solar_info = f" | ☀️ {state['house_pv_power'] + state['pv_power']}W"
+
             print(
                 f"[STATUS] SOC: {state['soc']}% | Batt: {state['power']}W | "
-                f"🏠 {state['household_consumption']}W | {p1_indicator} | "
+                f"🏠 {state['household_consumption']}W{solar_info} | {p1_indicator} | "
+                f"🌡️ {state['battery_temp']}°C | "
                 f"Mode: {state['mode']}{passive_info} | {power_indicator}"
             )
 
@@ -432,6 +457,10 @@ class MockMarstekDevice:
         if self.simulate:
             for key, value in totals.items():
                 setattr(self.simulator, key, value)
+            # The channel accumulator owns total_pv_energy while PV strings
+            # are configured; leaving it behind would undo the write on the
+            # next tick.
+            self.simulator.pv_channels.total_pv_energy = total_pv_energy
         else:
             self._static_totals.update(totals)
 
@@ -479,7 +508,7 @@ class MockMarstekDevice:
                     src,
                     extra_data=pv_method_not_found_extra_data(self.profile),
                 )
-            pv_channels = self.config.get("pv_channels")
+            pv_channels = state.get("pv_channels") or self.config.get("pv_channels")
             if isinstance(pv_channels, list) and pv_channels:
                 pv_state = {
                     "pv_channels": pv_channels,
