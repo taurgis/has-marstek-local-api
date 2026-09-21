@@ -39,7 +39,7 @@ async def test_coordinator_no_fresh_data_raises_update_failed(
         "1.2.3.4",
     )
 
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
 
 
@@ -60,7 +60,7 @@ async def test_coordinator_timeout_error_raises_update_failed(
         "1.2.3.4",
     )
 
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
 
 
@@ -81,7 +81,7 @@ async def test_coordinator_os_error_raises_update_failed(
         "1.2.3.4",
     )
 
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
 
 
@@ -102,7 +102,7 @@ async def test_coordinator_value_error_raises_update_failed(
         "1.2.3.4",
     )
 
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
 
 
@@ -135,7 +135,7 @@ async def test_coordinator_failure_threshold_keeps_entities_available(
     assert coordinator.consecutive_failures == 2
 
     # Third failure - reaches threshold, should raise UpdateFailed
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
     assert coordinator.consecutive_failures == 3
 
@@ -155,7 +155,7 @@ async def test_coordinator_failure_without_cache_raises(
         "1.2.3.4",
     )
 
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
     assert coordinator.consecutive_failures == 1
 
@@ -185,7 +185,7 @@ async def test_coordinator_recovers_after_failure(
         "1.2.3.4",
     )
 
-    with pytest.raises(UpdateFailed, match="Polling failed"):
+    with pytest.raises(UpdateFailed, match="update_failed"):
         await coordinator._async_update_data()
     assert coordinator.consecutive_failures == 1
 

@@ -61,7 +61,7 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True, slots=True)
 class MarstekRuntimeData:
     """Runtime data for Marstek integration."""
 
@@ -237,6 +237,27 @@ async def _get_or_create_udp_client(
     return udp_client
 
 
+def _connection_not_ready(
+    hass: HomeAssistant, entry: ConfigEntry, host: str, err: Exception
+) -> ConfigEntryNotReady:
+    """Build the setup-retry error for a device that did not answer."""
+    error_type = type(err).__name__
+    _LOGGER.debug(
+        "Unable to connect to device at %s (%s: %s). "
+        "Scanner will detect IP changes automatically. "
+        "Home Assistant will retry setup periodically.",
+        host,
+        error_type,
+        err,
+    )
+    _create_connection_issue(hass, entry, host, str(err))
+    return ConfigEntryNotReady(
+        translation_domain=DOMAIN,
+        translation_key="setup_cannot_connect",
+        translation_placeholders={"host": host, "error": f"{error_type}: {err}"},
+    )
+
+
 async def _async_verify_device_connection(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -245,35 +266,24 @@ async def _async_verify_device_connection(
     port: int,
 ) -> None:
     """Verify device connectivity using a lightweight API request."""
+    _LOGGER.debug("Attempting connection to %s:%s", host, port)
     try:
-        _LOGGER.debug("Attempting connection to %s:%s", host, port)
         parsed = await udp_client.fetch_es_mode(
             host,
             port,
             timeout=5.0,
         )
-        if parsed is None:
-            raise TimeoutError("ES.GetMode returned no usable result")
-        _LOGGER.debug(
-            "Connection successful to device at %s - using config_entry data",
-            host,
-        )
     except (TimeoutError, OSError, ValueError) as ex:
-        error_type = type(ex).__name__
-        _LOGGER.debug(
-            "Unable to connect to device at %s (%s: %s). "
-            "Scanner will detect IP changes automatically. "
-            "Home Assistant will retry setup periodically.",
-            host,
-            error_type,
-            str(ex),
-        )
-        _create_connection_issue(hass, entry, host, str(ex))
-        raise ConfigEntryNotReady(
-            f"Unable to connect to device at {host} ({error_type}: {ex}). "
-            "Scanner will detect IP changes and update configuration automatically. "
-            "Home Assistant will retry setup periodically."
-        ) from ex
+        raise _connection_not_ready(hass, entry, host, ex) from ex
+
+    if parsed is None:
+        no_reply = TimeoutError("ES.GetMode returned no usable result")
+        raise _connection_not_ready(hass, entry, host, no_reply) from no_reply
+
+    _LOGGER.debug(
+        "Connection successful to device at %s - using config_entry data",
+        host,
+    )
 
 
 def _build_device_info_dict(
@@ -325,9 +335,9 @@ async def _async_setup_coordinator(
         )
         _create_connection_issue(hass, entry, device_info["ip"], str(err))
         raise ConfigEntryNotReady(
-            f"Initial data fetch failed for {device_info['ip']}: {err}. "
-            "The device responded to connection check but failed to return status data. "
-            "This may be temporary - Home Assistant will retry automatically."
+            translation_domain=DOMAIN,
+            translation_key="setup_no_data",
+            translation_placeholders={"host": device_info["ip"], "error": str(err)},
         ) from err
 
     coordinator.finish_initial_setup()
@@ -351,8 +361,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
             translation_domain=DOMAIN,
             translation_key="unsupported_device",
         )
-
-    await async_setup_services(hass)
 
     stored_ip = entry.data[CONF_HOST]
     stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))

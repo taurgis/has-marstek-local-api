@@ -63,226 +63,123 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     _discovered_metadata: dict[str, Any] | None = None
     _discovered_identity_macs: set[str] | None = None
 
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: MarstekConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Return the options flow.
+
+        The annotation is the integration's own typed entry alias on purpose:
+        Home Assistant's runtime-data rule checks this signature once
+        strict-typing is claimed.
+        https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/runtime-data
+        """
+        return MarstekOptionsFlow()
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle the initial step - broadcast device discovery."""
         if user_input is not None and "device" in user_input:
-            selected_device = str(user_input["device"])
-            if selected_device == _MANUAL_DEVICE_OPTION:
-                return await self.async_step_manual()
+            return await self._async_create_entry_from_selection(str(user_input["device"]))
 
-            # User has selected a device from the discovered list
-            device_index = int(selected_device)
-            device = self.discovered_devices[device_index]
-
-            # Use BLE-MAC as unique_id for stability (beardhatcode & mik-laj feedback)
-            # BLE-MAC is more stable than WiFi MAC and ensures device history continuity
-            formatted_unique_id = get_unique_id_from_device_info(device)
-            if not formatted_unique_id:
-                return await self.async_step_manual(errors={"base": "invalid_discovery_info"})
-
-            # No Venus E2 check here: the discovery sweep below already drops
-            # those before they reach self.discovered_devices.
-            self._discovered_identity_macs = identity_macs_from_mapping(device)
-            await self.async_set_unique_id(formatted_unique_id)
-            self._abort_if_identity_configured()
-
-            return self.async_create_entry(
-                title=format_device_name(device),
-                data=build_entry_data(
-                    device["ip"],
-                    int(device.get("port", DEFAULT_UDP_PORT)),
-                    device,
-                ),
-            )
-
-        # Start broadcast device discovery
+        _LOGGER.debug("Starting device discovery")
         try:
-            _LOGGER.debug("Starting device discovery")
-
             # Execute broadcast discovery with retry mechanism
             # Uses local discovery module (workaround for pymarstek echo issues)
-            devices = await self._discover_devices_with_retry()
-            devices = [
-                device
-                for device in devices
-                if not is_unsupported_venus_e2(device.get("device_type"))
-            ]
-
-            if not devices:
-                # No devices found, offer manual entry
-                return await self.async_step_manual()
-
-            # Store discovered devices for selection
-            self.discovered_devices = devices
-            _LOGGER.debug("Discovered %d devices", len(devices))
-
-            # Get already configured device MACs for comparison
-            configured_macs = collect_configured_macs(
-                self._async_current_entries(include_ignore=False)
-            )
-
-            # Build device options, separating new and already-configured devices
-            device_options, already_configured_names = split_devices_by_configured(
-                devices, configured_macs
-            )
-
-            # If all discovered devices are already configured, show manual entry
-            if not device_options:
-                _LOGGER.debug("All discovered devices are already configured")
-                return await self.async_step_manual(errors={"base": "all_devices_configured"})
-
-            device_options[_MANUAL_DEVICE_OPTION] = "Enter IP/port manually"
-
-            # Build description showing already configured devices only
-            # Note: The "Already configured devices:" header is embedded in the placeholder
-            # value since HA config flows don't support dynamic translation lookups.
-            # This is a common pattern in HA integrations for this type of dynamic content.
-            already_configured_text = format_already_configured_text(already_configured_names)
-
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema({vol.Required("device"): vol.In(device_options)}),
-                description_placeholders={"already_configured": already_configured_text},
-            )
-
+            discovered = await self._discover_devices_with_retry()
         except ConnectionError as err:
             _LOGGER.error("Cannot connect for device discovery: %s", err)
-            # Connection failed, offer manual entry
             return await self.async_step_manual(errors={"base": "cannot_connect"})
-
         except (OSError, TimeoutError, ValueError) as err:
             _LOGGER.error("Device discovery failed: %s", err)
-            # Discovery failed, offer manual entry
             return await self.async_step_manual(errors={"base": "discovery_failed"})
+
+        devices = [
+            device
+            for device in discovered
+            if not is_unsupported_venus_e2(device.get("device_type"))
+        ]
+        if not devices:
+            # No devices found, offer manual entry
+            return await self.async_step_manual()
+
+        # Store discovered devices for selection
+        self.discovered_devices = devices
+        _LOGGER.debug("Discovered %d devices", len(devices))
+
+        # Build device options, separating new and already-configured devices
+        configured_macs = collect_configured_macs(self._async_current_entries(include_ignore=False))
+        device_options, already_configured_names = split_devices_by_configured(
+            devices, configured_macs
+        )
+
+        # If all discovered devices are already configured, show manual entry
+        if not device_options:
+            _LOGGER.debug("All discovered devices are already configured")
+            return await self.async_step_manual(errors={"base": "all_devices_configured"})
+
+        device_options[_MANUAL_DEVICE_OPTION] = "Enter IP/port manually"
+
+        # Build description showing already configured devices only
+        # Note: The "Already configured devices:" header is embedded in the placeholder
+        # value since HA config flows don't support dynamic translation lookups.
+        # This is a common pattern in HA integrations for this type of dynamic content.
+        already_configured_text = format_already_configured_text(already_configured_names)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({vol.Required("device"): vol.In(device_options)}),
+            description_placeholders={"already_configured": already_configured_text},
+        )
 
     async def async_step_manual(
         self,
         user_input: dict[str, Any] | None = None,
         errors: dict[str, str] | None = None,
     ) -> config_entries.ConfigFlowResult:
-        """Handle manual IP entry when discovery fails or user prefers manual setup."""
-        if errors is None:
-            errors = {}
+        """Handle manual IP entry when discovery fails or the user prefers it."""
+        errors = dict(errors or {})
+        form_port = DEFAULT_UDP_PORT
 
         if user_input is not None:
             host = user_input[CONF_HOST]
             port = int(user_input.get(CONF_PORT, DEFAULT_UDP_PORT))
-            manual_entry_schema = build_manual_entry_schema(port)
+            form_port = port
+            device_info: dict[str, Any] | None = None
 
             try:
                 # Validate connection by attempting to get device info
                 device_info = await self._async_get_device_info(host, port)
-
-                if not device_info:
-                    return self.async_show_form(
-                        step_id="manual",
-                        data_schema=manual_entry_schema,
-                        errors={"base": "cannot_connect"},
-                    )
-
-                # Check if device is already configured
-                formatted_unique_id = get_unique_id_from_device_info(device_info)
-                if not formatted_unique_id:
-                    return self.async_show_form(
-                        step_id="manual",
-                        data_schema=manual_entry_schema,
-                        errors={"base": "invalid_discovery_info"},
-                    )
-
-                if is_unsupported_venus_e2(device_info.get("device_type")):
-                    return self.async_show_form(
-                        step_id="manual",
-                        data_schema=manual_entry_schema,
-                        errors={"base": "unsupported_device"},
-                    )
-
-                self._discovered_identity_macs = identity_macs_from_mapping(device_info)
-                await self.async_set_unique_id(formatted_unique_id)
-                self._abort_if_identity_configured()
-
-                return self.async_create_entry(
-                    title=format_device_name(device_info),
-                    data=build_entry_data(host, port, device_info),
-                )
-
             except (ConnectionError, OSError, TimeoutError) as err:
                 _LOGGER.error("Cannot connect to device at %s:%s: %s", host, port, err)
-                return self.async_show_form(
-                    step_id="manual",
-                    data_schema=manual_entry_schema,
-                    errors={"base": "cannot_connect"},
-                )
+                errors["base"] = "cannot_connect"
             except ValueError as err:
                 _LOGGER.error("Invalid response from device at %s:%s: %s", host, port, err)
-                return self.async_show_form(
-                    step_id="manual",
-                    data_schema=manual_entry_schema,
-                    errors={"base": "invalid_discovery_info"},
-                )
+                errors["base"] = "invalid_discovery_info"
+
+            if not errors:
+                if not device_info:
+                    errors["base"] = "cannot_connect"
+                elif not (formatted_unique_id := get_unique_id_from_device_info(device_info)):
+                    errors["base"] = "invalid_discovery_info"
+                elif is_unsupported_venus_e2(device_info.get("device_type")):
+                    errors["base"] = "unsupported_device"
+                else:
+                    self._discovered_identity_macs = identity_macs_from_mapping(device_info)
+                    await self.async_set_unique_id(formatted_unique_id)
+                    self._abort_if_identity_configured()
+
+                    return self.async_create_entry(
+                        title=format_device_name(device_info),
+                        data=build_entry_data(host, port, device_info),
+                    )
 
         return self.async_show_form(
             step_id="manual",
-            data_schema=build_manual_entry_schema(DEFAULT_UDP_PORT),
+            data_schema=build_manual_entry_schema(form_port),
             errors=errors,
         )
-
-    async def _discover_devices_with_retry(
-        self, max_retries: int = 2, retry_delay: float = 3.0
-    ) -> list[dict[str, Any]]:
-        """Device discovery retry mechanism using local discovery module."""
-        scan_ports = self._build_discovery_ports()
-
-        for attempt in range(1, max_retries + 1):
-            try:
-                if attempt > 1:
-                    _LOGGER.debug("Device discovery, attempt %d", attempt)
-                    await asyncio.sleep(retry_delay)
-
-                devices = await self._async_discover_devices(scan_ports)
-
-                if devices:
-                    if attempt > 1:
-                        _LOGGER.debug("Device discovery retry successful")
-                    return devices
-                _LOGGER.warning("Attempt %d found no devices", attempt)
-
-            except (OSError, TimeoutError, ValueError) as error:
-                _LOGGER.error("Device discovery failed, attempt %d: %s", attempt, error)
-
-                if attempt == max_retries:
-                    _LOGGER.error(
-                        "Device discovery failed after %d retries: %s",
-                        max_retries,
-                        error,
-                    )
-                    raise
-
-        return []
-
-    def _build_discovery_ports(self) -> list[int]:
-        """Build UDP ports to probe during initial config flow discovery."""
-        return discovery_scan_ports(self._async_current_entries(include_ignore=False))
-
-    async def _async_get_device_info(self, host: str, port: int) -> dict[str, Any] | None:
-        """Unicast GetDevice on the pooled client when one already owns this port.
-
-        Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
-        never sees that reply — Linux hashes it onto the coordinator socket
-        even if that listener is paused. Pause only for broadcast discovery,
-        which must bind its own sockets. Hold the discovery lock so a
-        temporary unpooled socket cannot race a broadcast bind.
-        """
-        async with discovery_lock(self.hass):
-            udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
-            return await get_device_info(host=host, port=port, udp_client=udp_client)
-
-    async def _async_discover_devices(self, scan_ports: list[int]) -> list[dict[str, Any]]:
-        """Broadcast discovery while pooled listeners are paused."""
-        broadcast_addresses = await async_broadcast_addresses(self.hass)
-        async with async_paused_udp_receivers(self.hass):
-            return await discover_devices(ports=scan_ports, broadcast_addresses=broadcast_addresses)
 
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfo
@@ -404,12 +301,6 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle reauth when device becomes unreachable."""
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle reconfiguration of an existing entry."""
-        return await self.async_step_reconfigure_confirm(user_input)
-
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -446,6 +337,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"host": str(reauth_entry.data.get(CONF_HOST, ""))},
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle reconfiguration of an existing entry."""
+        return await self.async_step_reconfigure_confirm(user_input)
+
     async def async_step_reconfigure_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -479,6 +376,92 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={"host": str(reconfigure_entry.data.get(CONF_HOST, ""))},
         )
+
+    async def _async_create_entry_from_selection(
+        self, selected_device: str
+    ) -> config_entries.ConfigFlowResult:
+        """Create an entry for a device picked from the discovery list."""
+        if selected_device == _MANUAL_DEVICE_OPTION:
+            return await self.async_step_manual()
+
+        device = self.discovered_devices[int(selected_device)]
+
+        # Use BLE-MAC as unique_id for stability (beardhatcode & mik-laj feedback)
+        # BLE-MAC is more stable than WiFi MAC and ensures device history continuity
+        formatted_unique_id = get_unique_id_from_device_info(device)
+        if not formatted_unique_id:
+            return await self.async_step_manual(errors={"base": "invalid_discovery_info"})
+
+        # No Venus E2 check here: the discovery sweep in async_step_user already
+        # drops those before they reach self.discovered_devices.
+        self._discovered_identity_macs = identity_macs_from_mapping(device)
+        await self.async_set_unique_id(formatted_unique_id)
+        self._abort_if_identity_configured()
+
+        return self.async_create_entry(
+            title=format_device_name(device),
+            data=build_entry_data(
+                device["ip"],
+                int(device.get("port", DEFAULT_UDP_PORT)),
+                device,
+            ),
+        )
+
+    async def _discover_devices_with_retry(
+        self, max_retries: int = 2, retry_delay: float = 3.0
+    ) -> list[dict[str, Any]]:
+        """Device discovery retry mechanism using local discovery module."""
+        scan_ports = self._build_discovery_ports()
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt > 1:
+                    _LOGGER.debug("Device discovery, attempt %d", attempt)
+                    await asyncio.sleep(retry_delay)
+
+                devices = await self._async_discover_devices(scan_ports)
+
+                if devices:
+                    if attempt > 1:
+                        _LOGGER.debug("Device discovery retry successful")
+                    return devices
+                _LOGGER.warning("Attempt %d found no devices", attempt)
+
+            except (OSError, TimeoutError, ValueError) as error:
+                _LOGGER.error("Device discovery failed, attempt %d: %s", attempt, error)
+
+                if attempt == max_retries:
+                    _LOGGER.error(
+                        "Device discovery failed after %d retries: %s",
+                        max_retries,
+                        error,
+                    )
+                    raise
+
+        return []
+
+    def _build_discovery_ports(self) -> list[int]:
+        """Build UDP ports to probe during initial config flow discovery."""
+        return discovery_scan_ports(self._async_current_entries(include_ignore=False))
+
+    async def _async_get_device_info(self, host: str, port: int) -> dict[str, Any] | None:
+        """Unicast GetDevice on the pooled client when one already owns this port.
+
+        Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
+        never sees that reply — Linux hashes it onto the coordinator socket
+        even if that listener is paused. Pause only for broadcast discovery,
+        which must bind its own sockets. Hold the discovery lock so a
+        temporary unpooled socket cannot race a broadcast bind.
+        """
+        async with discovery_lock(self.hass):
+            udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
+            return await get_device_info(host=host, port=port, udp_client=udp_client)
+
+    async def _async_discover_devices(self, scan_ports: list[int]) -> list[dict[str, Any]]:
+        """Broadcast discovery while pooled listeners are paused."""
+        broadcast_addresses = await async_broadcast_addresses(self.hass)
+        async with async_paused_udp_receivers(self.hass):
+            return await discover_devices(ports=scan_ports, broadcast_addresses=broadcast_addresses)
 
     async def _async_handle_discovery_with_unique_id(
         self,
@@ -617,16 +600,3 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for entry in self._async_current_entries(include_ignore=False):
             if self._entry_matches_flow_identity(entry):
                 raise AbortFlow("already_configured")
-
-    @staticmethod
-    def async_get_options_flow(
-        config_entry: MarstekConfigEntry,
-    ) -> config_entries.OptionsFlow:
-        """Return the options flow.
-
-        The annotation is the integration's own typed entry alias on purpose:
-        Home Assistant's runtime-data rule checks this signature once
-        strict-typing is claimed.
-        https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/runtime-data
-        """
-        return MarstekOptionsFlow()
