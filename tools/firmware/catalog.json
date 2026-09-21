@@ -292,7 +292,7 @@
         "sp": "0x20016a98",
         "reset": "0x08002aad"
       },
-      "remark": "Venus E 2.x / HMG-50. First Control image with Marstek.GetDevice. GetDevice device string is VenusE or VenusC (src VenusE-%s / VenusC-%s). Recv list has no EM.GetStatus server method and no SYS. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the CT / P1 meter reader; no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
+      "remark": "Venus E 2.x / HMG-50. First Control image with Marstek.GetDevice. GetDevice device string is VenusE or VenusC (src VenusE-%s / VenusC-%s). Recv list has no EM.GetStatus server method and no SYS. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the UDP meter client (Marstek CT or Shelly; HomeWizard P1 and Eco-Tracker are read over the module's HTTP client instead); no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
     },
     {
       "deviceType": "HMG-50",
@@ -307,7 +307,7 @@
         "sp": "0x20016cb0",
         "reset": "0x08002aad"
       },
-      "remark": "Adds Open API server method EM.GetStatus to the recv list. Still no SYS/UPS. Same VenusE/VenusC identity as 153. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the CT / P1 meter reader; no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
+      "remark": "Adds Open API server method EM.GetStatus to the recv list. Still no SYS/UPS. Same VenusE/VenusC identity as 153. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the UDP meter client (Marstek CT or Shelly; HomeWizard P1 and Eco-Tracker are read over the module's HTTP client instead); no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
     },
     {
       "deviceType": "HMG-50",
@@ -322,7 +322,7 @@
         "sp": "0x20017180",
         "reset": "0x08002ab1"
       },
-      "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / VenusC / HMG-50). Still no SYS/UPS. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the CT / P1 meter reader; no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
+      "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / VenusC / HMG-50). Still no SYS/UPS. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the UDP meter client (Marstek CT or Shelly; HomeWizard P1 and Eco-Tracker are read over the module's HTTP client instead); no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
     }
   ]
 }

@@ -24,7 +24,7 @@ probe, so it also appears while setup is retrying. See
 
 HMG-50 Control (Venus C 2.0, and the Venus E 2.0 builds this integration
 refuses) shares one Wi-Fi receive channel between the Local API server and the
-device's own CT / P1 meter reader, so polling can cost it the meter samples
+device's own UDP meter client, so polling can cost it the meter samples
 that Self-consumption (Auto) mode regulates on
 ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). The
 warning is created from stored firmware metadata for every HMG-50 entry,

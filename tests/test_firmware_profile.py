@@ -530,7 +530,7 @@ def test_venus_c_155_plus_serves_em_without_sys(version: int) -> None:
     assert profile.supports_ups is False
     assert profile.openapi_reset_prone is (version < 156)
     # Issue #82: the 156 Open API stability fix does not split the Local API
-    # socket from the meter reader's, so traffic stays minimal either way.
+    # socket from the meter client's, so traffic stays minimal either way.
     assert profile.shared_meter_udp_channel is True
     assert profile.parallel_requests_safe is False
     assert profile.openapi_wifi_retransmit_safe is False

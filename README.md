@@ -78,7 +78,7 @@ Last reviewed **2026-09-20**. Activity and release facts were taken from each re
 
 > **Warning**: This integration is currently **not compatible with Venus E2.0** devices. Using this integration with Venus E2.0 may cause disconnection between the device and CT003.
 
-> **Warning**: **Venus C** runs the same HMG-50 Control firmware as Venus E2.0, which shares one Wi-Fi receive channel between the Local API and the device's own CT / P1 meter. Polling can cost the device its meter feed, and Self-consumption (Auto) mode then stops charging from excess solar ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). No firmware fixes this, 156 included. Use slow polling intervals, and read grid power from the meter directly if Auto mode stalls — see [troubleshooting](docs/troubleshooting.md#venus-c-stops-charging-from-excess-solar-in-auto-mode).
+> **Warning**: **Venus C** runs the same HMG-50 Control firmware as Venus E2.0, which shares one Wi-Fi receive channel between the Local API and the device's own UDP meter client. A Marstek CT or a Shelly is read over that socket; a HomeWizard P1 or an Eco-Tracker is read over the module's HTTP client instead. Polling can cost the device its meter feed, and Self-consumption (Auto) mode then stops charging from excess solar ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). No firmware fixes this, 156 included. Use slow polling intervals, and read grid power from the meter directly if Auto mode stalls — see [troubleshooting](docs/troubleshooting.md#venus-c-stops-charging-from-excess-solar-in-auto-mode).
 
 ## Installation
 
@@ -175,7 +175,7 @@ Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseabl
 |--------|--------|-------|
 | Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149** ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); firmware **148 or older** stays Wh. PV channel 1 stays deciwatts (÷10) through **150.9** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). SYS/UPS from 150 |
 | Venus D 3.0 | Supported (PV) | SYS/UPS from firmware 150; PV channel 1 stays deciwatts |
-| Venus C | Supported with a caveat (no PV) | HMG-50 Control **153/155/156**: no SYS/UPS. `EM.GetStatus` from **155**. Open API reset-prone until **156**. GetDevice may omit result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)). Shares one Wi-Fi receive channel with its own CT / P1 meter, so polling can stall Auto-mode charging ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)); parallel requests and retransmits stay off |
+| Venus C | Supported with a caveat (no PV) | HMG-50 Control **153/155/156**: no SYS/UPS. `EM.GetStatus` from **155**. Open API reset-prone until **156**. GetDevice may omit result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)). Shares one Wi-Fi receive channel with its own UDP meter client (Marstek CT or Shelly), so polling can stall Auto-mode charging ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)); parallel requests and retransmits stay off |
 | Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
 | Venus E mini | Supported (no PV) | SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |
 | Venus E 2.0 | **Not compatible** | May disconnect the device from CT003 (the shared meter channel of [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)) |

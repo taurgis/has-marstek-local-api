@@ -160,12 +160,16 @@ load or off-grid energy and its exact semantics vary by firmware.
 
 That is Control firmware, not a Home Assistant bug, and the integration
 cannot repair it. HMG-50 Control — the firmware behind both Venus C 2.0 and
-Venus E 2.0 — gives the Local API server and the device's **own** CT / P1
-meter reader a single Wi-Fi receive channel. Open API polling competes with
-the meter samples that Self-consumption (Auto) mode regulates on. When enough
+Venus E 2.0 — gives the Local API server and the device's **own** UDP meter
+client a single Wi-Fi receive channel. Open API polling competes with the
+meter samples that Self-consumption (Auto) mode regulates on. When enough
 samples are lost the device treats the meter as disconnected and stops
 charging, even with clear grid export. Marstek warns about the same defect on
 Venus E2.0 and CT003.
+
+Which meter you pair decides whether it shares that socket. A Marstek CT and
+a Shelly are both read over the UDP client; a HomeWizard P1 and an Eco-Tracker
+are read over the Wi-Fi module's separate HTTP client.
 
 Symptoms ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)):
 Open API stays enabled, the battery is far from full, there is export, and
@@ -184,6 +188,11 @@ do:
 4. If Auto mode keeps stalling, read grid power from the meter directly — a
    HomeWizard P1 or Shelly integration rather than through the battery — and
    keep the Marstek entry on slow intervals for battery state only.
+5. Changing which meter the **battery** regulates on is a separate lever. A
+   HomeWizard P1 or an Eco-Tracker moves the meter feed onto the module's HTTP
+   client and off the contested socket; a Shelly does not, because it uses the
+   same UDP client as the Local API. Both still share the module's single AT
+   link, so treat this as worth testing, not as a fix.
 
 Firmware research notes:
 [tools/firmware/HMG50_METER_CHANNEL.md](../tools/firmware/HMG50_METER_CHANNEL.md).

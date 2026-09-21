@@ -563,7 +563,7 @@
     },
     "shared_meter_udp_channel": {
       "title": "Marstek Open API can interrupt this device's own meter",
-      "description": "This {family} device reports firmware {firmware}, an HMG-50 Control build. HMG-50 gives the Local API server and the device's own CT / P1 meter reader a single Wi-Fi receive channel, so Open API polling competes with the meter samples that Self-consumption (Auto) mode regulates on. When those samples are lost the device treats the meter as disconnected and stops charging from excess solar until Open API is toggled off and on, or Home Assistant stops polling. Marstek warns about the same defect on Venus E2.0 and CT003. Parallel requests and Wi-Fi retransmits are disabled here, but only Marstek can fix the firmware: raise the polling intervals, or use a separate meter integration for grid power if Auto mode keeps stalling."
+      "description": "This {family} device reports firmware {firmware}, an HMG-50 Control build. HMG-50 gives the Local API server and the device's own UDP meter client a single Wi-Fi receive channel, so Open API polling competes with the meter samples that Self-consumption (Auto) mode regulates on. When those samples are lost the device treats the meter as disconnected and stops charging from excess solar until Open API is toggled off and on, or Home Assistant stops polling. Marstek warns about the same defect on Venus E2.0 and CT003. Parallel requests and Wi-Fi retransmits are disabled here, but only Marstek can fix the firmware: raise the polling intervals, or use a separate meter integration for grid power if Auto mode keeps stalling."
     }
   }
 }

@@ -13,7 +13,7 @@ This repository contains a Home Assistant custom integration for **Marstek energ
 Important compatibility notes:
 - The integration is currently **not compatible with Venus E2.0** devices (see `README.md`).
 - **Venus C** runs the same HMG-50 Control firmware as Venus E2.0. HMG-50 shares one Wi-Fi
-  receive channel between the Local API and the device's own CT / P1 meter, so polling can
+  receive channel between the Local API and the device's own UDP meter client, so polling can
   stall Self-consumption (Auto) charging ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)).
   No firmware fixes it, 156 included. `FirmwareProfile.shared_meter_udp_channel` keeps parallel
   requests and Wi-Fi retransmits off there; see `tools/firmware/HMG50_METER_CHANNEL.md`. Do not
