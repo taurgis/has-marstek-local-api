@@ -13,7 +13,7 @@ Blobs stay local-only. Use `fetch_firmware.py` to download them.
 Issue [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)
 (Venus C 2.0 stops self-consumption charging while Home Assistant polls) is a
 second, separate Control defect: HMG-50 shares one Wi-Fi receive channel
-between the Local API server and the device's own CT / P1 meter reader. No
+between the Local API server and the device's own UDP meter client. No
 HMG-50 build fixes it, 156 included. See `HMG50_METER_CHANNEL.md`.
 
 | File | Purpose |

@@ -45,7 +45,7 @@ _HMG50_CONTROL_MIN_GENERATION = 153
 _HMG50_EM_SERVER_GENERATION = 155
 _HMG50_OPENAPI_STABLE_GENERATION = 156
 # HMG-50 Control shares one Wi-Fi receive channel between the Local API
-# server and its own CT / P1 meter reader, so Open API traffic competes with
+# server and its own UDP meter client, so Open API traffic competes with
 # the regulation loop that Auto mode depends on. See
 # ``tools/firmware/HMG50_METER_CHANNEL.md`` for the string evidence: every
 # archived HMG-50 image (153/155/156) filters exactly one Quectel URC,
@@ -159,11 +159,11 @@ class FirmwareProfile:
 
     @property
     def shared_meter_udp_channel(self) -> bool:
-        """Return whether Open API reads contend with the device meter reader.
+        """Return whether Open API reads contend with the device meter client.
 
         HMG-50 Control (Venus C 2.0 and the bare ``VenusE`` of Venus E 2.0)
         has a single inbound Wi-Fi channel for both the Local API server and
-        its own CT / P1 meter polling. Losing meter samples to Open API
+        its own UDP meter polling. Losing meter samples to Open API
         traffic is what makes the device declare the meter gone and stop
         self-consumption charging (issue #82), and it is the same defect
         behind Marstek's own "Venus E2.0 may disconnect from CT003" warning.
@@ -187,7 +187,7 @@ class FirmwareProfile:
         after a known family and Control generation that this profile
         already treats as not reset-prone. Unknown models and missing
         ``ver`` stay one-shot, and so does HMG-50 Control: a second copy
-        there lands on the channel its meter reader is sharing.
+        there lands on the channel its meter client is sharing.
         """
         if self.openapi_reset_prone or self.shared_meter_udp_channel:
             return False
