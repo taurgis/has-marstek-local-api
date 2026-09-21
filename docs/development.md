@@ -128,6 +128,8 @@ npm run changeset:pre:exit
 
 Run the mock device to develop without hardware. `--device` and `--ver` select a firmware profile (legacy encodings + `Method not found` vs Rev 3.1 encodings and accepted SYS/UPS writes). Physical watts and watt-hours are encoded on the wire according to that profile; the integration normalizes them back to W and Wh.
 
+`--device` also picks the pack size and rated power, so a Venus A reports 2080 Wh / 1500 W rather than a Venus E's 5120 Wh / 2500 W. The mock simulates a whole home: a two-peak residential load curve (~10 kWh/day), a rooftop PV array following real solar geometry (`--house-pv-wp`, default 3500 Wp), and an Auto mode that regulates the simulated P1/CT reading toward zero through a lagged measurement, a deadband and a ramp-limited inverter. `ES.GetStatus.ongrid_power` is the inverter's own AC port; `EM.GetStatus.total_power` is the meter. They are different numbers, as they are on real hardware.
+
 ```
 cd tools
 python -m mock_device --ver 145

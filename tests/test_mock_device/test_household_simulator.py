@@ -2,7 +2,40 @@
 
 from __future__ import annotations
 
+import datetime as datetime_module
+import itertools
+import types
+
+import pytest
 from mock_device import HouseholdSimulator
+from mock_device.simulators import household as household_module
+
+
+@pytest.fixture
+def simulated_clock(monkeypatch: pytest.MonkeyPatch):
+    """Drive the household simulator from a clock the test controls.
+
+    The load curve is smooth and slow on purpose: a dwelling does not change
+    by hundreds of watts between two reads in the same microsecond. Anything
+    testing variation therefore has to move time forward.
+    """
+    state = {"seconds": 1_700_000_000.0}
+    start = datetime_module.datetime(2026, 3, 10, 0, 0, 0)
+
+    class _FrozenDatetime(datetime_module.datetime):
+        @classmethod
+        def now(cls, tz: datetime_module.tzinfo | None = None) -> datetime_module.datetime:
+            return start + datetime_module.timedelta(seconds=state["seconds"] - 1_700_000_000.0)
+
+    monkeypatch.setattr(
+        household_module, "time", types.SimpleNamespace(time=lambda: state["seconds"])
+    )
+    monkeypatch.setattr(household_module, "datetime", _FrozenDatetime)
+
+    def advance(seconds: float) -> None:
+        state["seconds"] += seconds
+
+    return advance
 
 
 class TestHouseholdSimulator:
@@ -34,28 +67,73 @@ class TestHouseholdSimulator:
 
         assert with_cooking > baseline + 2000
 
-    def test_consumption_fluctuation(self) -> None:
-        """Test consumption has realistic fluctuation."""
+    def test_consumption_fluctuation(self, simulated_clock) -> None:
+        """Test consumption has realistic fluctuation as time passes."""
         sim = HouseholdSimulator()
 
-        readings = [sim.get_consumption() for _ in range(10)]
-        unique_readings = len(set(readings))
-        assert unique_readings > 1
+        readings = []
+        for _ in range(60):
+            readings.append(sim.get_consumption())
+            simulated_clock(1.0)
+
+        assert len(set(readings)) > 1
+
+    def test_consumption_is_smooth(self, simulated_clock) -> None:
+        """Consecutive seconds move by watts, not hundreds of watts.
+
+        Resampling a wide random range every call used to turn the baseline
+        into white noise that buried every real signal in the trace. A real
+        dwelling does take the odd large step when an appliance switches on,
+        so the assertion is on the bulk of the distribution rather than its
+        maximum.
+        """
+        sim = HouseholdSimulator()
+
+        readings = []
+        for _ in range(120):
+            readings.append(sim.get_consumption())
+            simulated_clock(1.0)
+
+        steps = sorted(abs(b - a) for a, b in itertools.pairwise(readings))
+        assert steps[len(steps) // 2] < 25
+        assert steps[len(steps) * 9 // 10] < 100
 
     def test_default_base_load(self) -> None:
         """Test default base load is set."""
         sim = HouseholdSimulator()
         assert sim.base_load > 0
 
-    def test_time_of_day_variation(self) -> None:
-        """Test consumption varies by time of day."""
+    def test_time_of_day_variation(self, simulated_clock) -> None:
+        """The evening peak has to outweigh the small hours."""
         sim = HouseholdSimulator()
 
-        # Get several readings - they should fluctuate
-        readings = [sim.get_consumption() for _ in range(20)]
+        hourly: dict[int, int] = {}
+        for hour in range(24):
+            hourly[hour] = sim.get_consumption()
+            simulated_clock(3600.0)
 
-        # Should have some variation (not all identical)
-        assert max(readings) > min(readings)
+        assert max(hourly.values()) > min(hourly.values())
+        # Two-peak residential shape: evening is the heaviest hour of the day
+        # and the small hours are the lightest.
+        assert hourly[18] > hourly[3]
+        assert hourly[7] > hourly[3]
+
+    def test_daily_energy_is_realistic(self, simulated_clock) -> None:
+        """A day of the profile lands near the EU average dwelling."""
+        sim = HouseholdSimulator()
+
+        watt_seconds = 0.0
+        step = 60.0
+        for _ in range(24 * 60):
+            watt_seconds += sim.get_consumption() * step
+            simulated_clock(step)
+
+        kwh = watt_seconds / 3600 / 1000
+        # ODYSSEE-MURE puts the EU average household near 10 kWh/day; the
+        # daily occupancy scale and random appliance events widen the band,
+        # and a dwelling large enough to own a home battery sits above the
+        # apartment-heavy average.
+        assert 7.0 < kwh < 15.0
 
     def test_force_cooking_event_duration(self) -> None:
         """Test cooking event has a duration effect."""

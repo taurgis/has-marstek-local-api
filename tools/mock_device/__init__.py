@@ -12,7 +12,13 @@ from .const import (
     STATUS_IDLE,
 )
 from .device import MockMarstekDevice
-from .simulators import BatterySimulator, HouseholdSimulator, WiFiSimulator
+from .simulators import (
+    BatterySimulator,
+    HouseholdSimulator,
+    PVChannelSimulator,
+    SolarSimulator,
+    WiFiSimulator,
+)
 
 __all__ = [
     "BATTERY_CAPACITY_WH",
@@ -27,5 +33,7 @@ __all__ = [
     "BatterySimulator",
     "HouseholdSimulator",
     "MockMarstekDevice",
+    "PVChannelSimulator",
+    "SolarSimulator",
     "WiFiSimulator",
 ]

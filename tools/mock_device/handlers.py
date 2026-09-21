@@ -71,6 +71,12 @@ def handle_es_get_status(
       - Negative = discharging (power flowing OUT of battery)
     Internal simulator uses opposite convention, so we negate here.
 
+    ``ongrid_power`` is the inverter's own AC port power, **not** the CT/P1
+    reading. The Venus A firmware 147 capture in issue #11 reports
+    ``ongrid_power: 318`` while ``EM.GetStatus`` reports ``total_power: -16``
+    in the same poll. The integration derives battery power from
+    ``pv_power - ongrid_power``, so the meter value must never appear here.
+
     Args:
         request_id: Request ID for response
         src: Source identifier for response
@@ -93,7 +99,7 @@ def handle_es_get_status(
             "bat_soc": state["soc"],
             "bat_cap": state.get("capacity_wh", 5120),
             "pv_power": pv_power,
-            "ongrid_power": state["grid_power"],
+            "ongrid_power": state.get("ongrid_power", 0),
             "offgrid_power": 0,
             "total_pv_energy": _encode_value(
                 state.get("total_pv_energy", 0), profile.pv_energy_scale
@@ -153,7 +159,7 @@ def handle_es_get_mode(
     result: dict[str, Any] = {
         "id": _getmode_instance_id(params),
         "mode": state["mode"],
-        "ongrid_power": state["grid_power"],
+        "ongrid_power": state.get("ongrid_power", 0),
         "offgrid_power": 0,
         "bat_soc": state["soc"],
     }
@@ -424,6 +430,7 @@ def get_static_state(
         "power": power,
         "mode": mode,
         "status": STATUS_IDLE,
+        "ongrid_power": power,
         "grid_power": 0,
         "em_a_power": 0,
         "em_b_power": 0,
@@ -447,4 +454,5 @@ def get_static_state(
         "pv_power": 0,
         "pv_voltage": 0,
         "pv_current": 0,
+        "pv_channels": [],
     }

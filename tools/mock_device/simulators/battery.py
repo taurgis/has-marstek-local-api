@@ -1,11 +1,27 @@
-"""Battery behavior simulator with realistic P1 meter feedback loop.
+"""Battery behavior simulator with a closed-loop P1 meter feedback path.
 
-Simulates how a real Marstek battery interacts with a P1 meter:
-- P1 meter measures NET flow at meter point (after battery contribution)
-- Battery compensates to keep P1 at 0 (zero import/export)
-- Battery tracks its OWN contribution to avoid oscillation
+Simulates how a real Marstek battery behaves in a home:
+
+* The CT clamp / P1 meter measures **net** flow at the meter point, after the
+  battery and any rooftop array have contributed.
+* In Auto mode the device regulates its own output against that measurement
+  to hold the meter near zero. It only ever sees the net figure, never the
+  true appliance load, so the loop has to close on the meter reading.
+* ``ES.GetStatus.ongrid_power`` is the **inverter's own** AC port power, not
+  the meter reading. Real evidence: the Venus A firmware 147 capture in issue
+  #11 reports ``ongrid_power: 318`` at the same moment ``EM.GetStatus``
+  reports ``total_power: -16``. The integration derives battery power as
+  ``pv_power - ongrid_power``, so reporting the meter value there would make
+  Home Assistant show a battery that drains at 0 W.
+
+Sign conventions inside the simulator:
+
+* ``actual_power``  positive = discharging, negative = charging (AC side)
+* ``ongrid_power``  positive = inverter exporting, negative = importing
+* ``grid_power``    positive = house importing, negative = house exporting
 """
 
+import math
 import random
 import threading
 import time
@@ -14,15 +30,26 @@ from datetime import datetime
 from typing import Any
 
 from ..const import (
-    BATTERY_CAPACITY_WH,
-    DEFAULT_MAX_CHARGE_POWER,
-    DEFAULT_MAX_DISCHARGE_POWER,
+    AMBIENT_MEAN_C,
+    AMBIENT_SWING_C,
+    AUTO_DEADBAND_W,
+    AUTO_LOOP_GAIN,
+    BAT_TEMP_MAX_C,
+    BAT_TEMP_MIN_CHARGE_C,
+    CHARGE_EFFICIENCY,
+    CT_MEASUREMENT_LAG_SECONDS,
+    CT_NOISE_W,
+    DEFAULT_HOUSE_PV_WP,
+    DEFAULT_PHASE_COUNT,
     DEFAULT_POWER_FLUCTUATION_PCT,
     DEFAULT_UPDATE_INTERVAL,
+    DISCHARGE_EFFICIENCY,
     MODE_AI,
     MODE_AUTO,
     MODE_MANUAL,
     MODE_PASSIVE,
+    MODE_UPS,
+    POWER_RAMP_W_PER_SECOND,
     SOC_MIN_DISCHARGE,
     SOC_RESERVE,
     SOC_TAPER_CHARGE,
@@ -30,89 +57,140 @@ from ..const import (
     STATUS_CHARGING,
     STATUS_DISCHARGING,
     STATUS_IDLE,
+    THERMAL_CAPACITY_J_PER_K_PER_WH,
+    THERMAL_CONDUCTANCE_W_PER_K_PER_WH,
+    DeviceSpec,
+    device_spec,
 )
 from .household import HouseholdSimulator
+from .solar import PVChannelSimulator, SolarSimulator
 from .wifi import WiFiSimulator
+
+_SECONDS_PER_HOUR = 3600.0
+
+# AI mode: cheap overnight window used to top the pack up from the grid, and
+# the state of charge it aims for before the morning.
+_AI_NIGHT_CHARGE_HOURS = range(1, 6)
+_AI_NIGHT_TARGET_SOC = 80
+_AI_NIGHT_CHARGE_FRACTION = 0.6
+# Below this the pack is held back for the evening peak instead of covering
+# midday load the roof can already cover.
+_AI_EVENING_RESERVE_SOC = 35
+_AI_EVENING_HOURS = range(17, 23)
+
+# UPS mode keeps the pack full as backup: charge until here, then hold.
+_UPS_TARGET_SOC = 100
+_UPS_CHARGE_FRACTION = 0.5
+
+# Phase split of the house load for three-phase installs. Resampled slowly so
+# the imbalance drifts rather than flickering every second.
+_PHASE_SPLIT_UPDATE_SECONDS = 60.0
 
 
 class BatterySimulator:
     """Simulates realistic Marstek battery behavior with P1 meter feedback.
 
-    Key concepts:
-    - Gross household consumption: What all appliances are actually using
-    - Battery power: What the battery is providing (+) or absorbing (-)
-    - P1/Grid power (EM total_power): Net flow at meter = gross_consumption - battery_power
-      - Positive = importing from grid (household needs more than battery provides)
-      - Negative = exporting to grid (battery provides more than household needs)
+    Power balance maintained every tick::
 
-    In Auto mode, the battery aims to keep P1 at 0 (zero export/import).
-    The battery tracks its OWN contribution to avoid oscillation:
-    - If P1 reads 0, battery knows household = battery_power, so keeps running
-    - If P1 reads +200, battery increases output to compensate
-    - If P1 reads -200, battery decreases output
+        ongrid_power = pv_power + actual_power
+        grid_power   = household_load + standby_power - ongrid_power
 
-    Real example:
-    1. Household uses 800W (gross consumption)
-    2. Battery provides 800W (discharge)
-    3. P1 meter reads: 800W - 800W = 0W (balanced!)
-    4. Battery sees P1=0, knows "I'm giving 800W, P1=0, so household=800W"
-    5. Battery continues at 800W (not 0!)
+    In Auto mode the controller nudges its own output by the measured meter
+    imbalance until ``grid_power`` sits inside the deadband. A load step
+    therefore shows on the meter for a second or two before the battery
+    covers it, and a rooftop surplus pushes the controller negative so the
+    battery charges, exactly as a real unit does.
     """
 
     def __init__(
         self,
         initial_soc: int = 50,
-        capacity_wh: int = BATTERY_CAPACITY_WH,
-        max_charge_power: int = DEFAULT_MAX_CHARGE_POWER,
-        max_discharge_power: int = DEFAULT_MAX_DISCHARGE_POWER,
+        capacity_wh: int | None = None,
+        max_charge_power: int | None = None,
+        max_discharge_power: int | None = None,
         persist_callback: Callable[[dict[str, Any]], None] | None = None,
         persist_interval: float = 30.0,
+        device_type: str | None = None,
+        house_pv_wp: int | None = None,
+        pv_channels: list[dict[str, float]] | None = None,
+        phases: int = DEFAULT_PHASE_COUNT,
+        rng: random.Random | None = None,
     ):
+        spec: DeviceSpec = device_spec(device_type)
+        self.spec = spec
         self.soc = initial_soc
-        self.capacity_wh = capacity_wh
-        self.max_charge_power = max_charge_power
-        self.max_discharge_power = max_discharge_power
+        self.capacity_wh = spec.capacity_wh if capacity_wh is None else capacity_wh
+        self.max_charge_power = (
+            spec.max_charge_power if max_charge_power is None else max_charge_power
+        )
+        self.max_discharge_power = (
+            spec.max_discharge_power if max_discharge_power is None else max_discharge_power
+        )
+        self.standby_power = spec.standby_power
+        self.phases = 3 if phases == 3 else 1
+        self._rng = rng or random.Random()
 
         # Current state
         self.mode = MODE_AUTO
         self.target_power = 0  # Target for passive/manual mode
+        self.setpoint_power = 0  # Commanded AC power before ramp limiting
         self.actual_power = 0  # What battery is doing (+ = discharge, - = charge)
         self.gross_household_consumption = 0  # What appliances use (before battery)
-        self.grid_power = 0  # P1 meter reading (net flow after battery)
+        self.grid_power = 0  # P1 meter reading (net flow after battery and PV)
+        self.ongrid_power = 0  # Inverter AC port power (+ = exporting)
 
         # Phase power distribution (for EM.GetStatus)
         self.em_a_power = 0
         self.em_b_power = 0
         self.em_c_power = 0
+        self._phase_split = (0.45, 0.33)
+        self._last_phase_split_update = 0.0
 
         # Passive mode timing
         self.passive_end_time: float | None = None
         self.manual_schedules: list[dict[str, Any]] = []
 
         # Temperature simulation
-        self.base_temp = 25.0
-        self.battery_temp = self.base_temp
+        self.base_temp = AMBIENT_MEAN_C
+        self.ambient_temp = AMBIENT_MEAN_C
+        self.battery_temp = self._ambient_temperature()
 
         # CT/P1 meter state
         self.ct_connected = True
+        self._measured_grid_power = 0.0
 
         # Energy statistics (accumulated over time, in Wh)
         self.total_pv_energy = 0.0
-        self.total_grid_output_energy = 0.0  # Energy exported to grid
-        self.total_grid_input_energy = 0.0  # Energy imported from grid
+        self.total_grid_output_energy = 0.0  # Battery energy exported to grid
+        self.total_grid_input_energy = 0.0  # Battery energy imported from grid
         self.total_load_energy = 0.0  # Total household consumption
+        self.em_input_energy = 0.0  # CT-side lifetime import
+        self.em_output_energy = 0.0  # CT-side lifetime export
 
-        # PV simulation (always 0 for plug-in battery without solar input)
+        # PV state. ``pv_power`` is the device's own DC input (Venus A/D).
         self.pv_power = 0
         self.pv_voltage = 0
         self.pv_current = 0
 
         # Sub-simulators
-        self.household = HouseholdSimulator()
+        self.household = HouseholdSimulator(rng=self._rng)
         self.wifi = WiFiSimulator(base_rssi=-55)
+        self.solar = SolarSimulator(
+            peak_power_w=self._default_house_pv_wp(house_pv_wp, pv_channels),
+            rng=self._rng,
+        )
+        # Device MPPT channels share the sky with the rooftop array.
+        self.pv_channels = PVChannelSimulator(list(pv_channels or []), self.solar)
+        self.house_pv_power = 0
+        # Pinned inputs. Setting either freezes that side of the house so a
+        # scenario can ask "the P1 meter reads X, what does the battery do?"
+        # and get the same answer a real unit would give.
+        self._house_load_override: int | None = None
+        self._house_pv_override: int | None = None
 
         # Simulation settings
         self.power_fluctuation_pct = DEFAULT_POWER_FLUCTUATION_PCT
+        self.ramp_rate_w_per_s = POWER_RAMP_W_PER_SECOND
         self.update_interval = DEFAULT_UPDATE_INTERVAL
         self._lock = threading.Lock()
         self._running = False
@@ -120,6 +198,24 @@ class BatterySimulator:
         self._persist_callback = persist_callback
         self._persist_interval = persist_interval
         self._last_persist = time.time()
+
+    @staticmethod
+    def _default_house_pv_wp(
+        house_pv_wp: int | None,
+        pv_channels: list[dict[str, float]] | None,
+    ) -> int:
+        """Choose the rooftop array size for the simulated dwelling.
+
+        A Venus A or D with DC strings attached already has panels in the
+        picture; adding a separate rooftop inverter on top would double the
+        sun. Everything else gets a modest array so Auto mode has a surplus
+        to charge from.
+        """
+        if house_pv_wp is not None:
+            return max(0, house_pv_wp)
+        if pv_channels:
+            return 0
+        return DEFAULT_HOUSE_PV_WP
 
     def start(self) -> None:
         """Start the battery simulation thread."""
@@ -163,53 +259,109 @@ class BatterySimulator:
             self.target_power = 0
             self.passive_end_time = None
 
-        # Get gross household consumption (what appliances actually use)
-        self.gross_household_consumption = self.household.get_consumption()
-
-        # Calculate target power based on mode
-        target = self._calculate_target_power()
-        target = self._apply_soc_limits(target)
-
-        # Apply power limits
-        target = max(-self.max_charge_power, min(self.max_discharge_power, target))
-
-        # Add small fluctuation for realism
-        if target != 0:
-            fluctuation = target * (random.uniform(-1, 1) * self.power_fluctuation_pct / 100)
-            self.actual_power = int(target + fluctuation)
-        else:
-            self.actual_power = 0
-
-        # Calculate P1 meter reading (net flow AFTER battery contribution)
-        # Positive = importing from grid, Negative = exporting to grid
-        self.grid_power = self.gross_household_consumption - self.actual_power
-
-        # Update phase power distribution
-        self._update_phase_powers()
-
-        # Update SOC based on actual power flow
-        hours = elapsed_seconds / 3600
-        energy_wh = self.actual_power * hours  # Positive = discharging
-        soc_change = -(energy_wh / self.capacity_wh) * 100
-        self.soc = max(0, min(100, self.soc + soc_change))
-
-        # Update energy statistics
+        self._refresh_inputs()
+        self._advance_power(elapsed_seconds)
+        self._settle_flows()
+        self._update_soc(elapsed_seconds)
         self._update_energy_stats(elapsed_seconds)
-
-        # Update temperature
-        self._update_temperature()
-
-        # Persist state periodically
+        self._update_temperature(elapsed_seconds)
         self._maybe_persist_locked()
 
-    def _calculate_target_power(self) -> int:
-        """Calculate target battery power based on mode.
+    def set_house_load(self, watts: int | None) -> None:
+        """Pin the gross household load, or restore the simulated dwelling.
 
-        In Auto mode: discharge to match household consumption (keep P1 at 0).
-        The battery effectively sees:
-          target = gross_household_consumption (to fully offset it)
-        This makes grid_power = gross - actual ≈ 0
+        ``None`` hands the house back to :class:`HouseholdSimulator`.
         """
+        self._house_load_override = None if watts is None else max(0, int(watts))
+
+    def set_house_pv(self, watts: int | None) -> None:
+        """Pin rooftop PV production, or restore the solar curve."""
+        self._house_pv_override = None if watts is None else max(0, int(watts))
+
+    def _refresh_inputs(self) -> None:
+        """Sample the house, the roof and the device's own DC strings."""
+        if self._house_load_override is None:
+            self.gross_household_consumption = self.household.get_consumption()
+        else:
+            self.gross_household_consumption = self._house_load_override
+        if self._house_pv_override is None:
+            self.house_pv_power = self.solar.get_power()
+        else:
+            self.house_pv_power = self._house_pv_override
+        if self.pv_channels.configured:
+            channels = self.pv_channels.snapshot()
+            self.pv_power = self.pv_channels.total_power(channels)
+            first = channels[0] if channels else {}
+            self.pv_voltage = first.get("pv_voltage", 0)
+            self.pv_current = first.get("pv_current", 0)
+
+    def _advance_power(self, elapsed_seconds: float) -> None:
+        """Move the inverter toward its setpoint under the ramp-rate limit."""
+        target = self._calculate_target_power(elapsed_seconds)
+        target = self._apply_soc_limits(target)
+        target = max(-self.max_charge_power, min(self.max_discharge_power, target))
+        self.setpoint_power = target
+
+        ramp_limit = max(1.0, self.ramp_rate_w_per_s * max(elapsed_seconds, 0.0))
+        delta = target - self.actual_power
+        if abs(delta) > ramp_limit:
+            delta = math.copysign(ramp_limit, delta)
+        reached = self.actual_power + delta
+
+        if abs(reached) < 1:
+            self.actual_power = 0
+            return
+        # Setpoint tracking is good but never exact.
+        jitter = reached * (self._rng.uniform(-1, 1) * self.power_fluctuation_pct / 100)
+        self.actual_power = int(reached + jitter)
+
+    def _settle_flows(self) -> None:
+        """Recompute the inverter port, the meter reading and the phases."""
+        self.ongrid_power = self.pv_power + self.actual_power
+        self.grid_power = (
+            self.gross_household_consumption
+            + self.standby_power
+            - self.house_pv_power
+            - self.ongrid_power
+        )
+        self._update_phase_powers()
+
+    def _measure_grid_power(self, elapsed_seconds: float) -> float:
+        """Return the meter reading the controller currently believes.
+
+        A CT link reports about once a second and the controller filters it,
+        so the value driving regulation always trails the truth. That lag is
+        what puts a visible transient on the meter when a load switches on.
+        """
+        if not self.ct_connected:
+            return 0.0
+        elapsed = max(elapsed_seconds, 0.0)
+        alpha = elapsed / (elapsed + CT_MEASUREMENT_LAG_SECONDS) if elapsed > 0 else 0.0
+        self._measured_grid_power += (self.grid_power - self._measured_grid_power) * alpha
+        return self._measured_grid_power + self._rng.uniform(-CT_NOISE_W, CT_NOISE_W)
+
+    def _regulated_target_power(self, elapsed_seconds: float | None = None) -> int:
+        """Return the battery setpoint that drives the meter toward zero.
+
+        The controller commands its AC port, so PV is subtracted back out to
+        get the battery's own share: ``battery = desired_ongrid - pv_power``.
+        A rooftop surplus therefore turns into charging without any special
+        case, which is how a real unit ends up absorbing midday export.
+        """
+        interval = self.update_interval if elapsed_seconds is None else elapsed_seconds
+        error = self._measure_grid_power(interval)
+        if not self.ct_connected:
+            # No CT means no reference. Real units fall back to idle rather
+            # than guessing at the house load.
+            return 0
+        if abs(error) <= AUTO_DEADBAND_W:
+            desired_ongrid = float(self.ongrid_power)
+        else:
+            desired_ongrid = self.ongrid_power + error * AUTO_LOOP_GAIN
+        return int(desired_ongrid - self.pv_power)
+
+    def _calculate_target_power(self, elapsed_seconds: float | None = None) -> int:
+        """Calculate target battery power based on mode."""
         if self.mode == MODE_PASSIVE:
             # Fixed power set by user (+ = discharge, - = charge)
             return self.target_power
@@ -218,39 +370,36 @@ class BatterySimulator:
             schedule = self._get_active_schedule()
             return schedule.get("power", 0) if schedule else 0
 
-        if self.mode == MODE_AUTO:
-            # Discharge to offset household, keep P1 at 0
-            if self.soc <= SOC_RESERVE:
-                return 0  # Don't discharge below reserve
+        if self.mode == MODE_UPS:
+            # Backup mode: fill the pack and hold it there.
+            if self.soc >= _UPS_TARGET_SOC:
+                return 0
+            return -int(self.max_charge_power * _UPS_CHARGE_FRACTION)
 
-            target = self.gross_household_consumption
-            return min(target, self.max_discharge_power)
+        if self.mode == MODE_AUTO:
+            return self._self_consumption_target(elapsed_seconds)
 
         if self.mode == MODE_AI:
-            # Smarter decisions based on time of day and SOC
-            if self.soc <= 15:
-                return 0
-
             hour = datetime.now().hour
-            target = self.gross_household_consumption
-
-            # Night (cheap rate): might charge
-            if 0 <= hour < 6:
-                if self.soc < 50:
-                    return -int(self.max_charge_power * 0.5)
+            # Cheap overnight window: top up from the grid.
+            if hour in _AI_NIGHT_CHARGE_HOURS and self.soc < _AI_NIGHT_TARGET_SOC:
+                return -int(self.max_charge_power * _AI_NIGHT_CHARGE_FRACTION)
+            target = self._self_consumption_target(elapsed_seconds)
+            # Outside the evening peak, hold a reserve back for it.
+            if target > 0 and hour not in _AI_EVENING_HOURS and self.soc <= _AI_EVENING_RESERVE_SOC:
                 return 0
-
-            # Solar hours: be conservative
-            if 9 <= hour < 17:
-                target = int(target * 0.5) if self.soc > 60 else int(target * 0.3)
-
-            # Evening peak: use battery
-            if 17 <= hour < 22 and self.soc < 30:
-                target = int(target * 0.5)
-
-            return min(target, self.max_discharge_power)
+            return target
 
         return 0
+
+    def _self_consumption_target(self, elapsed_seconds: float | None = None) -> int:
+        """Return the Auto-mode setpoint, honouring the discharge reserve."""
+        target = self._regulated_target_power(elapsed_seconds)
+        if target > 0 and self.soc <= SOC_RESERVE:
+            # Below the reserve the unit stops supplying the house but still
+            # accepts a surplus, so the pack recovers on the next sunny hour.
+            return 0
+        return target
 
     def _apply_soc_limits(self, target: int) -> int:
         """Apply power limits based on SOC to protect battery."""
@@ -260,6 +409,10 @@ class BatterySimulator:
 
         # Can't charge if already full
         if target < 0 and self.soc >= 100:
+            return 0
+
+        # The BMS refuses to charge a cold or hot pack.
+        if target < 0 and not self._charge_allowed():
             return 0
 
         # Taper charging when nearly full
@@ -275,55 +428,109 @@ class BatterySimulator:
 
         return target
 
-    def _update_phase_powers(self) -> None:
-        """Update phase power distribution for EM.GetStatus.
+    def _charge_allowed(self) -> bool:
+        """Return whether the BMS permits charging at the current temperature."""
+        return BAT_TEMP_MIN_CHARGE_C <= self.battery_temp < BAT_TEMP_MAX_C
 
-        Realistically distributes grid power across 3 phases.
-        Phase A typically has highest load (kitchen/HVAC).
-        Phases MUST always sum to grid_power (total).
+    def _update_phase_powers(self) -> None:
+        """Split the meter reading across phases for EM.GetStatus.
+
+        A Venus is a single-phase unit. On a single-phase supply everything
+        lands on phase A. On a three-phase supply each phase carries its own
+        share of the house load while the battery only offsets the phase it
+        is plugged into, which is why one phase can export while the others
+        still import. Phase C takes the remainder so the three always sum to
+        the total.
         """
         total = self.grid_power
+        if self.phases == 1:
+            self.em_a_power = total
+            self.em_b_power = 0
+            self.em_c_power = 0
+            return
 
-        # Distribute with realistic imbalance (~40%/35%/25%)
-        a_ratio = 0.40 + random.uniform(-0.05, 0.05)
-        b_ratio = 0.35 + random.uniform(-0.05, 0.05)
+        now = time.time()
+        if now - self._last_phase_split_update > _PHASE_SPLIT_UPDATE_SECONDS:
+            self._last_phase_split_update = now
+            self._phase_split = (
+                0.45 + self._rng.uniform(-0.07, 0.07),
+                0.33 + self._rng.uniform(-0.05, 0.05),
+            )
 
-        self.em_a_power = int(total * a_ratio)
-        self.em_b_power = int(total * b_ratio)
-        # Phase C gets the remainder so phases always sum to total
+        house_side = self.gross_household_consumption + self.standby_power - self.house_pv_power
+        a_ratio, b_ratio = self._phase_split
+        # The inverter sits on phase A only.
+        self.em_a_power = int(house_side * a_ratio) - self.ongrid_power
+        self.em_b_power = int(house_side * b_ratio)
         self.em_c_power = total - self.em_a_power - self.em_b_power
 
+    def _update_soc(self, elapsed_seconds: float) -> None:
+        """Move the state of charge, paying conversion losses in both directions."""
+        hours = elapsed_seconds / _SECONDS_PER_HOUR
+        ac_wh = self.actual_power * hours
+        # Discharging, the pack gives up more than reaches the AC port;
+        # charging, part of what the port draws is lost on the way in.
+        dc_wh = ac_wh / DISCHARGE_EFFICIENCY if ac_wh > 0 else ac_wh * CHARGE_EFFICIENCY
+        soc_change = -(dc_wh / self.capacity_wh) * 100
+        self.soc = max(0, min(100, self.soc + soc_change))
+
     def _update_energy_stats(self, elapsed_seconds: float) -> None:
-        """Update energy statistics based on power flow."""
-        hours = elapsed_seconds / 3600
+        """Update energy statistics based on power flow.
 
-        # Grid energy tracking
-        if self.grid_power > 0:
-            self.total_grid_input_energy += self.grid_power * hours
+        ``total_grid_input_energy`` / ``total_grid_output_energy`` are the
+        **device's** lifetime counters and follow ``ongrid_power``; that is
+        the same relationship the integration falls back on when firmware
+        stalls those counters. The ``EM`` totals follow the meter instead,
+        because they are measured at a different point and diverge from the
+        device counters in exactly the way a real install does.
+        """
+        hours = elapsed_seconds / _SECONDS_PER_HOUR
+
+        if self.ongrid_power > 0:
+            self.total_grid_output_energy += self.ongrid_power * hours
         else:
-            self.total_grid_output_energy += abs(self.grid_power) * hours
+            self.total_grid_input_energy += abs(self.ongrid_power) * hours
 
-        # Load energy = gross household consumption
+        if self.grid_power > 0:
+            self.em_input_energy += self.grid_power * hours
+        else:
+            self.em_output_energy += abs(self.grid_power) * hours
+
         self.total_load_energy += self.gross_household_consumption * hours
 
-    def _update_temperature(self) -> None:
-        """Update battery temperature based on power flow."""
-        power_abs = abs(self.actual_power)
-        if power_abs > 100:
-            heat_factor = min(power_abs / self.max_discharge_power, 1.0)
-            self.battery_temp += heat_factor * 0.3 * random.uniform(0.8, 1.2)
-        else:
-            if self.battery_temp > self.base_temp:
-                self.battery_temp -= 0.1 * random.uniform(0.5, 1.5)
-            elif self.battery_temp < self.base_temp:
-                self.battery_temp += 0.1 * random.uniform(0.5, 1.5)
-        self.battery_temp = max(15.0, min(50.0, self.battery_temp))
+        if self.pv_channels.configured:
+            self.pv_channels.accumulate(self.pv_power, elapsed_seconds)
+            self.total_pv_energy = self.pv_channels.total_pv_energy
+
+    def _ambient_temperature(self, when: datetime | None = None) -> float:
+        """Return ambient temperature, coldest before dawn and warmest mid-afternoon."""
+        moment = when or datetime.now()
+        hours = moment.hour + moment.minute / 60
+        return self.base_temp + AMBIENT_SWING_C * math.sin(2 * math.pi * (hours - 9) / 24)
+
+    def _update_temperature(self, elapsed_seconds: float) -> None:
+        """Advance pack temperature from conversion losses and ambient exchange.
+
+        Heat in is the power actually lost to conversion plus the unit's own
+        auxiliary draw; heat out is proportional to the gap to ambient. At
+        continuous full power the pack settles about twelve degrees above
+        ambient, reached over roughly an hour -- not the degree-per-second
+        climb a fixed per-tick increment produces.
+        """
+        self.ambient_temp = self._ambient_temperature()
+        loss_w = abs(self.actual_power) * (1 - DISCHARGE_EFFICIENCY) + self.standby_power
+        heat_capacity = THERMAL_CAPACITY_J_PER_K_PER_WH * self.capacity_wh
+        conductance = THERMAL_CONDUCTANCE_W_PER_K_PER_WH * self.capacity_wh
+        net_w = loss_w - (self.battery_temp - self.ambient_temp) * conductance
+        self.battery_temp += net_w / heat_capacity * max(elapsed_seconds, 0.0)
+        self.battery_temp = max(-10.0, min(60.0, self.battery_temp))
 
     def apply_persistent_state(self, state: dict[str, Any]) -> None:
         """Apply persisted state values to the simulator."""
         with self._lock:
             self.soc = float(state.get("soc", self.soc))
             self.total_pv_energy = float(state.get("total_pv_energy", self.total_pv_energy))
+            self.pv_channels.total_pv_energy = self.total_pv_energy
             self.total_grid_output_energy = float(
                 state.get("total_grid_output_energy", self.total_grid_output_energy)
             )
@@ -331,6 +538,10 @@ class BatterySimulator:
                 state.get("total_grid_input_energy", self.total_grid_input_energy)
             )
             self.total_load_energy = float(state.get("total_load_energy", self.total_load_energy))
+            self.em_input_energy = float(state.get("em_input_energy", self.total_grid_input_energy))
+            self.em_output_energy = float(
+                state.get("em_output_energy", self.total_grid_output_energy)
+            )
 
     def _get_persistent_state_locked(self) -> dict[str, Any]:
         return {
@@ -339,6 +550,8 @@ class BatterySimulator:
             "total_grid_output_energy": float(self.total_grid_output_energy),
             "total_grid_input_energy": float(self.total_grid_input_energy),
             "total_load_energy": float(self.total_load_energy),
+            "em_input_energy": float(self.em_input_energy),
+            "em_output_energy": float(self.em_output_energy),
         }
 
     def get_persistent_state(self) -> dict[str, Any]:
@@ -356,23 +569,14 @@ class BatterySimulator:
         self._last_persist = now
 
     def _apply_immediate_power_update(self) -> None:
-        """Immediately update power to reflect mode change."""
-        # Refresh household consumption
-        self.gross_household_consumption = self.household.get_consumption()
-
-        target = self._calculate_target_power()
-        target = self._apply_soc_limits(target)
-        target = max(-self.max_charge_power, min(self.max_discharge_power, target))
-
-        if target != 0:
-            fluctuation = target * (random.uniform(-1, 1) * self.power_fluctuation_pct / 100)
-            self.actual_power = int(target + fluctuation)
-        else:
-            self.actual_power = 0
-
-        self.grid_power = self.gross_household_consumption - self.actual_power
-        self._update_phase_powers()
-        print(f"[SIM] Immediate update: battery={self.actual_power}W, P1={self.grid_power}W")
+        """Start moving toward the new setpoint as soon as the mode changes."""
+        self._refresh_inputs()
+        self._advance_power(self.update_interval)
+        self._settle_flows()
+        print(
+            f"[SIM] Setpoint {self.setpoint_power}W, "
+            f"battery={self.actual_power}W, P1={self.grid_power}W"
+        )
 
     def _get_active_schedule(self) -> dict[str, Any] | None:
         """Get currently active manual schedule."""
@@ -427,6 +631,19 @@ class BatterySimulator:
             else:
                 self._apply_immediate_power_update()
 
+    def settle(self, seconds: float = 10.0, step: float = 1.0) -> None:
+        """Advance the simulation without waiting on the background thread.
+
+        Regulation, ramping and the CT lag all need time to converge, so a
+        caller that wants a settled reading (a test, or a scripted scenario)
+        needs to give the loop its seconds.
+        """
+        with self._lock:
+            remaining = seconds
+            while remaining > 0:
+                self._update_state(min(step, remaining))
+                remaining -= step
+
     def get_state(self) -> dict[str, Any]:
         """Get current battery state for API responses."""
         with self._lock:
@@ -453,29 +670,36 @@ class BatterySimulator:
                 "power": self.actual_power,
                 "mode": self.mode,
                 "status": status,
+                # Inverter AC port, what ES.GetStatus calls ongrid_power
+                "ongrid_power": self.ongrid_power,
                 # Grid/P1 meter state
                 "grid_power": self.grid_power,
                 "em_a_power": self.em_a_power,
                 "em_b_power": self.em_b_power,
                 "em_c_power": self.em_c_power,
                 "household_consumption": self.gross_household_consumption,
+                "house_pv_power": self.house_pv_power,
                 # Mode-specific
                 "passive_remaining": passive_remaining,
                 "passive_cfg": passive_cfg,
                 # Sensors
                 "wifi_rssi": self.wifi.get_rssi(),
                 "battery_temp": round(self.battery_temp, 1),
+                "ambient_temp": round(self.ambient_temp, 1),
                 "ct_connected": self.ct_connected,
                 # Battery flags
-                "charg_flag": 1 if self.soc < 100 else 0,
+                "charg_flag": 1 if self.soc < 100 and self._charge_allowed() else 0,
                 "dischrg_flag": 1 if self.soc > SOC_MIN_DISCHARGE else 0,
                 # Energy statistics (Wh)
                 "total_pv_energy": int(self.total_pv_energy),
                 "total_grid_output_energy": int(self.total_grid_output_energy),
                 "total_grid_input_energy": int(self.total_grid_input_energy),
                 "total_load_energy": int(self.total_load_energy),
-                # PV state
+                "em_input_energy": int(self.em_input_energy),
+                "em_output_energy": int(self.em_output_energy),
+                # PV state (device DC input; zero on families without one)
                 "pv_power": self.pv_power,
                 "pv_voltage": self.pv_voltage,
                 "pv_current": self.pv_current,
+                "pv_channels": self.pv_channels.snapshot(),
             }
