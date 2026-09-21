@@ -156,12 +156,45 @@ derive energy from power.
 `total_load_energy` remains device-reported because Marstek documents it as
 load or off-grid energy and its exact semantics vary by firmware.
 
+## Venus C stops charging from excess solar in Auto mode
+
+That is Control firmware, not a Home Assistant bug, and the integration
+cannot repair it. HMG-50 Control — the firmware behind both Venus C 2.0 and
+Venus E 2.0 — gives the Local API server and the device's **own** CT / P1
+meter reader a single Wi-Fi receive channel. Open API polling competes with
+the meter samples that Self-consumption (Auto) mode regulates on. When enough
+samples are lost the device treats the meter as disconnected and stops
+charging, even with clear grid export. Marstek warns about the same defect on
+Venus E2.0 and CT003.
+
+Symptoms ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)):
+Open API stays enabled, the battery is far from full, there is export, and
+charging resumes the moment Home Assistant stops polling — or after toggling
+Open API off and on in the Marstek app.
+
+No HMG-50 build fixes it, **156 included**; its "Optimized OpenApi interface
+stability" note covers the API surface, not the shared channel. What you can
+do:
+
+1. A **warning** appears in Settings → Repairs for every HMG-50 entry.
+2. Parallel API requests and Wi-Fi retransmits stay off on these builds, so
+   the integration never puts a second datagram on the meter's channel.
+3. Raise the polling intervals (Configure → Polling). Less traffic means
+   fewer lost meter samples; it does not remove the contention.
+4. If Auto mode keeps stalling, read grid power from the meter directly — a
+   HomeWizard P1 or Shelly integration rather than through the battery — and
+   keep the Marstek entry on slow intervals for battery state only.
+
+Firmware research notes:
+[tools/firmware/HMG50_METER_CHANNEL.md](../tools/firmware/HMG50_METER_CHANNEL.md).
+
 ## Venus E2.0
 
 Venus **E2.0 is not supported** (HMG-50). Open API GetDevice reports
 `device: "VenusE"`, which is not Venus E 3.0 (`VenusE 3.0` / `VNSE3-0`).
 Existing config entries fail setup; discovery and manual add abort. Using
-the integration with this model may disconnect the device from CT003.
+the integration with this model may disconnect the device from CT003 — the
+shared meter channel described in the section above is the mechanism.
 
 ## Debug logging
 
