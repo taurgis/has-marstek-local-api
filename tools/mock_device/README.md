@@ -363,13 +363,13 @@ the inverter ramp all need simulated seconds to converge:
 
 ```python
 sim = BatterySimulator(initial_soc=60)
-sim.set_house_load(1800)   # gross appliance load in watts
-sim.set_house_pv(0)        # no rooftop production
-sim.settle(60.0)           # advance a minute of simulation
+sim.set_house_load(1800)  # gross appliance load in watts
+sim.set_house_pv(0)  # no rooftop production
+sim.settle(60.0)  # advance a minute of simulation
 
-print(sim.actual_power)    # ~1800 W discharge (+ standby)
-print(sim.grid_power)      # near zero: the meter the loop is chasing
-print(sim.ongrid_power)    # the inverter port the API reports
+print(sim.actual_power)  # ~1800 W discharge (+ standby)
+print(sim.grid_power)  # near zero: the meter the loop is chasing
+print(sim.ongrid_power)  # the inverter port the API reports
 
-sim.set_house_load(None)   # hand the house back to the simulator
+sim.set_house_load(None)  # hand the house back to the simulator
 ```
