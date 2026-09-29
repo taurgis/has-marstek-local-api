@@ -293,6 +293,10 @@ rtc: Python.PythonPeripheral @ sysbus 0x40002800
 can1: CAN.STMCAN @ sysbus <0x40006400, +0x400>
     [0-3] -> nvic@[19-22]
 
+// BMS/inverter bus: frames go to can_peers.py over TCP (renode/CanBridge.cs).
+canbridge: CAN.MarstekCanBridge @ sysbus
+    port: 3457
+
 can2: CAN.STMCAN @ sysbus <0x40006800, +0x400>
     [0-3] -> nvic@[63-66]
     master: can1

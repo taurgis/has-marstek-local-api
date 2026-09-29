@@ -4,6 +4,8 @@ Renders the Renode platform/script templates, starts Renode headless, starts the
 FC41D modem emulator (``fc41d.py``) on the firmware's Wi-Fi UART and runs the
 machine. The firmware's Local API then answers on real UDP port 30000 of this
 host, so Home Assistant (or ``tools/query_device.py``) talks to it unmodified.
+``can_peers.py`` plays the BMS and inverter on the CAN bus and serves the grid
+meter reading that AstraMeter turns into CT003 replies (see README.md).
 
 The firmware blob is not in the repository; fetch it with
 ``tools/firmware/fetch_firmware.py`` (it lands in ``tools/firmware/blobs/``).
@@ -33,6 +35,7 @@ UART_PORT = 3456
 RESC = """\
 mach create "vnse3"
 include @{renode_dir}/I2CEeprom.cs
+include @{renode_dir}/CanBridge.cs
 machine LoadPlatformDescription @{repl}
 sysbus LoadBinary @{blob} 0x08004800
 cpu VectorTableOffset 0x08004800
@@ -42,6 +45,9 @@ logLevel 2
 {usarts}
 emulation CreateServerSocketTerminal {uart_port} "wifi" false
 connector Connect sysbus.wifi_uart wifi
+emulation CreateCANHub "canhub"
+connector Connect sysbus.can1 canhub
+connector Connect sysbus.canbridge canhub
 """
 
 
@@ -73,6 +79,10 @@ class Monitor:
                 break
             buf += data
         return re.sub(rb"\x1b\[[0-9;]*[a-zA-Z]", b"", buf).decode("latin1")
+
+    def close(self) -> None:
+        """Release the monitor; Renode serves one client at a time."""
+        self._sock.close()
 
     def run(self, command: str, wait: float = 1.5) -> str:
         self._sock.sendall(command.encode() + b"\n")
@@ -129,6 +139,8 @@ def main() -> int:
     parser.add_argument("--work", type=Path, default=Path("/tmp/vnse3"))
     parser.add_argument("--eeprom", type=Path, help="EEPROM image (default: WORK/eeprom.bin)")
     parser.add_argument("--monitor-port", type=int, default=41234)
+    parser.add_argument("--soc", type=float, default=50.0, help="Initial battery SoC")
+    parser.add_argument("--house-load", default="300,150,150", help="Per-phase load in W")
     args = parser.parse_args()
 
     if not args.blob.is_file():
@@ -149,6 +161,7 @@ def main() -> int:
         start_new_session=True,
     )
     modem: subprocess.Popen[bytes] | None = None
+    peers: subprocess.Popen[bytes] | None = None
     signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         mon = Monitor(args.monitor_port)
@@ -163,13 +176,22 @@ def main() -> int:
             modem.terminate()
             modem.wait()
             modem = _boot(mon, resc, fc41d_cmd, modem_log)
+        with (args.work / "can_peers.log").open("ab") as out:
+            peers = subprocess.Popen(
+                [sys.executable, str(HERE / "can_peers.py"), "--soc", str(args.soc),
+                 "--house-load", args.house_load],
+                stdout=out,
+                stderr=subprocess.STDOUT,
+            )  # fmt: skip
         print(f"Running. Local API on UDP {args.local_api_port}; modem log {modem_log}")
+        mon.close()
         renode.wait()
     except KeyboardInterrupt:
         pass
     finally:
-        if modem is not None:
-            modem.terminate()
+        for child in (peers, modem):
+            if child is not None:
+                child.terminate()
         if renode.poll() is None:
             os.killpg(renode.pid, signal.SIGTERM)
     return 0

@@ -20,9 +20,12 @@ while this emulator is the vendor's own implementation, including its quirks
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
+| CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457 | `renode/CanBridge.cs` |
+| BMS and inverter | energy-counted battery, inverter that follows the MCU's setpoint | `can_peers.py` |
+| CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
 
-Not modelled yet: the BMS and inverter on CAN, the CT meter and RS485. The firmware
-therefore reports SoC, power and energy as 0, but every Open API method answers.
+Not modelled: RS485, PV (the Venus E has none) and the cloud (HTTP/MQTT get `OK`
+and no data).
 
 ## Run it
 
@@ -45,7 +48,18 @@ therefore reports SoC, power and energy as 0, but every Open API method answers.
 
    A fresh EEPROM (`/tmp/vnse3/eeprom.bin`) gets its defaults on the first boot.
    `--local-api-port` (default 30000) is then forced on. The launcher reboots once
-   if needed. The modem log is `/tmp/vnse3/fc41d.log`.
+   if needed, then starts `can_peers.py` (`--soc`, `--house-load A,B,C` in W).
+   Logs land in `/tmp/vnse3/`: `fc41d.log`, `can_peers.log`, `renode.log`.
+
+   For the CT, run AstraMeter on the host network. It needs no Home Assistant:
+   it polls `can_peers.py` on `127.0.0.1:8099`, where the grid power is the house
+   load minus the inverter's output on phase A.
+
+   ```bash
+   docker run -d --name astrameter --network host \
+       -v "$PWD/tools/firmware_emulator/astrameter/config.ini:/app/config.ini:ro" \
+       ghcr.io/tomquist/astrameter:latest
+   ```
 
 4. Check it answers (from another host/container; it listens on the host's port 30000):
 
@@ -72,3 +86,39 @@ an STM32G4, which Renode has no platform for yet.
 - The Local API is connection 3: `AT+QIOPEN=3,"UDP SERVICE","<ip>",2025,<port>,1`.
 - EEPROM byte 0 marks an initialised store. The Local API enable flag is at 0x371
   and the port at 0x372 (uint16 LE).
+
+## CAN bus facts learned from the firmware
+
+Every frame is 29-bit extended. `can_peers.py` documents the payloads it sends.
+
+- BMS frames are `(PGN << 16) | 0xAA00 | src`. The MCU looks the PGN up in a
+  17-entry table (0x1801-0x1804, 0x1807, 0x1820-0x1823, 0x1830-0x1833, 0x1840,
+  0x1841, 0x1852, 0x1853) and copies the payload raw into one status struct.
+  `Bat.GetStatus` and the SoC in `ES.GetStatus` come straight from 0x1801/0x1802.
+  The MCU polls with `1801ffaa`.
+- Other devices use `page << 24 | src_type << 20 | 1 << 16 | dst_type << 12 |
+  addr << 8 | cmd`: MCU 0, inverter 4, types 2 and 3 not identified. Inverter
+  replies use cmd 0x10. Page 4 gives `ongrid_power`/`offgrid_power`, page 5 the
+  AC limits, and page 6 the lifetime grid energy.
+- The MCU drives the inverter with cmd 0x01, a signed 32-bit AC setpoint in W
+  (+ = discharge). It sends each new value three times, clamped to the BMS
+  current limits × voltage. After boot it writes its stored energy counters
+  back with cmd 0x16/0x17.
+- Auto mode first runs a CT phase test: about 20 s of ±800 W, discharging above
+  50 % SoC and charging below. The BMS permission bit for that direction must be
+  set. The detected phase is stored at EEPROM 0x369.
+
+## Firmware debug log
+
+The firmware logs to USART2 (`/tmp/vnse3/usart2.txt`) once enabled from the
+Renode monitor (`telnet 127.0.0.1 41234`, after the launcher prints "Running"):
+
+```
+sysbus WriteByte 0x20000132 1   # logging on
+sysbus WriteByte 0x2000012a 5   # all modules
+```
+
+That log shows the Venus E 3.0's own form of the HMG-50 shared-channel problem.
+An Open API request that arrives while a CT reply is being handled logs
+`Extract_udp_data ... ct failed to get the mutex lock!`. The request then gets
+`Parse error` (`-32700`, data `403`) with `"id": 0`.
