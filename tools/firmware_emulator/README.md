@@ -169,7 +169,8 @@ What the firmware does with the writes, from its own code:
 - **UPS**: `ES.SetMode` accepts `ups_cfg` from 147 on; `ES.GetMode` then reports
   `UPS`.
 - **DOD.SET** (147+, 30-88): the firmware stores the value and forwards it to the
-  inverter as cmd 0x0A (byte 0). `can_peers.py` moves its discharge floor and
+  inverter as cmd 0x0A, byte 0 = 100 - DoD (the minimum SoC; EEPROM 0x201).
+  `can_peers.py` moves its discharge floor and
   the 0x1802 DoD byte to match.
 - **Ble.Adv / Led.Ctrl** (1476+): answer `set_result`. Ble.Adv drives
   `AT+QBLEADVSTART`/`STOP`, which `fc41d.py` acknowledges.

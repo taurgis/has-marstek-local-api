@@ -127,7 +127,7 @@ class Inverter:
         self.ac_power = 0.0  # + = export (discharge)
         self.input_wh = 0.0
         self.output_wh = 0.0
-        self.dod = 0  # last DOD.SET the MCU forwarded (cmd 0x0A); 0 = keep the BMS's
+        self.dod = 0  # DoD from the MCU's last cmd 0x0A (DOD.SET); 0 = keep the BMS's
 
     def step(self, battery: Battery, dt: float, pv: float = 0.0) -> float:
         """Advance ``dt`` seconds; returns battery DC power (+ = charge)."""
@@ -168,11 +168,12 @@ class Inverter:
         cmd = can_id & 0xFF
         if cmd == 0x16 and len(data) == 8:
             self.input_wh, self.output_wh = (float(v) for v in struct.unpack("<II", data))
-        if cmd == 0x0A and data and 0 < data[0] <= 100:
-            # DOD.SET: the MCU forwards the new depth of discharge in byte 0
-            # (build 150: 0x802f9f8 -> 0x800a33c). The discharge floor and the
-            # BMS's 0x1802 DoD byte follow it.
-            self.dod = data[0]
+        if cmd == 0x0A and data and 0 < data[0] < 100:
+            # DOD.SET: the MCU stores 100 - DoD (the minimum SoC; 12 % for the
+            # default 88) and forwards it in byte 0 (build 150: 0x800af3c,
+            # 0x802f9f8 -> 0x800a33c). The discharge floor and the BMS's 0x1802
+            # DoD byte follow it.
+            self.dod = 100 - data[0]
         if cmd != 0x01 or len(data) < 4:
             return False
         (self.setpoint,) = struct.unpack_from("<i", data)
