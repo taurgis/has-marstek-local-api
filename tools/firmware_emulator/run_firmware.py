@@ -175,7 +175,11 @@ def main() -> int:
     parser.add_argument("--soc", type=float, default=50.0, help="Initial battery SoC")
     parser.add_argument("--house-load", default="300,150,150", help="Per-phase load in W")
     parser.add_argument("--pv", default="", help="PV channel power in W (Venus A/D), e.g. 400,350")
-    parser.add_argument("--ac-limits", default="800,2500", help="Inverter max discharge,charge W")
+    parser.add_argument(
+        "--ac-limits", help="Inverter max discharge,charge W (default per family, see can_peers)"
+    )
+    parser.add_argument("--capacity", type=int, help="Rated battery Wh (default per family)")
+    parser.add_argument("--packs", type=int, default=1, help="Battery modules on the BMS")
     args = parser.parse_args()
 
     if args.firmware:
@@ -213,14 +217,20 @@ def main() -> int:
             modem.terminate()
             modem.wait()
             modem = _boot(mon, resc, fc41d_cmd, modem_log)
+        # The catalog deviceType picks the peers' family ratings (Venus D:
+        # 2560 Wh packs, 2500 W); explicit --capacity / --ac-limits win.
+        peers_cmd = [
+            sys.executable, str(HERE / "can_peers.py"), "--soc", str(args.soc),
+            "--house-load", args.house_load, "--pv", args.pv,
+            "--family", args.firmware.partition(":")[0] if args.firmware else "",
+            "--packs", str(args.packs), "--pv-state", str(args.work / "pv_energy.json"),
+        ]  # fmt: skip
+        if args.ac_limits:
+            peers_cmd += ["--ac-limits", args.ac_limits]
+        if args.capacity:
+            peers_cmd += ["--capacity", str(args.capacity)]
         with (args.work / "can_peers.log").open("ab") as out:
-            peers = subprocess.Popen(
-                [sys.executable, str(HERE / "can_peers.py"), "--soc", str(args.soc),
-                 "--house-load", args.house_load, "--pv", args.pv,
-                 "--ac-limits", args.ac_limits],
-                stdout=out,
-                stderr=subprocess.STDOUT,
-            )  # fmt: skip
+            peers = subprocess.Popen(peers_cmd, stdout=out, stderr=subprocess.STDOUT)
         print(f"Running. Local API on UDP {args.local_api_port}; modem log {modem_log}")
         mon.close()
         renode.wait()
