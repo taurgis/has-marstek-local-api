@@ -786,6 +786,92 @@ services:
       fw-venus-d-1492:
         condition: service_healthy
 
+  # Venus C (HMG-50, STM32G4), Control 156, 2560 Wh pack: issue #82's meter channel
+  fw-venus-c-156:
+    <<: *firmware-emulator
+    container_name: marstek-fw-venus-c-156
+    hostname: fw-venus-c-156
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.66
+    volumes:
+      - fw_venus_c_156:/state
+    command: ["--firmware", "HMG-50:156", "--ble-mac", "02:e0:00:00:00:66", "--wifi-mac", "02:e1:00:00:00:66", "--soc", "60", "--capacity", "2560"]
+
+  fw-venus-c-156-ct:
+    <<: *firmware-ct
+    container_name: marstek-fw-venus-c-156-ct
+    network_mode: service:fw-venus-c-156
+    depends_on:
+      fw-venus-c-156:
+        condition: service_healthy
+
+  # Venus C, Control 153 (no EM server: EM.GetStatus is parse_state 425)
+  fw-venus-c-153:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-153
+    hostname: fw-venus-c-153
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.67
+    volumes:
+      - fw_venus_c_153:/state
+    command: ["--firmware", "HMG-50:153", "--ble-mac", "02:e0:00:00:00:67", "--wifi-mac", "02:e1:00:00:00:67", "--soc", "45", "--capacity", "2560"]
+
+  fw-venus-c-153-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-153-ct
+    network_mode: service:fw-venus-c-153
+    depends_on:
+      fw-venus-c-153:
+        condition: service_healthy
+
+  # Venus C, Control 155
+  fw-venus-c-155:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-155
+    hostname: fw-venus-c-155
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.68
+    volumes:
+      - fw_venus_c_155:/state
+    command: ["--firmware", "HMG-50:155", "--ble-mac", "02:e0:00:00:00:68", "--wifi-mac", "02:e1:00:00:00:68", "--soc", "50", "--capacity", "2560"]
+
+  fw-venus-c-155-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-155-ct
+    network_mode: service:fw-venus-c-155
+    depends_on:
+      fw-venus-c-155:
+        condition: service_healthy
+
+  # Venus E 2.0 (HMG-50 with a 5120 Wh pack), Control 156
+  fw-venus-e2-156:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-e2-156
+    hostname: fw-venus-e2-156
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.69
+    volumes:
+      - fw_venus_e2_156:/state
+    command: ["--firmware", "HMG-50:156", "--ble-mac", "02:e0:00:00:00:69", "--wifi-mac", "02:e1:00:00:00:69", "--soc", "65", "--capacity", "5120"]
+
+  fw-venus-e2-156-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-e2-156-ct
+    network_mode: service:fw-venus-e2-156
+    depends_on:
+      fw-venus-e2-156:
+        condition: service_healthy
+
 networks:
   marstek_net:
     driver: bridge
@@ -828,6 +914,14 @@ volumes:
     name: marstek-fw-venus-d-149
   fw_venus_d_1492:
     name: marstek-fw-venus-d-1492
+  fw_venus_c_156:
+    name: marstek-fw-venus-c-156
+  fw_venus_c_153:
+    name: marstek-fw-venus-c-153
+  fw_venus_c_155:
+    name: marstek-fw-venus-c-155
+  fw_venus_e2_156:
+    name: marstek-fw-venus-e2-156
 
 secrets:
   # Build-only: optional extra CA bundle for the Renode download (see above).
