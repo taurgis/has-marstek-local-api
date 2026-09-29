@@ -15,20 +15,21 @@ while this emulator is the vendor's own implementation, including its quirks
 | Part | Model | File |
 |------|-------|------|
 | MCU (Cortex-M4F, STM32F1/GD32F30x-style map) | Renode `stm32f103` base, M4F core | `renode/control.repl.in` |
-| Clock tree, flash controller, RTC | always-ready register stubs | `renode/rcu.py`, `fmc.py`, `rtc.py` |
+| Clock tree, flash controller | always-ready register stubs | `renode/rcu.py`, `fmc.py` |
+| RTC (STM32F4-style BCD calendar) | reads the host's local time; firmware writes are ignored | `renode/rtc.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
 | CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457; inbound frames paced 1 per ms of virtual time | `renode/CanBridge.cs` |
-| BMS and inverter | energy-counted battery, inverter that follows the MCU's setpoint | `can_peers.py` |
-| PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, 0.01 kWh yield counters, MCU on/off | `can_peers.py --pv --pv-energy` |
+| BMS and inverter | energy-counted battery (`--packs`, `--capacity`), inverter that follows the MCU's setpoint within the family's AC limits | `can_peers.py --family` |
+| PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, day/month/year 0.01 kWh yield counters (persisted next to the EEPROM), MCU on/off | `can_peers.py --pv`, `--pv-energy`, `--pv-state` |
 | EPS socket (Venus A) | constant off-grid load served from the battery | `can_peers.py --offgrid-load` |
 | HMG-50 board (Venus C / E 2.0): STM32G474 map, USART/LPUART FIFO mode, RCC/PWR/FLASH/RTC/HRTIM/ADC/CORDIC stubs, FDCAN | Renode STM32 models + G4 stubs | `renode/hmg50.repl.in`, `STM32G4_USART.cs`, `g4*.py` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
 
-Not modelled: RS485, the inverter status/error/grid pages (1-3, 7) and the cloud
-(HTTP/MQTT get `OK` and no data).
+Not modelled: RS485 and the cloud (HTTP/MQTT get `OK` and no data). Without the
+cloud, the RTC is the only clock source; see [Deviations](#deviations-from-a-real-device).
 
 ## Images
 
@@ -86,7 +87,7 @@ BMS rated energy in CAN 0x355: 1-3000 Wh is HMG-25 (`VenusC`), more is HMG-50
    python3 tools/firmware_emulator/run_firmware.py \
        --renode /opt/renode/renode --ip 172.28.0.1 \
        --firmware VNSD-0:150 --work /tmp/marstek-fw/vnsd-150 \
-       --pv 400,350,300,250 --ac-limits 2200,2500 --ble-mac 02:ee:00:00:0d:02
+       --pv 400,350,300,250 --ble-mac 02:ee:00:00:0d:02
    ```
 
    `--firmware DEVICE:VERSION` picks an image from the catalog (default: the
@@ -94,11 +95,12 @@ BMS rated energy in CAN 0x355: 1-3000 Wh is HMG-25 (`VenusC`), more is HMG-50
    (`WORK/eeprom.bin`) gets its defaults on the first boot. `--local-api-port`
    (default 30000) is then forced on. The launcher reboots once if needed, then
    starts `can_peers.py` with `--soc`, `--house-load A,B,C`, `--pv` (W per
-   channel, Venus A/D), `--pv-energy` (initial MPPT yield in kWh), `--offgrid-load`
-   (EPS socket W, Venus A), `--capacity` (pack Wh) and `--ac-limits
-   DISCHARGE,CHARGE` (W). `--capacity` and `--ac-limits` default per catalog
-   device type: VNSA-0 2080 Wh and 1500,1500; everything else 5120 Wh and
-   800,2500 (Venus E 3.0). Logs land in
+   channel, Venus A/D), `--pv-energy` (initial MPPT year yield in kWh),
+   `--offgrid-load` (EPS socket W, Venus A), `--packs N`, `--capacity WH` and
+   `--ac-limits DISCHARGE,CHARGE` (W). The last three default per family, taken
+   from the catalog device type: VNSA-0 2080 Wh and 1500/1500 W; VNSD-0 2560 Wh
+   per pack and 2500/2500 W; everything else 5120 Wh and 800/2500 W (Venus E
+   3.0). Logs land in
    `WORK` (default `/tmp/marstek-fw/`): `fc41d.log`, `can_peers.log`,
    `renode.log`. Keep one work directory per image: the EEPROM layout is the
    firmware's own.
@@ -171,7 +173,7 @@ docker build -f tools/firmware_emulator/Dockerfile -t marstek-fw-emulator .
 docker run -d --name venus-d --network devcontainer_marstek_net --ip 172.28.0.52 \
     -v venus-d-state:/state marstek-fw-emulator \
     --firmware VNSD-0:150 --ble-mac 02:e0:00:00:00:52 --wifi-mac 02:e1:00:00:00:52 \
-    --pv 400,350,300,250 --ac-limits 2200,2500
+    --pv 400,350,300,250
 ```
 
 - `--ip auto` reports the address the container routes to `--gateway` from, so
@@ -199,7 +201,7 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 |---------|----|----------|---------|
 | `fw-venus-e-150` | 172.28.0.50 | VNSE3-0 150 | default |
 | `fw-venus-a-150` | 172.28.0.51 | VNSA-0 150, PV 420/360 W | default |
-| `fw-venus-d-150` | 172.28.0.52 | VNSD-0 150, PV 400/350/300/250 W, AC 2200/2500 W | default |
+| `fw-venus-d-150` | 172.28.0.52 | VNSD-0 150, PV 400/350/300/250 W | default |
 | `fw-venus-e-144`, `-147`, `-1476`, `-148`, `-149` | .53-.57 | VNSE3-0 | `firmware-all` |
 | `fw-venus-a-148`, `-1487`, `-149`, `-1508`, `-1509` | .58-.62 | VNSA-0, PV 420/360 W | `firmware-all` |
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
@@ -266,13 +268,21 @@ services below run them.
 - **Parse errors under load.** On a busy host the firmware answers a share of
   intact requests with `Parse error` (`data` 402: no payload buffer, 403:
   cJSON rejected the bytes it read), always with `id` 0. It retries fine, but
-  config flows can need a second attempt. Treat a burst of these as an
-  emulator artefact, not firmware behaviour, until a real device shows it.
-- **MPPT counters restart.** `capd`/`capm` count from the emulator's start,
-  not from midnight or the first of the month, and the lifetime counter
-  (`--pv-energy`) is not persisted across restarts.
+  config flows can need a second attempt, and long requests (a manual schedule)
+  can fail every retry. Treat a burst of these as an emulator artefact, not
+  firmware behaviour, until a real device shows it.
+- **Clock.** A real unit gets its time from the cloud. The emulated RTC always
+  reads the host's local time (UTC in the container unless `TZ` is set), so
+  manual schedules fire on the host's wall clock. At boot the firmware restores
+  its last saved time (or a 2019 default) and writes it to the RTC; that write
+  is ignored, as the cloud would correct it.
 - **Timing.** `--mips 40` (profile services) is a slower MCU than the GD32F30x.
   Replies can take a second or more under load. Home Assistant tolerates that.
+  On an overloaded host (load well above the core count), the emulated MCU falls
+  behind real time and the CT reply window grows. Long requests such as a
+  Manual `ES.SetMode` (about 190 bytes) then hit the `Parse error` 403 path far
+  more often than short polls do, and can fail all three of Home Assistant's
+  attempts.
 
 ## FC41D facts learned from the firmware
 
@@ -323,22 +333,27 @@ The MCU itself sends 0x305 and 0x300.
 - Other devices use `page << 24 | src_type << 20 | 1 << 16 | dst_type << 12 |
   addr << 8 | cmd`: MCU 0, PV MPPT 2, inverter 4, type 3 not identified.
   Inverter replies use cmd 0x10, MPPT replies cmd 0x03 (pages 2-4: PV1-PV4 volt,
-  current and power in 0.1 units). Venus E images parse MPPT frames too. Page 4 gives `ongrid_power`/`offgrid_power`, page 5 the
-  AC limits, and page 6 the lifetime grid energy.
+  current and power in 0.1 units). Venus E images parse MPPT frames too.
+  Inverter page 4 gives `ongrid_power`/`offgrid_power`, page 5 the
+  temperatures and AC limits, and page 6 the lifetime grid energy.
 - MPPT pages 1-7 land in one 0x38-byte struct (debug names in brackets): 1
   state/err/war/temp, 2-4 the channels, 5 `capd` u32 + `pve`/`pvs` u8 + `pow` u16,
   6 `capm` u32 + `capy` u32, 7 MPPT-side battery readings. The yield counters
   are 0.01 kWh. `ES.GetStatus` reports `capy` unscaled as `total_pv_energy` on
-  VNSA-0 1487/149/150/1508/1509; 148 hard-codes `pv_power` and
-  `total_pv_energy` to 0. `PV.GetStatus` reports PV1 power raw (0.1 W) and every
-  other channel field ×0.1, truncated, on all six VNSA-0 builds.
+  VNSA-0 1487/149/150/1508/1509 and VNSD-0 149/1492/150; Venus A 148 hard-codes
+  `pv_power` and `total_pv_energy` to 0. `PV.GetStatus` reports PV1 power raw
+  (0.1 W) and every other channel field ×0.1, truncated, on all six VNSA-0 builds.
 - The MCU switches the MPPT with cmd 0x01 to type 2 addr 1 (byte 4: 1 on,
   0 off). It sends off only after an hour with no channel above 14 V and the
   inverter idle.
-- Inverter page 1 is state/flags/warnings, 2 error words, 3 grid volt and
-  frequency, 7 two extra energy counters. None reaches the Open API, except
-  that state 4 with `ongrid_power` 0 makes the firmware report off-grid power.
-  `ES.GetStatus` hard-codes `total_load_energy` to 0 on every VNSA-0 build.
+- Inverter page 1 is state/flags/warnings (byte 3: backup output enabled), 2
+  error words, 3 grid volt and frequency, 7 two extra energy counters. The
+  Venus D reads pages 1 and 3; `can_peers.py --family VNSD-0` sends them. None
+  reaches the Open API, except that state 4 with `ongrid_power` 0 makes the
+  firmware report off-grid power. `ES.GetStatus` hard-codes `total_load_energy`
+  to 0 on every VNSA-0 build.
+- The MCU switches the backup (EPS) output with cmd 0x02 (1 byte, 1 = on);
+  `can_peers.py --family VNSD-0` echoes it in page 1.
 - The MCU drives the inverter with cmd 0x01, a signed 32-bit AC setpoint in W
   (+ = discharge). It sends each new value three times, clamped to the BMS
   current limits × voltage. After boot it writes its stored energy counters
@@ -346,6 +361,26 @@ The MCU itself sends 0x305 and 0x300.
 - Auto mode first runs a CT phase test: about 20 s of ±800 W, discharging above
   50 % SoC and charging below. The BMS permission bit for that direction must be
   set. The detected phase is stored at EEPROM 0x369.
+
+## Venus D facts learned from the firmware
+
+Checked by disassembling the VNSD-0 147, 149, 1492 and 150 images and on the
+emulator with Home Assistant.
+
+| | 147 | 149, 1492 | 150 |
+|---|---|---|---|
+| `ES.GetStatus` `pv_power`, `total_pv_energy` | always 0 | MPPT sum; year yield in 10 Wh | same as 149 |
+| `ES.SetMode` UPS, `DOD.SET`, `BLE.Adv`, `Led.Ctrl` | `Method not found` | present | present |
+
+- `bat_cap` is the BMS 0x1802 capacity (2560 Wh per pack). `total_pv_energy` is
+  the MPPT year counter (`PV_Year_Cap_10Wh` in the firmware's debug strings),
+  reported raw, so 1 = 10 Wh. `total_load_energy` is always 0.
+- `PV.GetStatus` is the same on all four: `pv1_power` in 0.1 W, `pv2`-`pv4`
+  in W, volts and amps rounded from 0.1 units, `pvN_state` = voltage above 14 V.
+- On 150, a fresh EEPROM starts in Manual mode with DOD 88 and the AC limits 800 W
+  discharge / 2500 W charge. The socket setting (`Set.Ver`, via the app) accepts
+  800, 2200 and 2500 W; the inverter's own limit frame caps it further.
+- `ES.GetMode` fills its CT fields (`ct_state`, `a_power`...) only in AI mode.
 
 ## Firmware debug log
 

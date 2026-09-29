@@ -33,14 +33,26 @@ The layout comes from the firmware's CAN dispatcher (build 150):
   and PV3 V/I, then PV3 P and PV4 V/I/P. ``PV.GetStatus`` drops a channel below
   10 W and reports ``pv*_state`` from volt > 14 V. Pages 5-6 carry the MPPT's
   own yield counters in 0.01 kWh (u32 ``capd`` day at page 5 bytes 0-3, u32
-  ``capm`` month and u32 ``capy`` at page 6). ``ES.GetStatus`` reports ``capy``
-  unscaled as ``total_pv_energy`` on every Venus A build except 148, which
-  hard-codes 0. The MCU switches the MPPT with ``cmd 0x01`` to type 2, addr 1
+  ``capm`` month and u32 ``capy`` year at page 6). ``ES.GetStatus`` reports
+  ``capy`` unscaled as ``total_pv_energy`` on VNSA-0 / VNSD-0 149 and later
+  (and Venus A 1487); Venus A 148 hard-codes 0. ``--pv-state FILE`` keeps the
+  counters across restarts. The MCU switches the MPPT with ``cmd 0x01`` to type 2, addr 1
   (byte 4: 1 on, 0 off); it sends off only after an hour without PV voltage.
 * The MCU commands the inverter with ``cmd 0x01`` to type 4: a signed 32-bit AC
   setpoint in W (+ = discharge). The inverter here ramps towards it and the
   battery follows. ``cmd 0x16`` restores the lifetime grid energy the MCU keeps
   in EEPROM, in the page 6 layout.
+* ``--family VNSD-0`` (Venus D) adds what that inverter reports besides power:
+  page 1 (``inv_state``, ``buz_state``, ``chrg_flag``, ``back_func``, u32 warning),
+  page 3 (u16 grid volt 0.1 V, grid frequency 0.1 Hz, off-grid volt 0.1 V,
+  ``grid_permit``) and the page 5 temperatures (s16 ambient and heat sink,
+  0.1 C). The firmware only drives LEDs, telemetry and its idle-sleep timer
+  from them, but a real unit on the grid never reports 0 V / 0 Hz. ``cmd 0x02``
+  (1 byte) switches the backup (EPS) function; the MCU resends it until page 1
+  ``back_func`` matches, so the inverter echoes it.
+* ``--family`` also picks the ratings (see ``FAMILIES``): Venus D 2560 Wh per
+  pack (``--packs`` fills the 0x1802 count and online mask) and 2500 W both
+  ways, the ceiling ``Set.Ver`` accepts on VNSD-0; Venus A 2080 Wh and 1500 W.
 
 HMG-50 (Venus C / Venus E 2.0, ``--protocol pylontech``) runs its own inverter
 stage and talks to the pack over 11-bit standard frames in the Pylontech /
@@ -85,13 +97,24 @@ EFFICIENCY = 0.95
 MPPT = 2
 MPPT_ADDR = 1
 PV_VOLT = 40.0
+# Per-family ratings and extras, keyed by the catalog ``deviceType``. Families
+# not listed keep the Venus E 3.0 defaults (5120 Wh, 800,2500 W, power pages only).
+# Each entry is ``(Wh per pack, "max discharge,max charge" W, grid pages)``.
+DEFAULT_FAMILY = (5120, "800,2500", False)
+FAMILIES: dict[str, tuple[int, str, bool]] = {
+    # Venus A: 2.08 kWh pack, 1500 W AC both ways.
+    "VNSA-0": (2080, "1500,1500", False),
+    # Venus D: 2.56 kWh LFP packs, 2500 W AC both ways (Set.Ver 2500).
+    "VNSD-0": (2560, "2500,2500", True),
+}
 
 
 class Battery:
-    """Single pack, energy-counted SoC."""
+    """Energy-counted SoC; ``packs`` modules reported as one aggregate BMS."""
 
-    def __init__(self, capacity_wh: int, soc: float) -> None:
+    def __init__(self, capacity_wh: int, soc: float, packs: int = 1) -> None:
         self.capacity_wh = capacity_wh
+        self.packs = packs
         self.energy_wh = capacity_wh * soc / 100
         self.temp_c = 25.0
         self.dod = 88
@@ -106,7 +129,7 @@ class Battery:
 
     def frames(self, dc_power: float) -> list[tuple[int, bytes]]:
         curr = dc_power / self.volt  # + = charge
-        limit_a = 50
+        limit_a = 50 * self.packs
 
         def bms(pgn: int, payload: bytes) -> tuple[int, bytes]:
             return (pgn << 16) | 0xAA00 | BMS_SRC, payload
@@ -122,7 +145,12 @@ class Battery:
                     round(self.soc * 10),
                 ),
             ),
-            bms(0x1802, struct.pack("<HBHBBB", self.capacity_wh, 1, 1, 0, self.dod, 0)),
+            bms(
+                0x1802,
+                struct.pack(
+                    "<HBHBBB", self.capacity_wh, self.packs, (1 << self.packs) - 1, 0, self.dod, 0
+                ),
+            ),
             bms(0x1803, struct.pack("<HHHBB", 576, limit_a * 10, limit_a * 10, 0b11, 0)),
             bms(0x1804, bytes(8)),
         ]
@@ -156,9 +184,13 @@ class PylontechBattery(Battery):
 class Inverter:
     """AC side: follows the MCU's setpoint and counts grid energy."""
 
-    def __init__(self, max_discharge: int, max_charge: int, offgrid_load: float = 0.0) -> None:
+    def __init__(
+        self, max_discharge: int, max_charge: int, offgrid_load: float = 0.0, grid: bool = False
+    ) -> None:
         self.max_discharge = max_discharge
         self.max_charge = max_charge
+        self.grid = grid  # also send pages 1 and 3 and the page 5 temperatures
+        self.back_func = 0  # backup (EPS) function, as commanded by cmd 0x02
         self.offgrid_load = offgrid_load  # EPS socket load, served from the battery
         self.offgrid_power = 0.0
         self.setpoint = 0
@@ -194,11 +226,17 @@ class Inverter:
         def page(n: int, payload: bytes) -> tuple[int, bytes]:
             return (n << 24) | (INVERTER << 20) | (1 << 16) | (1 << 8) | 0x10, payload
 
-        return [
+        temps = (300, 350) if self.grid else (0, 0)  # ambient, heat sink (0.1 C)
+        out = [
             page(4, struct.pack("<hHhH", round(self.ac_power), round(self.offgrid_power), 0, 0)),
-            page(5, struct.pack("<hhhh", 0, 0, self.max_discharge, -self.max_charge)),
+            page(5, struct.pack("<hhhh", *temps, self.max_discharge, -self.max_charge)),
             page(6, struct.pack("<II", round(self.input_wh), round(self.output_wh))),
         ]
+        if self.grid:
+            # On grid, 230.0 V / 50.0 Hz, no EPS output, grid tie permitted.
+            out.append(page(1, struct.pack("<BBBBI", 0, 0, 0, self.back_func, 0)))
+            out.append(page(3, struct.pack("<HHHH", 2300, 500, 0, 1)))
+        return out
 
     def on_frame(self, can_id: int, data: bytes) -> bool:
         """Apply an MCU command; True when it was the power setpoint."""
@@ -207,26 +245,79 @@ class Inverter:
         cmd = can_id & 0xFF
         if cmd == 0x16 and len(data) == 8:
             self.input_wh, self.output_wh = (float(v) for v in struct.unpack("<II", data))
+        if cmd == 0x02 and data:
+            self.back_func = 1 if data[0] else 0
         if cmd != 0x01 or len(data) < 4:
             return False
         (self.setpoint,) = struct.unpack_from("<i", data)
         return True
 
 
-class Mppt:
-    """PV charger: on/off state from the MCU and 0.01 kWh yield counters."""
+class PvEnergy:
+    """The MPPT's own day / month / year PV energy counters, in Wh."""
 
-    def __init__(self, total_kwh: float = 0.0) -> None:
+    def __init__(self, path: str | None, year_kwh: float = 0.0) -> None:
+        self.path = path
+        self.period = self._period()
+        self.day = self.month = 0.0
+        self.year = year_kwh * 1000
+        self._saved = 0.0
+        if path:
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    saved = json.load(fh)
+                if saved.get("period") == list(self.period):
+                    self.day, self.month, self.year = saved["day"], saved["month"], saved["year"]
+                elif saved.get("period", [None])[0] == self.period[0]:
+                    self.year = saved["year"]
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+
+    @staticmethod
+    def _period() -> tuple[int, int, int]:
+        now = time.localtime()
+        return now.tm_year, now.tm_mon, now.tm_mday
+
+    def add(self, watts: float, dt: float) -> None:
+        period = self._period()
+        if period[0] != self.period[0]:
+            self.year = 0.0
+        if period[:2] != self.period[:2]:
+            self.month = 0.0
+        if period != self.period:
+            self.day = 0.0
+        self.period = period
+        wh = watts * dt / 3600
+        self.day += wh
+        self.month += wh
+        self.year += wh
+        if self.path and self.year - self._saved >= 10:
+            self.save()
+
+    def save(self) -> None:
+        if not self.path:
+            return
+        state = {"period": list(self.period), "day": self.day, "month": self.month}
+        state["year"] = self.year
+        try:
+            with open(self.path, "w", encoding="utf-8") as fh:
+                json.dump(state, fh)
+            self._saved = self.year
+        except OSError:
+            pass
+
+
+class Mppt:
+    """PV charger: on/off state from the MCU and its 0.01 kWh yield counters."""
+
+    def __init__(self, energy: PvEnergy) -> None:
         self.on = True
-        self.day_wh = 0.0
-        self.total_wh = total_kwh * 1000
+        self.energy = energy
 
     def harvest(self, channels: list[float], dt: float) -> list[float]:
         """Channel power actually delivered for ``dt`` seconds, counted as yield."""
         out = channels if self.on else [0.0] * len(channels)
-        wh = sum(out) * dt / 3600
-        self.day_wh += wh
-        self.total_wh += wh
+        self.energy.add(sum(out), dt)
         return out
 
     def on_frame(self, can_id: int, data: bytes) -> bool:
@@ -244,12 +335,12 @@ class Mppt:
         def page(n: int, payload: bytes) -> tuple[int, bytes]:
             return (n << 24) | (MPPT << 20) | (1 << 16) | (MPPT_ADDR << 8) | 0x03, payload
 
-        # capd/capm/capy in 0.01 kWh; month and year counters start with the day.
-        day, total = round(self.day_wh / 10), round(self.total_wh / 10)
+        e = self.energy
+        day, month, year = (int(v // 10) for v in (e.day, e.month, e.year))  # 0.01 kWh
         return [
             *pv_frames(channels),
             page(5, struct.pack("<IBBH", day, 0, 0, 0)),
-            page(6, struct.pack("<II", day, total)),
+            page(6, struct.pack("<II", month, year)),
         ]
 
 
@@ -291,7 +382,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=3457, help="CanBridge TCP port")
     parser.add_argument("--soc", type=float, default=50.0)
-    parser.add_argument("--capacity", type=int, default=5120, help="Rated energy in Wh")
+    parser.add_argument(
+        "--family", default="", help="Catalog deviceType (e.g. VNSD-0) for ratings and extras"
+    )
+    parser.add_argument(
+        "--capacity", type=int, help="Rated energy in Wh (default per family and --packs)"
+    )
+    parser.add_argument("--packs", type=int, default=1, help="Battery modules (1-8)")
     parser.add_argument("--meter-port", type=int, default=8099, help="HTTP port for AstraMeter")
     parser.add_argument("--meter-bind", default="127.0.0.1", help="Address the meter HTTP binds")
     parser.add_argument(
@@ -304,12 +401,13 @@ def main() -> int:
         "--house-load", default="300,150,150", help="Per-phase house load in W (A,B,C)"
     )
     parser.add_argument(
-        "--ac-limits", default="800,2500", help="Max AC discharge,charge in W (Venus E 3.0)"
+        "--ac-limits", help="Max AC discharge,charge in W (default per family, E 3.0 800,2500)"
     )
     parser.add_argument("--pv", default="", help="PV channel power in W, e.g. 400,350 (Venus A/D)")
     parser.add_argument(
-        "--pv-energy", type=float, default=0.0, help="Initial MPPT yield in kWh (total_pv_energy)"
+        "--pv-energy", type=float, default=0.0, help="Initial MPPT year yield in kWh"
     )
+    parser.add_argument("--pv-state", help="JSON file that keeps the MPPT energy counters")
     parser.add_argument(
         "--offgrid-load", type=float, default=0.0, help="EPS socket load in W (Venus A)"
     )
@@ -317,10 +415,15 @@ def main() -> int:
     args = parser.parse_args()
 
     pylontech = args.protocol == "pylontech"
-    battery = (PylontechBattery if pylontech else Battery)(args.capacity, args.soc)
-    max_discharge, max_charge = (int(v) for v in args.ac_limits.split(","))
-    inverter = Inverter(max_discharge, max_charge, args.offgrid_load)
-    mppt = Mppt(args.pv_energy)
+    pack_wh, default_limits, grid = FAMILIES.get(args.family, DEFAULT_FAMILY)
+    if not 1 <= args.packs <= 8:
+        parser.error("--packs takes 1-8 (the firmware caps the 0x1802 count at 8)")
+    capacity = args.capacity or pack_wh * args.packs
+    battery = (PylontechBattery if pylontech else Battery)(capacity, args.soc, args.packs)
+    ac_limits = args.ac_limits or default_limits
+    max_discharge, max_charge = (int(v) for v in ac_limits.split(","))
+    inverter = Inverter(max_discharge, max_charge, args.offgrid_load, grid=grid)
+    mppt = Mppt(PvEnergy(args.pv_state, args.pv_energy))
     pv = [float(v) for v in args.pv.split(",") if v]
     if len(pv) > 4:
         parser.error("--pv takes at most four channels")
