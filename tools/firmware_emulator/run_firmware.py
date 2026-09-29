@@ -41,6 +41,15 @@ REPO = HERE.parent.parent
 DEFAULT_BLOB = REPO / "tools/firmware/blobs/VNSEE3-0_app_0150_0804_151249.bin"
 CATALOG = REPO / "tools/firmware/catalog.json"
 UART_PORT = 3456
+# Pack and inverter figures per catalog device type, used when --capacity or
+# --ac-limits is not given. The firmware reports the BMS rated energy as bat_cap
+# and clamps its Auto loop to the inverter's AC limits. Venus A: 2080 Wh pack
+# (bat_cap in the #5/#11 captures), 1500 W both ways (ES.SetMode rejects Manual
+# power beyond +/-1500 in every VNSA-0 build).
+FAMILY_DEFAULTS: dict[str, tuple[int, str]] = {
+    "VNSA-0": (2080, "1500,1500"),
+}
+DEFAULT_FAMILY = (5120, "800,2500")  # Venus E 3.0
 CT_PORT = 12345  # CT003 meter protocol (AstraMeter listens here)
 CAN_PORT = 3457
 METER_PORT = 8099
@@ -159,6 +168,13 @@ def _catalog_blob(spec: str) -> Path:
         if entry["deviceType"] == device and str(entry["version"]) == version:
             return CATALOG.parent / "blobs" / entry["filename"]
     raise SystemExit(f"{spec} is not in {CATALOG}")
+
+
+def _device_type(args: argparse.Namespace) -> str:
+    """Catalog device type of the image, from --firmware or the blob filename."""
+    if args.firmware:
+        return str(args.firmware.partition(":")[0])
+    return str(args.blob.name.split("_", 1)[0])
 
 
 def _board_for(args: argparse.Namespace) -> str:
@@ -312,13 +328,19 @@ def main() -> int:
     parser.add_argument(
         "--bssid", help="AP BSSID the modem reports (default: --wifi-mac, which it becomes)"
     )
-    parser.add_argument(
-        "--capacity", type=int, help="Rated pack energy in Wh (HMG-50: <=3000 VenusC, else VenusE)"
-    )
     parser.add_argument("--soc", type=float, default=50.0, help="Initial battery SoC")
     parser.add_argument("--house-load", default="300,150,150", help="Per-phase load in W")
     parser.add_argument("--pv", default="", help="PV channel power in W (Venus A/D), e.g. 400,350")
-    parser.add_argument("--ac-limits", default="800,2500", help="Inverter max discharge,charge W")
+    parser.add_argument(
+        "--ac-limits", help="Inverter max discharge,charge W (default per family, E 3.0 800,2500)"
+    )
+    parser.add_argument(
+        "--capacity",
+        type=int,
+        help="Pack Wh (default per family, E 3.0 5120; HMG-50 reports VenusC at <=3000)",
+    )
+    parser.add_argument("--pv-energy", type=float, default=0.0, help="Initial MPPT yield in kWh")
+    parser.add_argument("--offgrid-load", type=float, default=0.0, help="EPS socket W (Venus A)")
     parser.add_argument(
         "--quantum",
         type=float,
@@ -342,6 +364,9 @@ def main() -> int:
         args.ip = _own_ip(args.gateway)
     if args.firmware:
         args.blob = _catalog_blob(args.firmware)
+    capacity, ac_limits = FAMILY_DEFAULTS.get(_device_type(args), DEFAULT_FAMILY)
+    args.capacity = args.capacity or capacity
+    args.ac_limits = args.ac_limits or ac_limits
     if not args.blob.is_file():
         parser.error(f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)")
     board = BOARDS[_board_for(args)]
@@ -364,8 +389,8 @@ def main() -> int:
         "--ac-limits", args.ac_limits, "--meter-port", str(args.meter_port),
         "--meter-bind", args.meter_bind, "--protocol", board.protocol,
     ]  # fmt: skip
-    if args.capacity:
-        peers_cmd += ["--capacity", str(args.capacity)]
+    peers_cmd += ["--capacity", str(args.capacity), "--pv-energy", str(args.pv_energy)]
+    peers_cmd += ["--offgrid-load", str(args.offgrid_load)]
     modem_log = args.work / "fc41d.log"
 
     renode = subprocess.Popen(

@@ -74,6 +74,10 @@ class FC41D:
     writer: asyncio.StreamWriter | None = None
     services: dict[int, UdpService] = field(default_factory=dict)
     pending_payload: tuple[int, object] | None = None  # (length, handler)
+    # The MCU's BLE task (build 150: 0x8006a1c) re-issues AT+QBLEADVSTOP/START
+    # until AT+QBLESTAT reports the state it asked for, and Ble.Adv only answers
+    # once it does. A fixed "ADVERTISING" left every disable request unanswered.
+    ble_advertising: bool = True
 
     # ---- output -------------------------------------------------------
     def send(self, data: bytes) -> None:
@@ -179,7 +183,11 @@ class FC41D:
         elif up == "AT+QBLEADDR?":
             self.reply(f"+QBLEADDR:{self.config.ble_mac}", "OK")
         elif up == "AT+QBLESTAT":
-            self.reply("+QBLESTAT:ADVERTISING", "OK")
+            state = "ADVERTISING" if self.ble_advertising else "NOADVERTISING"
+            self.reply(f"+QBLESTAT:{state}", "OK")
+        elif up in ("AT+QBLEADVSTART", "AT+QBLEADVSTOP"):
+            self.ble_advertising = up == "AT+QBLEADVSTART"
+            self.reply("OK")
         elif up.startswith("AT+QIOPEN="):
             self._qiopen(cmd)
         elif up.startswith("AT+QISEND="):
