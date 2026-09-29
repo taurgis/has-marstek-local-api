@@ -255,6 +255,11 @@ changes what the battery does:
   server's id is hard-coded in a string (`+QIOPEN: 3,0`); the meter socket's id
   is computed at runtime, so "both sit on one channel" rests on HMG-50 having
   exactly one `"recv",<id>` handler, not on reading the meter's id directly.
+  Update: running 155/156 in the Renode emulator shows the id at runtime. The
+  meter socket is connection 0 (`AT+QIOPEN=0,"UDP SERVICE",…`). Under Local API
+  polling, the CT was lost after the meter socket was retargeted to the
+  poller's IP (see `tools/firmware_emulator/README.md`, "HMG-50 and issue #82").
+  That result comes from an emulator, not a capture from a real device.
 - The HTTP meters use a separate AT service, not a separate link. Everything
   still serialises on the module's single main UART, so an HTTP meter reduces
   contention on the receive channel without removing it from the path.

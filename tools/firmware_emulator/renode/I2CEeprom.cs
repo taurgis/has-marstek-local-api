@@ -1,7 +1,8 @@
 // 24Cxx-style I2C EEPROM backed by a file, for the VNSE3-0 config store.
 // Two-byte word address (24C64/24C256 style); size set in the .repl.
-// localApiPort > 0 keeps the Local API enabled (0x371) on that port (0x372, LE)
-// once the firmware has initialised the store (byte 0 no longer 0xFF).
+// localApiPort > 0 keeps the Local API enabled (VNSE3-0: 0x371) on that port
+// (VNSE3-0: 0x372, LE) once the firmware has initialised the store (byte 0 no
+// longer 0xFF). HMG-50 keeps the same pair at 0x37C/0x37D.
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -13,8 +14,11 @@ namespace Antmicro.Renode.Peripherals.I2C
 {
     public class MarstekI2CEeprom : II2CPeripheral
     {
-        public MarstekI2CEeprom(int size = 0x8000, int addressBytes = 2, string backingFile = "", int localApiPort = 0)
+        public MarstekI2CEeprom(int size = 0x8000, int addressBytes = 2, string backingFile = "", int localApiPort = 0,
+            int localApiEnableAddress = 0x371, int localApiPortAddress = 0x372)
         {
+            this.localApiEnableAddress = localApiEnableAddress;
+            this.localApiPortAddress = localApiPortAddress;
             this.size = size;
             this.addressBytes = addressBytes;
             this.backingFile = backingFile;
@@ -88,17 +92,17 @@ namespace Antmicro.Renode.Peripherals.I2C
 
         private void ForceLocalApi()
         {
-            if(localApiPort <= 0 || size <= LocalApiPortAddress + 1 || memory[0] == 0xFF)
+            if(localApiPort <= 0 || size <= localApiPortAddress + 1 || memory[0] == 0xFF)
             {
                 return;
             }
-            memory[LocalApiEnableAddress] = 1;
-            memory[LocalApiPortAddress] = (byte)(localApiPort & 0xFF);
-            memory[LocalApiPortAddress + 1] = (byte)(localApiPort >> 8);
+            memory[localApiEnableAddress] = 1;
+            memory[localApiPortAddress] = (byte)(localApiPort & 0xFF);
+            memory[localApiPortAddress + 1] = (byte)(localApiPort >> 8);
         }
 
-        private const int LocalApiEnableAddress = 0x371;
-        private const int LocalApiPortAddress = 0x372;
+        private readonly int localApiEnableAddress;
+        private readonly int localApiPortAddress;
         private readonly int localApiPort;
         private readonly int size;
         private readonly int addressBytes;

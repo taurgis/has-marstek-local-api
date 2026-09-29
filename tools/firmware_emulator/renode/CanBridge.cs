@@ -3,7 +3,9 @@
 //
 // Wire format, one frame per line in both directions:
 //   "<id hex> <data hex>\n"   e.g. "1801aa01 f4130000fa00e803"
-// Every frame is a 29-bit extended frame; that is all this bus carries.
+// An id written with eight hex digits is a 29-bit extended frame (the Control
+// firmware's bus); one with three or fewer is an 11-bit standard frame (the
+// HMG-50 BMS bus, e.g. "355 32006400").
 using System;
 using System.IO;
 using System.Net;
@@ -36,7 +38,7 @@ namespace Antmicro.Renode.Peripherals.CAN
             {
                 return;
             }
-            var line = string.Format("{0:x8} {1}\n", message.Id, ToHex(message.Data));
+            var line = string.Format(message.ExtendedFormat ? "{0:x8} {1}\n" : "{0:x3} {1}\n", message.Id, ToHex(message.Data));
             try
             {
                 lock(writerLock)
@@ -108,7 +110,7 @@ namespace Antmicro.Renode.Peripherals.CAN
             {
                 var id = Convert.ToUInt32(parts[0], 16);
                 var data = parts.Length > 1 ? FromHex(parts[1]) : new byte[0];
-                FrameSent?.Invoke(new CANMessageFrame(id, data, extendedFormat: true));
+                FrameSent?.Invoke(new CANMessageFrame(id, data, extendedFormat: parts[0].Length > 3));
             }
             catch(FormatException)
             {

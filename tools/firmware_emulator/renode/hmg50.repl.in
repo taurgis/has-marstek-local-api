@@ -1,0 +1,283 @@
+// HMG-50 (Venus C / Venus E 2.0) Control board: STM32G474-class Cortex-M4F.
+// Renode 1.17 has no STM32G4 platform, so this map is built from RM0440 with
+// Renode's STM32 models whose register layout the G4 shares, plus
+// STM32G4_USART.cs for the USART/LPUART FIFO mode.
+// Template: run_firmware.py fills in the @...@ placeholders.
+
+// Boot from main flash: 0x0 aliases 0x08000000 (RM0440 section 2.6).
+flash: Memory.MappedMemory @ { sysbus 0x08000000; sysbus 0x0 }
+    size: 0x80000
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x20000
+
+ccmsram: Memory.MappedMemory @ sysbus 0x10000000
+    size: 0x8000
+
+// System memory tail: 96-bit unique ID at 0x1FFF7590 and flash size at
+// 0x1FFF75E0 (RM0440 section 48); run_firmware.py writes both.
+sysmem: Memory.MappedMemory @ sysbus 0x1FFF7000
+    size: 0x1000
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xF0
+    systickFrequency: 170000000
+    IRQ -> cpu@0
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m4f"
+    nvic: nvic
+
+usart1: UART.STM32G4_USART @ sysbus 0x40013800
+    frequency: 170000000
+    IRQ -> nvic@37
+
+usart2: UART.STM32G4_USART @ sysbus 0x40004400
+    frequency: 170000000
+    IRQ -> nvic@38
+
+usart3: UART.STM32G4_USART @ sysbus 0x40004800
+    frequency: 170000000
+    IRQ -> nvic@39
+
+uart4: UART.STM32G4_USART @ sysbus 0x40004C00
+    frequency: 170000000
+    IRQ -> nvic@52
+
+uart5: UART.STM32G4_USART @ sysbus 0x40005000
+    frequency: 170000000
+    IRQ -> nvic@53
+
+lpuart1: UART.STM32G4_USART @ sysbus 0x40008000
+    frequency: 170000000
+    lowPower: true
+    IRQ -> nvic@91
+
+i2c1: I2C.STM32F7_I2C @ sysbus 0x40005400
+    EventInterrupt -> nvic@31
+    ErrorInterrupt -> nvic@32
+
+i2c2: I2C.STM32F7_I2C @ sysbus 0x40005800
+    EventInterrupt -> nvic@33
+    ErrorInterrupt -> nvic@34
+
+i2c3: I2C.STM32F7_I2C @ sysbus 0x40007800
+    EventInterrupt -> nvic@92
+    ErrorInterrupt -> nvic@93
+
+exti: IRQControllers.STM32F4_EXTI @ sysbus 0x40010400
+    numberOfOutputLines: 16
+    [0-4] -> nvic@[6-10]
+    [5-9] -> nvicInput23@[0-4]
+    [10-15] -> nvicInput40@[0-5]
+
+nvicInput23: Miscellaneous.CombinedInput @ none
+    numberOfInputs: 5
+    -> nvic@23
+
+nvicInput40: Miscellaneous.CombinedInput @ none
+    numberOfInputs: 6
+    -> nvic@40
+
+syscfg: Miscellaneous.STM32_SYSCFG @ sysbus 0x40010000
+    [0-15] -> exti@[0-15]
+
+gpioPortA: GPIOPort.STM32_GPIOPort @ sysbus <0x48000000, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#0@[0-15]
+
+gpioPortB: GPIOPort.STM32_GPIOPort @ sysbus <0x48000400, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#1@[0-15]
+
+gpioPortC: GPIOPort.STM32_GPIOPort @ sysbus <0x48000800, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#2@[0-15]
+
+gpioPortD: GPIOPort.STM32_GPIOPort @ sysbus <0x48000C00, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#3@[0-15]
+
+gpioPortE: GPIOPort.STM32_GPIOPort @ sysbus <0x48001000, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#4@[0-15]
+
+gpioPortF: GPIOPort.STM32_GPIOPort @ sysbus <0x48001400, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#5@[0-15]
+
+gpioPortG: GPIOPort.STM32_GPIOPort @ sysbus <0x48001800, +0x400>
+    numberOfAFs: 16
+    [0-15] -> syscfg#6@[0-15]
+
+timer1: Timers.STM32_Timer @ sysbus 0x40012C00
+    UpdateInterrupt -> nvic@25
+    CaptureCompareInterrupt -> nvic@27
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer2: Timers.STM32_Timer @ sysbus 0x40000000
+    IRQ -> nvic@28
+    frequency: 170000000
+    initialLimit: 0xFFFFFFFF
+
+timer3: Timers.STM32_Timer @ sysbus 0x40000400
+    IRQ -> nvic@29
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer4: Timers.STM32_Timer @ sysbus 0x40000800
+    IRQ -> nvic@30
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer5: Timers.STM32_Timer @ sysbus 0x40000C00
+    IRQ -> nvic@50
+    frequency: 170000000
+    initialLimit: 0xFFFFFFFF
+
+timer6: Timers.STM32_Timer @ sysbus 0x40001000
+    IRQ -> nvic@54
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer7: Timers.STM32_Timer @ sysbus 0x40001400
+    IRQ -> nvic@55
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer8: Timers.STM32_Timer @ sysbus 0x40013400
+    UpdateInterrupt -> nvic@44
+    CaptureCompareInterrupt -> nvic@46
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer15: Timers.STM32_Timer @ sysbus 0x40014000
+    IRQ -> nvic@24
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer16: Timers.STM32_Timer @ sysbus 0x40014400
+    IRQ -> nvic@25
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer17: Timers.STM32_Timer @ sysbus 0x40014800
+    IRQ -> nvic@26
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+timer20: Timers.STM32_Timer @ sysbus 0x40015000
+    UpdateInterrupt -> nvic@78
+    CaptureCompareInterrupt -> nvic@80
+    frequency: 170000000
+    initialLimit: 0xFFFF
+
+dma1: DMA.STM32G0DMA @ sysbus 0x40020000
+    numberOfChannels: 8
+    [0-6] -> nvic@[11-17]
+    7 -> nvic@96
+
+dma2: DMA.STM32G0DMA @ sysbus 0x40020400
+    numberOfChannels: 8
+    [0-4] -> nvic@[56-60]
+    [5-7] -> nvic@[97-99]
+
+rcc: Python.PythonPeripheral @ sysbus 0x40021000
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/g4rcc.py"
+
+flashctrl: Python.PythonPeripheral @ sysbus 0x40022000
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/g4flash.py"
+
+pwr: Python.PythonPeripheral @ sysbus 0x40007000
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/g4stub.py"
+
+rtc: Python.PythonPeripheral @ sysbus 0x40002800
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/g4rtc.py"
+
+hrtim: Python.PythonPeripheral @ sysbus 0x40016800
+    size: 0x1400
+    initable: true
+    filename: "@RENODE_DIR@/g4hrtim.py"
+
+adc: Python.PythonPeripheral @ sysbus 0x50000000
+    size: 0x1400
+    initable: true
+    filename: "@RENODE_DIR@/g4adc.py"
+
+// FDCAN (RM0440 section 44): the same IP as the STM32L5, which Renode models.
+// Each instance owns 0x350 bytes of the shared message RAM at 0x4000A400.
+fdcan1ram: Memory.ArrayMemory @ sysbus 0x4000A400
+    size: 0x350
+
+fdcan1: CAN.STM32_FDCAN @ sysbus 0x40006400
+    series: .L5
+    messageRam: fdcan1ram
+    Int0 -> nvic@21
+    Int1 -> nvic@22
+
+fdcan2ram: Memory.ArrayMemory @ sysbus 0x4000A750
+    size: 0x350
+
+fdcan2: CAN.STM32_FDCAN @ sysbus 0x40006800
+    series: .L5
+    messageRam: fdcan2ram
+    Int0 -> nvic@86
+    Int1 -> nvic@87
+
+fdcan3ram: Memory.ArrayMemory @ sysbus 0x4000AAA0
+    size: 0x350
+
+fdcan3: CAN.STM32_FDCAN @ sysbus 0x40006C00
+    series: .L5
+    messageRam: fdcan3ram
+    Int0 -> nvic@88
+    Int1 -> nvic@89
+
+dmamux: Miscellaneous.STM32_DMAMUX @ sysbus 0x40020800
+    numberOfInputRequestChannels: 115
+    numberOfOutputRequestChannels: 16
+    numberOfRequestGeneratorChannels: 4
+    [0-7] -> dma1@[1-8]
+    [8-15] -> dma2@[1-8]
+
+// IWDG: register file, never bites (the firmware reloads it anyway).
+iwdg: Python.PythonPeripheral @ sysbus 0x40003000
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/g4stub.py"
+
+cordic: Python.PythonPeripheral @ sysbus 0x40020C00
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/g4stub.py"
+
+dbgmcu: Python.PythonPeripheral @ sysbus 0xE0042000
+    size: 0x100
+    initable: true
+    filename: "@RENODE_DIR@/g4dbgmcu.py"
+
+// BMS bus on FDCAN2 (11-bit Pylontech-layout frames): frames go to
+// can_peers.py --protocol pylontech over TCP (renode/CanBridge.cs).
+canbridge: CAN.MarstekCanBridge @ sysbus
+    port: @CAN_PORT@
+
+// Config EEPROM (24Cxx, I2C1 0x50, 2-byte address). Byte 0 marks an
+// initialised store as on VNSE3-0, but the Local API enable flag is at 0x37C
+// and its port at 0x37D (uint16 LE). 0x371 is choose_meter and 0x372 the CT
+// type (defaults 1 and 4); RAM mirrors 0x300.. at 0x20002cdb.
+eeprom: I2C.MarstekI2CEeprom @ i2c1 0x50
+    size: 0x8000
+    addressBytes: 2
+    backingFile: "@EEPROM@"
+    localApiPort: @LOCAL_API_PORT@
+    localApiEnableAddress: 0x37C
+    localApiPortAddress: 0x37D

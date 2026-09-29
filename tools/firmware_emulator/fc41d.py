@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import logging
 import re
 import socket
@@ -39,6 +40,8 @@ class ModemConfig:
     ble_mac: str = "02:ee:00:00:00:02"
     version: str = "FC41DAAR03A05"
     bind_ip: str = "0.0.0.0"
+    dialect: str = "control"  # "control" (VNSE3-0/VNSA-0/VNSD-0) or "hmg50"
+    broadcast_to: str = ""  # unicast target for LAN broadcasts; "" sends them as is
 
 
 @dataclass
@@ -198,7 +201,8 @@ class FC41D:
         m = re.match(r'AT\+QSSLCERT="([^"]+)",(\d+)(?:,(\d+))?', cmd, re.I)
         if m and m.group(2) == "2" and m.group(3):
             length = int(m.group(3))
-            self.send(CRLF + b">")
+            # VNSE3/A/D wait for the ">" prompt; HMG-50 waits for "CONNECT".
+            self.send(CRLF + b"CONNECT" + CRLF if self.config.dialect == "hmg50" else CRLF + b">")
             self.pending_payload = (length, lambda _data: self.reply("OK"))
             return
         if cmd.upper() == "AT+QSSLCERT?":
@@ -269,6 +273,9 @@ class FC41D:
         if port is not None:
             # An empty IP is the firmware's LAN broadcast (Marstek app discovery).
             dest = (ip or "255.255.255.255", port)
+        if dest is not None and self.config.broadcast_to and self._is_broadcast(dest[0]):
+            # Keep LAN broadcasts (CT discovery, app discovery) off the shared network.
+            dest = (self.config.broadcast_to, dest[1])
         if service is None or service.transport is None or dest is None:
             _LOGGER.warning("QISEND on %d with no route", conn_id)
             self.reply("SEND FAIL")
@@ -279,6 +286,15 @@ class FC41D:
         except OSError as err:
             _LOGGER.warning("sendto %s failed: %s", dest, err)
         self.reply("SEND OK")
+
+    def _is_broadcast(self, ip: str) -> bool:
+        if ip == "255.255.255.255":
+            return True
+        try:
+            net = ipaddress.IPv4Network(f"{self.config.ip}/{self.config.netmask}", strict=False)
+            return ipaddress.IPv4Address(ip) == net.broadcast_address
+        except ValueError:
+            return False
 
     def _qiclose(self, cmd: str) -> None:
         conn_id = int(re.findall(r"\d+", cmd)[0])
@@ -295,6 +311,9 @@ async def _main(args: argparse.Namespace) -> None:
         wifi_mac=args.wifi_mac,
         ble_mac=args.ble_mac,
         bind_ip=args.bind_ip,
+        dialect=args.dialect,
+        broadcast_to=args.broadcast_to,
+        bssid=args.bssid,
     )
     while True:
         try:
@@ -317,6 +336,21 @@ def main() -> None:
     parser.add_argument("--bind-ip", default="0.0.0.0")
     parser.add_argument("--wifi-mac", default="02:ee:00:00:00:01")
     parser.add_argument("--ble-mac", default="02:ee:00:00:00:02")
+    parser.add_argument(
+        "--bssid", default="02:00:00:00:00:01", help="AP BSSID (HMG-50 reports it as wifi_mac)"
+    )
+    parser.add_argument(
+        "--dialect",
+        choices=("control", "hmg50"),
+        default="control",
+        help="Firmware line: VNSE3-0/VNSA-0/VNSD-0 (control) or HMG-50",
+    )
+    parser.add_argument(
+        "--broadcast-to",
+        default="",
+        metavar="IP",
+        help="Send the firmware's LAN broadcasts (CT discovery) to this host instead",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(

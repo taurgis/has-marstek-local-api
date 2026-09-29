@@ -36,6 +36,24 @@ The layout comes from the firmware's CAN dispatcher (build 150):
   battery follows. ``cmd 0x16`` restores the lifetime grid energy the MCU keeps
   in EEPROM, in the page 6 layout.
 
+HMG-50 (Venus C / Venus E 2.0, ``--protocol pylontech``) runs its own inverter
+stage and talks to the pack over 11-bit standard frames in the Pylontech /
+SMA layout instead. Its dispatcher (156: ``0x080056f8``, reached from the FDCAN
+FIFO0 callback for standard ids) copies these payloads raw:
+
+* ``0x351``: charge volt (0.1 V), charge and discharge current limits (0.1 A)
+* ``0x355``: SoC (%), SoH (%), rated energy (Wh). The MCU names itself from
+  the energy: 1-3000 Wh is ``HMG-25`` (``VenusC``), above 3000 ``HMG-50``
+  (``VenusE``), and it stores that type in EEPROM ``0x3000``
+* ``0x356``: volt (10 mV), curr (100 mA, + = charge), temp (0.1 C)
+* ``0x359``: protection and alarm words, module count, ``"PN"``
+* ``0x35C``: request flags (bit 7 charge, bit 6 discharge enable); the MCU
+  timestamps it and treats the pack as gone after 20 s without one
+* ``0x35E``: manufacturer name
+
+The MCU sends an empty ``0x305`` keep-alive. It never commands a setpoint on
+this bus, so the pack here sits at the given SoC with no current.
+
 It also serves the grid meter reading for AstraMeter's ``[JSON_HTTP]`` source
 (``--meter-port``): per-phase house load minus the inverter output on phase A.
 Auto mode then closes its loop through the real CT003 protocol, and the
@@ -100,6 +118,31 @@ class Battery:
             bms(0x1802, struct.pack("<HBHBBB", self.capacity_wh, 1, 1, 0, self.dod, 0)),
             bms(0x1803, struct.pack("<HHHBB", 576, limit_a * 10, limit_a * 10, 0b11, 0)),
             bms(0x1804, bytes(8)),
+        ]
+
+
+class PylontechBattery(Battery):
+    """HMG-50 pack: Pylontech-layout standard frames, 16s LFP."""
+
+    @property
+    def volt(self) -> float:
+        return 49.6 + 0.05 * self.soc
+
+    def frames(self, dc_power: float) -> list[tuple[int, bytes]]:
+        curr = dc_power / self.volt  # + = charge
+        soc = self.soc
+        return [
+            (0x351, struct.pack("<HhhH", 568, 500, 500, 448)),
+            (0x355, struct.pack("<HHHH", round(soc), 100, self.capacity_wh, 0)),
+            (
+                0x356,
+                struct.pack(
+                    "<hhhH", round(self.volt * 100), round(curr * 10), round(self.temp_c * 10), 0
+                ),
+            ),
+            (0x359, bytes([0, 0, 0, 0, 1, ord("P"), ord("N"), 0])),
+            (0x35C, bytes([0xC0, 0, 0, 0])),
+            (0x35E, b"PYLON   "),
         ]
 
 
@@ -171,7 +214,7 @@ def pv_frames(channels: list[float]) -> list[tuple[int, bytes]]:
     return [page(1, [0] * 4)] + [page(n + 2, words[4 * n : 4 * n + 4]) for n in range(3)]
 
 
-def serve_meter(port: int, load: list[float], inverter: Inverter) -> None:
+def serve_meter(port: int, load: list[float], inverter: Inverter, bind: str = "127.0.0.1") -> None:
     """Serve ``{"a": W, "b": W, "c": W}`` grid power (+ = import) over HTTP."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -187,7 +230,7 @@ def serve_meter(port: int, load: list[float], inverter: Inverter) -> None:
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer((bind, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
@@ -197,6 +240,13 @@ def main() -> int:
     parser.add_argument("--soc", type=float, default=50.0)
     parser.add_argument("--capacity", type=int, default=5120, help="Rated energy in Wh")
     parser.add_argument("--meter-port", type=int, default=8099, help="HTTP port for AstraMeter")
+    parser.add_argument("--meter-bind", default="127.0.0.1", help="Address the meter HTTP binds")
+    parser.add_argument(
+        "--protocol",
+        choices=("control", "pylontech"),
+        default="control",
+        help="BMS bus layout: Control (Venus A/D/E 3.0) or Pylontech (HMG-50)",
+    )
     parser.add_argument(
         "--house-load", default="300,150,150", help="Per-phase house load in W (A,B,C)"
     )
@@ -207,7 +257,8 @@ def main() -> int:
     parser.add_argument("-v", "--verbose", action="store_true", help="Log every changed MCU frame")
     args = parser.parse_args()
 
-    battery = Battery(args.capacity, args.soc)
+    pylontech = args.protocol == "pylontech"
+    battery = (PylontechBattery if pylontech else Battery)(args.capacity, args.soc)
     max_discharge, max_charge = (int(v) for v in args.ac_limits.split(","))
     inverter = Inverter(max_discharge, max_charge)
     pv = [float(v) for v in args.pv.split(",") if v]
@@ -216,7 +267,7 @@ def main() -> int:
     load = [float(v) for v in args.house_load.split(",")]
     if len(load) != 3:
         parser.error("--house-load needs three values")
-    serve_meter(args.meter_port, load, inverter)
+    serve_meter(args.meter_port, load, inverter, args.meter_bind)
     deadline = time.monotonic() + 60
     while True:
         try:
@@ -237,12 +288,16 @@ def main() -> int:
         if now - last >= TICK:
             full = battery.energy_wh >= battery.capacity_wh
             harvest = [0.0 if full else p for p in pv]
-            dc = inverter.step(battery, now - last, sum(harvest))
+            if not pylontech:
+                dc = inverter.step(battery, now - last, sum(harvest))
             last = now
-            out = battery.frames(dc) + inverter.frames()
-            if pv:
+            out = battery.frames(dc)
+            if not pylontech:
+                out += inverter.frames()
+            if pv and not pylontech:
                 out += pv_frames(harvest)
-            sock.sendall(b"".join(b"%08x %s\n" % (i, d.hex().encode()) for i, d in out))
+            width = 3 if pylontech else 8
+            sock.sendall(b"".join(b"%0*x %s\n" % (width, i, d.hex().encode()) for i, d in out))
         ready, _, _ = select.select([sock], [], [], max(0.0, last + TICK - time.monotonic()))
         if not ready:
             continue
