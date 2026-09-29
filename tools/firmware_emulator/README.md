@@ -16,7 +16,7 @@ while this emulator is the vendor's own implementation, including its quirks
 |------|-------|------|
 | MCU (Cortex-M4F, STM32F1/GD32F30x-style map) | Renode `stm32f103` base, M4F core | `renode/control.repl.in` |
 | Clock tree, flash controller | always-ready register stubs | `renode/rcu.py`, `fmc.py` |
-| RTC (STM32F4-style BCD calendar) | reads the host's local time; firmware writes are ignored | `renode/rtc.py` |
+| RTC (BCD calendar) and backup registers | calendar on the host's wall clock; backup DATA0 preset | `renode/rtc.py`, `bkp.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
@@ -28,8 +28,11 @@ while this emulator is the vendor's own implementation, including its quirks
 | HMG-50 board (Venus C / E 2.0): STM32G474 map, USART/LPUART FIFO mode, RCC/PWR/FLASH/RTC/HRTIM/ADC/CORDIC stubs, FDCAN | Renode STM32 models + G4 stubs | `renode/hmg50.repl.in`, `STM32G4_USART.cs`, `g4*.py` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
 
-Not modelled: RS485 and the cloud (HTTP/MQTT get `OK` and no data). Without the
-cloud, the RTC is the only clock source; see [Deviations](#deviations-from-a-real-device).
+Not modelled: RS485, inverter pages 2 and 7 (and 1 and 3 outside Venus D),
+the per-pack BMS PGNs (the firmware only forwards them to the cloud and the
+LEDs; no Open API field reads them) and the cloud (HTTP/MQTT get `OK` and no
+data). Without the cloud, the RTC is the only clock source; see
+[Deviations](#deviations-from-a-real-device).
 
 ## Images
 
@@ -46,7 +49,11 @@ the same board and serves the Local API. Checked with `Marstek.GetDevice`,
 | VNSD-0 | 147, 149, 1492, 150 | `Venus D` |
 
 Any method can come back as `Parse error` (data 403) or time out while a CT
-reply is being handled; see [Firmware debug log](#firmware-debug-log). Venus A and
+reply is being handled; see [Firmware debug log](#firmware-debug-log). On an
+overloaded host (load average about 20 on 4 cores) the CT sidecar left roughly half
+of all Local API requests without a usable reply, since virtual time then runs
+at about half speed and each CT reply blocks the parser for longer. Home
+Assistant writes needed up to four attempts. Venus A and
 D report `pv1_power` in 0.1 W and the other channels in W, as the real devices do.
 Home Assistant, which corrects that, shows the configured watts.
 
@@ -282,9 +289,9 @@ second try, and the first full poll can take several minutes.
   firmware behaviour, until a real device shows it.
 - **Clock.** A real unit gets its time from the cloud. The emulated RTC always
   reads the host's local time (UTC in the container unless `TZ` is set), so
-  manual schedules fire on the host's wall clock. At boot the firmware restores
-  its last saved time (or a 2019 default) and writes it to the RTC; that write
-  is ignored, as the cloud would correct it.
+  manual schedules fire on the host's wall clock. `bkp.py` presets the backup
+  register that tells the firmware its clock kept running, so it does not rewind
+  the RTC to its last saved time (see [Clock and write paths](#clock-and-write-paths-vnse3-0-144-150)).
 - **Timing.** `--mips 40` (profile services) is a slower MCU than the GD32F30x.
   Replies can take a second or more under load. Home Assistant tolerates that.
   On an overloaded host (load well above the core count), the emulated MCU falls
@@ -390,6 +397,54 @@ emulator with Home Assistant.
   discharge / 2500 W charge. The socket setting (`Set.Ver`, via the app) accepts
   800, 2200 and 2500 W; the inverter's own limit frame caps it further.
 - `ES.GetMode` fills its CT fields (`ct_state`, `a_power`...) only in AI mode.
+
+## Clock and write paths (VNSE3-0 144-150)
+
+The RTC is a BCD calendar with the STM32F4 register layout (TR, DR, ISR with
+INIT/INITF/RSF, WPR 0xCA/0x53). `rtc.py` serves the host's wall clock in the
+Renode process's local time, so pass `TZ` (for example `-e TZ=Europe/Brussels`
+with Docker). A real device sets its clock from the cloud (HTTP `getDateInfo`,
+MQTT "Set local time", BLE), which the emulator cannot do. At boot the firmware
+checks backup register DATA0 (0x40006C04) for 0xA5A5. If the value is missing,
+it rewinds the RTC to the time it last saved in EEPROM (0x160) or to
+2019-11-20. `bkp.py` presets 0xA5A5, as on a device whose clock kept running.
+A time written in init mode still moves the calendar, as an offset from host
+time.
+
+What the firmware does with the writes, from its own code:
+
+- **Manual**: slots run on the RTC, with `week_set` bit 0 = Monday and the
+  RTC's weekday numbering 1 = Monday .. 7 = Sunday. A slot that covers the
+  current time sends its power as the inverter setpoint; outside the slot the
+  setpoint is 0.
+- **Passive**: `power` must be within ±2500 W. `cd_time` counts the firmware's
+  own seconds tick, which is Renode virtual time: under load it runs slower
+  than the wall clock, so the countdown lasts longer. When it expires the setpoint
+  goes to 0 and `ES.GetMode` keeps reporting `Passive`.
+- **UPS**: `ES.SetMode` accepts `ups_cfg` from 147 on; `ES.GetMode` then reports
+  `UPS` and the setpoint goes to full charge (about -2500 W). On 148 a later
+  Manual `ES.SetMode` runs its slot but `ES.GetMode` still reports `UPS`; on
+  150 Manual clears it. Home Assistant offers UPS only from 150, so on 147-149
+  its select shows `unknown` while the device reports `UPS`.
+- **DOD.SET** (147+, 30-88): the firmware stores the value and forwards it to the
+  inverter as cmd 0x0A, byte 0 = 100 - DoD (the minimum SoC; EEPROM 0x201).
+  `can_peers.py` moves its discharge floor and the 0x1802 DoD byte to match. A
+  discharging Manual slot stays at 0 W while the SoC is below the floor. 144
+  answers `Method not found`.
+- **Ble.Adv / Led.Ctrl** (1476+): answer `set_result`. Ble.Adv drives
+  `AT+QBLEADVSTART`/`STOP`, which `fc41d.py` acknowledges.
+- `Bat.GetStatus` copies the whole 0x1803 permission byte into both
+  `charg_flag` and `dischrg_flag`, so both stay true until the BMS withdraws
+  charge *and* discharge. `can_peers.py` clears bit 0 at 100 % and bit 1 at
+  the DoD floor.
+
+In every VNSE3-0 build (144-150), both `Marstek.GetDevice` and
+`Wifi.GetStatus` copy `wifi_mac` from the buffer the `bssid=` parser of
+`+QGETWIFISTATE` fills (build 150: 0x2001a626). If the module reports the
+access point there, as the field name says, all batteries on one AP share a
+`wifi_mac`. Give each emulated device its own `--wifi-mac`. Two devices that
+share one make Home Assistant's scanner treat them as one device and move the
+first one's config entry to the other's IP (seen in the devcontainer).
 
 ## Firmware debug log
 

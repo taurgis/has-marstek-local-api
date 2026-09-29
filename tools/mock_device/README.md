@@ -179,7 +179,8 @@ To add devices in Home Assistant:
 
 The same compose file also runs the **vendor Control firmware** in Renode
 (`tools/firmware_emulator/`, see its README). These are not mocks: every reply
-comes from Marstek's own code. All listen on UDP 30000 and carry an AstraMeter
+comes from Marstek's own code (Control board for Venus A/D/E 3.0, HMG-50 board
+for Venus C / E 2.0). All listen on UDP 30000 and carry an AstraMeter
 CT003 sidecar (`fw-*-ct`).
 
 | Service | IP | Firmware | BLE MAC | Started |
@@ -190,6 +191,9 @@ CT003 sidecar (`fw-*-ct`).
 | fw-venus-e-144 … -149 | 172.28.0.53–.57 | VNSE3-0 144, 147, 1476, 148, 149 | `…:53`–`…:57` | `--profile firmware-all` |
 | fw-venus-a-148 … -1509 | 172.28.0.58–.62 | VNSA-0 148, 1487, 149, 1508, 1509 | `…:58`–`…:62` | `--profile firmware-all` |
 | fw-venus-d-147 … -1492 | 172.28.0.63–.65 | VNSD-0 147, 149, 1492 | `…:63`–`…:65` | `--profile firmware-all` |
+| fw-venus-c-156 | 172.28.0.66 | HMG-50 156, 2560 Wh (reports VenusC) | `02:e0:00:00:00:66` | default |
+| fw-venus-c-153, -155 | 172.28.0.67–.68 | HMG-50 153, 155, 2560 Wh | `…:67`–`…:68` | `--profile firmware-hmg50` or `firmware-all` |
+| fw-venus-e2-156 | 172.28.0.69 | HMG-50 156, 5120 Wh (reports VenusE) | `…:69` | `--profile firmware-hmg50` or `firmware-all` |
 
 The Wi-Fi MAC is `02:e1:00:00:00:<same last octet>`.
 
