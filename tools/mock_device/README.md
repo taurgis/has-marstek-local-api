@@ -175,6 +175,24 @@ To add devices in Home Assistant:
     - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
     - `172.28.0.30`–`172.28.0.46` archived Control variants (see table above)
 
+#### Firmware emulators next to the mocks
+
+The same compose file also runs the **vendor Control firmware** in Renode
+(`tools/firmware_emulator/`, see its README). These are not mocks: every reply
+comes from Marstek's own code. All listen on UDP 30000 and carry an AstraMeter
+CT003 sidecar (`fw-*-ct`).
+
+| Service | IP | Firmware | BLE MAC | Started |
+|---------|-----|----------|---------|---------|
+| fw-venus-e-150 | 172.28.0.50 | VNSE3-0 150 | `02:e0:00:00:00:50` | default |
+| fw-venus-a-150 | 172.28.0.51 | VNSA-0 150, PV 420/360 W | `02:e0:00:00:00:51` | default |
+| fw-venus-d-150 | 172.28.0.52 | VNSD-0 150, PV 400/350/300/250 W | `02:e0:00:00:00:52` | default |
+| fw-venus-e-144 … -149 | 172.28.0.53–.57 | VNSE3-0 144, 147, 1476, 148, 149 | `…:53`–`…:57` | `--profile firmware-all` |
+| fw-venus-a-148 … -1509 | 172.28.0.58–.62 | VNSA-0 148, 1487, 149, 1508, 1509 | `…:58`–`…:62` | `--profile firmware-all` |
+| fw-venus-d-147 … -1492 | 172.28.0.63–.65 | VNSD-0 147, 149, 1492 | `…:63`–`…:65` | `--profile firmware-all` |
+
+The Wi-Fi MAC is `02:e1:00:00:00:<same last octet>`.
+
 ## Simulation Behavior
 
 The mock is meant to sit on a Home Assistant dashboard next to a real Venus

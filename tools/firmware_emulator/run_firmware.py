@@ -48,6 +48,7 @@ FAMILY_DEFAULTS: dict[str, tuple[int, str]] = {
     "VNSA-0": (2080, "1500,1500"),
 }
 DEFAULT_FAMILY = (5120, "800,2500")  # Venus E 3.0
+CT_PORT = 12345  # CT003 meter protocol (AstraMeter listens here)
 
 RESC = """\
 mach create "marstek"
@@ -65,7 +66,7 @@ connector Connect sysbus.wifi_uart wifi
 emulation CreateCANHub "canhub"
 connector Connect sysbus.can1 canhub
 connector Connect sysbus.canbridge canhub
-"""
+{tuning}"""
 
 
 class Monitor:
@@ -149,6 +150,12 @@ def _render(args: argparse.Namespace, work: Path) -> Path:
         pc=pc,
         usarts=usarts,
         uart_port=UART_PORT,
+        tuning="".join(
+            [
+                f'emulation SetGlobalQuantum "{args.quantum}"\n' if args.quantum else "",
+                f"cpu PerformanceInMips {args.mips}\n" if args.mips else "",
+            ]
+        ),
     )
     (work / "control.resc").write_text(resc)
     return work / "control.resc"
@@ -159,6 +166,28 @@ def _eeprom_initialised(path: Path) -> bool:
         return path.read_bytes()[:1] not in (b"", b"\xff")
     except OSError:
         return False
+
+
+def _own_ip(gateway: str) -> str:
+    """The address this host routes to ``gateway`` from (a container's own IP)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect((gateway, 9))  # UDP connect sends nothing
+        return str(sock.getsockname()[0])
+
+
+def _rotate_logs(work: Path, max_bytes: int) -> None:
+    """Copy-truncate ``WORK/*.log`` past ``max_bytes``: one ``.1`` generation is kept.
+
+    The children write with ``O_APPEND``, so truncating in place is safe.
+    """
+    for log in work.glob("*.log"):
+        try:
+            if log.stat().st_size <= max_bytes:
+                continue
+            log.with_suffix(".log.1").write_bytes(log.read_bytes())
+            os.truncate(log, 0)
+        except OSError:
+            continue
 
 
 def _boot(mon: Monitor, resc: Path, fc41d_cmd: list[str], log: Path) -> subprocess.Popen[bytes]:
@@ -174,16 +203,32 @@ def _boot(mon: Monitor, resc: Path, fc41d_cmd: list[str], log: Path) -> subproce
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--renode", required=True, help="Path to the renode launcher")
+    parser.add_argument(
+        "--renode",
+        default=os.environ.get("RENODE"),
+        help="Path to the renode launcher (default: $RENODE)",
+    )
     parser.add_argument("--blob", type=Path, default=DEFAULT_BLOB)
     parser.add_argument(
         "--firmware", metavar="DEVICE:VERSION", help="Catalog image, e.g. VNSA-0:150"
     )
-    parser.add_argument("--ip", required=True, help="IP the emulated device reports")
+    parser.add_argument(
+        "--ip", required=True, help="IP the emulated device reports; 'auto' = route to --gateway"
+    )
     parser.add_argument("--gateway", default="172.28.0.1")
     parser.add_argument("--local-api-port", type=int, default=30000)
     parser.add_argument(
         "--ble-mac", default="02:ee:00:00:00:02", help="BLE MAC (the integration's unique ID)"
+    )
+    parser.add_argument(
+        "--wifi-mac",
+        default="02:00:00:00:00:01",
+        help="wifi_mac the firmware reports (the modem's BSSID answer, see README)",
+    )
+    parser.add_argument(
+        "--ct-loopback",
+        action="store_true",
+        help=f"Keep CT003 traffic (UDP {CT_PORT}) on 127.0.0.1 for a same-namespace AstraMeter",
     )
     parser.add_argument("--work", type=Path, default=Path("/tmp/marstek-fw"))
     parser.add_argument("--eeprom", type=Path, help="EEPROM image (default: WORK/eeprom.bin)")
@@ -197,8 +242,27 @@ def main() -> int:
     parser.add_argument("--capacity", type=int, help="Pack Wh (default per family, E 3.0 5120)")
     parser.add_argument("--pv-energy", type=float, default=0.0, help="Initial MPPT yield in kWh")
     parser.add_argument("--offgrid-load", type=float, default=0.0, help="EPS socket W (Venus A)")
+    parser.add_argument(
+        "--quantum",
+        type=float,
+        help="Renode global quantum in s (default 0.0001). The firmware never sleeps, so "
+        "a larger quantum (0.01) roughly halves host CPU by syncing less often",
+    )
+    parser.add_argument(
+        "--mips",
+        type=int,
+        help="Emulated CPU speed (Renode default 100). Host CPU scales with it; a lower "
+        "value is a slower MCU with the same timers",
+    )
+    parser.add_argument(
+        "--log-max-mb", type=float, default=0, help="Rotate WORK/*.log past this size (0 = never)"
+    )
     args = parser.parse_args()
 
+    if not args.renode:
+        parser.error("--renode (or $RENODE) is required")
+    if args.ip == "auto":
+        args.ip = _own_ip(args.gateway)
     if args.firmware:
         args.blob = _catalog_blob(args.firmware)
     capacity, ac_limits = FAMILY_DEFAULTS.get(_device_type(args), DEFAULT_FAMILY)
@@ -211,8 +275,11 @@ def main() -> int:
     resc = _render(args, args.work)
     fc41d_cmd = [
         sys.executable, str(HERE / "fc41d.py"), "--uart-port", str(UART_PORT),
-        "--ip", args.ip, "--gateway", args.gateway, "--ble-mac", args.ble_mac, "-v",
+        "--ip", args.ip, "--gateway", args.gateway, "--ble-mac", args.ble_mac,
+        "--bssid", args.wifi_mac, "-v",
     ]  # fmt: skip
+    if args.ct_loopback:
+        fc41d_cmd += ["--loopback-port", str(CT_PORT)]
     modem_log = args.work / "fc41d.log"
 
     renode = subprocess.Popen(
@@ -229,7 +296,7 @@ def main() -> int:
         fresh = not _eeprom_initialised(args.eeprom)
         modem = _boot(mon, resc, fc41d_cmd, modem_log)
         if fresh:
-            print("Fresh EEPROM: waiting for the firmware defaults, then rebooting once")
+            print("Fresh EEPROM: waiting for the defaults, then rebooting once", flush=True)
             deadline = time.monotonic() + 180
             while not _eeprom_initialised(args.eeprom) and time.monotonic() < deadline:
                 time.sleep(2)
@@ -246,9 +313,21 @@ def main() -> int:
                 stdout=out,
                 stderr=subprocess.STDOUT,
             )  # fmt: skip
-        print(f"Running. Local API on UDP {args.local_api_port}; modem log {modem_log}")
+        print(
+            f"Running {args.blob.name} as {args.ip}. Local API on UDP {args.local_api_port};"
+            f" modem log {modem_log}",
+            flush=True,
+        )
         mon.close()
-        renode.wait()
+        while True:
+            try:
+                renode.wait(timeout=30)
+                break
+            except subprocess.TimeoutExpired:
+                if args.log_max_mb:
+                    _rotate_logs(args.work, int(args.log_max_mb * 1024 * 1024))
+        print(f"Renode exited with {renode.returncode}", flush=True)
+        return 1
     except KeyboardInterrupt:
         pass
     finally:
