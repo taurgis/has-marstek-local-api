@@ -8,7 +8,8 @@ firmware** defect. Venus E 3.0 Control **150** is the vendor fix
 `catalog.json` now lists every Control image hashed from
 [rweijnen/marstek-firmware-archive](https://github.com/rweijnen/marstek-firmware-archive)
 and [sphings79/marstek-firmware-archiv](https://github.com/sphings79/marstek-firmware-archiv).
-Blobs stay local-only. Use `fetch_firmware.py` to download them.
+The images themselves are committed under `blobs/`, so the emulator and the
+research here do not depend on those archives staying online.
 
 Issue [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)
 (Venus C 2.0 stops self-consumption charging while Home Assistant polls) is a
@@ -22,15 +23,17 @@ HMG-50 build fixes it, 156 included. See `HMG50_METER_CHANNEL.md`.
 | `HMG50_METER_CHANNEL.md` | Why Open API polling costs HMG-50 (Venus C 2.0 / E 2.0) its meter |
 | `WIFI_UDP_RELIABILITY.md` | Why Wi-Fi Open API still times out on 150; RFC/Quectel/HA sources |
 | `catalog.json` | SHA-256, OTA URLs, build stamps, initial SP |
-| `fetch_firmware.py` | Download catalog images into `blobs/` and verify hashes |
+| `blobs/` | The catalogued images (vendor copyright, kept for research and emulation) |
+| `fetch_firmware.py` | Verify `blobs/` against the catalog; download any image that is missing |
 
-## Fetch locally
+## Verify or refetch
 
 ```bash
 python3 tools/firmware/fetch_firmware.py
 ```
 
-Files land in `tools/firmware/blobs/` (gitignored). Re-run after changing
+Cached images whose SHA-256 matches print `ok … (cached)`; anything missing is
+downloaded from its catalog URL. Commit new images after adding them to
 `catalog.json`.
 
 Upstream copies:

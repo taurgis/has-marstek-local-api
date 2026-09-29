@@ -11,8 +11,8 @@ VNSE3-0, VNSA-0 and VNSD-0 images share one board, so ``--firmware DEVICE:VERSIO
 picks any of them from ``tools/firmware/catalog.json``. The stack pointer and entry
 point come from each image's vector table.
 
-The firmware blob is not in the repository; fetch it with
-``tools/firmware/fetch_firmware.py`` (it lands in ``tools/firmware/blobs/``).
+The firmware images are committed under ``tools/firmware/blobs/``;
+``tools/firmware/fetch_firmware.py`` verifies them against the catalog.
 
 A fresh EEPROM image gets its defaults from the firmware on the first boot,
 with the Local API disabled. The EEPROM model then forces it on, and this

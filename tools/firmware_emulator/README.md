@@ -52,10 +52,11 @@ Renode has no platform for yet.
 
 ## Run it
 
-1. Download the firmware (blobs are Marstek/Hamedata copyright and stay out of git):
+1. The firmware images are in the repository under `tools/firmware/blobs/`
+   (Marstek/Hamedata copyright). Check them against the catalog with:
 
    ```bash
-   python3 tools/firmware/fetch_firmware.py   # writes tools/firmware/blobs/
+   python3 tools/firmware/fetch_firmware.py   # "ok ... (cached)" for each image
    ```
 
 2. Install [Renode](https://github.com/renode/renode/releases) (the portable Linux
