@@ -86,6 +86,9 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
   exit 0
 fi
 
+# Also builds and starts the three default firmware emulators (fw-venus-*-150,
+# 172.28.0.50-.52). The other thirteen need --profile firmware-all; see
+# tools/firmware_emulator/README.md.
 sudo docker compose -f "${COMPOSE_FILE}" up -d --build
 wait_for_ha
 sudo docker compose -f "${COMPOSE_FILE}" ps

@@ -4,7 +4,14 @@
 // Wire format, one frame per line in both directions:
 //   "<id hex> <data hex>\n"   e.g. "1801aa01 f4130000fa00e803"
 // Every frame is a 29-bit extended frame; that is all this bus carries.
+//
+// Frames from the peer are queued and put on the bus one per millisecond of
+// virtual time. can_peers.py sends a burst of about ten frames each second;
+// injected straight from the socket thread they would all land inside one
+// emulation quantum, before the firmware's ISR could drain the 3-deep RX FIFO,
+// and the BMS frames that overflow it read as a missing battery (SoC 0).
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -14,6 +21,7 @@ using Antmicro.Renode.Core;
 using Antmicro.Renode.Core.CAN;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals.Network;
+using Antmicro.Renode.Peripherals.Timers;
 
 namespace Antmicro.Renode.Peripherals.CAN
 {
@@ -21,6 +29,9 @@ namespace Antmicro.Renode.Peripherals.CAN
     {
         public MarstekCanBridge(IMachine machine, int port = 3457)
         {
+            pacer = new LimitTimer(machine.ClockSource, 1000, this, "pacer", limit: 1,
+                enabled: true, eventEnabled: true, autoUpdate: true);
+            pacer.LimitReached += DeliverOne;
             listener = new TcpListener(IPAddress.Loopback, port);
             listener.Start();
             var thread = new Thread(AcceptLoop) { IsBackground = true, Name = "MarstekCanBridge" };
@@ -53,6 +64,14 @@ namespace Antmicro.Renode.Peripherals.CAN
 
         public void Reset()
         {
+        }
+
+        private void DeliverOne()
+        {
+            if(pending.TryDequeue(out var frame))
+            {
+                FrameSent?.Invoke(frame);
+            }
         }
 
         // "mach clear" disposes peripherals; free the port for the next boot.
@@ -108,7 +127,7 @@ namespace Antmicro.Renode.Peripherals.CAN
             {
                 var id = Convert.ToUInt32(parts[0], 16);
                 var data = parts.Length > 1 ? FromHex(parts[1]) : new byte[0];
-                FrameSent?.Invoke(new CANMessageFrame(id, data, extendedFormat: true));
+                pending.Enqueue(new CANMessageFrame(id, data, extendedFormat: true));
             }
             catch(FormatException)
             {
@@ -136,6 +155,8 @@ namespace Antmicro.Renode.Peripherals.CAN
             return data;
         }
 
+        private readonly ConcurrentQueue<CANMessageFrame> pending = new ConcurrentQueue<CANMessageFrame>();
+        private readonly LimitTimer pacer;
         private readonly TcpListener listener;
         private readonly object writerLock = new object();
         private volatile StreamWriter writer;

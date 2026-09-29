@@ -39,6 +39,8 @@ class ModemConfig:
     ble_mac: str = "02:ee:00:00:00:02"
     version: str = "FC41DAAR03A05"
     bind_ip: str = "0.0.0.0"
+    # Remote ports whose UDP SERVICE sockets stay on 127.0.0.1 (see --loopback-port).
+    loopback_ports: frozenset[int] = frozenset()
 
 
 @dataclass
@@ -214,11 +216,12 @@ class FC41D:
             _LOGGER.warning("unsupported QIOPEN: %s", cmd)
             self.reply("ERROR")
             return
-        conn_id, local_port = int(m.group(1)), int(m.group(4))
+        conn_id, remote_port, local_port = int(m.group(1)), int(m.group(3)), int(m.group(4))
         self.reply("OK")
-        asyncio.get_running_loop().create_task(self._open_udp(conn_id, local_port))
+        bind_ip = "127.0.0.1" if remote_port in self.config.loopback_ports else self.config.bind_ip
+        asyncio.get_running_loop().create_task(self._open_udp(conn_id, local_port, bind_ip))
 
-    async def _open_udp(self, conn_id: int, local_port: int) -> None:
+    async def _open_udp(self, conn_id: int, local_port: int, bind_ip: str) -> None:
         old = self.services.pop(conn_id, None)
         if old and old.transport:
             old.transport.close()
@@ -227,9 +230,9 @@ class FC41D:
         # No SO_REUSEADDR: a second emulator on the port must fail, not split traffic.
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         try:
-            sock.bind((self.config.bind_ip, local_port))
+            sock.bind((bind_ip, local_port))
         except OSError as err:
-            _LOGGER.error("bind %s:%d failed: %s", self.config.bind_ip, local_port, err)
+            _LOGGER.error("bind %s:%d failed: %s", bind_ip, local_port, err)
             self.urc(f"+QIOPEN: {conn_id},1")
             return
         loop = asyncio.get_running_loop()
@@ -238,7 +241,7 @@ class FC41D:
         )
         service.transport = transport
         self.services[conn_id] = service
-        _LOGGER.info("UDP SERVICE %d listening on %s:%d", conn_id, self.config.bind_ip, local_port)
+        _LOGGER.info("UDP SERVICE %d listening on %s:%d", conn_id, bind_ip, local_port)
         self.urc(f"+QIOPEN: {conn_id},0")
 
     def _qisend(self, cmd: str) -> None:
@@ -269,6 +272,9 @@ class FC41D:
         if port is not None:
             # An empty IP is the firmware's LAN broadcast (Marstek app discovery).
             dest = (ip or "255.255.255.255", port)
+            if port in self.config.loopback_ports:
+                # Broadcasts included: the peer for this port shares our namespace.
+                dest = ("127.0.0.1", port)
         if service is None or service.transport is None or dest is None:
             _LOGGER.warning("QISEND on %d with no route", conn_id)
             self.reply("SEND FAIL")
@@ -292,9 +298,11 @@ async def _main(args: argparse.Namespace) -> None:
     config = ModemConfig(
         ip=args.ip,
         gateway=args.gateway,
+        bssid=args.bssid,
         wifi_mac=args.wifi_mac,
         ble_mac=args.ble_mac,
         bind_ip=args.bind_ip,
+        loopback_ports=frozenset(args.loopback_port),
     )
     while True:
         try:
@@ -316,6 +324,20 @@ def main() -> None:
     parser.add_argument("--gateway", default="172.28.0.1")
     parser.add_argument("--bind-ip", default="0.0.0.0")
     parser.add_argument("--wifi-mac", default="02:ee:00:00:00:01")
+    parser.add_argument(
+        "--bssid",
+        default="02:00:00:00:00:01",
+        help="AP BSSID in AT+QGETWIFISTATE; the firmware reports it as wifi_mac",
+    )
+    parser.add_argument(
+        "--loopback-port",
+        type=int,
+        action="append",
+        default=[],
+        metavar="PORT",
+        help="Keep UDP SERVICE traffic to remote PORT on 127.0.0.1, broadcasts included "
+        "(12345 keeps CT003 polls to a same-namespace AstraMeter). Repeatable.",
+    )
     parser.add_argument("--ble-mac", default="02:ee:00:00:00:02")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
