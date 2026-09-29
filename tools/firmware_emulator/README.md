@@ -22,11 +22,12 @@ while this emulator is the vendor's own implementation, including its quirks
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
 | CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457; inbound frames paced 1 per ms of virtual time | `renode/CanBridge.cs` |
 | BMS and inverter | energy-counted battery, inverter that follows the MCU's setpoint | `can_peers.py` |
-| PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery | `can_peers.py --pv` |
+| PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, 0.01 kWh yield counters, MCU on/off | `can_peers.py --pv --pv-energy` |
+| EPS socket (Venus A) | constant off-grid load served from the battery | `can_peers.py --offgrid-load` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
 
-Not modelled: RS485, the lifetime PV energy counter (`total_pv_energy` stays 0)
-and the cloud (HTTP/MQTT get `OK` and no data).
+Not modelled: RS485, the inverter status/error/grid pages (1-3, 7) and the cloud
+(HTTP/MQTT get `OK` and no data).
 
 ## Images
 
@@ -78,7 +79,11 @@ Renode has no platform for yet.
    (`WORK/eeprom.bin`) gets its defaults on the first boot. `--local-api-port`
    (default 30000) is then forced on. The launcher reboots once if needed, then
    starts `can_peers.py` with `--soc`, `--house-load A,B,C`, `--pv` (W per
-   channel, Venus A/D) and `--ac-limits DISCHARGE,CHARGE` (W). Logs land in
+   channel, Venus A/D), `--pv-energy` (initial MPPT yield in kWh), `--offgrid-load`
+   (EPS socket W, Venus A), `--capacity` (pack Wh) and `--ac-limits
+   DISCHARGE,CHARGE` (W). `--capacity` and `--ac-limits` default per catalog
+   device type: VNSA-0 2080 Wh and 1500,1500; everything else 5120 Wh and
+   800,2500 (Venus E 3.0). Logs land in
    `WORK` (default `/tmp/marstek-fw/`): `fc41d.log`, `can_peers.log`,
    `renode.log`. Keep one work directory per image: the EEPROM layout is the
    firmware's own.
@@ -225,6 +230,14 @@ image, plus a `fw-*` service and its CT sidecar.
 - **CAN pacing.** Inbound CAN frames are spread 1 ms apart in virtual time.
   With a 10 ms quantum, a burst injected at once overflowed the 3-deep RX FIFO,
   and the lost BMS frames showed up as SoC 0 for minutes at a time.
+- **Parse errors under load.** On a busy host the firmware answers a share of
+  intact requests with `Parse error` (`data` 402: no payload buffer, 403:
+  cJSON rejected the bytes it read), always with `id` 0. It retries fine, but
+  config flows can need a second attempt. Treat a burst of these as an
+  emulator artefact, not firmware behaviour, until a real device shows it.
+- **MPPT counters restart.** `capd`/`capm` count from the emulator's start,
+  not from midnight or the first of the month, and the lifetime counter
+  (`--pv-energy`) is not persisted across restarts.
 - **Timing.** `--mips 40` (profile services) is a slower MCU than the GD32F30x.
   Replies can take a second or more under load. Home Assistant tolerates that.
 
@@ -239,6 +252,12 @@ image, plus a `fw-*` service and its CT sidecar.
   It polls the directed broadcast of the reported IP/mask (e.g. `172.28.255.255`)
   about once a second.
 - `Marstek.GetDevice`'s `wifi_mac` comes from the `bssid=` field of `AT+QGETWIFISTATE`.
+- BLE advertising: `Ble.Adv` stores `enable` as the wanted state (EEPROM 0x36bd)
+  and the BLE task sends `AT+QBLEADVSTART` for `1` and `AT+QBLEADVSTOP` for `0`,
+  re-sending until `AT+QBLESTAT` reports `ADVERTISING` / `NOADVERTISING`.
+  `fc41d.py` tracks that state; a fixed `ADVERTISING` left every disable
+  request unanswered. The firmware only re-reads `AT+QBLESTAT` around a
+  request, so a second change right after the first can be a no-op.
 - The Local API is connection 3: `AT+QIOPEN=3,"UDP SERVICE","<ip>",2025,<port>,1`.
 - EEPROM byte 0 marks an initialised store. The Local API enable flag is at 0x371
   and the port at 0x372 (uint16 LE).
@@ -257,6 +276,20 @@ Every frame is 29-bit extended. `can_peers.py` documents the payloads it sends.
   Inverter replies use cmd 0x10, MPPT replies cmd 0x03 (pages 2-4: PV1-PV4 volt,
   current and power in 0.1 units). Venus E images parse MPPT frames too. Page 4 gives `ongrid_power`/`offgrid_power`, page 5 the
   AC limits, and page 6 the lifetime grid energy.
+- MPPT pages 1-7 land in one 0x38-byte struct (debug names in brackets): 1
+  state/err/war/temp, 2-4 the channels, 5 `capd` u32 + `pve`/`pvs` u8 + `pow` u16,
+  6 `capm` u32 + `capy` u32, 7 MPPT-side battery readings. The yield counters
+  are 0.01 kWh. `ES.GetStatus` reports `capy` unscaled as `total_pv_energy` on
+  VNSA-0 1487/149/150/1508/1509; 148 hard-codes `pv_power` and
+  `total_pv_energy` to 0. `PV.GetStatus` reports PV1 power raw (0.1 W) and every
+  other channel field ×0.1, truncated, on all six VNSA-0 builds.
+- The MCU switches the MPPT with cmd 0x01 to type 2 addr 1 (byte 4: 1 on,
+  0 off). It sends off only after an hour with no channel above 14 V and the
+  inverter idle.
+- Inverter page 1 is state/flags/warnings, 2 error words, 3 grid volt and
+  frequency, 7 two extra energy counters. None reaches the Open API, except
+  that state 4 with `ongrid_power` 0 makes the firmware report off-grid power.
+  `ES.GetStatus` hard-codes `total_load_energy` to 0 on every VNSA-0 build.
 - The MCU drives the inverter with cmd 0x01, a signed 32-bit AC setpoint in W
   (+ = discharge). It sends each new value three times, clamped to the BMS
   current limits × voltage. After boot it writes its stored energy counters
