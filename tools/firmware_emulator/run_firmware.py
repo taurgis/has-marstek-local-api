@@ -39,6 +39,15 @@ DEFAULT_BLOB = REPO / "tools/firmware/blobs/VNSEE3-0_app_0150_0804_151249.bin"
 CATALOG = REPO / "tools/firmware/catalog.json"
 APP_BASE = 0x08004800  # the Control images sit above a 18 KiB bootloader
 UART_PORT = 3456
+# Pack and inverter figures per catalog device type, used when --capacity or
+# --ac-limits is not given. The firmware reports the BMS rated energy as bat_cap
+# and clamps its Auto loop to the inverter's AC limits. Venus A: 2080 Wh pack
+# (bat_cap in the #5/#11 captures), 1500 W both ways (ES.SetMode rejects Manual
+# power beyond +/-1500 in every VNSA-0 build).
+FAMILY_DEFAULTS: dict[str, tuple[int, str]] = {
+    "VNSA-0": (2080, "1500,1500"),
+}
+DEFAULT_FAMILY = (5120, "800,2500")  # Venus E 3.0
 
 RESC = """\
 mach create "marstek"
@@ -112,6 +121,13 @@ def _catalog_blob(spec: str) -> Path:
     raise SystemExit(f"{spec} is not in {CATALOG}")
 
 
+def _device_type(args: argparse.Namespace) -> str:
+    """Catalog device type of the image, from --firmware or the blob filename."""
+    if args.firmware:
+        return str(args.firmware.partition(":")[0])
+    return str(args.blob.name.split("_", 1)[0])
+
+
 def _render(args: argparse.Namespace, work: Path) -> Path:
     renode_dir = HERE / "renode"
     repl = (renode_dir / "control.repl.in").read_text()
@@ -175,11 +191,19 @@ def main() -> int:
     parser.add_argument("--soc", type=float, default=50.0, help="Initial battery SoC")
     parser.add_argument("--house-load", default="300,150,150", help="Per-phase load in W")
     parser.add_argument("--pv", default="", help="PV channel power in W (Venus A/D), e.g. 400,350")
-    parser.add_argument("--ac-limits", default="800,2500", help="Inverter max discharge,charge W")
+    parser.add_argument(
+        "--ac-limits", help="Inverter max discharge,charge W (default per family, E 3.0 800,2500)"
+    )
+    parser.add_argument("--capacity", type=int, help="Pack Wh (default per family, E 3.0 5120)")
+    parser.add_argument("--pv-energy", type=float, default=0.0, help="Initial MPPT yield in kWh")
+    parser.add_argument("--offgrid-load", type=float, default=0.0, help="EPS socket W (Venus A)")
     args = parser.parse_args()
 
     if args.firmware:
         args.blob = _catalog_blob(args.firmware)
+    capacity, ac_limits = FAMILY_DEFAULTS.get(_device_type(args), DEFAULT_FAMILY)
+    args.capacity = args.capacity or capacity
+    args.ac_limits = args.ac_limits or ac_limits
     if not args.blob.is_file():
         parser.error(f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)")
     args.work.mkdir(parents=True, exist_ok=True)
@@ -217,7 +241,8 @@ def main() -> int:
             peers = subprocess.Popen(
                 [sys.executable, str(HERE / "can_peers.py"), "--soc", str(args.soc),
                  "--house-load", args.house_load, "--pv", args.pv,
-                 "--ac-limits", args.ac_limits],
+                 "--ac-limits", args.ac_limits, "--capacity", str(args.capacity),
+                 "--pv-energy", str(args.pv_energy), "--offgrid-load", str(args.offgrid_load)],
                 stdout=out,
                 stderr=subprocess.STDOUT,
             )  # fmt: skip

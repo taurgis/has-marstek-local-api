@@ -22,7 +22,8 @@ The layout comes from the firmware's CAN dispatcher (build 150):
 * **Inverter** frames are ``page << 24 | src_type << 20 | 1 << 16 | dst_type << 12
   | addr << 8 | cmd``, with the inverter as type 4 and the MCU as type 0.
   Replies to the MCU use ``cmd 0x10``. Page 4 holds the AC port power
-  (s16 ``ongrid_power`` W, + = export; u16 ``offgrid_power``). Page 5 bytes 4-7
+  (s16 ``ongrid_power`` W, + = export; u16 ``offgrid_power``, the Venus A
+  EPS socket, see ``--offgrid-load``). Page 5 bytes 4-7
   are the AC limits the Auto loop clamps to (s16 max discharge, s16 max charge,
   charge negative). Page 6 holds the lifetime grid energy (u32 input Wh, u32
   output Wh).
@@ -30,7 +31,12 @@ The layout comes from the firmware's CAN dispatcher (build 150):
   ``cmd 0x03``. Pages 2-4 hold four channels as u16 volt (0.1 V), current
   (0.1 A) and power (0.1 W), in that order: PV1 V/I/P and PV2 V, then PV2 I/P
   and PV3 V/I, then PV3 P and PV4 V/I/P. ``PV.GetStatus`` drops a channel below
-  10 W and reports ``pv*_state`` from volt > 14 V.
+  10 W and reports ``pv*_state`` from volt > 14 V. Pages 5-6 carry the MPPT's
+  own yield counters in 0.01 kWh (u32 ``capd`` day at page 5 bytes 0-3, u32
+  ``capm`` month and u32 ``capy`` at page 6). ``ES.GetStatus`` reports ``capy``
+  unscaled as ``total_pv_energy`` on every Venus A build except 148, which
+  hard-codes 0. The MCU switches the MPPT with ``cmd 0x01`` to type 2, addr 1
+  (byte 4: 1 on, 0 off); it sends off only after an hour without PV voltage.
 * The MCU commands the inverter with ``cmd 0x01`` to type 4: a signed 32-bit AC
   setpoint in W (+ = discharge). The inverter here ramps towards it and the
   battery follows. ``cmd 0x16`` restores the lifetime grid energy the MCU keeps
@@ -59,6 +65,7 @@ TICK = 1.0
 RAMP = 0.5  # fraction of the setpoint error closed per tick
 EFFICIENCY = 0.95
 MPPT = 2
+MPPT_ADDR = 1
 PV_VOLT = 40.0
 
 
@@ -106,9 +113,11 @@ class Battery:
 class Inverter:
     """AC side: follows the MCU's setpoint and counts grid energy."""
 
-    def __init__(self, max_discharge: int, max_charge: int) -> None:
+    def __init__(self, max_discharge: int, max_charge: int, offgrid_load: float = 0.0) -> None:
         self.max_discharge = max_discharge
         self.max_charge = max_charge
+        self.offgrid_load = offgrid_load  # EPS socket load, served from the battery
+        self.offgrid_power = 0.0
         self.setpoint = 0
         self.ac_power = 0.0  # + = export (discharge)
         self.input_wh = 0.0
@@ -130,7 +139,11 @@ class Inverter:
         else:
             dc = -self.ac_power * EFFICIENCY
             self.input_wh += -self.ac_power * hours
-        dc += pv
+        # The EPS socket runs off the battery whatever the grid setpoint says,
+        # until the pack reaches the DoD floor.
+        floor = battery.soc <= 100 - battery.dod
+        self.offgrid_power = 0.0 if floor else self.offgrid_load
+        dc += pv - self.offgrid_power / EFFICIENCY
         battery.energy_wh = min(max(battery.energy_wh + dc * hours, 0), battery.capacity_wh)
         return dc
 
@@ -139,7 +152,7 @@ class Inverter:
             return (n << 24) | (INVERTER << 20) | (1 << 16) | (1 << 8) | 0x10, payload
 
         return [
-            page(4, struct.pack("<hHhH", round(self.ac_power), 0, 0, 0)),
+            page(4, struct.pack("<hHhH", round(self.ac_power), round(self.offgrid_power), 0, 0)),
             page(5, struct.pack("<hhhh", 0, 0, self.max_discharge, -self.max_charge)),
             page(6, struct.pack("<II", round(self.input_wh), round(self.output_wh))),
         ]
@@ -155,6 +168,46 @@ class Inverter:
             return False
         (self.setpoint,) = struct.unpack_from("<i", data)
         return True
+
+
+class Mppt:
+    """PV charger: on/off state from the MCU and 0.01 kWh yield counters."""
+
+    def __init__(self, total_kwh: float = 0.0) -> None:
+        self.on = True
+        self.day_wh = 0.0
+        self.total_wh = total_kwh * 1000
+
+    def harvest(self, channels: list[float], dt: float) -> list[float]:
+        """Channel power actually delivered for ``dt`` seconds, counted as yield."""
+        out = channels if self.on else [0.0] * len(channels)
+        wh = sum(out) * dt / 3600
+        self.day_wh += wh
+        self.total_wh += wh
+        return out
+
+    def on_frame(self, can_id: int, data: bytes) -> bool:
+        """Apply the MCU's on/off command; True when it changed the state."""
+        dst, addr, cmd = (can_id >> 12) & 0xF, (can_id >> 8) & 0xF, can_id & 0xFF
+        if dst != MPPT or addr != MPPT_ADDR or cmd != 0x01 or len(data) < 5:
+            return False
+        on = bool(data[4])
+        changed, self.on = on != self.on, on
+        return changed
+
+    def frames(self, channels: list[float]) -> list[tuple[int, bytes]]:
+        """Pages 1-6; page 7 (the MPPT's battery-side readings) is never reported."""
+
+        def page(n: int, payload: bytes) -> tuple[int, bytes]:
+            return (n << 24) | (MPPT << 20) | (1 << 16) | (MPPT_ADDR << 8) | 0x03, payload
+
+        # capd/capm/capy in 0.01 kWh; month and year counters start with the day.
+        day, total = round(self.day_wh / 10), round(self.total_wh / 10)
+        return [
+            *pv_frames(channels),
+            page(5, struct.pack("<IBBH", day, 0, 0, 0)),
+            page(6, struct.pack("<II", day, total)),
+        ]
 
 
 def pv_frames(channels: list[float]) -> list[tuple[int, bytes]]:
@@ -204,12 +257,19 @@ def main() -> int:
         "--ac-limits", default="800,2500", help="Max AC discharge,charge in W (Venus E 3.0)"
     )
     parser.add_argument("--pv", default="", help="PV channel power in W, e.g. 400,350 (Venus A/D)")
+    parser.add_argument(
+        "--pv-energy", type=float, default=0.0, help="Initial MPPT yield in kWh (total_pv_energy)"
+    )
+    parser.add_argument(
+        "--offgrid-load", type=float, default=0.0, help="EPS socket load in W (Venus A)"
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Log every changed MCU frame")
     args = parser.parse_args()
 
     battery = Battery(args.capacity, args.soc)
     max_discharge, max_charge = (int(v) for v in args.ac_limits.split(","))
-    inverter = Inverter(max_discharge, max_charge)
+    inverter = Inverter(max_discharge, max_charge, args.offgrid_load)
+    mppt = Mppt(args.pv_energy)
     pv = [float(v) for v in args.pv.split(",") if v]
     if len(pv) > 4:
         parser.error("--pv takes at most four channels")
@@ -236,12 +296,12 @@ def main() -> int:
         now = time.monotonic()
         if now - last >= TICK:
             full = battery.energy_wh >= battery.capacity_wh
-            harvest = [0.0 if full else p for p in pv]
+            harvest = mppt.harvest([0.0 if full else p for p in pv], now - last)
             dc = inverter.step(battery, now - last, sum(harvest))
             last = now
             out = battery.frames(dc) + inverter.frames()
             if pv:
-                out += pv_frames(harvest)
+                out += mppt.frames(harvest)
             sock.sendall(b"".join(b"%08x %s\n" % (i, d.hex().encode()) for i, d in out))
         ready, _, _ = select.select([sock], [], [], max(0.0, last + TICK - time.monotonic()))
         if not ready:
@@ -255,6 +315,8 @@ def main() -> int:
             parts = line.split()
             can_id = int(parts[0], 16)
             data = bytes.fromhex(parts[1].decode()) if len(parts) > 1 else b""
+            if mppt.on_frame(can_id, data):
+                print(f"MPPT switched {'on' if mppt.on else 'off'}", flush=True)
             if inverter.on_frame(can_id, data) and seen.get(can_id) != data:
                 print(f"setpoint {inverter.setpoint} W (SoC {battery.soc:.1f} %)", flush=True)
             elif args.verbose and seen.get(can_id) != data:
