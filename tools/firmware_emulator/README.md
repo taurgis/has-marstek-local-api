@@ -15,7 +15,8 @@ while this emulator is the vendor's own implementation, including its quirks
 | Part | Model | File |
 |------|-------|------|
 | MCU (Cortex-M4F, STM32F1/GD32F30x-style map) | Renode `stm32f103` base, M4F core | `renode/control.repl.in` |
-| Clock tree, flash controller, RTC | always-ready register stubs | `renode/rcu.py`, `fmc.py`, `rtc.py` |
+| Clock tree, flash controller | always-ready register stubs | `renode/rcu.py`, `fmc.py` |
+| RTC (BCD calendar) and backup registers | calendar on the host's wall clock; backup DATA0 preset | `renode/rtc.py`, `bkp.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
@@ -25,8 +26,10 @@ while this emulator is the vendor's own implementation, including its quirks
 | PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery | `can_peers.py --pv` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
 
-Not modelled: RS485, the lifetime PV energy counter (`total_pv_energy` stays 0)
-and the cloud (HTTP/MQTT get `OK` and no data).
+Not modelled: RS485, the lifetime PV energy counter (`total_pv_energy` stays 0),
+inverter pages 1-3 and 7 and the per-pack BMS PGNs (the firmware only forwards
+them to the cloud and the LEDs; no Open API field reads them) and the cloud
+(HTTP/MQTT get `OK` and no data).
 
 ## Images
 
@@ -139,6 +142,47 @@ Every frame is 29-bit extended. `can_peers.py` documents the payloads it sends.
 - Auto mode first runs a CT phase test: about 20 s of ±800 W, discharging above
   50 % SoC and charging below. The BMS permission bit for that direction must be
   set. The detected phase is stored at EEPROM 0x369.
+
+## Clock and write paths (VNSE3-0 144-150)
+
+The RTC is a BCD calendar with the STM32F4 register layout (TR, DR, ISR with
+INIT/INITF/RSF, WPR 0xCA/0x53). `rtc.py` serves the host's wall clock in the
+Renode process's local time, so pass `TZ` (for example `-e TZ=Europe/Brussels`
+with Docker). A real device sets its clock from the cloud (HTTP `getDateInfo`,
+MQTT "Set local time", BLE), which the emulator cannot do. At boot the firmware
+checks backup register DATA0 (0x40006C04) for 0xA5A5. If the value is missing,
+it rewinds the RTC to the time it last saved in EEPROM (0x160) or to
+2019-11-20. `bkp.py` presets 0xA5A5, as on a device whose clock kept running.
+A time written in init mode still moves the calendar, as an offset from host
+time.
+
+What the firmware does with the writes, from its own code:
+
+- **Manual**: slots run on the RTC, with `week_set` bit 0 = Monday and the
+  RTC's weekday numbering 1 = Monday .. 7 = Sunday. A slot that covers the
+  current time sends its power as the inverter setpoint; outside the slot the
+  setpoint is 0.
+- **Passive**: `power` must be within ±2500 W. `cd_time` counts the firmware's
+  own seconds tick, which is Renode virtual time: under load it runs slower
+  than the wall clock, so the countdown lasts longer. When it expires the setpoint
+  goes to 0 and `ES.GetMode` keeps reporting `Passive`.
+- **UPS**: `ES.SetMode` accepts `ups_cfg` from 147 on; `ES.GetMode` then reports
+  `UPS`.
+- **DOD.SET** (147+, 30-88): the firmware stores the value and forwards it to the
+  inverter as cmd 0x0A (byte 0). `can_peers.py` moves its discharge floor and
+  the 0x1802 DoD byte to match.
+- **Ble.Adv / Led.Ctrl** (1476+): answer `set_result`. Ble.Adv drives
+  `AT+QBLEADVSTART`/`STOP`, which `fc41d.py` acknowledges.
+- `Bat.GetStatus` copies the whole 0x1803 permission byte into both
+  `charg_flag` and `dischrg_flag`, so both stay true until the BMS withdraws
+  charge *and* discharge. `can_peers.py` clears bit 0 at 100 % and bit 1 at
+  the DoD floor.
+
+`wifi_mac` in `Marstek.GetDevice` and `Wifi.GetStatus` is the `bssid=` of
+`+QGETWIFISTATE`, i.e. the access point, in every VNSE3-0 build. Real
+batteries on one AP therefore share it. Give each emulated device its own
+BSSID, or Home Assistant's scanner treats two of them as one device and moves a
+config entry to the other's IP.
 
 ## Firmware debug log
 

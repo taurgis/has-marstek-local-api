@@ -76,6 +76,20 @@ class Battery:
         return 100 * self.energy_wh / self.capacity_wh
 
     @property
+    def permits(self) -> int:
+        """0x1803 byte 6: bit 0 charge allowed, bit 1 discharge allowed.
+
+        A BMS withdraws charge at full and discharge at its DoD floor. The
+        firmware's own loop honours each bit for its direction. Its
+        ``Bat.GetStatus``, though, copies the whole byte into both
+        ``charg_flag`` and ``dischrg_flag`` (build 150: 0x801fff4), so both
+        read true until both bits are clear, as on a real device.
+        """
+        charge = 0b01 if self.soc < 100 else 0
+        discharge = 0b10 if self.soc > 100 - self.dod else 0
+        return charge | discharge
+
+    @property
     def volt(self) -> float:
         return 48.0 + 0.08 * self.soc
 
@@ -98,7 +112,7 @@ class Battery:
                 ),
             ),
             bms(0x1802, struct.pack("<HBHBBB", self.capacity_wh, 1, 1, 0, self.dod, 0)),
-            bms(0x1803, struct.pack("<HHHBB", 576, limit_a * 10, limit_a * 10, 0b11, 0)),
+            bms(0x1803, struct.pack("<HHHBB", 576, limit_a * 10, limit_a * 10, self.permits, 0)),
             bms(0x1804, bytes(8)),
         ]
 
@@ -113,9 +127,12 @@ class Inverter:
         self.ac_power = 0.0  # + = export (discharge)
         self.input_wh = 0.0
         self.output_wh = 0.0
+        self.dod = 0  # last DOD.SET the MCU forwarded (cmd 0x0A); 0 = keep the BMS's
 
     def step(self, battery: Battery, dt: float, pv: float = 0.0) -> float:
         """Advance ``dt`` seconds; returns battery DC power (+ = charge)."""
+        if self.dod:
+            battery.dod = self.dod
         self.ac_power += (self.setpoint - self.ac_power) * RAMP
         if abs(self.ac_power) < 1:
             self.ac_power = 0.0
@@ -151,6 +168,11 @@ class Inverter:
         cmd = can_id & 0xFF
         if cmd == 0x16 and len(data) == 8:
             self.input_wh, self.output_wh = (float(v) for v in struct.unpack("<II", data))
+        if cmd == 0x0A and data and 0 < data[0] <= 100:
+            # DOD.SET: the MCU forwards the new depth of discharge in byte 0
+            # (build 150: 0x802f9f8 -> 0x800a33c). The discharge floor and the
+            # BMS's 0x1802 DoD byte follow it.
+            self.dod = data[0]
         if cmd != 0x01 or len(data) < 4:
             return False
         (self.setpoint,) = struct.unpack_from("<i", data)

@@ -290,6 +290,12 @@ rtc: Python.PythonPeripheral @ sysbus 0x40002800
     initable: true
     filename: "@RENODE_DIR@/rtc.py"
 
+// Backup-domain registers: DATA0 = 0xA5A5 keeps the RTC running across boots.
+bkp: Python.PythonPeripheral @ sysbus 0x40006C00
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/bkp.py"
+
 can1: CAN.STMCAN @ sysbus <0x40006400, +0x400>
     [0-3] -> nvic@[19-22]
 
