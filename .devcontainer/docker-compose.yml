@@ -490,7 +490,7 @@ services:
         ipv4_address: 172.28.0.52
     volumes:
       - fw_venus_d_150:/state
-    command: ["--firmware", "VNSD-0:150", "--ble-mac", "02:e0:00:00:00:52", "--wifi-mac", "02:e1:00:00:00:52", "--soc", "65", "--pv", "400,350,300,250", "--ac-limits", "2200,2500"]
+    command: ["--firmware", "VNSD-0:150", "--ble-mac", "02:e0:00:00:00:52", "--wifi-mac", "02:e1:00:00:00:52", "--soc", "65", "--pv", "400,350,300,250"]
 
   fw-venus-d-150-ct:
     <<: *firmware-ct
@@ -731,7 +731,7 @@ services:
         ipv4_address: 172.28.0.63
     volumes:
       - fw_venus_d_147:/state
-    command: ["--firmware", "VNSD-0:147", "--ble-mac", "02:e0:00:00:00:63", "--wifi-mac", "02:e1:00:00:00:63", "--soc", "71", "--pv", "400,350,300,250", "--ac-limits", "2200,2500", "--mips", "40"]
+    command: ["--firmware", "VNSD-0:147", "--ble-mac", "02:e0:00:00:00:63", "--wifi-mac", "02:e1:00:00:00:63", "--soc", "71", "--pv", "400,350,300,250", "--mips", "40"]
 
   fw-venus-d-147-ct:
     <<: *firmware-ct
@@ -753,7 +753,7 @@ services:
         ipv4_address: 172.28.0.64
     volumes:
       - fw_venus_d_149:/state
-    command: ["--firmware", "VNSD-0:149", "--ble-mac", "02:e0:00:00:00:64", "--wifi-mac", "02:e1:00:00:00:64", "--soc", "78", "--pv", "400,350,300,250", "--ac-limits", "2200,2500", "--mips", "40"]
+    command: ["--firmware", "VNSD-0:149", "--ble-mac", "02:e0:00:00:00:64", "--wifi-mac", "02:e1:00:00:00:64", "--soc", "78", "--pv", "400,350,300,250", "--mips", "40"]
 
   fw-venus-d-149-ct:
     <<: *firmware-ct
@@ -775,7 +775,7 @@ services:
         ipv4_address: 172.28.0.65
     volumes:
       - fw_venus_d_1492:/state
-    command: ["--firmware", "VNSD-0:1492", "--ble-mac", "02:e0:00:00:00:65", "--wifi-mac", "02:e1:00:00:00:65", "--soc", "35", "--pv", "400,350,300,250", "--ac-limits", "2200,2500", "--mips", "40"]
+    command: ["--firmware", "VNSD-0:1492", "--ble-mac", "02:e0:00:00:00:65", "--wifi-mac", "02:e1:00:00:00:65", "--soc", "35", "--pv", "400,350,300,250", "--mips", "40"]
 
   fw-venus-d-1492-ct:
     <<: *firmware-ct

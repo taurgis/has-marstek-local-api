@@ -290,7 +290,7 @@ def main() -> int:
             sys.executable, str(HERE / "can_peers.py"), "--soc", str(args.soc),
             "--house-load", args.house_load, "--pv", args.pv,
             "--family", args.firmware.partition(":")[0] if args.firmware else "",
-            "--packs", str(args.packs), "--pv-state", str(args.work / "pv_energy.json"),
+            "--packs", str(args.packs), "--pv-state", str(args.eeprom.parent / "pv_energy.json"),
         ]  # fmt: skip
         if args.ac_limits:
             peers_cmd += ["--ac-limits", args.ac_limits]
