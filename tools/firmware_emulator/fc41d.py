@@ -156,11 +156,19 @@ class FC41D:
             self.urc("+QSTASTAT:GOT_IP")
         elif up == "AT+QGETIP=STATION":
             c = self.config
-            self.reply(f"+QGETIP: {c.ip},{c.netmask},{c.gateway},{c.gateway}", "OK")
+            # The MCU copies "ip:...dns:..." up to the first CRLF, so no leading CRLF.
+            # It scans ip: up to "gate" and mask: up to "dns", fixing the field order.
+            self.send(
+                f"+QGETIP: ip:{c.ip},gateway:{c.gateway},mask:{c.netmask},dns:{c.gateway}".encode()
+                + CRLF
+                + CRLF
+                + b"OK"
+                + CRLF
+            )
         elif up == "AT+QGETWIFISTATE":
             c = self.config
             self.reply(
-                f'+QGETWIFISTATE: "{c.ssid}","{c.bssid}",{c.rssi},6,"{c.wifi_mac}"',
+                f"+QGETWIFISTATE: ssid={c.ssid},bssid={c.bssid},rssi={c.rssi},channel=6",
                 "OK",
             )
         elif up == "AT+QBLEADDR?":
@@ -194,7 +202,9 @@ class FC41D:
             self.pending_payload = (length, lambda _data: self.reply("OK"))
             return
         if cmd.upper() == "AT+QSSLCERT?":
-            self.reply('+QSSLCERT: "CA",1', '+QSSLCERT: "User Cert",1', '+QSSLCERT: "User Key",1', "OK")
+            self.reply(
+                '+QSSLCERT: "CA",1', '+QSSLCERT: "User Cert",1', '+QSSLCERT: "User Key",1', "OK"
+            )
             return
         self.reply("OK")
 
@@ -214,7 +224,7 @@ class FC41D:
             old.transport.close()
         service = UdpService(conn_id, local_port)
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # No SO_REUSEADDR: a second emulator on the port must fail, not split traffic.
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         try:
             sock.bind((self.config.bind_ip, local_port))
@@ -232,17 +242,23 @@ class FC41D:
         self.urc(f"+QIOPEN: {conn_id},0")
 
     def _qisend(self, cmd: str) -> None:
-        m = re.match(r'AT\+QISEND=(\d+),(\d+)(?:,"([^"]*)"(?:,"?([^",]*)"?)?(?:,(\d+))?)?', cmd, re.I)
+        m = re.match(
+            r'AT\+QISEND=(\d+),(\d+)(?:,"([^"]*)"(?:,"?([^",]*)"?)?(?:,(\d+))?)?', cmd, re.I
+        )
         if not m:
             self.reply("ERROR")
             return
         conn_id, length = int(m.group(1)), int(m.group(2))
         ip = m.group(3)
         port_text = m.group(5) or m.group(4)
-        service = self.services.get(conn_id)
 
         def deliver(data: bytes) -> None:
-            self._send_udp(conn_id, data, ip or "", int(port_text) if port_text and port_text.isdigit() else None)
+            self._send_udp(
+                conn_id,
+                data,
+                ip or "",
+                int(port_text) if port_text and port_text.isdigit() else None,
+            )
 
         self.send(CRLF + b"> ")
         self.pending_payload = (length, deliver)

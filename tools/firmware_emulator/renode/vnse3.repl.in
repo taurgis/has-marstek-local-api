@@ -1,6 +1,7 @@
 // Venus E 3.0 (VNSE3-0) Control board: GD32F30x-class Cortex-M4F with an
 // STM32F1-compatible peripheral map. Built from Renode's stm32f103.repl
 // (Cortex-M3 -> M4F, flash at 0x08000000) plus the models below.
+// Template: run_vnse3.py fills in the @...@ placeholders.
 
 fsmcBank1: Memory.MappedMemory @ sysbus 0x60000000
     size: 0x10000000
@@ -277,17 +278,17 @@ wifi_uart: UART.STM32_UART @ sysbus <0x40015000, +0x100>
 rcu: Python.PythonPeripheral @ sysbus 0x40021000
     size: 0x400
     initable: true
-    filename: "/home/user/has-marstek-local-api/tools/firmware_emulator/renode/rcu.py"
+    filename: "@RENODE_DIR@/rcu.py"
 
 fmc: Python.PythonPeripheral @ sysbus 0x40022000
     size: 0x400
     initable: true
-    filename: "/home/user/has-marstek-local-api/tools/firmware_emulator/renode/fmc.py"
+    filename: "@RENODE_DIR@/fmc.py"
 
 rtc: Python.PythonPeripheral @ sysbus 0x40002800
     size: 0x400
     initable: true
-    filename: "/home/user/has-marstek-local-api/tools/firmware_emulator/renode/rtc.py"
+    filename: "@RENODE_DIR@/rtc.py"
 
 can1: CAN.STMCAN @ sysbus <0x40006400, +0x400>
     [0-3] -> nvic@[19-22]
@@ -299,14 +300,15 @@ can2: CAN.STMCAN @ sysbus <0x40006800, +0x400>
 spi2: Python.PythonPeripheral @ sysbus 0x40003800
     size: 0x400
     initable: true
-    filename: "/home/user/has-marstek-local-api/tools/firmware_emulator/renode/spi2.py"
+    filename: "@RENODE_DIR@/spi2.py"
 
 cau: Python.PythonPeripheral @ sysbus 0xA0001000
     size: 0x400
     initable: true
-    filename: "/home/user/has-marstek-local-api/tools/firmware_emulator/renode/cau.py"
+    filename: "@RENODE_DIR@/cau.py"
 
 eeprom: I2C.MarstekI2CEeprom @ i2c1 0x50
     size: 0x8000
     addressBytes: 2
-    backingFile: "/tmp/vnse3_eeprom.bin"
+    backingFile: "@EEPROM@"
+    localApiPort: @LOCAL_API_PORT@

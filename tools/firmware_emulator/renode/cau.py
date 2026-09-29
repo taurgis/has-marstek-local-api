@@ -1,3 +1,4 @@
+# ruff: noqa: F821  (Renode injects `request` into PythonPeripheral scripts)
 # Block engine at 0xA0001000 (config + FIFO at 0x60, status 0x28, count 0x24).
 # Unknown algorithm: it is modelled as a loopback so waits complete.
 if request.IsInit:

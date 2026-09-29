@@ -1,3 +1,4 @@
+# ruff: noqa: F821  (Renode injects `request` into PythonPeripheral scripts)
 # GD32F30x RCU (STM32F1-compatible RCC) at 0x40021000: stores writes and
 # reports every oscillator/PLL as stable and the requested SYSCLK as active.
 if request.IsInit:
@@ -11,9 +12,7 @@ elif request.IsRead:
         v |= (1 << 1) | (1 << 17) | (1 << 25) | (1 << 27) | (1 << 29)
     elif off == 0x04:  # CFG0: SCSS mirrors SCS
         v = (v & ~0xC) | ((v & 0x3) << 2)
-    elif off == 0x20:  # BDCTL: LXTALSTB
-        v |= 1 << 1
-    elif off == 0x24:  # RSTSCK: IRC40KSTB
+    elif off in (0x20, 0x24):  # BDCTL: LXTALSTB / RSTSCK: IRC40KSTB
         v |= 1 << 1
     elif off == 0x08:  # INT: stable flags
         v |= 0x1F

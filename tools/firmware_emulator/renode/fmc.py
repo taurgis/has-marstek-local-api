@@ -1,3 +1,4 @@
+# ruff: noqa: F821  (Renode injects `request` into PythonPeripheral scripts)
 # GD32F30x FMC at 0x40022000: never busy, never locked.
 if request.IsInit:
     regs = {}

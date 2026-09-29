@@ -1,3 +1,4 @@
+# ruff: noqa: F821  (Renode injects `request` into PythonPeripheral scripts)
 # GD32F30x RTC at 0x40002800: registers synchronised, last write done.
 if request.IsInit:
     regs = {}

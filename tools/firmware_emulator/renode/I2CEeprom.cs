@@ -1,5 +1,7 @@
 // 24Cxx-style I2C EEPROM backed by a file, for the VNSE3-0 config store.
 // Two-byte word address (24C64/24C256 style); size set in the .repl.
+// localApiPort > 0 keeps the Local API enabled (0x371) on that port (0x372, LE)
+// once the firmware has initialised the store (byte 0 no longer 0xFF).
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -11,11 +13,12 @@ namespace Antmicro.Renode.Peripherals.I2C
 {
     public class MarstekI2CEeprom : II2CPeripheral
     {
-        public MarstekI2CEeprom(int size = 0x8000, int addressBytes = 2, string backingFile = "")
+        public MarstekI2CEeprom(int size = 0x8000, int addressBytes = 2, string backingFile = "", int localApiPort = 0)
         {
             this.size = size;
             this.addressBytes = addressBytes;
             this.backingFile = backingFile;
+            this.localApiPort = localApiPort;
             memory = new byte[size];
             for(var i = 0; i < size; i++) { memory[i] = 0xFF; }
             if(backingFile != "" && File.Exists(backingFile))
@@ -23,6 +26,7 @@ namespace Antmicro.Renode.Peripherals.I2C
                 var data = File.ReadAllBytes(backingFile);
                 Array.Copy(data, memory, Math.Min(data.Length, size));
             }
+            ForceLocalApi();
         }
 
         public void Write(byte[] data)
@@ -47,7 +51,11 @@ namespace Antmicro.Renode.Peripherals.I2C
                 pointer = (pointer + 1) % size;
                 wrote = true;
             }
-            if(wrote) { dirty = true; }
+            if(wrote)
+            {
+                dirty = true;
+                ForceLocalApi();
+            }
         }
 
         public byte[] Read(int count = 1)
@@ -78,6 +86,20 @@ namespace Antmicro.Renode.Peripherals.I2C
             addressed = false;
         }
 
+        private void ForceLocalApi()
+        {
+            if(localApiPort <= 0 || size <= LocalApiPortAddress + 1 || memory[0] == 0xFF)
+            {
+                return;
+            }
+            memory[LocalApiEnableAddress] = 1;
+            memory[LocalApiPortAddress] = (byte)(localApiPort & 0xFF);
+            memory[LocalApiPortAddress + 1] = (byte)(localApiPort >> 8);
+        }
+
+        private const int LocalApiEnableAddress = 0x371;
+        private const int LocalApiPortAddress = 0x372;
+        private readonly int localApiPort;
         private readonly int size;
         private readonly int addressBytes;
         private readonly string backingFile;
