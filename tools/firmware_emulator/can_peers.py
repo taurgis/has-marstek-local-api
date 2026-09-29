@@ -1,4 +1,4 @@
-"""Play the BMS and the inverter on the emulated VNSE3-0 firmware's CAN bus.
+"""Play the BMS, inverter and PV MPPT on the emulated Control firmware's CAN bus.
 
 Connects to ``renode/CanBridge.cs`` (one frame per line, ``"<id hex> <data hex>"``)
 and answers with the frames the firmware reads its battery and AC figures from,
@@ -26,6 +26,11 @@ The layout comes from the firmware's CAN dispatcher (build 150):
   are the AC limits the Auto loop clamps to (s16 max discharge, s16 max charge,
   charge negative). Page 6 holds the lifetime grid energy (u32 input Wh, u32
   output Wh).
+* **PV MPPT** frames (Venus A/D) use the same layout with ``src_type`` 2 and
+  ``cmd 0x03``. Pages 2-4 hold four channels as u16 volt (0.1 V), current
+  (0.1 A) and power (0.1 W), in that order: PV1 V/I/P and PV2 V, then PV2 I/P
+  and PV3 V/I, then PV3 P and PV4 V/I/P. ``PV.GetStatus`` drops a channel below
+  10 W and reports ``pv*_state`` from volt > 14 V.
 * The MCU commands the inverter with ``cmd 0x01`` to type 4: a signed 32-bit AC
   setpoint in W (+ = discharge). The inverter here ramps towards it and the
   battery follows. ``cmd 0x16`` restores the lifetime grid energy the MCU keeps
@@ -53,8 +58,8 @@ INVERTER = 4
 TICK = 1.0
 RAMP = 0.5  # fraction of the setpoint error closed per tick
 EFFICIENCY = 0.95
-MAX_DISCHARGE_W = 800  # Venus E 3.0 AC ratings
-MAX_CHARGE_W = 2500
+MPPT = 2
+PV_VOLT = 40.0
 
 
 class Battery:
@@ -101,13 +106,15 @@ class Battery:
 class Inverter:
     """AC side: follows the MCU's setpoint and counts grid energy."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_discharge: int, max_charge: int) -> None:
+        self.max_discharge = max_discharge
+        self.max_charge = max_charge
         self.setpoint = 0
         self.ac_power = 0.0  # + = export (discharge)
         self.input_wh = 0.0
         self.output_wh = 0.0
 
-    def step(self, battery: Battery, dt: float) -> float:
+    def step(self, battery: Battery, dt: float, pv: float = 0.0) -> float:
         """Advance ``dt`` seconds; returns battery DC power (+ = charge)."""
         self.ac_power += (self.setpoint - self.ac_power) * RAMP
         if abs(self.ac_power) < 1:
@@ -123,6 +130,7 @@ class Inverter:
         else:
             dc = -self.ac_power * EFFICIENCY
             self.input_wh += -self.ac_power * hours
+        dc += pv
         battery.energy_wh = min(max(battery.energy_wh + dc * hours, 0), battery.capacity_wh)
         return dc
 
@@ -132,7 +140,7 @@ class Inverter:
 
         return [
             page(4, struct.pack("<hHhH", round(self.ac_power), 0, 0, 0)),
-            page(5, struct.pack("<hhhh", 0, 0, MAX_DISCHARGE_W, -MAX_CHARGE_W)),
+            page(5, struct.pack("<hhhh", 0, 0, self.max_discharge, -self.max_charge)),
             page(6, struct.pack("<II", round(self.input_wh), round(self.output_wh))),
         ]
 
@@ -147,6 +155,20 @@ class Inverter:
             return False
         (self.setpoint,) = struct.unpack_from("<i", data)
         return True
+
+
+def pv_frames(channels: list[float]) -> list[tuple[int, bytes]]:
+    """MPPT pages 1-4 for up to four channels of ``channels`` W."""
+    words: list[int] = []
+    for n in range(4):
+        power = channels[n] if n < len(channels) else 0.0
+        volt = PV_VOLT if power > 0 else 0.0
+        words += [round(volt * 10), round(power / volt * 10) if volt else 0, round(power * 10)]
+
+    def page(n: int, values: list[int]) -> tuple[int, bytes]:
+        return (n << 24) | (MPPT << 20) | (1 << 16) | (1 << 8) | 0x03, struct.pack("<4H", *values)
+
+    return [page(1, [0] * 4)] + [page(n + 2, words[4 * n : 4 * n + 4]) for n in range(3)]
 
 
 def serve_meter(port: int, load: list[float], inverter: Inverter) -> None:
@@ -178,11 +200,19 @@ def main() -> int:
     parser.add_argument(
         "--house-load", default="300,150,150", help="Per-phase house load in W (A,B,C)"
     )
+    parser.add_argument(
+        "--ac-limits", default="800,2500", help="Max AC discharge,charge in W (Venus E 3.0)"
+    )
+    parser.add_argument("--pv", default="", help="PV channel power in W, e.g. 400,350 (Venus A/D)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Log every changed MCU frame")
     args = parser.parse_args()
 
     battery = Battery(args.capacity, args.soc)
-    inverter = Inverter()
+    max_discharge, max_charge = (int(v) for v in args.ac_limits.split(","))
+    inverter = Inverter(max_discharge, max_charge)
+    pv = [float(v) for v in args.pv.split(",") if v]
+    if len(pv) > 4:
+        parser.error("--pv takes at most four channels")
     load = [float(v) for v in args.house_load.split(",")]
     if len(load) != 3:
         parser.error("--house-load needs three values")
@@ -205,9 +235,13 @@ def main() -> int:
     while True:
         now = time.monotonic()
         if now - last >= TICK:
-            dc = inverter.step(battery, now - last)
+            full = battery.energy_wh >= battery.capacity_wh
+            harvest = [0.0 if full else p for p in pv]
+            dc = inverter.step(battery, now - last, sum(harvest))
             last = now
             out = battery.frames(dc) + inverter.frames()
+            if pv:
+                out += pv_frames(harvest)
             sock.sendall(b"".join(b"%08x %s\n" % (i, d.hex().encode()) for i, d in out))
         ready, _, _ = select.select([sock], [], [], max(0.0, last + TICK - time.monotonic()))
         if not ready:

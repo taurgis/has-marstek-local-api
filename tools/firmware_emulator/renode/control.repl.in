@@ -1,7 +1,7 @@
-// Venus E 3.0 (VNSE3-0) Control board: GD32F30x-class Cortex-M4F with an
+// Venus E 3.0 / A / D (VNSE3-0, VNSA-0, VNSD-0) Control board: GD32F30x-class Cortex-M4F with an
 // STM32F1-compatible peripheral map. Built from Renode's stm32f103.repl
 // (Cortex-M3 -> M4F, flash at 0x08000000) plus the models below.
-// Template: run_vnse3.py fills in the @...@ placeholders.
+// Template: run_firmware.py fills in the @...@ placeholders.
 
 fsmcBank1: Memory.MappedMemory @ sysbus 0x60000000
     size: 0x10000000

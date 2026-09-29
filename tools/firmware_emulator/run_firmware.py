@@ -1,11 +1,15 @@
-"""Boot the vendor VNSE3-0 (Venus E 3.0) Control firmware in Renode on this host.
+"""Boot a vendor Venus E 3.0 / A / D Control firmware image in Renode on this host.
 
 Renders the Renode platform/script templates, starts Renode headless, starts the
 FC41D modem emulator (``fc41d.py``) on the firmware's Wi-Fi UART and runs the
 machine. The firmware's Local API then answers on real UDP port 30000 of this
 host, so Home Assistant (or ``tools/query_device.py``) talks to it unmodified.
-``can_peers.py`` plays the BMS and inverter on the CAN bus and serves the grid
-meter reading that AstraMeter turns into CT003 replies (see README.md).
+``can_peers.py`` plays the BMS, inverter and PV MPPT on the CAN bus and serves
+the grid meter reading that AstraMeter turns into CT003 replies (see README.md).
+
+VNSE3-0, VNSA-0 and VNSD-0 images share one board, so ``--firmware DEVICE:VERSION``
+picks any of them from ``tools/firmware/catalog.json``. The stack pointer and entry
+point come from each image's vector table.
 
 The firmware blob is not in the repository; fetch it with
 ``tools/firmware/fetch_firmware.py`` (it lands in ``tools/firmware/blobs/``).
@@ -18,10 +22,12 @@ script reboots once so the firmware reads the enabled setting.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -30,17 +36,19 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 DEFAULT_BLOB = REPO / "tools/firmware/blobs/VNSEE3-0_app_0150_0804_151249.bin"
+CATALOG = REPO / "tools/firmware/catalog.json"
+APP_BASE = 0x08004800  # the Control images sit above a 18 KiB bootloader
 UART_PORT = 3456
 
 RESC = """\
-mach create "vnse3"
+mach create "marstek"
 include @{renode_dir}/I2CEeprom.cs
 include @{renode_dir}/CanBridge.cs
 machine LoadPlatformDescription @{repl}
-sysbus LoadBinary @{blob} 0x08004800
-cpu VectorTableOffset 0x08004800
-sysbus.cpu SP 0x2001f5e0
-sysbus.cpu PC 0x08004a71
+sysbus LoadBinary @{blob} {base:#010x}
+cpu VectorTableOffset {base:#010x}
+sysbus.cpu SP {sp:#010x}
+sysbus.cpu PC {pc:#010x}
 logLevel 2
 {usarts}
 emulation CreateServerSocketTerminal {uart_port} "wifi" false
@@ -89,26 +97,45 @@ class Monitor:
         return self._drain(wait)
 
 
+def _vector_table(blob: Path) -> tuple[int, int]:
+    """Initial SP and reset vector: the first two words of the image."""
+    sp, pc = struct.unpack("<II", blob.read_bytes()[:8])
+    return sp, pc
+
+
+def _catalog_blob(spec: str) -> Path:
+    """Resolve ``DEVICE:VERSION`` (e.g. ``VNSA-0:150``) through the catalog."""
+    device, _, version = spec.partition(":")
+    for entry in json.loads(CATALOG.read_text())["images"]:
+        if entry["deviceType"] == device and str(entry["version"]) == version:
+            return CATALOG.parent / "blobs" / entry["filename"]
+    raise SystemExit(f"{spec} is not in {CATALOG}")
+
+
 def _render(args: argparse.Namespace, work: Path) -> Path:
     renode_dir = HERE / "renode"
-    repl = (renode_dir / "vnse3.repl.in").read_text()
+    repl = (renode_dir / "control.repl.in").read_text()
     for key, value in {
         "@RENODE_DIR@": str(renode_dir),
         "@EEPROM@": str(args.eeprom),
         "@LOCAL_API_PORT@": str(args.local_api_port),
     }.items():
         repl = repl.replace(key, value)
-    (work / "vnse3.repl").write_text(repl)
+    (work / "control.repl").write_text(repl)
     usarts = "\n".join(f"usart{n} CreateFileBackend @{work}/usart{n}.txt true" for n in range(1, 6))
+    sp, pc = _vector_table(args.blob)
     resc = RESC.format(
         renode_dir=renode_dir,
-        repl=work / "vnse3.repl",
+        repl=work / "control.repl",
         blob=args.blob,
+        base=APP_BASE,
+        sp=sp,
+        pc=pc,
         usarts=usarts,
         uart_port=UART_PORT,
     )
-    (work / "vnse3.resc").write_text(resc)
-    return work / "vnse3.resc"
+    (work / "control.resc").write_text(resc)
+    return work / "control.resc"
 
 
 def _eeprom_initialised(path: Path) -> bool:
@@ -133,16 +160,26 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--renode", required=True, help="Path to the renode launcher")
     parser.add_argument("--blob", type=Path, default=DEFAULT_BLOB)
+    parser.add_argument(
+        "--firmware", metavar="DEVICE:VERSION", help="Catalog image, e.g. VNSA-0:150"
+    )
     parser.add_argument("--ip", required=True, help="IP the emulated device reports")
     parser.add_argument("--gateway", default="172.28.0.1")
     parser.add_argument("--local-api-port", type=int, default=30000)
-    parser.add_argument("--work", type=Path, default=Path("/tmp/vnse3"))
+    parser.add_argument(
+        "--ble-mac", default="02:ee:00:00:00:02", help="BLE MAC (the integration's unique ID)"
+    )
+    parser.add_argument("--work", type=Path, default=Path("/tmp/marstek-fw"))
     parser.add_argument("--eeprom", type=Path, help="EEPROM image (default: WORK/eeprom.bin)")
     parser.add_argument("--monitor-port", type=int, default=41234)
     parser.add_argument("--soc", type=float, default=50.0, help="Initial battery SoC")
     parser.add_argument("--house-load", default="300,150,150", help="Per-phase load in W")
+    parser.add_argument("--pv", default="", help="PV channel power in W (Venus A/D), e.g. 400,350")
+    parser.add_argument("--ac-limits", default="800,2500", help="Inverter max discharge,charge W")
     args = parser.parse_args()
 
+    if args.firmware:
+        args.blob = _catalog_blob(args.firmware)
     if not args.blob.is_file():
         parser.error(f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)")
     args.work.mkdir(parents=True, exist_ok=True)
@@ -150,7 +187,7 @@ def main() -> int:
     resc = _render(args, args.work)
     fc41d_cmd = [
         sys.executable, str(HERE / "fc41d.py"), "--uart-port", str(UART_PORT),
-        "--ip", args.ip, "--gateway", args.gateway, "-v",
+        "--ip", args.ip, "--gateway", args.gateway, "--ble-mac", args.ble_mac, "-v",
     ]  # fmt: skip
     modem_log = args.work / "fc41d.log"
 
@@ -179,7 +216,8 @@ def main() -> int:
         with (args.work / "can_peers.log").open("ab") as out:
             peers = subprocess.Popen(
                 [sys.executable, str(HERE / "can_peers.py"), "--soc", str(args.soc),
-                 "--house-load", args.house_load],
+                 "--house-load", args.house_load, "--pv", args.pv,
+                 "--ac-limits", args.ac_limits],
                 stdout=out,
                 stderr=subprocess.STDOUT,
             )  # fmt: skip

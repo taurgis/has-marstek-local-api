@@ -1,7 +1,7 @@
 # Firmware emulator (Renode)
 
-Runs the **unmodified vendor Control firmware** of a Venus E 3.0 (VNSE3-0,
-build 150) in [Renode](https://renode.io/), with the chips around the MCU
+Runs the **unmodified vendor Control firmware** of a Venus E 3.0, Venus A or
+Venus D in [Renode](https://renode.io/), with the chips around the MCU
 modelled well enough for the firmware to boot, join "Wi-Fi" and serve the
 Local API on real UDP port 30000 of this host. Home Assistant then adds and
 polls it like a physical device.
@@ -14,7 +14,7 @@ while this emulator is the vendor's own implementation, including its quirks
 
 | Part | Model | File |
 |------|-------|------|
-| MCU (Cortex-M4F, STM32F1/GD32F30x-style map) | Renode `stm32f103` base, M4F core | `renode/vnse3.repl.in` |
+| MCU (Cortex-M4F, STM32F1/GD32F30x-style map) | Renode `stm32f103` base, M4F core | `renode/control.repl.in` |
 | Clock tree, flash controller, RTC | always-ready register stubs | `renode/rcu.py`, `fmc.py`, `rtc.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
@@ -22,10 +22,33 @@ while this emulator is the vendor's own implementation, including its quirks
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
 | CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457 | `renode/CanBridge.cs` |
 | BMS and inverter | energy-counted battery, inverter that follows the MCU's setpoint | `can_peers.py` |
+| PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery | `can_peers.py --pv` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
 
-Not modelled: RS485, PV (the Venus E has none) and the cloud (HTTP/MQTT get `OK`
-and no data).
+Not modelled: RS485, the lifetime PV energy counter (`total_pv_energy` stays 0)
+and the cloud (HTTP/MQTT get `OK` and no data).
+
+## Images
+
+Every VNSE3-0, VNSA-0 and VNSD-0 image in `tools/firmware/catalog.json` boots on
+the same board and serves the Local API. Checked with `Marstek.GetDevice`,
+`ES.GetStatus`, `ES.GetMode`, `Bat.GetStatus`, `PV.GetStatus`, `EM.GetStatus`,
+`Wifi.GetStatus` and `BLE.GetStatus`:
+
+| Family | Versions | Reports |
+|--------|----------|---------|
+| VNSE3-0 | 144, 147, 1476, 148, 149, 150 | `VenusE 3.0`; `PV.GetStatus` is `Method not found` |
+| VNSA-0 | 148, 1487, 149, 150, 1509 (ems) | `Venus A` |
+| VNSA-0 | 1508 (banner VEPRO-0) | `VenusE Pro` |
+| VNSD-0 | 147, 149, 1492, 150 | `Venus D` |
+
+Any method can come back as `Parse error` (data 403) or time out while a CT
+reply is being handled; see [Firmware debug log](#firmware-debug-log). Venus A and
+D report `pv1_power` in 0.1 W and the other channels in W, as the real devices do.
+Home Assistant, which corrects that, shows the configured watts.
+
+The HMG-50 images (Venus C / E 2.0: 153, 155, 156) target an STM32G4, which
+Renode has no platform for yet.
 
 ## Run it
 
@@ -42,14 +65,24 @@ and no data).
    devcontainer compose network that is the bridge gateway `172.28.0.1`:
 
    ```bash
-   python3 tools/firmware_emulator/run_vnse3.py \
-       --renode /opt/renode/renode --ip 172.28.0.1
+   python3 tools/firmware_emulator/run_firmware.py \
+       --renode /opt/renode/renode --ip 172.28.0.1 \
+       --firmware VNSD-0:150 --work /tmp/marstek-fw/vnsd-150 \
+       --pv 400,350,300,250 --ac-limits 2200,2500 --ble-mac 02:ee:00:00:0d:02
    ```
 
-   A fresh EEPROM (`/tmp/vnse3/eeprom.bin`) gets its defaults on the first boot.
-   `--local-api-port` (default 30000) is then forced on. The launcher reboots once
-   if needed, then starts `can_peers.py` (`--soc`, `--house-load A,B,C` in W).
-   Logs land in `/tmp/vnse3/`: `fc41d.log`, `can_peers.log`, `renode.log`.
+   `--firmware DEVICE:VERSION` picks an image from the catalog (default: the
+   VNSE3-0 150 blob; `--blob PATH` takes any file). A fresh EEPROM
+   (`WORK/eeprom.bin`) gets its defaults on the first boot. `--local-api-port`
+   (default 30000) is then forced on. The launcher reboots once if needed, then
+   starts `can_peers.py` with `--soc`, `--house-load A,B,C`, `--pv` (W per
+   channel, Venus A/D) and `--ac-limits DISCHARGE,CHARGE` (W). Logs land in
+   `WORK` (default `/tmp/marstek-fw/`): `fc41d.log`, `can_peers.log`,
+   `renode.log`. Keep one work directory per image: the EEPROM layout is the
+   firmware's own.
+
+   The BLE MAC is the integration's unique ID. Give each emulated device its own
+   `--ble-mac`, or Home Assistant keeps the first one's config entry.
 
    For the CT, run AstraMeter on the host network. It needs no Home Assistant:
    it polls `can_peers.py` on `127.0.0.1:8099`, where the grid power is the house
@@ -71,10 +104,7 @@ and no data).
    ```
 
 5. In Home Assistant, **Add integration → Marstek**. Broadcast discovery lists
-   `VenusE 3.0 v150 (MarstekEmu) - 172.28.0.1`.
-
-Only the Venus E 3.0 image is wired up. The HMG-50 (Venus C / E 2.0) image targets
-an STM32G4, which Renode has no platform for yet.
+   the image, e.g. `Venus D v150 (MarstekEmu) - 172.28.0.1`.
 
 ## FC41D facts learned from the firmware
 
@@ -97,8 +127,9 @@ Every frame is 29-bit extended. `can_peers.py` documents the payloads it sends.
   `Bat.GetStatus` and the SoC in `ES.GetStatus` come straight from 0x1801/0x1802.
   The MCU polls with `1801ffaa`.
 - Other devices use `page << 24 | src_type << 20 | 1 << 16 | dst_type << 12 |
-  addr << 8 | cmd`: MCU 0, inverter 4, types 2 and 3 not identified. Inverter
-  replies use cmd 0x10. Page 4 gives `ongrid_power`/`offgrid_power`, page 5 the
+  addr << 8 | cmd`: MCU 0, PV MPPT 2, inverter 4, type 3 not identified.
+  Inverter replies use cmd 0x10, MPPT replies cmd 0x03 (pages 2-4: PV1-PV4 volt,
+  current and power in 0.1 units). Venus E images parse MPPT frames too. Page 4 gives `ongrid_power`/`offgrid_power`, page 5 the
   AC limits, and page 6 the lifetime grid energy.
 - The MCU drives the inverter with cmd 0x01, a signed 32-bit AC setpoint in W
   (+ = discharge). It sends each new value three times, clamped to the BMS
@@ -110,8 +141,9 @@ Every frame is 29-bit extended. `can_peers.py` documents the payloads it sends.
 
 ## Firmware debug log
 
-The firmware logs to USART2 (`/tmp/vnse3/usart2.txt`) once enabled from the
-Renode monitor (`telnet 127.0.0.1 41234`, after the launcher prints "Running"):
+The firmware logs to USART2 (`WORK/usart2.txt`) once enabled from the Renode
+monitor (`telnet 127.0.0.1 41234`, after the launcher prints "Running"). The two
+flags sit at the same addresses in every VNSE3-0, VNSA-0 and VNSD-0 image:
 
 ```
 sysbus WriteByte 0x20000132 1   # logging on
