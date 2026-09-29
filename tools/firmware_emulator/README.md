@@ -295,8 +295,7 @@ What the firmware does with the writes, from its own code:
   `UPS`.
 - **DOD.SET** (147+, 30-88): the firmware stores the value and forwards it to the
   inverter as cmd 0x0A, byte 0 = 100 - DoD (the minimum SoC; EEPROM 0x201).
-  `can_peers.py` moves its discharge floor and
-  the 0x1802 DoD byte to match.
+  `can_peers.py` moves its discharge floor and the 0x1802 DoD byte to match.
 - **Ble.Adv / Led.Ctrl** (1476+): answer `set_result`. Ble.Adv drives
   `AT+QBLEADVSTART`/`STOP`, which `fc41d.py` acknowledges.
 - `Bat.GetStatus` copies the whole 0x1803 permission byte into both
@@ -304,11 +303,13 @@ What the firmware does with the writes, from its own code:
   charge *and* discharge. `can_peers.py` clears bit 0 at 100 % and bit 1 at
   the DoD floor.
 
-`wifi_mac` in `Marstek.GetDevice` and `Wifi.GetStatus` is the `bssid=` of
-`+QGETWIFISTATE`, i.e. the access point, in every VNSE3-0 build. Real
-batteries on one AP therefore share it. Give each emulated device its own
-BSSID, or Home Assistant's scanner treats two of them as one device and moves a
-config entry to the other's IP.
+In every VNSE3-0 build (144-150), both `Marstek.GetDevice` and
+`Wifi.GetStatus` copy `wifi_mac` from the buffer the `bssid=` parser of
+`+QGETWIFISTATE` fills (build 150: 0x2001a626). If the module reports the
+access point there, as the field name says, all batteries on one AP share a
+`wifi_mac`. Give each emulated device its own `--wifi-mac`. Two devices that
+share one make Home Assistant's scanner treat them as one device and move the
+first one's config entry to the other's IP (seen in the devcontainer).
 
 ## Firmware debug log
 
