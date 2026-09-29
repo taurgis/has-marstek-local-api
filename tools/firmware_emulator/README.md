@@ -241,7 +241,16 @@ instructions per second. Sixteen emulators still oversubscribe a 4-core host
 
 The HMG-50 (STM32G4) images run from the same image: `--firmware HMG-50:VERSION`
 picks the `hmg50` board (`renode/hmg50.repl.in`), and the `fw-venus-c-*`
-services below run them.
+services below run them. `fw-venus-c-156` (172.28.0.66, 2560 Wh) starts by
+default; 153, 155 and the 5120 Wh `fw-venus-e2-156` are under the
+`firmware-hmg50` and `firmware-all` profiles.
+
+HMG-50 replies to the Local API port (30000), not to the sender's port, so
+`healthcheck.py` also accepts the reply the modem logs as sent to 127.0.0.1.
+Expect a slow start in Home Assistant: the firmware drops most requests that
+arrive while it talks to the modem (see [HMG-50 and issue
+#82](#hmg-50-and-issue-82)). On a loaded host, the config flow can need a
+second try, and the first full poll can take several minutes.
 
 ## Deviations from a real device
 
