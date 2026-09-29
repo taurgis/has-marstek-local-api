@@ -46,7 +46,11 @@ the same board and serves the Local API. Checked with `Marstek.GetDevice`,
 | VNSD-0 | 147, 149, 1492, 150 | `Venus D` |
 
 Any method can come back as `Parse error` (data 403) or time out while a CT
-reply is being handled; see [Firmware debug log](#firmware-debug-log). Venus A and
+reply is being handled; see [Firmware debug log](#firmware-debug-log). On an
+overloaded host (load average about 20 on 4 cores) the CT sidecar left roughly half
+of all Local API requests without a usable reply, since virtual time then runs
+at about half speed and each CT reply blocks the parser for longer. Home
+Assistant writes needed up to four attempts. Venus A and
 D report `pv1_power` in 0.1 W and the other channels in W, as the real devices do.
 Home Assistant, which corrects that, shows the configured watts.
 
@@ -292,10 +296,15 @@ What the firmware does with the writes, from its own code:
   than the wall clock, so the countdown lasts longer. When it expires the setpoint
   goes to 0 and `ES.GetMode` keeps reporting `Passive`.
 - **UPS**: `ES.SetMode` accepts `ups_cfg` from 147 on; `ES.GetMode` then reports
-  `UPS`.
+  `UPS` and the setpoint goes to full charge (about -2500 W). On 148 a later
+  Manual `ES.SetMode` runs its slot but `ES.GetMode` still reports `UPS`; on
+  150 Manual clears it. Home Assistant offers UPS only from 150, so on 147-149
+  its select shows `unknown` while the device reports `UPS`.
 - **DOD.SET** (147+, 30-88): the firmware stores the value and forwards it to the
   inverter as cmd 0x0A, byte 0 = 100 - DoD (the minimum SoC; EEPROM 0x201).
-  `can_peers.py` moves its discharge floor and the 0x1802 DoD byte to match.
+  `can_peers.py` moves its discharge floor and the 0x1802 DoD byte to match. A
+  discharging Manual slot stays at 0 W while the SoC is below the floor. 144
+  answers `Method not found`.
 - **Ble.Adv / Led.Ctrl** (1476+): answer `set_result`. Ble.Adv drives
   `AT+QBLEADVSTART`/`STOP`, which `fc41d.py` acknowledges.
 - `Bat.GetStatus` copies the whole 0x1803 permission byte into both
