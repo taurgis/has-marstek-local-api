@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from custom_components.marstek.const import (
@@ -686,3 +688,16 @@ def test_unusable_float_ver_stays_unknown(version: float) -> None:
 
     assert profile.firmware_version is None
     assert profile.openapi_reset_prone is True
+
+
+@pytest.mark.parametrize("device_type", ["VenusE 3.0", "VenusD"])
+def test_control_151_resolves_like_150(device_type: str) -> None:
+    """Control 151 keeps 150's Open API: same methods, fields and scales.
+
+    Checked against the VNSE3-0 / VNSD-0 151 images in the firmware emulator;
+    only ``src`` changed, to the SKU, which identity parsing does not read.
+    """
+    profile_150 = resolve_firmware_profile(device_type, 150)
+    profile_151 = resolve_firmware_profile(device_type, 151)
+
+    assert replace(profile_151, firmware_version=150) == profile_150

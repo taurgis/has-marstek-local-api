@@ -22,6 +22,7 @@ _ARCHIVED_CONTROL_MOCKS: frozenset[tuple[str, int]] = frozenset(
         ("VenusE 3.0", 148),
         ("VenusE 3.0", 149),
         ("VenusE 3.0", 150),
+        ("VenusE 3.0", 151),
         ("VenusA", 148),
         ("VenusA", 1487),
         ("VenusA", 149),
@@ -32,6 +33,7 @@ _ARCHIVED_CONTROL_MOCKS: frozenset[tuple[str, int]] = frozenset(
         ("VenusD", 149),
         ("VenusD", 1492),
         ("VenusD", 150),
+        ("VenusD", 151),
         ("VenusC", 153),
         ("VenusC", 155),
         ("VenusC", 156),
@@ -99,6 +101,7 @@ def test_devcontainer_runs_observed_firmware_mocks() -> None:
     assert '"--device", "VenusE Pro", "--ver", "1508"' in compose
     assert "172.28.0.26" in compose
     assert "172.28.0.46" in compose
+    assert "172.28.0.48" in compose
     assert '"--port", "30004"' in compose
 
 
@@ -118,9 +121,9 @@ def test_firmware_catalog_lists_control_images_for_mocks() -> None:
         sku = str(image["deviceType"])
         versions_by_sku.setdefault(sku, set()).add(int(image["version"]))
 
-    assert versions_by_sku["VNSE3-0"] == {144, 147, 1476, 148, 149, 150}
+    assert versions_by_sku["VNSE3-0"] == {144, 147, 1476, 148, 149, 150, 151}
     assert versions_by_sku["VNSA-0"] == {148, 1487, 149, 150, 1508, 1509}
-    assert versions_by_sku["VNSD-0"] == {147, 149, 1492, 150}
+    assert versions_by_sku["VNSD-0"] == {147, 149, 1492, 150, 151}
     assert versions_by_sku["HMG-50"] == {153, 155, 156}
 
 

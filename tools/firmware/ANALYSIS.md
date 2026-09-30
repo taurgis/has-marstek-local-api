@@ -214,6 +214,39 @@ Docker mocks:
 - `172.28.0.42` / `.43` Venus C 155 / 156
 - `172.28.0.29` / `.44` / `.45` unsupported `VenusE` 153 / 155 / 156
 
+## What 151 changed versus 150
+
+VNSE3-0 151 (built 28 September 2026) and VNSD-0 151 (29 September 2026), from
+the official EU OTA CDN. Both match the community archive's SHA-256 and the
+cloud's CRC16. The vendor changelog lists Modbus TCP stability, a fix for the
+DOD state that blocked discharge, an upgrade-type check (`Bin type
+mismatch!`), AI-mode validation and an AI-strategy query, the pre-release
+server URL, HTTPS upload stability, and CT polling every 1.1 s.
+
+Checked by string diff and by running both images in the emulator next to
+150, with Home Assistant set up against them:
+
+- **The Open API is unchanged.** The same dotted method names are there,
+  including `Set.Ver`, `Reset.Factory` and `Marstek.GetData`. There are no new
+  reply fields, and the values and encodings match 150 (Venus D still reports
+  PV1 in deciwatts). `DOD.SET`, `Ble.Adv`, `Led.Ctrl` and `ES.SetMode`
+  answer as on 150. The AI-strategy query and the `debug`/`read_inv*` strings
+  belong to the cloud (MQTT) side; no Open API method was added for them.
+- **`src` names the SKU.** Replies carry `"VNSE3-0-<ble_mac>"` /
+  `"VNSD-0-<ble_mac>"`, where 150 sent `"VenusE 3.0-<ble_mac>"`. The format
+  string `` VenusE 3.0-%s`` became `%s-%s`. `Marstek.GetDevice` `device` still
+  reads `VenusE 3.0` / `VenusD`, so family detection is unaffected, and the MAC
+  fallback from `src` (issue #60) still finds the BLE MAC.
+- Cloud-side only: the HTTP host moved from `%s.hamedata.com` to
+  `api-%s.marstekcloud.com`, `AT+QHTTPPOST` timeouts went from 60 to 120 s, a
+  `cd=19,ct_st=…` CT statistics line and a `df=` status field were added, and
+  the BLE name is built from `MST_VNSE3_` / `MST_VNSD_`.
+- Initial SP moved to `0x20021df8` (VNSE3-0) and `0x20022010` (VNSD-0).
+
+The firmware profile resolves 151 exactly like 150
+(`tests/test_firmware_profile.py::test_control_151_resolves_like_150`). No
+VNSA-0 151 has been published.
+
 ## Archived Control matrix (community OTA)
 
 `catalog.json` now lists every Control image hashed from
@@ -223,9 +256,9 @@ Blobs stay local-only.
 
 | SKU | Open API `ver` | Generation | Notes |
 |-----|----------------|------------|-------|
-| VNSE3-0 | 144, 147, 1476, 148, 149, 150 | 144–150 | 1476 is app 147.6. SYS/UPS at 150. Live 150 `PV.GetStatus` is `-32601`. |
+| VNSE3-0 | 144, 147, 1476, 148, 149, 150, 151 | 144–151 | 1476 is app 147.6. SYS/UPS at 150. Live 150 `PV.GetStatus` is `-32601`. |
 | VNSA-0 | 148, 1487, 149, 150, 1508, 1509 | 148–150 | 1487→148, 1508/1509→150. 1508 banners `VEPRO-0` / `VenusE Pro` (unknown family). |
-| VNSD-0 | 147, 149, 1492, 150 | 147–150 | 1492→149. Venus D 149 and 1492 report solar energy in 0.01 kWh (`×10`), like Venus A 149. |
+| VNSD-0 | 147, 149, 1492, 150, 151 | 147–151 | 1492→149. Venus D 149 and 1492 report solar energy in 0.01 kWh (`×10`), like Venus A 149. |
 | HMG-50 | 153, 155, 156 | 153–156 | No SYS. EM server from 155. Open API stable at 156. |
 
 String presence of `DOD.SET` / `Ble.Adv` / `Led.Ctrl` on VNSE3-0 **147–149**

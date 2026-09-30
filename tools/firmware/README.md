@@ -19,7 +19,7 @@ HMG-50 build fixes it, 156 included. See `HMG50_METER_CHANNEL.md`.
 
 | File | Purpose |
 |------|---------|
-| `ANALYSIS.md` | What 144 / 1476 / 148 / 150 contain and what 150 changed |
+| `ANALYSIS.md` | What 144 / 1476 / 148 / 150 / 151 contain and what 150 and 151 changed |
 | `HMG50_METER_CHANNEL.md` | Why Open API polling costs HMG-50 (Venus C 2.0 / E 2.0) its meter |
 | `WIFI_UDP_RELIABILITY.md` | Why Wi-Fi Open API still times out on 150; RFC/Quectel/HA sources |
 | `catalog.json` | SHA-256, OTA URLs, build stamps, initial SP |

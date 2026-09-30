@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 class TestIsEchoResponse:
     """Tests for _is_echo_response."""
@@ -139,6 +141,14 @@ def test_mac_from_src_separated() -> None:
     from custom_components.marstek.pymarstek.network import mac_from_openapi_src
 
     assert mac_from_openapi_src("VenusC-AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
+
+
+@pytest.mark.parametrize("sku", ["VNSE3-0", "VNSD-0"])
+def test_mac_from_src_with_control_151_sku_prefix(sku: str) -> None:
+    """Control 151 names the SKU in src; its digits must not be read as MAC."""
+    from custom_components.marstek.pymarstek.network import mac_from_openapi_src
+
+    assert mac_from_openapi_src(f"{sku}-AABBCCDDEEFF") == "AA:BB:CC:DD:EE:FF"
 
 
 def test_mac_from_src_missing() -> None:

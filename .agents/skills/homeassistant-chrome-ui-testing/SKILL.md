@@ -233,7 +233,7 @@ Base: `http://127.0.0.1:8123`
 | `172.28.0.27` | 30004 | Venus A 150 | SYS/UPS + PV; firmware 150.9 encodings (#57) |
 | `172.28.0.28` | 30000 | Venus E mini 145 | SYS without 150 gate; slots 0–5; same-port |
 | `172.28.0.29` | 30000 | Venus E 2.0 / HMG-50 153 | GetDevice `VenusE`; must **not** add; no EM server |
-| `172.28.0.30`–`.46` | 30000 | Archived Control extras | VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini `VNSEM-0` 301 |
+| `172.28.0.30`–`.48` | 30000 | Archived Control extras | VNSE3-0 144/147/1476/148/149/151, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150/151, Venus C 155/156, HMG-50 155/156, Venus E mini `VNSEM-0` 301 |
 
 Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 30000, BLE MAC `02:e0:00:00:00:<last octet>`):
 
@@ -243,6 +243,7 @@ Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 3000
 | `172.28.0.53`–`.65` | Other VNSE3-0 / VNSA-0 / VNSD-0 images | `--profile firmware-all` only |
 | `172.28.0.66` | HMG-50 Venus C 156 (vendor firmware) | Default; drops many requests (#82), config flow may need a retry |
 | `172.28.0.67`–`.69` | HMG-50 Venus C 153/155, Venus E 2.0 156 | `--profile firmware-hmg50` or `firmware-all` |
+| `172.28.0.70` / `.71` | VNSE3-0 151 / VNSD-0 151 (4 PV) | `--profile firmware-all` only |
 
 Discovery reads the paused pooled socket for ports an entry already uses, so emulators on 30000 show up in the picker. If one is missing, it is usually the HMG-50 loss (#82) or an overloaded sandbox, not the port; add it with manual IP. `campaign` only walks `mock-marstek*`, but its `compose up --build` also builds and starts the default emulators. See `tools/firmware_emulator/README.md`.
 

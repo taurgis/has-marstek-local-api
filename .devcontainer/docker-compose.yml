@@ -432,6 +432,34 @@ services:
         ipv4_address: 172.28.0.46
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.46", "--device", "VNSEM-0", "--ver", "301", "--ble-mac", "02deadbeef1a", "--wifi-mac", "02cafebabe1a", "--soc", "56"]
 
+  # Control 151 (September 2026). Same Open API as 150; replies name the SKU
+  # in src ("VNSE3-0-<ble>", "VNSD-0-<ble>"). Emulated on .70/.71.
+  mock-marstek-27:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-27
+    environment:
+      - MOCK_IP=172.28.0.47
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.47
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.47", "--device", "VenusE 3.0", "--ver", "151", "--ble-mac", "02deadbeef1b", "--wifi-mac", "02cafebabe1b", "--soc", "62"]
+
+  mock-marstek-28:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-28
+    environment:
+      - MOCK_IP=172.28.0.48
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.48
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.48", "--device", "VenusD", "--ver", "151", "--ble-mac", "02deadbeef1c", "--wifi-mac", "02cafebabe1c", "--soc", "48", "--pv-channels", "400:40:10,350:40:8,300:40:7,250:40:6"]
+
   # ---- Firmware emulators: the vendor's own Control firmware in Renode ----
   # tools/firmware_emulator/README.md ("Docker"). Each emulator reports its own
   # IP and answers the Local API on UDP 30000; healthy = Marstek.GetDevice
@@ -612,6 +640,28 @@ services:
       fw-venus-e-149:
         condition: service_healthy
 
+  # Venus E 3.0, Control 151 (September 2026)
+  fw-venus-e-151:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-151
+    hostname: fw-venus-e-151
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.70
+    volumes:
+      - fw_venus_e_151:/state
+    command: ["--firmware", "VNSE3-0:151", "--ble-mac", "02:e0:00:00:00:70", "--wifi-mac", "02:e1:00:00:00:70", "--soc", "62", "--mips", "40"]
+
+  fw-venus-e-151-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-151-ct
+    network_mode: service:fw-venus-e-151
+    depends_on:
+      fw-venus-e-151:
+        condition: service_healthy
+
   # Venus A, Control 148
   fw-venus-a-148:
     <<: *firmware-emulator
@@ -788,6 +838,28 @@ services:
       fw-venus-d-1492:
         condition: service_healthy
 
+  # Venus D, Control 151 (September 2026)
+  fw-venus-d-151:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-151
+    hostname: fw-venus-d-151
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.71
+    volumes:
+      - fw_venus_d_151:/state
+    command: ["--firmware", "VNSD-0:151", "--ble-mac", "02:e0:00:00:00:71", "--wifi-mac", "02:e1:00:00:00:71", "--soc", "48", "--pv", "400,350,300,250", "--mips", "40"]
+
+  fw-venus-d-151-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-151-ct
+    network_mode: service:fw-venus-d-151
+    depends_on:
+      fw-venus-d-151:
+        condition: service_healthy
+
   # Venus C (HMG-50, STM32G4), Control 156, 2560 Wh pack: issue #82's meter channel
   fw-venus-c-156:
     <<: *firmware-emulator
@@ -916,6 +988,10 @@ volumes:
     name: marstek-fw-venus-d-149
   fw_venus_d_1492:
     name: marstek-fw-venus-d-1492
+  fw_venus_e_151:
+    name: marstek-fw-venus-e-151
+  fw_venus_d_151:
+    name: marstek-fw-venus-d-151
   fw_venus_c_156:
     name: marstek-fw-venus-c-156
   fw_venus_c_153:

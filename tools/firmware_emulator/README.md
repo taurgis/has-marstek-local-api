@@ -43,10 +43,10 @@ the same board and serves the Local API. Checked with `Marstek.GetDevice`,
 
 | Family | Versions | Reports |
 |--------|----------|---------|
-| VNSE3-0 | 144, 147, 1476, 148, 149, 150 | `VenusE 3.0`; `PV.GetStatus` is `Method not found` |
+| VNSE3-0 | 144, 147, 1476, 148, 149, 150, 151 | `VenusE 3.0`; `PV.GetStatus` is `Method not found` |
 | VNSA-0 | 148, 1487, 149, 150, 1509 (ems) | `Venus A` |
 | VNSA-0 | 1508 (banner VEPRO-0) | `VenusE Pro` |
-| VNSD-0 | 147, 149, 1492, 150 | `Venus D` |
+| VNSD-0 | 147, 149, 1492, 150, 151 | `Venus D` |
 
 Any method can come back as `Parse error` (data 403) or time out while a CT
 reply is being handled; see [Firmware debug log](#firmware-debug-log). On an
@@ -212,11 +212,12 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | `fw-venus-e-144`, `-147`, `-1476`, `-148`, `-149` | .53-.57 | VNSE3-0 | `firmware-all` |
 | `fw-venus-a-148`, `-1487`, `-149`, `-1508`, `-1509` | .58-.62 | VNSA-0, PV 420/360 W | `firmware-all` |
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
+| `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
 
 ```bash
 cd .devcontainer
 docker compose up -d --build                  # HA, the mocks and the three defaults
-docker compose --profile firmware-all up -d   # all sixteen emulators
+docker compose --profile firmware-all up -d   # all twenty-two emulators
 docker compose --profile firmware-all stop fw-venus-e-144 fw-venus-e-144-ct   # one by one
 ```
 

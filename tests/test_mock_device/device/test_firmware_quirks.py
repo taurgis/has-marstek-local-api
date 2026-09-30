@@ -129,6 +129,31 @@ class TestVenusEFirmware150Capture:
         }
         assert "result" not in response
 
+    @pytest.mark.parametrize(
+        ("device_name", "ver", "prefix"),
+        [
+            ("VenusE 3.0", 150, "VenusE 3.0"),
+            ("VenusE 3.0", 151, "VNSE3-0"),
+            ("VenusD", 151, "VNSD-0"),
+            ("VenusA", 151, "VenusA"),
+            ("VenusC", 156, "VenusC"),
+        ],
+    )
+    def test_src_names_the_sku_from_control_151(
+        self, device_name: str, ver: int, prefix: str
+    ) -> None:
+        """VNSE3-0 / VNSD-0 151 put the SKU in ``src``; ``device`` keeps the name."""
+        device = MockMarstekDevice(
+            simulate=False,
+            device_config={"device": device_name, "ver": ver, "ble_mac": "02deadbeef01"},
+        )
+
+        response = device.build_response(1, "Marstek.GetDevice", {"ble_mac": "0"})
+
+        assert response is not None
+        assert response["src"] == f"{prefix}-02deadbeef01"
+        assert response["result"]["device"] == device_name
+
 
 class TestFirmwareUdpQuirks:
     """Reproduce Control firmware Open API quirks found in VNSE3-0 binaries."""

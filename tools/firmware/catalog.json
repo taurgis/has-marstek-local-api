@@ -110,6 +110,23 @@
       "remark": "Optimized Local API send anomaly on Ethernet; HTTP OTA on Ethernet; Peak-shaving; HTTP payload length; CT_TYPE meter."
     },
     {
+      "deviceType": "VNSE3-0",
+      "firmwareType": "Control",
+      "version": 151,
+      "controlGeneration": 151,
+      "filename": "VNSEE3-0_ems_app_0151_0928_094421.bin",
+      "size": 378880,
+      "sha256": "a2f566ebdf3f94a5b2b171e071bd65237d0cd0ae68035dab5fc34734cf250148",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260928/VNSEE3-0_ems_app_0151_0928_094421.bin",
+      "buildStamp": "Sep 28 2026 09:39:27",
+      "banner": "VNSE3-0 v151",
+      "vectorTable": {
+        "sp": "0x20021df8",
+        "reset": "0x08004a71"
+      },
+      "remark": "Modbus TCP stability; DOD abnormal state could block discharge; Ymodel upgrade type check; AI mode validation and current AI strategy query; pre-release server URL fix; HTTPS upload stability; CT polled every 1.1 s."
+    },
+    {
       "deviceType": "VNSA-0",
       "firmwareType": "Control",
       "version": 148,
@@ -278,6 +295,23 @@
         "reset": "0x08004a71"
       },
       "remark": "Fixed faulty Local API transmission in Ethernet mode."
+    },
+    {
+      "deviceType": "VNSD-0",
+      "firmwareType": "Control",
+      "version": 151,
+      "controlGeneration": 151,
+      "filename": "VNSD-0_ems_app_0151_0929_094333.bin",
+      "size": 393216,
+      "sha256": "db3638cb68683175debe283375f36b02427b9e5e7a647ce2045e8135177fea47",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260929/VNSD-0_ems_app_0151_0929_094333.bin",
+      "buildStamp": "Sep 29 2026 09:42:27",
+      "banner": "VNSD-0 v151",
+      "vectorTable": {
+        "sp": "0x20022010",
+        "reset": "0x08004a71"
+      },
+      "remark": "Modbus TCP stability; DOD abnormal state could block discharge; Ymodel upgrade type check; AI mode validation and current AI strategy query; pre-release server URL fix; HTTPS upload stability; CT polled every 1.1 s."
     },
     {
       "deviceType": "HMG-50",
