@@ -11,7 +11,11 @@ from homeassistant.helpers.device_registry import (
 )
 
 from custom_components.marstek.binary_sensor import MarstekBinarySensor
-from custom_components.marstek.device_info import build_device_info, get_device_identifier
+from custom_components.marstek.device_info import (
+    build_device_info,
+    get_device_identifier,
+    stale_access_point_connections,
+)
 from custom_components.marstek.helpers.binary_sensor_descriptions import BINARY_SENSORS
 
 
@@ -52,23 +56,44 @@ def test_build_device_info_formats_device_name() -> None:
     assert device["sw_version"] == "147"
 
 
-def test_build_device_info_registers_hardware_connections() -> None:
-    """Wi-Fi and BLE MACs should be registered so HA can match the hardware."""
+def test_build_device_info_registers_only_ble_mac() -> None:
+    """``wifi_mac`` is the access point's BSSID, so it is not this device's MAC."""
     device = build_device_info(
         {
             "ble_mac": "AA:BB:CC:DD:EE:FF",
             "wifi_mac": "11:22:33:44:55:66",
-            "mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "11:22:33:44:55:66",
             "device_type": "VenusA 3.0",
         }
     )
 
-    assert device["connections"] == {
-        (CONNECTION_NETWORK_MAC, "11:22:33:44:55:66"),
-        (CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff"),
-        (CONNECTION_BLUETOOTH, "aa:bb:cc:dd:ee:ff"),
-    }
+    assert device["connections"] == {(CONNECTION_BLUETOOTH, "aa:bb:cc:dd:ee:ff")}
     assert device["serial_number"] == "aa:bb:cc:dd:ee:ff"
+
+
+def test_build_device_info_falls_back_to_network_mac_without_ble() -> None:
+    """Without a BLE MAC the reported MACs are all Home Assistant can match on."""
+    device = build_device_info(
+        {"wifi_mac": "11:22:33:44:55:66", "mac": "11:22:33:44:55:66", "device_type": "Venus"}
+    )
+
+    assert device["connections"] == {(CONNECTION_NETWORK_MAC, "11:22:33:44:55:66")}
+
+
+def test_stale_access_point_connections() -> None:
+    """Only the reported BSSIDs are stale; other network MACs stay."""
+    info = {"ble_mac": "AA:BB:CC:DD:EE:FF", "wifi_mac": "11:22:33:44:55:66", "mac": ""}
+    registered = {
+        (CONNECTION_BLUETOOTH, "aa:bb:cc:dd:ee:ff"),
+        (CONNECTION_NETWORK_MAC, "11:22:33:44:55:66"),
+        (CONNECTION_NETWORK_MAC, "77:88:99:aa:bb:cc"),
+    }
+
+    assert stale_access_point_connections(info, registered) == {
+        (CONNECTION_NETWORK_MAC, "11:22:33:44:55:66")
+    }
+    # Without a BLE MAC the network MAC is the device's identity; keep it.
+    assert stale_access_point_connections({"wifi_mac": "11:22:33:44:55:66"}, registered) == set()
 
 
 def test_build_device_info_skips_unusable_macs() -> None:

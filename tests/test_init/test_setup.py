@@ -266,3 +266,36 @@ async def test_remove_config_entry_device_allows_all_without_identity(
     )
 
     assert await async_remove_config_entry_device(hass, entry, device) is True
+
+
+async def test_setup_removes_access_point_mac_connection(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Setup drops the BSSID an earlier release registered as the device MAC."""
+    mock_config_entry.add_to_hass(hass)
+    device_registry = dr.async_get(hass)
+    other_mac = (dr.CONNECTION_NETWORK_MAC, "77:88:99:aa:bb:cc")
+    device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, "aa:bb:cc:dd:ee:ff")},
+        connections={
+            (dr.CONNECTION_NETWORK_MAC, "11:22:33:44:55:66"),
+            (dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff"),
+            other_mac,
+        },
+    )
+
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    device = async_lookup_device_by_identifier(device_registry, (DOMAIN, "aa:bb:cc:dd:ee:ff"))
+    assert device is not None
+    # A network MAC this device never reported (another integration's) stays.
+    assert device.connections == {
+        (dr.CONNECTION_BLUETOOTH, "aa:bb:cc:dd:ee:ff"),
+        other_mac,
+    }
