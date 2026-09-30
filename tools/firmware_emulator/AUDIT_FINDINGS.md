@@ -39,8 +39,10 @@ The firmware has more than the profile enables. Widen these only with real-devic
 - `total_load_energy` is always 0. Venus A 148 hard-codes `pv_power` and `total_pv_energy` to 0, and Venus D 147 does the same in `ES.GetStatus`.
 - A manual slot whose window already includes the current time is acknowledged much less often than one that starts later. Venus E 151, both sent from Auto with compact JSON: 7/16 within three tries against 7/8. The failures are `Parse error` 403 or silence, so the three retries already in place are the only mitigation.
 - Venus A `ongrid_power` (in both `ES.GetStatus` and `ES.GetMode`) follows a new setpoint only after tens of seconds; on 1487 it read 0, then 600, then 0 again. Right after a mode change the fallback battery power is therefore PV only. Nothing better is on the wire, so the parser keeps it.
+- Under contention a supported read can come back as `Method not found` (-32601, data 425) once: Venus A 1509 did it for `EM.GetStatus` and answered the next three normally. The integration treats it like any failed read and never marks a method unsupported from one reply; keep it that way.
 - The emulators lose BMS CAN frames now and then, which triggers bug 7 without any fault injected. Treat a zero battery reading in a campaign as that, not as a new bug.
-- HMG-50 answers only a fraction of Local API requests while it services its CT, see [issue #82](https://github.com/taurgis/has-marstek-local-api/issues/82) and the README.
+- HMG-50 answers only a fraction of Local API requests while it services its CT, see [issue #82](https://github.com/taurgis/has-marstek-local-api/issues/82) and the README. In the emulator modem logs Venus C 153 answered 27 % and 155 answered 16 % of requests. HA still added, polled and wrote to 153 and 156 through its retries and cached data, but a first add often shows `cannot_connect` and about half of the mode and schedule writes fail after three tries. Venus E 2.0 156 is refused with `unsupported_device` whenever its `GetDevice` reply arrives.
+- HMG-50 sends every reply to the Open API port (30000), never to the request's source port. A host-side probe on an ephemeral port therefore sees only timeouts. Probe these images from port 30000 or read the modem log (`fc41d.log`).
 
 ## Reproduce
 
