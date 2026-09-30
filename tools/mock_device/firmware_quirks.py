@@ -86,3 +86,26 @@ def openapi_src_prefix(profile: FirmwareProfile, device_name: str) -> str:
     if sku is None or generation is None or generation < _SKU_SRC_MIN_GENERATION:
         return device_name
     return sku
+
+
+def answers_unknown_methods(profile: FirmwareProfile) -> bool:
+    """Return whether an unsupported method gets a ``-32601`` reply.
+
+    Control firmware answers it. A Venus E mini ``VNSEM-0`` 301 (issue #86)
+    sent nothing for ``PV.GetStatus`` or ``Foo.Get`` within 10 s and kept
+    answering other requests, so it drops them silently.
+    """
+    return profile.family is not DeviceFamily.VENUS_E_MINI
+
+
+def uses_broadcast_reply_rules(profile: FirmwareProfile) -> bool:
+    """Return whether the firmware follows the Venus E mini UDP rules.
+
+    Captured on ``VNSEM-0`` 301 (issue #86):
+
+    - it answers only a request whose source port is its API port;
+    - it sends every reply to ``<subnet broadcast>:<API port>``;
+    - it ignores a ``Marstek.GetDevice`` sent to the broadcast address, so
+      LAN discovery never finds it and it must be added by IP.
+    """
+    return profile.family is DeviceFamily.VENUS_E_MINI

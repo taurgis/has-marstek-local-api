@@ -160,6 +160,17 @@ class FirmwareProfile:
         return generation < 150
 
     @property
+    def es_bat_cap_is_remaining(self) -> bool:
+        """Return whether ES.GetStatus ``bat_cap`` is the remaining energy.
+
+        Control firmware reports the pack's rated capacity there (Venus A:
+        2080 Wh at 49 % SoC). A Venus E mini ``VNSEM-0`` 301 capture (issue
+        #86) sent ``bat_cap`` 1916 at 95 % SoC, exactly its Bat.GetStatus
+        ``bat_capacity`` (remaining) and below its ``rated_capacity`` 2009.
+        """
+        return self.family is DeviceFamily.VENUS_E_MINI
+
+    @property
     def shared_meter_udp_channel(self) -> bool:
         """Return whether Open API reads contend with the device meter client.
 

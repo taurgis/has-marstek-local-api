@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .const import API_MODE_PASSIVE, DEFAULT_UDP_PORT, DOMAIN
 from .helpers.device_lookup import (
@@ -204,12 +204,17 @@ async def async_set_manual_schedule(hass: HomeAssistant, call: ServiceCall) -> N
     )
 
 
+# Consecutive failed slots after which clearing gives up on the device.
+_CLEAR_SLOT_FAILURE_LIMIT = 2
+
+
 async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle clear_manual_schedules service call.
 
     Each profile slot is cleared sequentially. Each slot requires
     a separate API call to the device due to protocol limitations.
     Polling is paused once for the batch to avoid race conditions.
+    Failed slots are reported together at the end.
     """
     device_id = _get_device_id_from_call(call)
 
@@ -222,10 +227,19 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
         device_id,
     )
 
+    failed: list[int] = []
+    last_error = ""
+    consecutive_failures = 0
     # Pause polling once for the full batch
     async with polling_paused(udp_client, host):
-        # Clear every profile-supported slot by setting it to disabled
+        # Clear every profile-supported slot by setting it to disabled. A slot
+        # that fails does not stop the rest: one lost write should not leave
+        # the later slots active. Two failures in a row mean the device is
+        # gone, and the remaining slots would each wait out every retry.
         for slot in range(slot_count):
+            if consecutive_failures >= _CLEAR_SLOT_FAILURE_LIMIT:
+                failed.extend(range(slot, slot_count))
+                break
             config = build_manual_mode_config(
                 power=0,
                 enable=False,
@@ -235,14 +249,21 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
                 week_set=0,
             )
 
-            await send_mode_command_with_retries(
-                udp_client,
-                host,
-                port,
-                config,
-                pause_polling=False,
-                logger=_LOGGER,
-            )
+            try:
+                await send_mode_command_with_retries(
+                    udp_client,
+                    host,
+                    port,
+                    config,
+                    pause_polling=False,
+                    logger=_LOGGER,
+                )
+            except HomeAssistantError as err:
+                failed.append(slot)
+                consecutive_failures += 1
+                last_error = (err.translation_placeholders or {}).get("error", str(err))
+                continue
+            consecutive_failures = 0
             _LOGGER.debug(
                 "Cleared manual schedule slot %d/%d for device %s",
                 slot + 1,
@@ -252,6 +273,16 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
 
     # Refresh coordinator
     await entry.runtime_data.coordinator.async_request_refresh()
+
+    if failed:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="clear_schedules_failed",
+            translation_placeholders={
+                "slots": ", ".join(str(slot) for slot in failed),
+                "error": last_error,
+            },
+        )
 
     _LOGGER.debug("Cleared all manual schedules for device %s", device_id)
 

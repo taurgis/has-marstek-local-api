@@ -60,6 +60,12 @@ MIN_REQUEST_INTERVAL: float = 0.3  # 300ms minimum between requests to same IP
 # Control firmware below 150 is heap-sensitive; keep a stricter floor even when
 # a caller asks to bypass the normal 300ms throttle (GetDevice, retries).
 MIN_RESET_PRONE_REQUEST_INTERVAL: float = 1.0
+# Control firmware lets its CT meter task catch up right after it answers,
+# and drops Open API requests that arrive meanwhile (Parse error 403 or no
+# reply). On the vendor firmware emulators 0/23 requests sent within 1 s of a
+# reply were answered, against 13/13 after 2 s. Throttled requests therefore
+# also wait this long after the device's last datagram.
+POST_REPLY_QUIET_INTERVAL: float = 2.0
 # FC41D Wi-Fi STA power-save and AP TIM buffering often drop or delay the
 # first downlink unicast. RFC 1122 leaves UDP retransmission to the
 # application. Wait this long for a reply before sending a second copy.
@@ -444,7 +450,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
             if self._marks.is_reset_prone(target_ip)
             else MIN_REQUEST_INTERVAL
         )
-        await self._throttle.wait_turn(target_ip, min_interval)
+        await self._throttle.wait_turn(target_ip, min_interval, POST_REPLY_QUIET_INTERVAL)
         if self._throttle.is_crowded():
             await self._cleanup_rate_limit_tracking()
 
@@ -804,6 +810,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                 raw_id = response.get("id") if isinstance(response, dict) else None
                 request_id = json_rpc_wire_id(raw_id)
                 _LOGGER.debug("Recv: %s:%d | %s", addr[0], addr[1], response)
+                self._throttle.note_reply(addr[0])
                 if request_id is not None:
                     self._router.deliver(request_id, response, addr)
 

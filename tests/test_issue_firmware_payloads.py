@@ -334,3 +334,99 @@ def test_issue_60_venus_c_153_getdevice_mac_from_src() -> None:
     assert profile.supports_em_status is False
     assert profile.supports_em_energy is False
     assert profile.openapi_reset_prone is True
+
+
+_MINI_SRC = "VNSEM-0-000000000000"
+
+
+def _mini_es_status(bat_soc: int, bat_cap: int) -> dict[str, object]:
+    return {
+        "id": 3333,
+        "src": _MINI_SRC,
+        "result": {
+            "id": 0,
+            "bat_soc": bat_soc,
+            "bat_cap": bat_cap,
+            "pv_power": 0,
+            "ongrid_power": 0,
+            "offgrid_power": 0,
+            "total_pv_energy": 0,
+            "total_grid_output_energy": 0,
+            "total_grid_input_energy": 0,
+            "total_load_energy": 0,
+        },
+    }
+
+
+def test_issue_86_venus_e_mini_301_bat_cap_is_remaining_energy() -> None:
+    """Issue #86: VNSEM-0 301 bat_cap equals Bat.GetStatus remaining capacity."""
+    profile = resolve_firmware_profile("VNSEM-0", 301)
+    es_status = parse_es_status_response(_mini_es_status(95, 1916), profile)
+    mode = parse_es_mode_response(
+        {
+            "id": 3332,
+            "src": _MINI_SRC,
+            "result": {
+                "id": 0,
+                "mode": "UPS",
+                "ongrid_power": 0,
+                "offgrid_power": 0,
+                "bat_soc": 95,
+                "ct_state": 0,
+                "a_power": 0,
+                "b_power": 0,
+                "c_power": 0,
+                "total_power": 0,
+                "input_energy": 0,
+                "output_energy": 0,
+            },
+        },
+        profile,
+    )
+    bat = parse_bat_status_response(
+        {
+            "id": 3331,
+            "src": _MINI_SRC,
+            "result": {
+                "id": 0,
+                "soc": 95,
+                "charg_flag": True,
+                "dischrg_flag": True,
+                "bat_temp": 23,
+                "bat_capacity": 1916,
+                "rated_capacity": 2009,
+            },
+        }
+    )
+
+    merged = merge_device_status(es_mode_data=mode, es_status_data=es_status, bat_status_data=bat)
+
+    assert merged["device_mode"] == "ups"
+    assert merged["battery_soc"] == 95
+    assert merged["bat_capacity"] == 1916
+    assert merged["bat_rated_capacity"] == 2009
+    # Not the pack size, so the total-capacity sensor gets no value.
+    assert merged["bat_cap"] is None
+    assert merged["battery_status"] == "idle"
+
+
+def test_issue_86_venus_e_mini_drained_pack_reads_zero() -> None:
+    """Remaining energy 0 at SoC 0 is an empty mini, not a silent BMS."""
+    profile = resolve_firmware_profile("VNSEM-0", 301)
+
+    empty = parse_es_status_response(_mini_es_status(0, 0), profile)
+    contradicted = parse_es_status_response(_mini_es_status(40, 0), profile)
+
+    assert empty["battery_soc"] == 0
+    assert empty["bat_capacity"] == 0
+    assert contradicted["battery_soc"] == 40
+    assert "bat_capacity" not in contradicted
+
+
+def test_control_bat_cap_stays_total_capacity() -> None:
+    """Regular families keep bat_cap as the pack size and add no remaining key."""
+    profile = resolve_firmware_profile("VenusE 3.0", 150)
+    parsed = parse_es_status_response(_mini_es_status(49, 5120), profile)
+
+    assert parsed["bat_cap"] == 5120
+    assert "bat_capacity" not in parsed

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+import struct
 import threading
 import time
 from collections import Counter
@@ -33,11 +34,13 @@ from .const import (
     MODE_UPS,
 )
 from .firmware_quirks import (
+    answers_unknown_methods,
     openapi_src_prefix,
     pv_method_not_found_extra_data,
     reports_es_bat_power,
     supports_set_ver_and_factory_reset,
     supports_wifi_set_config,
+    uses_broadcast_reply_rules,
 )
 from .handlers import (
     get_static_state,
@@ -57,6 +60,8 @@ from .handlers import (
 )
 from .simulators import BatterySimulator
 from .utils import (
+    LIMITED_BROADCAST,
+    get_broadcast_address,
     get_local_ip,
     load_persistent_state,
     reset_persistent_state,
@@ -72,6 +77,9 @@ DROP_LOG_INTERVAL = 10.0
 # Seconds between simulator status lines. Every mock prints these for as long
 # as it runs, so the default stays coarse; pass --status-interval to tighten.
 DEFAULT_STATUS_INTERVAL = 30.0
+
+# ``struct in_pktinfo`` (ip(7)): ifindex, local address, header destination.
+_IN_PKTINFO = struct.Struct("=I4s4s")
 
 
 class MockMarstekDevice:
@@ -103,6 +111,9 @@ class MockMarstekDevice:
         self.config["ver"] = self.profile.firmware_version
         self.ip = ip_override or get_local_ip()
         self.sock: socket.socket | None = None
+        # Venus E mini UDP rules (issue #86); see uses_broadcast_reply_rules.
+        self._broadcast_rules = uses_broadcast_reply_rules(self.profile)
+        self._broadcast_addr = LIMITED_BROADCAST
         self._state_dir = resolve_state_dir(state_dir) if state_dir is not None else None
 
         # Whether to include bat_power in ES.GetStatus responses
@@ -166,6 +177,13 @@ class MockMarstekDevice:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, "SO_REUSEPORT"):
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        # Firmware that replies by broadcast needs SO_BROADCAST to send, and
+        # IP_PKTINFO tells it which requests were broadcast (ip(7)).
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        if self._broadcast_rules:
+            self._broadcast_addr = get_broadcast_address(self.ip)
+            if hasattr(socket, "IP_PKTINFO"):
+                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_PKTINFO, 1)
         self.sock.bind(("0.0.0.0", self.port))
 
         self._print_banner()
@@ -292,10 +310,14 @@ class MockMarstekDevice:
 
     def _handle_request(self) -> None:
         """Handle incoming UDP request."""
-        assert self.sock is not None
-        data, addr = self.sock.recvfrom(4096)
+        data, addr, destination = self._receive()
         sender_ip, sender_port = addr
         sender = f"{sender_ip}:{sender_port}"
+        mini_rules = self._broadcast_rules and not is_loopback_host(sender_ip)
+
+        if mini_rules and sender_port != self.port:
+            self._log_dropped("source port is not the API port", sender)
+            return
 
         if self._openapi_frozen:
             self._log_dropped(f"Open API frozen, {len(data)} bytes", sender)
@@ -345,7 +367,19 @@ class MockMarstekDevice:
         if not isinstance(params, dict):
             params = {}
 
+        if (
+            mini_rules
+            and method == "Marstek.GetDevice"
+            and destination in {self._broadcast_addr, LIMITED_BROADCAST}
+        ):
+            self._log_dropped("broadcast GetDevice", sender)
+            return
+
         response = self.build_response(request_id, method, params)
+        if response and not answers_unknown_methods(self.profile):
+            error = response.get("error")
+            if isinstance(error, dict) and error.get("code") == -32601:
+                response = None
 
         if response:
             self._send_openapi_datagram(response, addr)
@@ -356,6 +390,22 @@ class MockMarstekDevice:
                 f"[{time.strftime('%H:%M:%S')}] {sender} {method} "
                 f"id={raw_id} (wire {request_id}) -> {outcome}"
             )
+
+    def _receive(self) -> tuple[bytes, tuple[str, int], str | None]:
+        """Read one datagram, with its destination address when it is known."""
+        assert self.sock is not None
+        if not (self._broadcast_rules and hasattr(socket, "IP_PKTINFO")):
+            data, addr = self.sock.recvfrom(4096)
+            return data, addr, None
+        data, ancdata, _flags, addr = self.sock.recvmsg(4096, socket.CMSG_SPACE(_IN_PKTINFO.size))
+        destination = None
+        for level, kind, payload in ancdata:
+            if level == socket.IPPROTO_IP and kind == socket.IP_PKTINFO:
+                _ifindex, _local, header_destination = _IN_PKTINFO.unpack(
+                    payload[: _IN_PKTINFO.size]
+                )
+                destination = socket.inet_ntoa(header_destination)
+        return data, addr, destination
 
     def _send_openapi_datagram(self, response: dict[str, Any], addr: tuple[str, int]) -> None:
         """Send a UDP reply, duplicating it on reset-prone Control firmware.
@@ -380,6 +430,8 @@ class MockMarstekDevice:
         sender_ip, _sender_port = addr
         if is_loopback_host(sender_ip):
             return addr
+        if self._broadcast_rules:
+            return (self._broadcast_addr, self.port)
         return (sender_ip, self.port)
 
     def _get_state(self) -> dict[str, Any]:

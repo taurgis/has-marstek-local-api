@@ -209,7 +209,7 @@ non-finite values a second time, for values arithmetic inside the parsers produc
 
 ### Rate limiting
 
-The UDP client enforces a **minimum interval between requests** to the same device IP (`MIN_REQUEST_INTERVAL = 0.3s`) to prevent overwhelming devices.
+The UDP client enforces a **minimum interval between requests** to the same device IP (`MIN_REQUEST_INTERVAL = 0.3s`) to prevent overwhelming devices. Throttled requests also wait `POST_REPLY_QUIET_INTERVAL = 2.0s` after the device's last datagram: Control firmware lets its CT meter task catch up right after it answers and drops requests that arrive meanwhile (see `tools/firmware_emulator/AUDIT_FINDINGS.md`).
 
 ### Strict validation mode
 

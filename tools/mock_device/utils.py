@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,39 @@ def get_local_ip() -> str:
         return ip
     except Exception:
         return "127.0.0.1"
+
+
+_SIOCGIFADDR = 0x8915
+_SIOCGIFBRDADDR = 0x8919
+LIMITED_BROADCAST = "255.255.255.255"
+
+
+def get_broadcast_address(ip: str) -> str:
+    """Return the subnet broadcast address of the interface holding ``ip``.
+
+    Uses the Linux ``SIOCGIFADDR`` / ``SIOCGIFBRDADDR`` ioctls
+    (netdevice(7)). Anywhere they are missing, or no interface holds
+    ``ip``, fall back to the limited broadcast address.
+    """
+    try:
+        import fcntl  # Linux only
+    except ImportError:
+        return LIMITED_BROADCAST
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        for _index, name in socket.if_nameindex():
+            request = struct.pack("256s", name.encode()[:15])
+            try:
+                address = socket.inet_ntoa(
+                    fcntl.ioctl(probe.fileno(), _SIOCGIFADDR, request)[20:24]
+                )
+                if address != ip:
+                    continue
+                return socket.inet_ntoa(
+                    fcntl.ioctl(probe.fileno(), _SIOCGIFBRDADDR, request)[20:24]
+                )
+            except OSError:
+                continue
+    return LIMITED_BROADCAST
 
 
 def resolve_state_dir(state_dir: str | Path | None) -> Path:

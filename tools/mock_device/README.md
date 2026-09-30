@@ -50,6 +50,15 @@ Issue [#57](https://github.com/taurgis/has-marstek-local-api/issues/57) is **PV1
 
 Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be configured as Venus E if you need the SYS-without-150 and slots 0–5 behavior.
 
+Venus E mini also follows the UDP rules of a `VNSEM-0` 301 capture
+([#86](https://github.com/taurgis/has-marstek-local-api/issues/86)) for
+non-loopback senders: it answers only requests sent from the API port, replies
+by broadcast to that port, ignores broadcast `Marstek.GetDevice` (so discovery
+does not list it), and stays silent on `PV.GetStatus` and unknown methods
+instead of returning `Method not found`. Its `ES.GetStatus` `bat_cap` is the
+remaining energy, equal to `Bat.GetStatus` `bat_capacity`. Loopback senders
+(the unit tests) still get unicast replies on their source port.
+
 ## Firmware UDP quirks
 
 The mock reproduces Control firmware behavior found in VNSE3-0 / HMG-50

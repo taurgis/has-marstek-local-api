@@ -67,6 +67,34 @@ async def test_e_mini_profile_omits_pv_entities_even_with_stale_data(
     assert hass.states.get("sensor.venus_e_mini_total_solar_energy") is None
 
 
+async def test_e_mini_profile_omits_total_capacity(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """The mini's ES bat_cap is remaining energy, so no total-capacity sensor."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "device_type": "VNSEM-0", "version": 301},
+    )
+    client = create_mock_client(
+        status={"device_mode": "ups", "battery_soc": 95, "bat_cap": None, "bat_capacity": 1916}
+    )
+
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    capacity = [
+        state.entity_id
+        for state in hass.states.async_all("sensor")
+        if state.entity_id.endswith("_battery_total_capacity")
+    ]
+    assert capacity == []
+    assert any(
+        state.entity_id.endswith("_battery_level") for state in hass.states.async_all("sensor")
+    )
+
+
 async def test_pv_power_overridden_when_api_returns_zero(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

@@ -132,6 +132,19 @@ def json_loads_strict(text: str) -> Any:
     )
 
 
+def json_dumps_wire(payload: Any) -> str:
+    """Encode an outgoing request without insignificant whitespace.
+
+    Control firmware drops a request that arrives while its CT meter task
+    holds the modem (Parse error, data 403), and a longer datagram stays on
+    the modem UART longer. Compact separators cut a manual ES.SetMode from
+    205 to 183 bytes; on the vendor firmware emulators that raised its
+    acceptance from 11/80 to 69/80. RFC 8259 section 2 makes the whitespace
+    optional, so the payload is the same JSON either way.
+    """
+    return json.dumps(payload, separators=(",", ":"))
+
+
 def json_rpc_result_usable(response: dict[str, Any]) -> bool:
     """Return True when the payload carries a JSON-RPC result, not an error.
 
@@ -165,7 +178,7 @@ def normalize_json_rpc_wire_message(message: str) -> tuple[str, int, str]:
         wire_id = 1
     if payload["id"] != wire_id:
         payload["id"] = wire_id
-        message = json.dumps(payload, separators=(",", ":"))
+        message = json_dumps_wire(payload)
     return message, wire_id, method_name
 
 
