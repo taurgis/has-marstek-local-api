@@ -417,6 +417,8 @@ services:
         ipv4_address: 172.28.0.45
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.45", "--device", "VenusE", "--ver", "156", "--ble-mac", "02deadbeef19", "--wifi-mac", "02cafebabe19", "--soc", "43"]
 
+  # Venus E mini as a real device reports it (issue #86): GetDevice
+  # "VNSEM-0", ver 301. SYS + UPS, slots 0-5.
   mock-marstek-26:
     <<: *default-logging
     build:
@@ -428,7 +430,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.46
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.46", "--device", "Venus E mini", "--ver", "150", "--ble-mac", "02deadbeef1a", "--wifi-mac", "02cafebabe1a", "--soc", "56"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.46", "--device", "VNSEM-0", "--ver", "301", "--ble-mac", "02deadbeef1a", "--wifi-mac", "02cafebabe1a", "--soc", "56"]
 
   # ---- Firmware emulators: the vendor's own Control firmware in Renode ----
   # tools/firmware_emulator/README.md ("Docker"). Each emulator reports its own

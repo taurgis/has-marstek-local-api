@@ -67,6 +67,7 @@ def test_setup_expectation_matches_firmware_profile() -> None:
     assert campaign.setup_expectation("VenusE 3.0", 150) == "add_supported"
     assert campaign.setup_expectation("VenusC", 153) == "add_supported"
     assert campaign.setup_expectation("Venus E mini", 145) == "add_supported"
+    assert campaign.setup_expectation("VNSEM-0", 301) == "add_supported"
 
 
 def test_entity_by_key_matches_mac_unique_id_suffix() -> None:

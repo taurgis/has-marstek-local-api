@@ -11,7 +11,7 @@ Those controls are firmware-profile gated. They are **omitted** when the device 
 
 If they are missing:
 
-1. Check the device model on the device page (Venus E mini is not Venus E).
+1. Check the device model on the device page (Venus E mini is not Venus E; it reports `VNSEM-0`).
 2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** → `firmware_profile`).
 3. Unknown or unparseable `ver` stays legacy-safe: no SYS and no UPS.
 4. After a firmware update that crosses a capability or reset-safety gate, the scanner reloads the config entry; you do not need to delete and re-add the device.

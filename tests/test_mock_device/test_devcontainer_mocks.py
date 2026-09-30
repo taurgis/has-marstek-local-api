@@ -92,7 +92,7 @@ def test_devcontainer_runs_observed_firmware_mocks() -> None:
     assert '"--device", "VenusC", "--ver", "155"' in compose
     assert '"--device", "VenusC", "--ver", "156"' in compose
     assert '"--device", "Venus E mini", "--ver", "145"' in compose
-    assert '"--device", "Venus E mini", "--ver", "150"' in compose
+    assert '"--device", "VNSEM-0", "--ver", "301"' in compose
     assert '"--device", "VenusE", "--ver", "153"' in compose
     assert '"--device", "VenusE", "--ver", "155"' in compose
     assert '"--device", "VenusE", "--ver", "156"' in compose

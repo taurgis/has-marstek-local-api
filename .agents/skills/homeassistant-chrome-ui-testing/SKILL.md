@@ -233,7 +233,7 @@ Base: `http://127.0.0.1:8123`
 | `172.28.0.27` | 30004 | Venus A 150 | SYS/UPS + PV; firmware 150.9 encodings (#57) |
 | `172.28.0.28` | 30000 | Venus E mini 145 | SYS without 150 gate; slots 0–5; same-port |
 | `172.28.0.29` | 30000 | Venus E 2.0 / HMG-50 153 | GetDevice `VenusE`; must **not** add; no EM server |
-| `172.28.0.30`–`.46` | 30000 | Archived Control extras | VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, E mini 150 |
+| `172.28.0.30`–`.46` | 30000 | Archived Control extras | VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini `VNSEM-0` 301 |
 
 Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 30000, BLE MAC `02:e0:00:00:00:<last octet>`):
 

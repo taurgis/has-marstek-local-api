@@ -31,6 +31,8 @@ from custom_components.marstek.firmware_profile import (
         ("VNSA-0", DeviceFamily.VENUS_A, True, 9),
         ("VNSD-0", DeviceFamily.VENUS_D, True, 9),
         ("VNSE3-0", DeviceFamily.VENUS_E, False, 9),
+        ("VNSEM-0", DeviceFamily.VENUS_E_MINI, False, 5),
+        ("vnsem 0", DeviceFamily.VENUS_E_MINI, False, 5),
         ("vnse3 0", DeviceFamily.VENUS_E, False, 9),
         ("VNSE2-0", DeviceFamily.UNKNOWN, False, 9),
         ("Venus E2.0", DeviceFamily.UNKNOWN, False, 9),
@@ -228,6 +230,7 @@ def test_dotted_app_firmware_labels_use_leading_open_api_integer(
         ("VenusC", 155, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),
         ("VenusC", 156, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),
         ("Venus E mini", 145, DeviceFamily.VENUS_E_MINI, 1.0, True, False, False, False, 5),
+        ("VNSEM-0", 301, DeviceFamily.VENUS_E_MINI, 10.0, True, True, True, False, 5),
         ("VenusD", 145, DeviceFamily.VENUS_D, 1.0, False, False, False, True, 9),
     ],
 )

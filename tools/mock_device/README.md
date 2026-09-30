@@ -154,7 +154,7 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
 | mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
-| mock-marstek-26 | 172.28.0.46 | Venus E mini | 150 | E mini with UPS + ten-slot exception still 0–5 |
+| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as the real device reports it (issue #86): SYS + UPS, slots 0–5 |
 
 Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. Venus A @ 150 is the SYS/UPS PV device; do not replace the 148/149 pair with it.
 

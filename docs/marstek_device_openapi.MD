@@ -484,7 +484,7 @@ Observed HMG-50 Control **153/155/156** can GetDevice as `VenusC` (issue #60) or
 server method from **155**. The PDF row above remains the vendor chapter-4
 matrix; shipped profile behavior for those generations is in 4.2.
 
-Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `VenusE 3.0`) **or** vendor SKUs (`VNSA-0`, `VNSD-0`, `VNSE3-0`). Both map to the same families. Venus E 2.x is **HMG-50**: Open API GetDevice reports `device: "VenusE"` (not `VenusE 3.0`). Bare `VenusE`, `HMG-50`, and `VNSE2` are rejected.
+Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `VenusE 3.0`) **or** vendor SKUs (`VNSA-0`, `VNSD-0`, `VNSE3-0`, and `VNSEM-0` for the Venus E mini, which reports `ver` `301`, [#86](https://github.com/taurgis/has-marstek-local-api/issues/86)). Both map to the same families. Venus E 2.x is **HMG-50**: Open API GetDevice reports `device: "VenusE"` (not `VenusE 3.0`). Bare `VenusE`, `HMG-50`, and `VNSE2` are rejected.
 
 ### 4.2 Integration firmware-profile behavior (shipped)
 
