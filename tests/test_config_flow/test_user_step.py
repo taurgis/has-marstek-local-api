@@ -338,3 +338,41 @@ async def test_user_discovery_pauses_udp_receivers(hass: HomeAssistant) -> None:
     assert result["step_id"] == "manual"
     client.async_pause_receiver.assert_awaited()
     client.async_resume_receiver.assert_awaited()
+
+
+async def test_user_flow_adds_device_a_discovery_flow_is_waiting_on(
+    hass: HomeAssistant,
+) -> None:
+    """Picking a device the scanner already offered must add it, not abort.
+
+    The scanner opens an ``integration_discovery`` flow for every new device.
+    A user who ignores that card and runs "Add integration" instead picks the
+    same device, so the user flow shares the discovery flow's unique id. The
+    user asked for this device; finishing their flow replaces the card.
+    """
+    device = {
+        "ip": "1.2.3.4",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "11:22:33:44:55:66",
+        "device_type": "VNSEM-0",
+        "version": 301,
+        "wifi_name": "marstek",
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+    discovery = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=device
+    )
+    assert discovery["type"] == FlowResultType.FORM
+    assert discovery["step_id"] == "confirm"
+
+    with patch_discovery([device]):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"device": "0"}
+        )
+    await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["host"] == "1.2.3.4"
+    # The discovery card for the same device is gone.
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []

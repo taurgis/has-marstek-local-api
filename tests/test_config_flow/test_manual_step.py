@@ -334,3 +334,31 @@ async def test_manual_add_reuses_pooled_udp_client(hass: HomeAssistant) -> None:
     assert mock_get_device_info.await_args.kwargs["udp_client"] is client
     client.async_pause_receiver.assert_not_called()
     client.async_resume_receiver.assert_not_called()
+
+
+async def test_manual_flow_adds_device_a_discovery_flow_is_waiting_on(
+    hass: HomeAssistant,
+) -> None:
+    """Entering the IP of a device the scanner already offered adds it."""
+    device = {
+        "ip": "1.2.3.4",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "11:22:33:44:55:66",
+        "device_type": "VNSEM-0",
+        "version": 301,
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+    discovery = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=device
+    )
+    assert discovery["step_id"] == "confirm"
+
+    with patch_discovery([]), patch_manual_connection(device_info=device):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={CONF_HOST: "1.2.3.4", CONF_PORT: 30000}
+        )
+    await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []

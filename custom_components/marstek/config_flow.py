@@ -168,7 +168,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "unsupported_device"
                 else:
                     self._discovered_identity_macs = identity_macs_from_mapping(device_info)
-                    await self.async_set_unique_id(formatted_unique_id)
+                    # Same as a picked device: an open discovery flow must
+                    # not turn the user's manual entry into an abort.
+                    await self.async_set_unique_id(formatted_unique_id, raise_on_progress=False)
                     self._abort_if_identity_configured()
 
                     return self.async_create_entry(
@@ -399,7 +401,10 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # No Venus E2 check here: the discovery sweep in async_step_user already
         # drops those before they reach self.discovered_devices.
         self._discovered_identity_macs = identity_macs_from_mapping(device)
-        await self.async_set_unique_id(formatted_unique_id)
+        # The scanner has usually opened a discovery flow for this device
+        # already. The user picked it here, so finish this flow; creating the
+        # entry aborts that discovery flow instead of this one.
+        await self.async_set_unique_id(formatted_unique_id, raise_on_progress=False)
         self._abort_if_identity_configured()
 
         return self.async_create_entry(
