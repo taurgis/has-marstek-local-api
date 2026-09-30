@@ -18,6 +18,8 @@ If they are missing:
 
 The Open API documents **no GET methods** for DOD, Bluetooth advertising, or LED. Home Assistant restores the last value it successfully wrote. Changes made in the Marstek app, after a device reboot, or by another controller are not detected.
 
+Earlier versions sent the Bluetooth advertising value inverted (the Open API PDF documents `Ble.Adv` backwards), so **on** stopped advertising. If the switch state does not match the device, turn it off and on again once after upgrading.
+
 Older notes that “LED is not in the API” applied to legacy Open API firmware. Capable firmware has a **Panel LED** switch (`Led.Ctrl`).
 
 `Set.Ver` and factory reset are intentionally not exposed in the default UI.

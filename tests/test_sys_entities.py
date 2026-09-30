@@ -410,7 +410,11 @@ async def test_sys_switches_start_unknown_without_history(
 async def test_bluetooth_advertising_wire_polarity(
     hass: HomeAssistant, service: str, enable: int
 ) -> None:
-    """HA on maps to Ble.Adv enable 0; HA off maps to enable 1."""
+    """HA on maps to Ble.Adv enable 1; HA off maps to enable 0.
+
+    The firmware sends AT+QBLEADVSTART for 1, the reverse of the Rev 3.1 PDF.
+    """
+    assert (BLE_ADV_ENABLED, BLE_ADV_DISABLED) == (1, 0)
     entry = _config_entry()
     client = _sys_client()
     with patch_marstek_integration(client=client):

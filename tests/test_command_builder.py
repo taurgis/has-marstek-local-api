@@ -24,6 +24,7 @@ from custom_components.marstek.pymarstek.command_builder import (
     set_es_mode_manual_discharge,
     set_led,
 )
+from custom_components.marstek.pymarstek.const import BLE_ADV_DISABLED, BLE_ADV_ENABLED
 from custom_components.marstek.pymarstek.validators import ValidationError
 
 
@@ -314,12 +315,12 @@ class TestSysCommands:
         assert parsed["params"] == {"value": 50}
 
     def test_set_ble_advertising_payloads(self) -> None:
-        """Ble.Adv 0 enables advertising and 1 disables it."""
-        enabled = json.loads(set_ble_advertising(0))
-        disabled = json.loads(set_ble_advertising(1))
+        """Ble.Adv 1 enables advertising and 0 disables it (firmware, not the PDF)."""
+        enabled = json.loads(set_ble_advertising(BLE_ADV_ENABLED))
+        disabled = json.loads(set_ble_advertising(BLE_ADV_DISABLED))
         assert enabled["method"] == "Ble.Adv"
-        assert enabled["params"] == {"enable": 0}
-        assert disabled["params"] == {"enable": 1}
+        assert enabled["params"] == {"enable": 1}
+        assert disabled["params"] == {"enable": 0}
 
     def test_set_led_payloads(self) -> None:
         """Led.Ctrl 1 is on and 0 is off."""
