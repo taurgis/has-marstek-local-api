@@ -366,9 +366,21 @@ def onboard_home_assistant() -> dict[str, Any]:
     return {"ok": True, "already": False}
 
 
-def bring_up_compose() -> dict[str, Any]:
-    """Build and start Home Assistant plus every mock from compose."""
+def compose_up_services(mocks: list[ComposeMock]) -> list[str]:
+    """Return the compose services a campaign run needs: HA and its mocks.
+
+    Naming them keeps a bare ``up`` from also starting the default firmware
+    emulators, which the campaign never tests and which take about half of a
+    4-CPU sandbox (AGENTS.md, *Sandbox resource budget*). ``--only`` narrows
+    ``mocks``, so it also narrows what starts.
+    """
+    return ["homeassistant", *sorted({mock.service for mock in mocks})]
+
+
+def bring_up_compose(mocks: list[ComposeMock]) -> dict[str, Any]:
+    """Build and start Home Assistant plus the campaign's mocks from compose."""
     compose = repo_root() / ".devcontainer" / COMPOSE_FILE
+    services = compose_up_services(mocks)
     cmd = [
         "sudo",
         "docker",
@@ -378,8 +390,9 @@ def bring_up_compose() -> dict[str, Any]:
         "up",
         "-d",
         "--build",
+        *services,
     ]
-    _log("docker compose up -d --build")
+    _log(f"docker compose up -d --build ({len(services)} services)")
     proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
     return {
         "ok": proc.returncode == 0,
@@ -2069,7 +2082,7 @@ async def run_campaign(
         mocks = [mock for mock in mocks if mock.host.lower() in wanted]
     if not skip_compose:
         _iptables_forward_accept()
-        compose = bring_up_compose()
+        compose = bring_up_compose(mocks)
         if not compose.get("ok"):
             return {"ok": False, "error": "compose", "detail": compose}
     if not wait_ha_api():

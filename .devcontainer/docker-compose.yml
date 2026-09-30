@@ -467,9 +467,11 @@ services:
   # and gets the firmware's port-12345 CT polls over loopback (--ct-loopback), so
   # no other device's meter answers them. The EEPROM (the firmware's settings)
   # persists in a named volume per device.
-  # Three run by default; every other catalogued Venus E 3.0 / A / D image is in
-  # the firmware-all profile:  docker compose --profile firmware-all up -d
-  # Profile images run a slower emulated MCU (--mips 40) to fit 16 on few cores.
+  # Four run by default (Venus E/A/D 150 and HMG-50 Venus C 156); every other
+  # catalogued image is in the firmware-all profile. On a small host start them
+  # by name, at most nproc at a time (AGENTS.md, "Sandbox resource budget"):
+  #   docker compose up -d fw-venus-e-148-ct fw-venus-d-149-ct
+  # Profile images run a slower emulated MCU (--mips 40) to lower their cost.
   # Venus E 3.0, Control 150 (current release)
   fw-venus-e-150:
     <<: *firmware-emulator

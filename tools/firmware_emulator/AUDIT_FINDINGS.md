@@ -36,8 +36,15 @@ The firmware has more than the profile enables. Widen these only with real-devic
 
 ## Reproduce
 
+Start the images a finding is about by name, a few at a time (AGENTS.md,
+*Sandbox resource budget*), for example bug 1:
+
 ```bash
-docker compose -f .devcontainer/docker-compose.yml --profile firmware-all up -d
+cd .devcontainer
+docker compose up -d homeassistant fw-venus-a-1487-ct fw-venus-d-149-ct fw-venus-d-1492-ct
+docker compose rm -sf fw-venus-a-1487-ct fw-venus-a-1487 fw-venus-d-149-ct fw-venus-d-149 fw-venus-d-1492-ct fw-venus-d-1492
 ```
+
+`--profile firmware-all up -d` starts all twenty-two, which only a large host carries.
 
 The service table is in `tools/mock_device/README.md`.

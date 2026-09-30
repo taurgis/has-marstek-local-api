@@ -151,6 +151,8 @@ python tools/mock_device/mock_marstek.py
 
 Devcontainer compose runs the archived Control mock matrix with mixed firmware and mixed Open API ports. See [tools/mock_device/README.md](../tools/mock_device/README.md).
 
+Next to the mocks, `fw-*` services run the vendor's own firmware in Renode for every image in `tools/firmware/catalog.json` ([tools/firmware_emulator/README.md](../tools/firmware_emulator/README.md)). Each costs 0.3-0.6 core and about 550 MB, so on a small machine start them by name, at most `nproc` at a time, and remove each batch before the next. The batch recipe is in AGENTS.md, *Sandbox resource budget*.
+
 ## Protocol reference
 
 See [Marstek Device Open API Rev 3.1](marstek_device_openapi.MD).

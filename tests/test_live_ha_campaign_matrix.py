@@ -32,8 +32,8 @@ def test_compose_mocks_cover_supported_and_rejected_devices() -> None:
     mocks = campaign.load_compose_mocks()
     hosts = {mock.host for mock in mocks}
     assert "172.28.0.20" in hosts
-    assert "172.28.0.46" in hosts
-    assert len(mocks) >= 26
+    assert "172.28.0.48" in hosts
+    assert len(mocks) >= 28
 
     by_host = {mock.host: mock for mock in mocks}
     assert by_host["172.28.0.29"].expectation == "reject_unsupported"
@@ -56,6 +56,20 @@ def test_compose_mocks_cover_supported_and_rejected_devices() -> None:
     assert by_host["172.28.0.20"].ble_mac == campaign.DEFAULT_MOCK_BLE_MAC
     assert campaign.campaign_mac(by_host["172.28.0.20"].ble_mac) == "00:9b:08:a5:aa:39"
     assert campaign.campaign_mac(by_host["172.28.0.25"].ble_mac) == "02:de:ad:be:ef:02"
+
+
+def test_compose_up_starts_only_home_assistant_and_the_campaign_mocks() -> None:
+    """The campaign never starts firmware emulators; --only narrows the mocks."""
+    campaign = _load_campaign()
+    mocks = campaign.load_compose_mocks()
+
+    services = campaign.compose_up_services(mocks)
+    assert services[0] == "homeassistant"
+    assert not [name for name in services if name.startswith("fw-")]
+    assert len(services) == len(mocks) + 1
+
+    one = [mock for mock in mocks if mock.host == "172.28.0.20"]
+    assert campaign.compose_up_services(one) == ["homeassistant", one[0].service]
 
 
 def test_setup_expectation_matches_firmware_profile() -> None:

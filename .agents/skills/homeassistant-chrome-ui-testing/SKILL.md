@@ -165,8 +165,10 @@ Then from `.devcontainer/` (drop `sudo` when you are root):
 sudo docker compose up -d --build
 ```
 
-Naming services (`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-6`)
-builds three mock images instead of twenty and is enough for same-port pooling
+A bare `up` also starts the four default firmware emulators, about half of a
+4-CPU sandbox. On a small machine name the services instead:
+`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-6` starts three
+mocks instead of twenty-eight and is enough for same-port pooling
 plus one unique-port device. Wait until `http://127.0.0.1:8123/api/onboarding`
 responds.
 
@@ -245,7 +247,7 @@ Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 3000
 | `172.28.0.67`–`.69` | HMG-50 Venus C 153/155, Venus E 2.0 156 | `--profile firmware-hmg50` or `firmware-all` |
 | `172.28.0.70` / `.71` | VNSE3-0 151 / VNSD-0 151 (4 PV) | `--profile firmware-all` only |
 
-Discovery reads the paused pooled socket for ports an entry already uses, so emulators on 30000 show up in the picker. If one is missing, it is usually the HMG-50 loss (#82) or an overloaded sandbox, not the port; add it with manual IP. `campaign` only walks `mock-marstek*`, but its `compose up --build` also builds and starts the default emulators. See `tools/firmware_emulator/README.md`.
+Discovery reads the paused pooled socket for ports an entry already uses, so emulators on 30000 show up in the picker. If one is missing, it is usually the HMG-50 loss (#82) or an overloaded sandbox, not the port; add it with manual IP. `campaign` only walks `mock-marstek*` and starts only Home Assistant and those mocks, so `--only` also limits what starts. See `tools/firmware_emulator/README.md`.
 
 Each Renode emulator takes ~0.3-0.6 core in Docker (1-1.5 on the host without `--quantum 0.01`) and ~550 MB. Run at most `nproc` of them at once, in named batches (`docker compose up -d fw-venus-e-150-ct …`, then `docker compose rm -sf …`), and never `--profile firmware-all` in a sandbox. See AGENTS.md → *Sandbox resource budget*.
 

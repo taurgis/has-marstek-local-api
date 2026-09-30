@@ -216,10 +216,18 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 
 ```bash
 cd .devcontainer
-docker compose up -d --build                  # HA, the mocks and the three defaults
-docker compose --profile firmware-all up -d   # all twenty-two emulators
-docker compose --profile firmware-all stop fw-venus-e-144 fw-venus-e-144-ct   # one by one
+docker compose up -d --build                  # HA, the mocks and the four defaults
+# One named batch; naming the -ct sidecar also starts its emulator
+docker compose up -d homeassistant fw-venus-e-148-ct fw-venus-d-149-ct
+docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venus-d-149
 ```
+
+The four defaults are `fw-venus-e-150`, `-a-150`, `-d-150` and the HMG-50
+`fw-venus-c-156`. `docker compose --profile firmware-all up -d` starts all
+twenty-two emulators. That needs a large host: each takes 0.3-0.6 core and
+about 550 MB, and on a 4-CPU sandbox the load reaches about 60 and the firmware
+answers `Parse error` or times out. On a small machine, run at most `nproc`
+emulators at a time in named batches; see AGENTS.md, *Sandbox resource budget*.
 
 Services without a profile always start. Profiled ones start only when their
 profile is enabled with `--profile` or `COMPOSE_PROFILES`

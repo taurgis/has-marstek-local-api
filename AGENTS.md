@@ -331,7 +331,7 @@ Cloud Agents must use **Python 3.14.2+**. Home Assistant Core 2026.9 and `pytest
 After start:
 
 - Home Assistant: `http://127.0.0.1:8123` (onboarding, then username `admin` / password `marstek-dev`)
-- Mock devices: `172.28.0.20`–`172.28.0.46` as documented in the Chrome UI testing skill
+- Mock devices: `172.28.0.20`–`172.28.0.48` as documented in the Chrome UI testing skill
 - Nested Docker uses `fuse-overlayfs` and `iptables-legacy`. If HA cannot ping a mock, `start.sh` already sets `FORWARD ACCEPT`.
 
 Use `python3 -m ruff`, `python3 -m mypy --strict`, and `pytest` from that venv (same commands as in Verification after changes). Drive the HA UI with `.agents/skills/homeassistant-chrome-ui-testing` (`ha_cdp.py`), not screenshot clicks.
@@ -364,7 +364,7 @@ green".
 
 | What | CPU | RAM | Notes |
 |------|-----|-----|-------|
-| Python mock (`tools/mock_device`, `mock-marstek*`) | ~0 % | ~20 MB | Cheap; all 26 fit easily |
+| Python mock (`tools/mock_device`, `mock-marstek*`) | ~0 % | ~20 MB | Cheap; all 28 fit easily |
 | Renode firmware emulator in Docker (`fw-*`) | ~0.3-0.6 core | ~550 MB | The image runs `--quantum 0.01`; profile images also `--mips 40` |
 | Renode firmware emulator on the host (`run_firmware.py`) | 1-1.5 cores | ~550 MB | Renode's default quantum; pass `--quantum 0.01` to match the image |
 | `pytest tests/` (serial) | 1 core | < 1 GB | ~140 s for the full suite |
@@ -384,7 +384,10 @@ runs rather than one run with all of them:
 
 1. Python mocks carry the per-version encodings and gates (`firmware_profile.py`
    is shared), so the pytest suite and the `mock-marstek*` services cover every
-   version cheaply. Start there.
+   version cheaply. Start there. Every image in `tools/firmware/catalog.json`
+   also has a `fw-*` emulator running the vendor's own firmware; use it to
+   confirm what a mock claims. Versions with no public image stay mock-only:
+   Venus E and Venus D 145, and the Venus E mini (145, and `VNSEM-0` 301).
 2. Run the vendor firmware emulators **at most `nproc` at a time in Docker**
    (the four default ones on a 4-CPU sandbox), or `nproc / 2` host
    `run_firmware.py` instances without `--quantum 0.01`, next to Home Assistant
