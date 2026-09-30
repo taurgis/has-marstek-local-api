@@ -364,7 +364,7 @@ green".
 
 | What | CPU | RAM | Notes |
 |------|-----|-----|-------|
-| Python mock (`tools/mock_device`, `mock-marstek*`) | ~0 % | ~20 MB | Cheap; all 28 fit easily |
+| Python mock (`tools/mock_device`, `mock-marstek*`) | ~0 % | ~20 MB | Four start by default; all 28 (`--profile mocks-all`) fit easily |
 | Renode firmware emulator in Docker (`fw-*`) | ~0.3-0.6 core | ~550 MB | The image runs `--quantum 0.01`; profile images also `--mips 40` |
 | Renode firmware emulator on the host (`run_firmware.py`) | 1-1.5 cores | ~550 MB | Renode's default quantum; pass `--quantum 0.01` to match the image |
 | `pytest tests/` (serial) | 1 core | < 1 GB | ~140 s for the full suite |
@@ -384,7 +384,7 @@ runs rather than one run with all of them:
 
 1. Python mocks carry the per-version encodings and gates (`firmware_profile.py`
    is shared), so the pytest suite and the `mock-marstek*` services cover every
-   version cheaply. Start there. Every image in `tools/firmware/catalog.json`
+   version cheaply (`--profile mocks-all`, or name the services). Start there. Every image in `tools/firmware/catalog.json`
    also has a `fw-*` emulator running the vendor's own firmware; use it to
    confirm what a mock claims. Versions with no public image stay mock-only:
    Venus E and Venus D 145, and the Venus E mini (145, and `VNSEM-0` 301).
@@ -592,7 +592,7 @@ python -m mock_device --device VenusA --ver 149
 python -m mock_device --device VenusA --ver 150
 ```
 
-**In devcontainer:** Twenty-eight mock devices run automatically. `172.28.0.20`–`.29` are the issue-log / custom-port set: Venus E 145 and 150, Venus A 148/149/150, Venus D 145, Venus C 153 (HMG-50 reporting VenusC: no SYS/UPS, no EM server, omitted GetDevice MACs), Venus E mini 145, and unsupported VenusE 153. `172.28.0.30`–`.46` add the remaining archived Control images (VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini as `VNSEM-0` 301), and `.47`/`.48` carry Control 151 (VNSE3-0, VNSD-0), whose replies name the SKU in `src`. `VenusE Pro` 1508 is an unknown family. Custom ports 30001/30002/30003/30004 exercise the per-port UDP pool. See `tools/mock_device/README.md`. Next to the mocks, `fw-*` services run the **vendor firmware itself** in Renode (`tools/firmware_emulator/`, UDP 30000, each with an AstraMeter CT003 sidecar): Venus E 150 on `172.28.0.50`, Venus A 150 with PV on `.51`, Venus D 150 with four PV channels on `.52` and the HMG-50 Venus C 156 on `.66` start by default. The other thirteen VNSE3-0/VNSA-0/VNSD-0 images sit on `.53`–`.65`, VNSE3-0 151 and VNSD-0 151 on `.70`/`.71`, and HMG-50 Venus C 153/155 and Venus E 2.0 156 on `.67`–`.69`, behind `docker compose --profile firmware-all up -d` (HMG-50 alone: `--profile firmware-hmg50`). The HMG-50 emulators reproduce the #82 shared-channel loss, so expect many dropped requests there.
+**In devcontainer:** Twenty-eight mock devices are defined, but only the four with no firmware image start by default: Venus E 145 (`.20`), Venus D 145 on custom port 30002 (`.23`), Venus E mini 145 (`.28`) and `VNSEM-0` 301 (`.46`). The other 24 repeat an image a `fw-*` emulator runs for real, so they sit behind `--profile mocks-all` and never start next to it by default; the live campaign starts the ones it walks by name. `172.28.0.20`–`.29` are the issue-log / custom-port set: Venus E 145 and 150, Venus A 148/149/150, Venus D 145, Venus C 153 (HMG-50 reporting VenusC: no SYS/UPS, no EM server, omitted GetDevice MACs), Venus E mini 145, and unsupported VenusE 153. `172.28.0.30`–`.46` add the remaining archived Control images (VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini as `VNSEM-0` 301), and `.47`/`.48` carry Control 151 (VNSE3-0, VNSD-0), whose replies name the SKU in `src`. `VenusE Pro` 1508 is an unknown family. Custom ports 30001/30002/30003/30004 exercise the per-port UDP pool. See `tools/mock_device/README.md`. Next to the mocks, `fw-*` services run the **vendor firmware itself** in Renode (`tools/firmware_emulator/`, UDP 30000, each with an AstraMeter CT003 sidecar): Venus E 150 on `172.28.0.50`, Venus A 150 with PV on `.51` (Open API port 30004; the profile's Venus A 148/149 use 30001/30003, so the per-port pool is tested on real firmware), Venus D 150 with four PV channels on `.52` and the HMG-50 Venus C 156 on `.66` start by default. The other thirteen VNSE3-0/VNSA-0/VNSD-0 images sit on `.53`–`.65`, VNSE3-0 151 and VNSD-0 151 on `.70`/`.71`, and HMG-50 Venus C 153/155 and Venus E 2.0 156 on `.67`–`.69`, behind `docker compose --profile firmware-all up -d` (HMG-50 alone: `--profile firmware-hmg50`). The HMG-50 emulators reproduce the #82 shared-channel loss, so expect many dropped requests there.
 
 ### Tool selection guide
 

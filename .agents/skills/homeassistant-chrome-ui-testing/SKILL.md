@@ -165,10 +165,12 @@ Then from `.devcontainer/` (drop `sudo` when you are root):
 sudo docker compose up -d --build
 ```
 
-A bare `up` also starts the four default firmware emulators, about half of a
-4-CPU sandbox. On a small machine name the services instead:
-`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-6` starts three
-mocks instead of twenty-eight and is enough for same-port pooling
+A bare `up` starts Home Assistant, the four mocks that have no firmware image
+and the four default firmware emulators (about half of a 4-CPU sandbox). The
+other 24 mocks repeat an emulated image and need `--profile mocks-all` or their
+name. On a small machine name the services instead:
+`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-8` starts three
+mocks and no emulator, and is enough for same-port pooling
 plus one unique-port device. Wait until `http://127.0.0.1:8123/api/onboarding`
 responds.
 
@@ -224,6 +226,9 @@ Base: `http://127.0.0.1:8123`
 
 ## Mock devices
 
+Only `.20`, `.23`, `.28` and `.46` start by default; the rest need `--profile mocks-all` or their service name.
+The Venus A 150 emulator (`172.28.0.51:30004`) covers a custom port on real firmware by default.
+
 | IP | Port | Model | What it proves |
 |----|------|-------|----------------|
 | `172.28.0.20` | 30000 | Venus E 145 | Same-port share with C |
@@ -241,7 +246,7 @@ Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 3000
 
 | IP | Firmware | Notes |
 |----|----------|-------|
-| `172.28.0.50` / `.51` / `.52` | Venus E 150 / Venus A 150 (2 PV) / Venus D 150 (4 PV) | Default; healthy ≈100 s after start (`docker ps`) |
+| `172.28.0.50` / `.51` / `.52` | Venus E 150 / Venus A 150 (2 PV, port 30004) / Venus D 150 (4 PV) | Default; healthy ≈100 s after start (`docker ps`) |
 | `172.28.0.53`–`.65` | Other VNSE3-0 / VNSA-0 / VNSD-0 images | `--profile firmware-all` only |
 | `172.28.0.66` | HMG-50 Venus C 156 (vendor firmware) | Default; drops many requests (#82), config flow may need a retry |
 | `172.28.0.67`–`.69` | HMG-50 Venus C 153/155, Venus E 2.0 156 | `--profile firmware-hmg50` or `firmware-all` |

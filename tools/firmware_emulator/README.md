@@ -207,10 +207,10 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | Service | IP | Firmware | Profile |
 |---------|----|----------|---------|
 | `fw-venus-e-150` | 172.28.0.50 | VNSE3-0 150 | default |
-| `fw-venus-a-150` | 172.28.0.51 | VNSA-0 150, PV 420/360 W | default |
+| `fw-venus-a-150` | 172.28.0.51 | VNSA-0 150, PV 420/360 W, Open API port 30004 | default |
 | `fw-venus-d-150` | 172.28.0.52 | VNSD-0 150, PV 400/350/300/250 W | default |
 | `fw-venus-e-144`, `-147`, `-1476`, `-148`, `-149` | .53-.57 | VNSE3-0 | `firmware-all` |
-| `fw-venus-a-148`, `-1487`, `-149`, `-1508`, `-1509` | .58-.62 | VNSA-0, PV 420/360 W | `firmware-all` |
+| `fw-venus-a-148`, `-1487`, `-149`, `-1508`, `-1509` | .58-.62 | VNSA-0, PV 420/360 W; 148 on port 30001, 149 on 30003 | `firmware-all` |
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
 | `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
 

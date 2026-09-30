@@ -45,7 +45,10 @@ tools/mock_device/
 
 ## Multi-Battery Setup
 
-The devcontainer supports multiple mock devices:
+The devcontainer supports multiple mock devices. A mock starts by default only
+where no firmware image exists; mocks that repeat a catalogued image carry
+`profiles: ["mocks-all"]`, because a `fw-*` emulator runs that image for real
+(`tests/test_mock_device/test_devcontainer_mocks.py` enforces this):
 
 ```yaml
 # .devcontainer/docker-compose.yml

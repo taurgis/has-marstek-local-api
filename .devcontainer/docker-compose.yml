@@ -58,6 +58,13 @@ services:
         ipv4_address: 172.28.0.10
     command: python -m homeassistant -c /config
 
+  # A mock runs by default only where no firmware image exists (Venus E and
+  # Venus D 145, Venus E mini 145 and VNSEM-0 301). Every other mock repeats a
+  # catalogued image that a fw-* service below runs for real, so it sits in the
+  # mocks-all profile: cheap for an all-versions Home Assistant sweep, but not
+  # started next to the firmware. The custom-port cases moved onto emulators
+  # (fw-venus-a-150 on 30004; fw-venus-a-148/-149 on 30001/30003).
+
   # Mock device 1 - Venus E 3.0, default UDP port 30000
   # Legacy firmware 145: no SYS/UPS; energy fields in Wh
   mock-marstek:
@@ -82,6 +89,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-2
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.25
     networks:
@@ -98,6 +106,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-3
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.22
     networks:
@@ -129,6 +138,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-5
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.24
     networks:
@@ -146,6 +156,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-6
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.26
     networks:
@@ -162,6 +173,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-7
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.27
     networks:
@@ -195,6 +207,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-9
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.29
     networks:
@@ -212,6 +225,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-10
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.30
     networks:
@@ -225,6 +239,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-11
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.31
     networks:
@@ -238,6 +253,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-12
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.32
     networks:
@@ -251,6 +267,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-13
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.33
     networks:
@@ -264,6 +281,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-14
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.34
     networks:
@@ -278,6 +296,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-15
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.35
     networks:
@@ -292,6 +311,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-16
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.36
     networks:
@@ -306,6 +326,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-17
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.37
     networks:
@@ -319,6 +340,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-18
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.38
     networks:
@@ -332,6 +354,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-19
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.39
     networks:
@@ -345,6 +368,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-20
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.40
     networks:
@@ -358,6 +382,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-21
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.41
     networks:
@@ -371,6 +396,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-22
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.42
     networks:
@@ -384,6 +410,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-23
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.43
     networks:
@@ -397,6 +424,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-24
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.44
     networks:
@@ -410,6 +438,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-25
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.45
     networks:
@@ -440,6 +469,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-27
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.47
     networks:
@@ -453,6 +483,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-28
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.48
     networks:
@@ -502,7 +533,9 @@ services:
         ipv4_address: 172.28.0.51
     volumes:
       - fw_venus_a_150:/state
-    command: ["--firmware", "VNSA-0:150", "--ble-mac", "02:e0:00:00:00:51", "--wifi-mac", "02:e1:00:00:00:51", "--soc", "40", "--pv", "420,360"]
+    command: ["--firmware", "VNSA-0:150", "--ble-mac", "02:e0:00:00:00:51", "--wifi-mac", "02:e1:00:00:00:51", "--soc", "40", "--pv", "420,360", "--local-api-port", "30004"]
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/firmware_emulator/healthcheck.py", "--port", "30004"]
 
   fw-venus-a-150-ct:
     <<: *firmware-ct
@@ -675,7 +708,9 @@ services:
         ipv4_address: 172.28.0.58
     volumes:
       - fw_venus_a_148:/state
-    command: ["--firmware", "VNSA-0:148", "--ble-mac", "02:e0:00:00:00:58", "--wifi-mac", "02:e1:00:00:00:58", "--soc", "36", "--pv", "420,360", "--mips", "40"]
+    command: ["--firmware", "VNSA-0:148", "--ble-mac", "02:e0:00:00:00:58", "--wifi-mac", "02:e1:00:00:00:58", "--soc", "36", "--pv", "420,360", "--local-api-port", "30001", "--mips", "40"]
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/firmware_emulator/healthcheck.py", "--port", "30001"]
 
   fw-venus-a-148-ct:
     <<: *firmware-ct
@@ -719,7 +754,9 @@ services:
         ipv4_address: 172.28.0.60
     volumes:
       - fw_venus_a_149:/state
-    command: ["--firmware", "VNSA-0:149", "--ble-mac", "02:e0:00:00:00:60", "--wifi-mac", "02:e1:00:00:00:60", "--soc", "50", "--pv", "420,360", "--mips", "40"]
+    command: ["--firmware", "VNSA-0:149", "--ble-mac", "02:e0:00:00:00:60", "--wifi-mac", "02:e1:00:00:00:60", "--soc", "50", "--pv", "420,360", "--local-api-port", "30003", "--mips", "40"]
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/firmware_emulator/healthcheck.py", "--port", "30003"]
 
   fw-venus-a-149-ct:
     <<: *firmware-ct

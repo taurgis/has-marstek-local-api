@@ -127,7 +127,7 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs **these twenty-eight** mock devices. `.20`–`.29` are the
+The devcontainer defines **these twenty-eight** mock devices. Only the four with no firmware image start by default (`.20`, `.23`, `.28`, `.46`); the others repeat an image a `fw-*` emulator runs, so they need `--profile mocks-all` or their service name. `.20`–`.29` are the
 issue-log / custom-port set. `.30`–`.46` are the remaining archived Control
 images from `tools/firmware/catalog.json`, and `.47`–`.48` the Control 151 images.
 
@@ -176,6 +176,10 @@ To add devices in Home Assistant:
     - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
     - `172.28.0.30`–`172.28.0.48` archived Control variants (see table above)
 
+All but `.20`, `.23` and `.28` need `--profile mocks-all` or their service name. The real-firmware
+custom-port devices are `172.28.0.51:30004` (default) and `172.28.0.58:30001` / `172.28.0.60:30003`
+(`firmware-all`).
+
 #### Firmware emulators next to the mocks
 
 The same compose file also runs the **vendor Control firmware** in Renode
@@ -187,7 +191,7 @@ CT003 sidecar (`fw-*-ct`).
 | Service | IP | Firmware | BLE MAC | Started |
 |---------|-----|----------|---------|---------|
 | fw-venus-e-150 | 172.28.0.50 | VNSE3-0 150 | `02:e0:00:00:00:50` | default |
-| fw-venus-a-150 | 172.28.0.51 | VNSA-0 150, PV 420/360 W | `02:e0:00:00:00:51` | default |
+| fw-venus-a-150 | 172.28.0.51 | VNSA-0 150, PV 420/360 W, Open API port 30004 | `02:e0:00:00:00:51` | default |
 | fw-venus-d-150 | 172.28.0.52 | VNSD-0 150, PV 400/350/300/250 W | `02:e0:00:00:00:52` | default |
 | fw-venus-e-144 … -149 | 172.28.0.53–.57 | VNSE3-0 144, 147, 1476, 148, 149 | `…:53`–`…:57` | `--profile firmware-all` |
 | fw-venus-a-148 … -1509 | 172.28.0.58–.62 | VNSA-0 148, 1487, 149, 1508, 1509 | `…:58`–`…:62` | `--profile firmware-all` |
