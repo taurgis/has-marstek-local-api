@@ -453,6 +453,34 @@ class TestParseEsStatusResponse:
         assert result["battery_power"] == -1000
         assert result["battery_status"] == "charging"
 
+    def test_parse_missing_bat_power_fallback_subtracts_offgrid_load(self):
+        """The EPS socket load (``offgrid_power``) is part of the power balance.
+
+        Firmware emulator audit: 300 W of PV with 80 W on the EPS socket
+        showed the battery charging 300 W. It charges 300 - 80 = 220 W.
+        """
+        response = {
+            "id": 1,
+            "result": {"bat_soc": 55, "pv_power": 300, "ongrid_power": 0, "offgrid_power": 80},
+        }
+
+        result = parse_es_status_response(response)
+
+        assert result["battery_power"] == -220
+        assert result["battery_status"] == "charging"
+
+    def test_parse_missing_bat_power_offgrid_only_discharges(self):
+        """With no PV and no grid flow, an EPS load is served by the battery."""
+        response = {
+            "id": 1,
+            "result": {"bat_soc": 55, "pv_power": 0, "ongrid_power": 0, "offgrid_power": 150},
+        }
+
+        result = parse_es_status_response(response)
+
+        assert result["battery_power"] == 150
+        assert result["battery_status"] == "discharging"
+
     def test_parse_missing_bat_power_zero_values_keeps_missing(self):
         """Test missing bat_power with zero pv/grid keeps battery values unset."""
         response = {

@@ -430,7 +430,7 @@ python3 tools/verify_battery_logic.py [IP_ADDRESS]
 **Use when:**
 - Debugging battery charging/discharging status issues
 - Verifying power sign conventions (positive = charging/discharging)
-- Validating `bat_power` fallback calculation (`pv_power - ongrid_power`)
+- Validating `bat_power` fallback calculation (`pv_power - ongrid_power - offgrid_power`)
 - Understanding how different modes affect power flow
 
 **Features:**
