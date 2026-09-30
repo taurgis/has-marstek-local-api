@@ -44,6 +44,7 @@ from .helpers.udp_clients import (
     bind_port_for_host,
     discovery_lock,
     get_udp_client,
+    paused_discovery_sockets,
     transfer_reset_prone_mark_for_entry,
 )
 from .options_flow import MarstekOptionsFlow
@@ -266,11 +267,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "unsupported_device"
                     else:
                         device_macs = identity_macs_from_mapping(device_info)
+                        reported_macs = identity_macs_from_mapping(
+                            device_info, include_fallback=True
+                        )
                         flow_mac = formatted_mac_or_none(self.unique_id)
                         if (
                             self.unique_id
                             and formatted_unique_id != self.unique_id
-                            and (flow_mac is None or flow_mac not in device_macs)
+                            and (flow_mac is None or flow_mac not in reported_macs)
                         ):
                             errors["base"] = "unique_id_mismatch"
                         else:
@@ -460,8 +464,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_discover_devices(self, scan_ports: list[int]) -> list[dict[str, Any]]:
         """Broadcast discovery while pooled listeners are paused."""
         broadcast_addresses = await async_broadcast_addresses(self.hass)
-        async with async_paused_udp_receivers(self.hass):
-            return await discover_devices(ports=scan_ports, broadcast_addresses=broadcast_addresses)
+        async with async_paused_udp_receivers(self.hass) as paused:
+            return await discover_devices(
+                ports=scan_ports,
+                broadcast_addresses=broadcast_addresses,
+                shared_sockets=paused_discovery_sockets(paused),
+            )
 
     async def _async_handle_discovery_with_unique_id(
         self,
@@ -545,8 +553,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not formatted_unique_id:
                 return None, "invalid_discovery_info"
 
-            device_macs = identity_macs_from_mapping(device_info)
-            if not identities_overlap(identity_macs_from_entry(entry), device_macs):
+            # The user chose this host for this entry, so any reported MAC
+            # confirms it, including a legacy Wi-Fi-MAC unique id.
+            if not identities_overlap(
+                identity_macs_from_entry(entry, include_fallback=True),
+                identity_macs_from_mapping(device_info, include_fallback=True),
+            ):
                 return None, "unique_id_mismatch"
 
             data_updates: dict[str, Any] = {
@@ -577,24 +589,23 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _entry_matches_flow_identity(self, entry: config_entries.ConfigEntry) -> bool:
         """Return True if entry shares any stable MAC with this flow.
 
-        Wider than the unique id alone: the entry's BLE, Wi-Fi and legacy MACs
-        are all compared against everything this flow has learned, so the same
-        hardware is recognised whichever field the firmware filled in.
+        Wider than the unique id alone: the entry's identity MACs are compared
+        against everything this flow has learned. The Wi-Fi and legacy MACs
+        count only for a side without a BLE MAC, because they hold the access
+        point's BSSID (see ``identity_macs_from_mapping``).
         """
         entry_macs = identity_macs_from_entry(entry)
         discovered = set(self._discovered_identity_macs or ())
         unique_id_mac = formatted_mac_or_none(self.unique_id)
         if unique_id_mac is not None:
             discovered.add(unique_id_mac)
-        if self._discovered_metadata:
-            discovered.update(identity_macs_from_mapping(self._discovered_metadata))
         return identities_overlap(entry_macs, discovered)
 
     def _abort_if_identity_configured(self) -> None:
         """Abort when this hardware is already configured.
 
-        Unique IDs stay as originally assigned. Match BLE, Wi-Fi, and stored
-        MAC identities so a later discovery view cannot create a second entry.
+        Unique IDs stay as originally assigned. Match the identity MACs so a
+        later discovery view cannot create a second entry.
         """
         self._abort_if_unique_id_configured()
         for entry in self._async_current_entries(include_ignore=False):

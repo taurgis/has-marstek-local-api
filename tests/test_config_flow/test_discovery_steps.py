@@ -243,10 +243,10 @@ async def test_dhcp_updates_ip_without_unique_id(hass: HomeAssistant) -> None:
     assert hass.config_entries.async_entries(DOMAIN)[0].data["host"] == "1.2.3.5"
 
 
-async def test_dhcp_wifi_mac_updates_ble_unique_id_entry(
+async def test_dhcp_bssid_does_not_move_ble_entry(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """DHCP uses the Wi-Fi MAC; entries identified by BLE MAC must still match."""
+    """A lease for the stored ``wifi_mac`` (the AP BSSID) must not move a BLE entry."""
     mock_config_entry.add_to_hass(hass)
 
     discovery_info = type(
@@ -263,11 +263,11 @@ async def test_dhcp_wifi_mac_updates_ble_unique_id_entry(
         DOMAIN, context={"source": "dhcp"}, data=discovery_info
     )
 
-    assert result["type"] == FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
-    updated = hass.config_entries.async_entries(DOMAIN)[0]
-    assert updated.data["host"] == "1.2.3.9"
-    assert updated.unique_id == "aa:bb:cc:dd:ee:ff"
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+    unchanged = hass.config_entries.async_entries(DOMAIN)[0]
+    assert unchanged.data["host"] == mock_config_entry.data["host"]
+    assert unchanged.unique_id == "aa:bb:cc:dd:ee:ff"
 
 
 async def test_integration_discovery_updates_ip(
@@ -459,10 +459,14 @@ async def test_integration_discovery_aborts_venus_e2(hass: HomeAssistant, device
     assert result["reason"] == "unsupported_device"
 
 
-async def test_integration_discovery_wifi_only_updates_existing_entry(
+async def test_integration_discovery_wifi_only_does_not_move_ble_entry(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Scanner discovery without BLE MAC still updates the matching entry."""
+    """A Wi-Fi-only reply shares the AP BSSID with every battery on that AP.
+
+    It cannot say which BLE-identified entry it belongs to, so it must not
+    move one.
+    """
     mock_config_entry.add_to_hass(hass)
 
     discovery_info = {
@@ -477,11 +481,11 @@ async def test_integration_discovery_wifi_only_updates_existing_entry(
         DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
     )
 
-    assert result["type"] == FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
-    updated = hass.config_entries.async_entries(DOMAIN)[0]
-    assert updated.data["host"] == "1.2.3.99"
-    assert updated.unique_id == "aa:bb:cc:dd:ee:ff"
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+    unchanged = hass.config_entries.async_entries(DOMAIN)[0]
+    assert unchanged.data["host"] == mock_config_entry.data["host"]
+    assert unchanged.unique_id == "aa:bb:cc:dd:ee:ff"
 
 
 async def test_integration_discovery_wifi_only_confirms_new_device(

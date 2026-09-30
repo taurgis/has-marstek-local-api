@@ -271,6 +271,29 @@ async def test_scanner_find_device_by_identity_found(hass: HomeAssistant):
     assert result["ip"] == "1.2.3.4"
 
 
+async def test_scanner_ignores_shared_access_point_bssid(hass: HomeAssistant):
+    """Batteries on one AP report its BSSID as ``wifi_mac``; match on BLE only.
+
+    Matching the shared BSSID moved one entry onto the other battery's IP.
+    """
+    scanner = MarstekScanner(hass)
+    bssid = "74:83:C2:31:5C:F8"
+    devices = [
+        {"ip": "1.2.3.5", "ble_mac": "02:EE:00:00:00:02", "wifi_mac": bssid, "mac": bssid},
+        {"ip": "1.2.3.4", "ble_mac": "02:EE:00:00:00:01", "wifi_mac": bssid, "mac": bssid},
+    ]
+    entry_data = {"ble_mac": "02:EE:00:00:00:01", "wifi_mac": bssid, "mac": bssid}
+
+    result = scanner._find_device_by_identity(
+        devices,
+        identity_macs_from_mapping(entry_data, include_unique_id="02:ee:00:00:00:01"),
+        "Test Entry",
+    )
+
+    assert result is not None
+    assert result["ip"] == "1.2.3.4"
+
+
 async def test_scanner_find_device_by_identity_case_insensitive(hass: HomeAssistant):
     """Test _find_device_by_identity is case insensitive."""
     scanner = MarstekScanner(hass)

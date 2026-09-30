@@ -15,6 +15,11 @@ from homeassistant.helpers.device_registry import format_mac
 # Marstek firmware keeps across IP and Wi-Fi changes. Anything reading a MAC
 # out of a device dict or an entry must walk these in this order.
 IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
+# ``wifi_mac`` is the BSSID of the access point the device joined (the
+# ``bssid=`` field of the Wi-Fi module's state), not the device's own MAC, so
+# batteries on one AP share it. ``mac`` is ``wifi_mac or ble_mac``, so it is
+# usually that BSSID too. They identify a device only without a BLE MAC.
+_FALLBACK_IDENTITY_MAC_KEYS: frozenset[str] = frozenset({CONF_MAC, "wifi_mac"})
 # Home Assistant ``format_mac`` lowercases; it does not validate. Only a
 # 6-octet hex MAC is a stable Marstek identity.
 _FORMATTED_MAC = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
@@ -37,10 +42,21 @@ def identity_macs_from_mapping(
     data: Mapping[str, Any],
     *,
     include_unique_id: str | None = None,
+    include_fallback: bool = False,
 ) -> set[str]:
-    """Collect formatted BLE, Wi-Fi, and legacy MAC identities from a mapping."""
+    """Collect formatted MAC identities from a mapping.
+
+    The BLE MAC wins. ``mac`` and ``wifi_mac`` join only without one: they
+    hold the access point's BSSID, shared by every device on that AP, so
+    matching on them would tie one battery's entry to another battery.
+    ``include_fallback`` collects them anyway, for checks that only confirm a
+    host the user chose rather than pick a device.
+    """
     macs: set[str] = set()
+    has_ble_mac = formatted_mac_or_none(data.get("ble_mac")) is not None
     for key in IDENTITY_MAC_KEYS:
+        if key in _FALLBACK_IDENTITY_MAC_KEYS and has_ble_mac and not include_fallback:
+            continue
         formatted = formatted_mac_or_none(data.get(key))
         if formatted is not None:
             macs.add(formatted)
@@ -50,9 +66,15 @@ def identity_macs_from_mapping(
     return macs
 
 
-def identity_macs_from_entry(entry: config_entries.ConfigEntry) -> set[str]:
+def identity_macs_from_entry(
+    entry: config_entries.ConfigEntry,
+    *,
+    include_fallback: bool = False,
+) -> set[str]:
     """Collect every stable MAC stored on a config entry, including unique_id."""
-    return identity_macs_from_mapping(entry.data, include_unique_id=entry.unique_id)
+    return identity_macs_from_mapping(
+        entry.data, include_unique_id=entry.unique_id, include_fallback=include_fallback
+    )
 
 
 def identities_overlap(left: set[str], right: set[str]) -> bool:

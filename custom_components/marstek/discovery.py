@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import socket
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
@@ -213,12 +213,52 @@ def _normalize_discovery_ports(
     return normalized
 
 
+def _discovery_sockets(
+    scan_ports: list[int],
+    shared_sockets: Mapping[int, socket.socket] | None,
+) -> tuple[list[tuple[int, socket.socket]], list[socket.socket]]:
+    """Return ``(port, socket)`` pairs to scan and the sockets bound here.
+
+    A port with a shared socket reuses it: a second ``SO_REUSEPORT`` bind
+    would split the replies with it. Only the sockets bound here are
+    returned as owned, so the caller closes those and nothing else.
+    """
+    sockets: list[tuple[int, socket.socket]] = []
+    owned_sockets: list[socket.socket] = []
+    bind_error: OSError | None = None
+    for scan_port in scan_ports:
+        shared = (shared_sockets or {}).get(scan_port)
+        if shared is not None:
+            sockets.append((scan_port, shared))
+            continue
+        try:
+            sock = create_udp_socket(
+                bind_port=scan_port,
+                broadcast=True,
+                fallback_ephemeral=True,
+                logger=_LOGGER,
+            )
+        except OSError as err:
+            bind_error = err
+            _LOGGER.error("Failed to bind UDP socket on port %s: %s", scan_port, err)
+            continue
+        sockets.append((scan_port, sock))
+        owned_sockets.append(sock)
+
+    if not sockets:
+        if bind_error is not None:
+            raise bind_error
+        raise OSError("Failed to bind UDP socket")
+    return sockets, owned_sockets
+
+
 async def discover_devices(
     timeout: float = DISCOVERY_TIMEOUT,
     port: int = DEFAULT_UDP_PORT,
     ports: Iterable[int] | None = None,
     *,
     broadcast_addresses: Iterable[str] | None = None,
+    shared_sockets: Mapping[int, socket.socket] | None = None,
 ) -> list[dict[str, Any]]:
     """Discover Marstek devices on the local network via UDP broadcast.
 
@@ -233,6 +273,8 @@ async def discover_devices(
         ports: Optional explicit list of UDP ports to scan
         broadcast_addresses: Sweep targets to use instead of reading the
             interface table here
+        shared_sockets: Already-bound sockets to use for these ports instead
+            of binding new ones (paused pooled clients). They are not closed.
 
     Returns:
         List of discovered device dictionaries
@@ -247,26 +289,7 @@ async def discover_devices(
     # Bind one socket per scan port. Firmware replies to the device listen
     # port, so a probe sent from 30000 will miss a device configured on 30003.
     # Official protocol: https://static-eu.marstekenergy.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf
-    sockets: list[tuple[int, socket.socket]] = []
-    bind_error: OSError | None = None
-    for scan_port in scan_ports:
-        try:
-            sock = create_udp_socket(
-                bind_port=scan_port,
-                broadcast=True,
-                fallback_ephemeral=True,
-                logger=_LOGGER,
-            )
-        except OSError as err:
-            bind_error = err
-            _LOGGER.error("Failed to bind UDP socket on port %s: %s", scan_port, err)
-            continue
-        sockets.append((scan_port, sock))
-
-    if not sockets:
-        if bind_error is not None:
-            raise bind_error
-        raise OSError("Failed to bind UDP socket")
+    sockets, owned_sockets = _discovery_sockets(scan_ports, shared_sockets)
 
     loop = asyncio.get_running_loop()
 
@@ -395,7 +418,7 @@ async def discover_devices(
             task.cancel()
         if receivers:
             await asyncio.gather(*receivers, return_exceptions=True)
-        for _, sock in sockets:
+        for sock in owned_sockets:
             sock.close()
 
     _LOGGER.debug(

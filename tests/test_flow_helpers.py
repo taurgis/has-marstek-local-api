@@ -43,22 +43,40 @@ def test_get_unique_id_prefers_valid_ble_mac() -> None:
     assert get_unique_id_from_device_info({"ble_mac": "not-a-mac"}) is None
 
 
-def test_identity_macs_from_mapping_collects_all_fields() -> None:
-    """BLE, Wi-Fi, and legacy MAC fields are all stable identities."""
-    macs = identity_macs_from_mapping(
-        {
-            "ble_mac": "AA:BB:CC:DD:EE:FF",
-            "wifi_mac": "11:22:33:44:55:66",
-            "mac": "AA:AA:AA:AA:AA:AA",
-        },
-        include_unique_id="02:de:ad:be:ef:03",
-    )
-    assert macs == {
+def test_identity_macs_from_mapping_prefers_ble_over_bssid_fields() -> None:
+    """With a BLE MAC, the Wi-Fi and legacy fields (the AP BSSID) are not identities."""
+    data = {
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "wifi_mac": "11:22:33:44:55:66",
+        "mac": "AA:AA:AA:AA:AA:AA",
+    }
+    macs = identity_macs_from_mapping(data, include_unique_id="02:de:ad:be:ef:03")
+    assert macs == {"aa:bb:cc:dd:ee:ff", "02:de:ad:be:ef:03"}
+
+    assert identity_macs_from_mapping(data, include_fallback=True) == {
         "aa:bb:cc:dd:ee:ff",
         "11:22:33:44:55:66",
         "aa:aa:aa:aa:aa:aa",
-        "02:de:ad:be:ef:03",
     }
+
+
+def test_identity_macs_from_mapping_falls_back_without_ble_mac() -> None:
+    """Without a BLE MAC the Wi-Fi and legacy MACs are the only identity left."""
+    macs = identity_macs_from_mapping(
+        {"ble_mac": "", "wifi_mac": "11:22:33:44:55:66", "mac": "11:22:33:44:55:66"}
+    )
+    assert macs == {"11:22:33:44:55:66"}
+
+
+def test_batteries_on_one_access_point_do_not_share_an_identity() -> None:
+    """Two batteries report the same BSSID as ``wifi_mac``; only BLE tells them apart."""
+    battery_a = {"ble_mac": "02:ee:00:00:00:01", "wifi_mac": "74:83:c2:31:5c:f8"}
+    battery_b = {"ble_mac": "02:ee:00:00:00:02", "wifi_mac": "74:83:c2:31:5c:f8"}
+    battery_b["mac"] = battery_b["wifi_mac"]
+
+    assert not identities_overlap(
+        identity_macs_from_mapping(battery_a), identity_macs_from_mapping(battery_b)
+    )
 
 
 def test_identities_overlap_wifi_matches_ble_entry() -> None:
@@ -69,10 +87,10 @@ def test_identities_overlap_wifi_matches_ble_entry() -> None:
     assert not identities_overlap(entry_macs, {"02:de:ad:be:ef:09"})
 
 
-async def test_collect_configured_macs_includes_wifi_and_unique_id(
+async def test_collect_configured_macs_uses_ble_and_unique_id(
     hass: HomeAssistant,
 ) -> None:
-    """Configured-device filtering must not drop the Wi-Fi identity."""
+    """Configured-device filtering keys on BLE, not on the shared AP BSSID."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="aa:bb:cc:dd:ee:ff",
@@ -85,9 +103,9 @@ async def test_collect_configured_macs_includes_wifi_and_unique_id(
     entry.add_to_hass(hass)
 
     configured = collect_configured_macs(hass.config_entries.async_entries(DOMAIN))
-    assert "aa:bb:cc:dd:ee:ff" in configured
-    assert "11:22:33:44:55:66" in configured
+    assert configured == {"aa:bb:cc:dd:ee:ff"}
     assert identity_macs_from_entry(entry) == configured
+    assert "11:22:33:44:55:66" in identity_macs_from_entry(entry, include_fallback=True)
 
 
 def test_split_devices_marks_wifi_only_as_configured() -> None:

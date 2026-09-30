@@ -70,8 +70,8 @@ class CannotConnectRepairFlow(RepairsFlow):
                         elif is_unsupported_venus_e2(device_info.get("device_type")):
                             errors["base"] = "unsupported_device"
                         elif not identities_overlap(
-                            identity_macs_from_entry(entry),
-                            identity_macs_from_mapping(device_info),
+                            identity_macs_from_entry(entry, include_fallback=True),
+                            identity_macs_from_mapping(device_info, include_fallback=True),
                         ):
                             errors["base"] = "unique_id_mismatch"
                         else:

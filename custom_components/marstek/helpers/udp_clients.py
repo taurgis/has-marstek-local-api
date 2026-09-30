@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -41,6 +42,7 @@ __all__ = [
     "get_udp_client",
     "get_udp_client_for_entry",
     "iter_udp_clients",
+    "paused_discovery_sockets",
     "store_udp_client",
     "transfer_reset_prone_mark_for_entry",
     "udp_client_lock",
@@ -292,6 +294,29 @@ async def async_resume_udp_receivers(clients: tuple[MarstekUDPClient, ...]) -> N
                 resume_error = err
     if resume_error is not None:
         raise resume_error
+
+
+def paused_discovery_sockets(
+    clients: tuple[MarstekUDPClient, ...],
+) -> dict[int, socket.socket]:
+    """Map each paused pooled client's bound port to its socket.
+
+    Broadcast discovery reads these instead of binding the same ports again:
+    with ``SO_REUSEPORT`` the kernel would split the replies between the two
+    sockets, and replies hashed onto the paused one were lost.
+    """
+    sockets: dict[int, socket.socket] = {}
+    for client in clients:
+        borrow = getattr(client, "paused_socket", None)
+        sock = borrow() if callable(borrow) else None
+        if not isinstance(sock, socket.socket):
+            continue
+        try:
+            port = int(sock.getsockname()[1])
+        except OSError:
+            continue
+        sockets.setdefault(port, sock)
+    return sockets
 
 
 @asynccontextmanager

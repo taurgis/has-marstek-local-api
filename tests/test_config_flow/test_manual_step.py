@@ -179,10 +179,10 @@ async def test_manual_flow_already_configured(
     assert result["reason"] == "already_configured"
 
 
-async def test_manual_flow_already_configured_via_wifi_mac(
+async def test_manual_flow_adds_second_battery_on_same_access_point(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Manual add must abort when only the Wi-Fi MAC matches an existing entry."""
+    """A shared ``wifi_mac`` is the AP BSSID, so it must not block a second battery."""
     mock_config_entry.add_to_hass(hass)
 
     device_info = {
@@ -202,9 +202,37 @@ async def test_manual_flow_already_configured_via_wifi_mac(
             result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
         )
 
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == "11:22:33:44:55:66"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 2
+
+
+async def test_manual_flow_already_configured_via_ble_on_legacy_entry(
+    hass: HomeAssistant,
+) -> None:
+    """A legacy entry keyed on a Wi-Fi MAC still blocks re-adding its BLE device."""
+    MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="11:22:33:44:55:66",
+        data={"host": "192.168.1.100", "port": 30000, "ble_mac": "AA:BB:CC:DD:EE:FF"},
+    ).add_to_hass(hass)
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusE 3.0",
+        "version": 150,
+    }
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"
-    assert hass.config_entries.async_entries(DOMAIN)[0].unique_id == "aa:bb:cc:dd:ee:ff"
 
 
 async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
