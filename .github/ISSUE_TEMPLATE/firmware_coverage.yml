@@ -1,0 +1,105 @@
+name: Untested device or firmware version
+description: Tell us about a device model or firmware version that is not in the test matrix yet
+title: "Firmware coverage: "
+labels:
+  - enhancement
+assignees:
+  - taurgis
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us widen the test matrix. The README's
+        [Test matrix](https://github.com/taurgis/has-marstek-local-api#test-matrix)
+        lists every device and firmware version we test. If yours is missing,
+        we add it to the Docker test setup, ideally by running your firmware
+        version itself in the emulator.
+
+        **How to find your device model and firmware version**
+
+        1. **In Home Assistant** (best): go to **Settings → Devices & services →
+           Marstek** and open the device. The **Device info** card shows the model
+           and **Firmware**. That number is the Open API `ver` the integration
+           reads, for example `150` or `1476`.
+        2. **Before the integration is set up**: run
+           `python3 tools/query_device.py <device IP> --port <Open API port>` from a
+           checkout of this repository and copy the `device` and `ver` fields from the reply.
+        3. **In the Marstek app**: open the device and look at its firmware or
+           upgrade screen. The app can write a version differently, for example
+           `147.6` for Open API `ver` `1476`, so give the Home Assistant number
+           if you can.
+
+        You do **not** need to send us the firmware file. We take images from
+        Marstek's public update server and the community archives. If you know
+        where a public copy of your version is, link it below.
+
+        **Privacy:** don't post your Marstek account, passwords, serial numbers or
+        MAC addresses. The diagnostics download already redacts MACs, IPs and the
+        Wi-Fi name. Remove the `wifi_mac`, `ble_mac` and `ip` values from any raw
+        `query_device.py` output before you paste it.
+
+  - type: dropdown
+    id: device_model
+    attributes:
+      label: Device model
+      options:
+        - Venus E 3.0
+        - Venus A
+        - Venus D
+        - Venus C
+        - Venus E 2.0
+        - Venus E mini
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: firmware_version
+    attributes:
+      label: Firmware version (Open API `ver`)
+      description: The **Firmware** value on the Home Assistant device page, or `ver` from `query_device.py`.
+      placeholder: "e.g., 151"
+    validations:
+      required: true
+
+  - type: input
+    id: device_string
+    attributes:
+      label: Device name the device reports
+      description: The `device` field from `Marstek.GetDevice`, or the model on the Home Assistant device page.
+      placeholder: "e.g., VenusE 3.0, VNSEM-0"
+    validations:
+      required: false
+
+  - type: input
+    id: app_version
+    attributes:
+      label: Firmware version shown in the Marstek app
+      placeholder: "e.g., 151"
+    validations:
+      required: false
+
+  - type: input
+    id: firmware_link
+    attributes:
+      label: Public link to this firmware image (if you know one)
+      description: For example, an entry in a community firmware archive. Leave empty if you don't know one.
+    validations:
+      required: false
+
+  - type: textarea
+    id: observations
+    attributes:
+      label: What works and what doesn't
+      description: Values that look wrong, missing entities, errors in the log. Say "all good" if everything works.
+    validations:
+      required: false
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: On the device page, open the ⋮ menu and choose **Download diagnostics**, then attach or paste the file. It is redacted already, but please check it before you post.
+      render: json
+    validations:
+      required: false

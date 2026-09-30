@@ -424,8 +424,8 @@ runs rather than one run with all of them:
 5. HMG-50 images (`fw-venus-c-*`, `fw-venus-e2-156`) lose many requests by design
    ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)), so give them a batch of their own, where the loss is not confused with load.
 
-`.cursor/start.sh` and a bare `docker compose up -d` start every mock plus the
-four default emulators, which takes about half of a 4-CPU sandbox before any
+`.cursor/start.sh` and a bare `docker compose up -d` start the four mock-only
+mocks plus the four default emulators, which takes about half of a 4-CPU sandbox before any
 test runs. Stop the
 emulators you are not testing (`docker compose stop fw-...`) before relying on
 timing-sensitive results.
