@@ -748,8 +748,8 @@ def merge_device_status(
         }
         # ES.GetMode has no capacity to tell a drained pack from a silent BMS,
         # and its bat_soc is the first field to drop to 0 when the BMS goes
-        # quiet. A zero only fills a gap; ES.GetStatus still reports a real 0.
-        if _is_zero(mode_core.get("battery_soc")) and status["battery_soc"] is not None:
+        # quiet. Its zero is ignored; ES.GetStatus still reports a real 0.
+        if _is_zero(mode_core.get("battery_soc")):
             mode_core.pop("battery_soc")
         _apply_updates(mode_core)
         for key, value in es_mode_data.items():
@@ -775,9 +775,12 @@ def merge_device_status(
 
     # Recalculate pv_power and battery_power using PV channel data when
     # ES.GetStatus returns incorrect pv_power (Venus A devices report pv_power=0
-    # in ES.GetStatus but individual channels from PV.GetStatus are correct)
-    if pv_status_data and es_status_data:
-        _recalculate_battery_from_pv(status, pv_status_data, es_status_data)
+    # in ES.GetStatus but individual channels from PV.GetStatus are correct).
+    # PV.GetStatus is a medium-tier read, so most polls carry no fresh
+    # channels; the ones kept from the previous poll still hold. Without them
+    # Venus A 148 firmware flips between charging and idle on every fast poll.
+    if es_status_data:
+        _recalculate_battery_from_pv(status, pv_status_data or status, es_status_data)
 
     energy_safe_previous = without_implausible_energy_totals(previous_status)
     _resolve_contradicted_energy_totals(status, energy_safe_previous)

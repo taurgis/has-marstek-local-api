@@ -787,3 +787,27 @@ class TestValidityCheckSharesTheChannelSum:
         )
 
         assert has_valid_status_data({"pv1_power": "unknown", "pv2_power": [1]}) is False
+
+
+class TestPvChannelsFromPreviousPoll:
+    """ES.GetStatus pv_power 0 on a poll without PV.GetStatus (Venus A 148)."""
+
+    def test_previous_channels_keep_pv_and_battery_power(self):
+        """Channels kept from the last PV read still override the ES zero."""
+        previous = {"pv1_power": 420.0, "pv2_power": 360, "pv_power": 780.0}
+        result = merge_device_status(
+            es_status_data={
+                "battery_soc": 49,
+                "pv_power": 0,
+                "ongrid_power": 0,
+                "offgrid_power": 0,
+                "battery_power": 0,
+                "battery_status": "idle",
+            },
+            pv_status_data=None,
+            previous_status=previous,
+        )
+
+        assert result["pv_power"] == 780.0
+        assert result["battery_power"] == -780.0
+        assert result["battery_status"] == "charging"

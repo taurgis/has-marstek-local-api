@@ -84,7 +84,7 @@ class TestBatStatus:
 
 
 class TestEsModeSoc:
-    """ES.GetMode ``bat_soc`` 0 only fills a gap."""
+    """ES.GetMode ``bat_soc`` 0 is never taken as a reading."""
 
     def test_zero_does_not_replace_known_soc(self) -> None:
         mode = parse_es_mode_response({"id": 1, "result": {"mode": "Auto", "bat_soc": 0}})
@@ -93,10 +93,12 @@ class TestEsModeSoc:
 
         assert status["battery_soc"] == 58
 
-    def test_zero_fills_an_empty_soc(self) -> None:
+    def test_zero_does_not_fill_an_empty_soc(self) -> None:
+        """First poll with a silent BMS: ES.GetStatus flagged it, GetMode must not add 0."""
         mode = parse_es_mode_response({"id": 1, "result": {"mode": "Auto", "bat_soc": 0}})
+        es = parse_es_status_response(_es_status(bat_soc=0, bat_cap=0))
 
-        assert merge_device_status(es_mode_data=mode)["battery_soc"] == 0
+        assert merge_device_status(es_mode_data=mode, es_status_data=es)["battery_soc"] is None
 
     def test_es_status_zero_still_wins(self) -> None:
         mode = parse_es_mode_response({"id": 1, "result": {"mode": "Auto", "bat_soc": 0}})
