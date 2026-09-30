@@ -141,7 +141,7 @@
         "sp": "0x2001f768",
         "reset": "0x08004a71"
       },
-      "remark": "App 148.7. Adds Set.Ver / Reset.Factory. Open API ver 1487 folds to generation 148."
+      "remark": "App 148.7. Adds Set.Ver / Reset.Factory. Open API ver 1487 folds to generation 148. Solar energy already in 0.01 kWh."
     },
     {
       "deviceType": "VNSA-0",
@@ -243,7 +243,7 @@
         "sp": "0x2001f778",
         "reset": "0x08004a71"
       },
-      "remark": "Venus D 149. Unlike Venus A 149, solar energy stays unscaled until generation 150."
+      "remark": "Venus D 149. Like Venus A 149, solar energy is the MPPT year counter in 0.01 kWh."
     },
     {
       "deviceType": "VNSD-0",

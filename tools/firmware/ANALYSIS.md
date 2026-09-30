@@ -225,7 +225,7 @@ Blobs stay local-only.
 |-----|----------------|------------|-------|
 | VNSE3-0 | 144, 147, 1476, 148, 149, 150 | 144–150 | 1476 is app 147.6. SYS/UPS at 150. Live 150 `PV.GetStatus` is `-32601`. |
 | VNSA-0 | 148, 1487, 149, 150, 1508, 1509 | 148–150 | 1487→148, 1508/1509→150. 1508 banners `VEPRO-0` / `VenusE Pro` (unknown family). |
-| VNSD-0 | 147, 149, 1492, 150 | 147–150 | 1492→149. Venus D 149 does **not** use the Venus A 149 solar `×10` scale. |
+| VNSD-0 | 147, 149, 1492, 150 | 147–150 | 1492→149. Venus D 149 and 1492 report solar energy in 0.01 kWh (`×10`), like Venus A 149. |
 | HMG-50 | 153, 155, 156 | 153–156 | No SYS. EM server from 155. Open API stable at 156. |
 
 String presence of `DOD.SET` / `Ble.Adv` / `Led.Ctrl` on VNSE3-0 **147–149**

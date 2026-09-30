@@ -609,8 +609,38 @@ def test_venus_a_1487_folds_to_legacy_148_generation() -> None:
     assert profile.control_generation == 148
     assert profile.supports_sys_dod is False
     assert profile.supports_ups is False
-    assert profile.pv_energy_scale == 1.0
+    assert profile.pv_energy_scale == 10.0
     assert profile.openapi_reset_prone is True
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "pv_energy_scale"),
+    [
+        ("VenusA", 1486, 1.0),
+        ("VenusA", 1487, 10.0),
+        ("VenusA", 1489, 10.0),
+        ("VenusD", 147, 1.0),
+        ("VenusD", 148, 1.0),
+        ("VenusD", 149, 10.0),
+        ("VenusD", 1492, 10.0),
+        ("VenusD", 150, 10.0),
+        ("VenusE 3.0", 149, 1.0),
+        ("VenusE 3.0", 1487, 1.0),
+    ],
+)
+def test_mppt_year_counter_firmware_scales_solar_energy(
+    device_type: str,
+    version: int,
+    pv_energy_scale: float,
+) -> None:
+    """Venus A 148.7+ and Venus D 149+ report solar energy in 0.01 kWh.
+
+    Confirmed on the VNSA-0 1487 and VNSD-0 149 images in the firmware
+    emulator: 1.01 kWh of MPPT yield reads ``total_pv_energy: 101``.
+    """
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.pv_energy_scale == pv_energy_scale
 
 
 @pytest.mark.parametrize(

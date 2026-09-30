@@ -31,6 +31,8 @@ _REGULAR_FAMILIES = frozenset(
 )
 _KNOWN_FAMILIES = _REGULAR_FAMILIES | {DeviceFamily.VENUS_E_MINI}
 _PV_FAMILIES = frozenset({DeviceFamily.VENUS_A, DeviceFamily.VENUS_D})
+# Venus A app 148.7 already reports solar energy in 0.01 kWh.
+_VENUS_A_SCALED_PV_ENERGY_MIN = 1487
 # Observed Control Open API ``ver`` values start near 144. Unknown model
 # names with a plausible Control generation below 150 still get the reset
 # warning (mis-parsed Venus). Placeholders such as ``version: 3`` do not.
@@ -351,8 +353,16 @@ def resolve_firmware_profile(
     #   Venus E 150 (LAN capture / #34): SYS/UPS; GetMode CT keys zeros.
     #   Venus C 153 (#60): HMG-50 reporting VenusC; no SYS/UPS; GetDevice
     #   may omit result MACs; EM.GetStatus is meter-client only until 155.
+    #   Venus A 148.7 (1487) and Venus D 149/149.2 (firmware emulator audit):
+    #   total_pv_energy is the MPPT year counter in 0.01 kWh, like 149+.
     scaled_pv_energy = known_family and (
-        firmware_150 or (family is DeviceFamily.VENUS_A and firmware_149)
+        firmware_150
+        or (family in _PV_FAMILIES and firmware_149)
+        or (
+            family is DeviceFamily.VENUS_A
+            and firmware_version is not None
+            and _VENUS_A_SCALED_PV_ENERGY_MIN <= firmware_version < 1490
+        )
     )
     if is_unsupported_venus_e2(device_type) or (family is DeviceFamily.VENUS_C and hmg50_control):
         supports_em_status = generation is not None and generation >= _HMG50_EM_SERVER_GENERATION

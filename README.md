@@ -173,8 +173,8 @@ Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseabl
 
 | Device | Status | Notes |
 |--------|--------|-------|
-| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149** ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); firmware **148 or older** stays Wh. PV channel 1 stays deciwatts (÷10) through **150.9** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). SYS/UPS from 150 |
-| Venus D 3.0 | Supported (PV) | SYS/UPS from firmware 150; PV channel 1 stays deciwatts |
+| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149**, and from Open API `ver` **1487** (app 148.7) ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); firmware **148 or older** stays Wh. PV channel 1 stays deciwatts (÷10) through **150.9** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). SYS/UPS from 150 |
+| Venus D 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149**; SYS/UPS from firmware 150; PV channel 1 stays deciwatts |
 | Venus C | Supported with a caveat (no PV) | HMG-50 Control **153/155/156**: no SYS/UPS. `EM.GetStatus` from **155**. Open API reset-prone until **156**. GetDevice may omit result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)). Shares one Wi-Fi receive channel with its own UDP meter client (Marstek CT or Shelly), so polling can stall Auto-mode charging ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)); parallel requests and retransmits stay off |
 | Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
 | Venus E mini | Supported (no PV) | SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |

@@ -123,6 +123,8 @@ Firmware **148** (including app labels such as `148.3`) keeps solar energy in
 Wh. Integration **1.1.0** introduced firmware-gated **solar energy** scaling:
 only Venus A **149** (and known families at **150+**) starts the 0.01 kWh
 encoding ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
+Venus A Open API `ver` **1487** (app 148.7) and Venus D **149** / **1492** use
+the same 0.01 kWh encoding, so later integration versions scale them as well.
 That energy fix is separate from PV1 power.
 
 ## PV1 power looks 10× too high
