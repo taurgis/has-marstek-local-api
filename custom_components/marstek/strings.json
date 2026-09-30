@@ -481,6 +481,9 @@
     "command_failed": {
       "message": "Failed to send command: {error}"
     },
+    "clear_schedules_failed": {
+      "message": "Could not clear manual schedule slots {slots}: {error}"
+    },
     "invalid_time_format": {
       "message": "Invalid time format for {field}: {value}. Use HH:MM."
     },

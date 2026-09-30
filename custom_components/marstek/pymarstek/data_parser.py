@@ -158,7 +158,14 @@ def parse_es_status_response(
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
     bat_soc = result.get("bat_soc")
     bat_cap = result.get("bat_cap")  # Battery capacity in Wh
-    if _is_zero(bat_cap):
+    remaining: dict[str, Any] = {}
+    if active_profile.es_bat_cap_is_remaining:
+        # Remaining energy, not the pack size: 0 is a drained pack, unless
+        # the SoC contradicts it.
+        if not (_is_zero(bat_cap) and _is_nonzero_number(bat_soc)):
+            remaining["bat_capacity"] = bat_cap
+        bat_cap = None
+    elif _is_zero(bat_cap):
         # No battery pack has zero capacity: the BMS went silent (see
         # _is_zero). Its SoC is the same placeholder when it reads 0 too.
         bat_cap = None
@@ -235,6 +242,7 @@ def parse_es_status_response(
         "total_grid_output_energy": total_grid_output_energy,
         "total_grid_input_energy": total_grid_input_energy,
         "total_load_energy": total_load_energy,
+        **remaining,
     }
 
 

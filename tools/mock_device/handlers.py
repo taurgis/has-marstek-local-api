@@ -53,6 +53,16 @@ def handle_ble_get_status(
     }
 
 
+def _es_bat_cap(state: dict[str, Any], profile: FirmwareProfile) -> int:
+    """Return ``bat_cap``: the pack size, or the remaining energy on the mini."""
+    capacity_wh = int(state.get("capacity_wh", 5120))
+    if profile.es_bat_cap_is_remaining:
+        # Same formula as Bat.GetStatus bat_capacity, which VNSEM-0 301
+        # repeats here (issue #86).
+        return int(capacity_wh * state["soc"] / 100)
+    return capacity_wh
+
+
 def handle_es_get_status(
     request_id: int,
     src: str,
@@ -97,7 +107,7 @@ def handle_es_get_status(
         "result": {
             "id": 0,
             "bat_soc": state["soc"],
-            "bat_cap": state.get("capacity_wh", 5120),
+            "bat_cap": _es_bat_cap(state, profile),
             "pv_power": pv_power,
             "ongrid_power": state.get("ongrid_power", 0),
             "offgrid_power": 0,

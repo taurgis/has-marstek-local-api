@@ -192,6 +192,10 @@ async def async_setup_entry(
             continue
         if description.key in EM_STATUS_KEYS and not coordinator.profile.supports_em_status:
             continue
+        # There ES.GetStatus has no pack size to show (see
+        # FirmwareProfile.es_bat_cap_is_remaining).
+        if description.key == "bat_cap" and coordinator.profile.es_bat_cap_is_remaining:
+            continue
         if description.exists_fn(data_for_exists):
             sensors.append(
                 MarstekSensor(

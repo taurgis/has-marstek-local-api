@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import time
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
@@ -231,6 +233,79 @@ async def test_e_mini_clear_sends_six_commands_with_single_pause(
         assert client.send_request.call_count == 6
         client.pause_polling.assert_awaited_once()
         client.resume_polling.assert_awaited_once()
+
+
+async def _clear_with_failing_slots(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    failing_slots: set[int],
+) -> tuple[list[int], HomeAssistantError | None]:
+    """Clear schedules while *failing_slots* time out; return the slots sent."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device is not None
+
+        sent: list[int] = []
+
+        async def send_request(command: str, *_args: object, **_kwargs: object) -> dict:
+            slot = json.loads(command)["params"]["config"]["manual_cfg"]["time_num"]
+            sent.append(slot)
+            if slot in failing_slots:
+                raise TimeoutError("timeout")
+            return {"id": 1, "result": {"set_result": True}}
+
+        client.send_request = AsyncMock(side_effect=send_request)
+        error: HomeAssistantError | None = None
+        with patch("custom_components.marstek.helpers.command_retry.asyncio.sleep"):
+            try:
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_CLEAR_MANUAL_SCHEDULES,
+                    {ATTR_DEVICE_ID: device.id},
+                    blocking=True,
+                )
+            except HomeAssistantError as err:
+                error = err
+        client.pause_polling.assert_awaited_once()
+        client.resume_polling.assert_awaited_once()
+    return sent, error
+
+
+@pytest.mark.asyncio
+async def test_clear_manual_schedules_continues_past_failed_slot(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A slot that fails every retry does not leave the later slots set."""
+    sent, error = await _clear_with_failing_slots(hass, mock_config_entry, {3, 7})
+
+    # Slots 3 and 7 are tried three times each; every other slot once.
+    assert sorted(set(sent)) == list(range(10))
+    assert sent.count(3) == 3
+    assert sent.count(7) == 3
+    assert sent.count(9) == 1
+    assert error is not None
+    assert error.translation_key == "clear_schedules_failed"
+    assert error.translation_placeholders == {"slots": "3, 7", "error": "timeout"}
+
+
+@pytest.mark.asyncio
+async def test_clear_manual_schedules_stops_when_device_is_gone(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Two failed slots in a row end the batch and report the rest as failed."""
+    sent, error = await _clear_with_failing_slots(hass, mock_config_entry, set(range(10)))
+
+    assert sent == [0, 0, 0, 1, 1, 1]
+    assert error is not None
+    assert error.translation_key == "clear_schedules_failed"
+    assert error.translation_placeholders == {
+        "slots": "0, 1, 2, 3, 4, 5, 6, 7, 8, 9",
+        "error": "timeout",
+    }
 
 
 @pytest.mark.asyncio
