@@ -156,6 +156,7 @@ def _command_after_setup(client: MagicMock, setup_calls: int) -> dict[str, Any]:
         ("Venus E mini", 1, True),
         ("Venus E mini", 0, True),
         ("VenusE-mini 3.0", 12, True),
+        ("VNSEM-0", 301, True),
         ("Venus E mini", None, False),
         ("Venus E mini", "unknown", False),
         ("Marstek Energy Storage", 150, False),

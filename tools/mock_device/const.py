@@ -130,7 +130,8 @@ _FAMILY_SPECS: dict[DeviceFamily, tuple[int, int]] = {
     DeviceFamily.VENUS_E: (5120, 2500),
     # The mini is rated 1.5 kVA even though the integration allows the family
     # the generic 2500 W ceiling; the mock reports what the hardware can do.
-    DeviceFamily.VENUS_E_MINI: (2010, 1500),
+    # 2009 Wh is the rated_capacity a VNSEM-0 301 reports in Bat.GetStatus.
+    DeviceFamily.VENUS_E_MINI: (2009, 1500),
 }
 
 

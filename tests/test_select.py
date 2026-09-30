@@ -400,6 +400,7 @@ def test_select_current_option_normalizes_open_api_auto() -> None:
         ("VenusE 3.0", 145, False),
         ("VenusE 3.0", 150, True),
         ("Venus E mini", 150, True),
+        ("VNSEM-0", 301, True),
         ("Venus E mini", "not-a-version", False),
         ("Marstek Energy Storage", 150, False),
     ],

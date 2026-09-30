@@ -301,7 +301,7 @@ outage. Accepted only when the firmware profile reports `supports_ups`
 | Venus C | 2560 Wh | 2500 W |
 | Venus D | 2560 Wh | 2200 W |
 | Venus E 3.0 | 5120 Wh | 2500 W |
-| Venus E mini | 2010 Wh | 1500 W |
+| Venus E mini | 2009 Wh | 1500 W |
 
 An unrecognised model falls back to the Venus E shape. The powers mirror the
 integration's own per-family ceilings; they are duplicated in
