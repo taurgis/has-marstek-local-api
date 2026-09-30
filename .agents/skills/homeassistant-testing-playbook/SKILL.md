@@ -67,7 +67,7 @@ Live Home Assistant in Docker is **not** a substitute for pytest. For delete/re-
 # 1. Type checking (strict mode enforced)
 python3 -m mypy --strict custom_components/<domain>/
 
-# 2. Run all tests
+# 2. Run all tests (add `-n "$(nproc)"` to use pytest-xdist; coverage is combined)
 pytest tests/ -q
 ```
 

@@ -33,6 +33,7 @@ from .const import (
     MODE_UPS,
 )
 from .firmware_quirks import (
+    openapi_src_prefix,
     pv_method_not_found_extra_data,
     reports_es_bat_power,
     supports_set_ver_and_factory_reset,
@@ -468,7 +469,8 @@ class MockMarstekDevice:
         self, request_id: int, method: str, params: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Build the Open API response for a request."""
-        src = f"{self.config['device']}-{self.config['ble_mac']}"
+        src_name = openapi_src_prefix(self.profile, self.config["device"])
+        src = f"{src_name}-{self.config['ble_mac']}"
         state = self._get_state()
 
         if method == "Marstek.GetDevice":

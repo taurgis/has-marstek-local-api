@@ -331,12 +331,104 @@ Cloud Agents must use **Python 3.14.2+**. Home Assistant Core 2026.9 and `pytest
 After start:
 
 - Home Assistant: `http://127.0.0.1:8123` (onboarding, then username `admin` / password `marstek-dev`)
-- Mock devices: `172.28.0.20`–`172.28.0.46` as documented in the Chrome UI testing skill
+- Mock devices: `172.28.0.20`–`172.28.0.48` as documented in the Chrome UI testing skill
 - Nested Docker uses `fuse-overlayfs` and `iptables-legacy`. If HA cannot ping a mock, `start.sh` already sets `FORWARD ACCEPT`.
 
 Use `python3 -m ruff`, `python3 -m mypy --strict`, and `pytest` from that venv (same commands as in Verification after changes). Drive the HA UI with `.agents/skills/homeassistant-chrome-ui-testing` (`ha_cdp.py`), not screenshot clicks.
 
 Official setup notes: [Cursor Cloud Agent environment](https://cursor.com/docs/cloud-agent/setup), [Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/), [HA Container install](https://www.home-assistant.io/installation/linux#install-home-assistant-container).
+
+## Sandbox resource budget (cloud agents)
+
+Cloud sandboxes (Claude Code on the web, Cursor Cloud) are small, shared VMs.
+The one this guidance was measured on had **4 CPUs and 15 GB RAM**, and its
+disk is a fixed per-session allowance. Size every test run to the sandbox
+instead of starting everything at once: an overloaded VM does not fail
+cleanly. Emulated firmware misses its timers, UDP replies arrive late or not
+at all, and the result looks like an integration bug that isn't there.
+
+### Check before you start
+
+```bash
+nproc; free -g; df -h .               # what this sandbox has
+uptime                                # load average; keep it below nproc
+docker stats --no-stream              # per-container CPU % and memory, once Docker runs
+```
+
+Re-check `uptime` / `docker stats --no-stream` while a batch runs. If the load
+average stays above `nproc`, or HA logs timeouts that a smaller batch does not
+show, the batch is too big. Stop services and split it; do not "retry until
+green".
+
+### Measured cost per device
+
+| What | CPU | RAM | Notes |
+|------|-----|-----|-------|
+| Python mock (`tools/mock_device`, `mock-marstek*`) | ~0 % | ~20 MB | Four start by default; all 28 (`--profile mocks-all`) fit easily |
+| Renode firmware emulator in Docker (`fw-*`) | ~0.3-0.6 core | ~550 MB | The image runs `--quantum 0.01`; profile images also `--mips 40` |
+| Renode firmware emulator on the host (`run_firmware.py`) | 1-1.5 cores | ~550 MB | Renode's default quantum; pass `--quantum 0.01` to match the image |
+| `pytest tests/` (serial) | 1 core | < 1 GB | ~140 s for the full suite |
+| `pytest tests/ -n 4` (xdist, 4 workers) | 4 cores | ~2 GB | ~60 s; coverage is combined, so `--cov-fail-under` still applies |
+
+`pytest-xdist` comes with `pytest-homeassistant-custom-component`. Use `-n <nproc>`
+(or `-n auto`, which counts physical cores,
+[pytest-xdist distribution](https://pytest-xdist.readthedocs.io/en/stable/distribution.html);
+coverage from `load` workers is combined,
+[pytest-cov xdist](https://pytest-cov.readthedocs.io/en/latest/xdist.html)).
+Do not run xdist while emulators are up: they compete for the same cores.
+
+### Test firmware versions in batches, not all at once
+
+Every firmware version still has to be covered. Cover them in several small
+runs rather than one run with all of them:
+
+1. Python mocks carry the per-version encodings and gates (`firmware_profile.py`
+   is shared), so the pytest suite and the `mock-marstek*` services cover every
+   version cheaply (`--profile mocks-all`, or name the services). Start there. Every image in `tools/firmware/catalog.json`
+   also has a `fw-*` emulator running the vendor's own firmware; use it to
+   confirm what a mock claims. Versions with no public image stay mock-only:
+   Venus E and Venus D 145, and the Venus E mini (145, and `VNSEM-0` 301).
+2. Run the vendor firmware emulators **at most `nproc` at a time in Docker**
+   (the four default ones on a 4-CPU sandbox), or `nproc / 2` host
+   `run_firmware.py` instances without `--quantum 0.01`, next to Home Assistant
+   and the mocks you need. The `firmware-all` profile starts 18 more Renode
+   instances (load around 60 on 4 cores); never start it in a sandbox. On an
+   overloaded host the firmware answers `Parse error` (data 403) or times out,
+   and the CT sidecar leaves about half the requests unanswered.
+3. Name the services per batch, then remove them before the next batch
+   ([compose up](https://docs.docker.com/reference/cli/docker/compose/up/),
+   [compose rm](https://docs.docker.com/reference/cli/docker/compose/rm/)).
+   Naming a service in a profile starts it without the rest of the profile
+   ([profiles](https://docs.docker.com/compose/how-tos/profiles/)):
+
+   ```bash
+   cd .devcontainer
+   # Naming the -ct meter sidecar also starts its emulator (depends_on).
+   docker compose up -d homeassistant fw-venus-e-150-ct fw-venus-a-150-ct   # batch 1
+   # ... test, then record the result ...
+   docker compose rm -sf fw-venus-e-150-ct fw-venus-e-150 fw-venus-a-150-ct fw-venus-a-150
+   docker compose up -d fw-venus-e-148-ct fw-venus-d-149-ct                  # batch 2
+   ```
+
+   `docker compose config --services` lists every service name (`--profile
+   firmware-all` to include the profile images).
+   Group a batch by what it proves (same family across versions, or one
+   version per family) and keep a list of batches done, so no version is
+   skipped.
+4. Outside Docker, pass `--quantum 0.01` to `tools/firmware_emulator/run_firmware.py`
+   (the image's setting) and give each instance distinct
+   `--local-api-port`, `--monitor-port`, `--uart-port`, `--can-port` and
+   `--meter-port` values. Stop each instance (and its `fc41d.py` /
+   `can_peers.py` helpers) by PID when the batch is done. Don't use
+   `pkill -f`: the pattern also matches your own shell.
+5. HMG-50 images (`fw-venus-c-*`, `fw-venus-e2-156`) lose many requests by design
+   ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)), so give them a batch of their own, where the loss is not confused with load.
+
+`.cursor/start.sh` and a bare `docker compose up -d` start the four mock-only
+mocks plus the four default emulators, which takes about half of a 4-CPU sandbox before any
+test runs. Stop the
+emulators you are not testing (`docker compose stop fw-...`) before relying on
+timing-sensitive results.
 
 ## Development Tools
 
@@ -430,7 +522,7 @@ python3 tools/verify_battery_logic.py [IP_ADDRESS]
 **Use when:**
 - Debugging battery charging/discharging status issues
 - Verifying power sign conventions (positive = charging/discharging)
-- Validating `bat_power` fallback calculation (`pv_power - ongrid_power`)
+- Validating `bat_power` fallback calculation (`pv_power - ongrid_power - offgrid_power`)
 - Understanding how different modes affect power flow
 
 **Features:**
@@ -500,7 +592,7 @@ python -m mock_device --device VenusA --ver 149
 python -m mock_device --device VenusA --ver 150
 ```
 
-**In devcontainer:** Twenty-six mock devices run automatically. `172.28.0.20`–`.29` are the issue-log / custom-port set: Venus E 145 and 150, Venus A 148/149/150, Venus D 145, Venus C 153 (HMG-50 reporting VenusC: no SYS/UPS, no EM server, omitted GetDevice MACs), Venus E mini 145, and unsupported VenusE 153. `172.28.0.30`–`.46` add the remaining archived Control images (VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini 150). `VenusE Pro` 1508 is an unknown family. Custom ports 30001/30002/30003/30004 exercise the per-port UDP pool. See `tools/mock_device/README.md`.
+**In devcontainer:** Twenty-eight mock devices are defined, but only the four with no firmware image start by default: Venus E 145 (`.20`), Venus D 145 on custom port 30002 (`.23`), Venus E mini 145 (`.28`) and `VNSEM-0` 301 (`.46`). The other 24 repeat an image a `fw-*` emulator runs for real, so they sit behind `--profile mocks-all` and never start next to it by default; the live campaign starts the ones it walks by name. `172.28.0.20`–`.29` are the issue-log / custom-port set: Venus E 145 and 150, Venus A 148/149/150, Venus D 145, Venus C 153 (HMG-50 reporting VenusC: no SYS/UPS, no EM server, omitted GetDevice MACs), Venus E mini 145, and unsupported VenusE 153. `172.28.0.30`–`.46` add the remaining archived Control images (VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, Venus E mini as `VNSEM-0` 301), and `.47`/`.48` carry Control 151 (VNSE3-0, VNSD-0), whose replies name the SKU in `src`. `VenusE Pro` 1508 is an unknown family. Custom ports 30001/30002/30003/30004 exercise the per-port UDP pool. See `tools/mock_device/README.md`. Next to the mocks, `fw-*` services run the **vendor firmware itself** in Renode (`tools/firmware_emulator/`, UDP 30000, each with an AstraMeter CT003 sidecar): Venus E 150 on `172.28.0.50`, Venus A 150 with PV on `.51` (Open API port 30004; the profile's Venus A 148/149 use 30001/30003, so the per-port pool is tested on real firmware), Venus D 150 with four PV channels on `.52` and the HMG-50 Venus C 156 on `.66` start by default. The other thirteen VNSE3-0/VNSA-0/VNSD-0 images sit on `.53`–`.65`, VNSE3-0 151 and VNSD-0 151 on `.70`/`.71`, and HMG-50 Venus C 153/155 and Venus E 2.0 156 on `.67`–`.69`, behind `docker compose --profile firmware-all up -d` (HMG-50 alone: `--profile firmware-hmg50`). The HMG-50 emulators reproduce the #82 shared-channel loss, so expect many dropped requests there.
 
 ### Tool selection guide
 

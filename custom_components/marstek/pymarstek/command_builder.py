@@ -232,7 +232,7 @@ def set_dod(value: int) -> str:
 
 
 def set_ble_advertising(enable: int) -> str:
-    """Create a Ble.Adv command. 0 enables advertising, 1 disables it."""
+    """Create a Ble.Adv command. 1 enables advertising, 0 disables it."""
     return build_command(CMD_BLE_ADV, {"enable": enable})
 
 

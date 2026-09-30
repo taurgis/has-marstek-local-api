@@ -10,6 +10,32 @@ x-logging: &default-logging
       max-size: "5m"
       max-file: "2"
 
+# Firmware emulator (tools/firmware_emulator/Dockerfile): one image for every
+# Venus E 3.0 / A / D service below. The build downloads a pinned,
+# checksum-verified Renode; set MARSTEK_BUILD_CA to a CA bundle file when a
+# TLS-intercepting proxy sits in the way.
+x-firmware-emulator: &firmware-emulator
+  <<: *default-logging
+  build:
+    context: ..
+    dockerfile: tools/firmware_emulator/Dockerfile
+    secrets:
+      - build_ca
+  image: marstek-fw-emulator:local
+  init: true
+  stop_grace_period: 20s
+
+# AstraMeter as the CT003 of one emulator, sharing its network namespace.
+# 2.3.1 is the release current on 2026-09-29, pinned by digest.
+# It starts once the emulator is healthy (can_peers.py serves the meter by then)
+# and retries, since it exits when its first meter read fails.
+x-firmware-ct: &firmware-ct
+  <<: *default-logging
+  restart: on-failure
+  image: ghcr.io/tomquist/astrameter:2.3.1@sha256:72329da6a63704fb68be7668c494640639c9b28cfbf3bae7588ac1f13a36fb0e
+  volumes:
+    - ../tools/firmware_emulator/astrameter/config.ini:/app/config.ini:ro
+
 services:
   homeassistant:
     <<: *default-logging
@@ -31,6 +57,13 @@ services:
       marstek_net:
         ipv4_address: 172.28.0.10
     command: python -m homeassistant -c /config
+
+  # A mock runs by default only where no firmware image exists (Venus E and
+  # Venus D 145, Venus E mini 145 and VNSEM-0 301). Every other mock repeats a
+  # catalogued image that a fw-* service below runs for real, so it sits in the
+  # mocks-all profile: cheap for an all-versions Home Assistant sweep, but not
+  # started next to the firmware. The custom-port cases moved onto emulators
+  # (fw-venus-a-150 on 30004; fw-venus-a-148/-149 on 30001/30003).
 
   # Mock device 1 - Venus E 3.0, default UDP port 30000
   # Legacy firmware 145: no SYS/UPS; energy fields in Wh
@@ -56,6 +89,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-2
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.25
     networks:
@@ -72,6 +106,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-3
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.22
     networks:
@@ -103,6 +138,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-5
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.24
     networks:
@@ -120,6 +156,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-6
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.26
     networks:
@@ -136,6 +173,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-7
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.27
     networks:
@@ -169,6 +207,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-9
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.29
     networks:
@@ -186,6 +225,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-10
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.30
     networks:
@@ -199,6 +239,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-11
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.31
     networks:
@@ -212,6 +253,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-12
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.32
     networks:
@@ -225,6 +267,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-13
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.33
     networks:
@@ -238,6 +281,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-14
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.34
     networks:
@@ -252,6 +296,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-15
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.35
     networks:
@@ -266,6 +311,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-16
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.36
     networks:
@@ -280,6 +326,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-17
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.37
     networks:
@@ -293,6 +340,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-18
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.38
     networks:
@@ -306,6 +354,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-19
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.39
     networks:
@@ -319,6 +368,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-20
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.40
     networks:
@@ -332,6 +382,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-21
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.41
     networks:
@@ -345,6 +396,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-22
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.42
     networks:
@@ -358,6 +410,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-23
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.43
     networks:
@@ -371,6 +424,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-24
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.44
     networks:
@@ -384,6 +438,7 @@ services:
       context: ..
       dockerfile: tools/mock_device/Dockerfile
     container_name: marstek-mock-device-25
+    profiles: ["mocks-all"]
     environment:
       - MOCK_IP=172.28.0.45
     networks:
@@ -391,6 +446,8 @@ services:
         ipv4_address: 172.28.0.45
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.45", "--device", "VenusE", "--ver", "156", "--ble-mac", "02deadbeef19", "--wifi-mac", "02cafebabe19", "--soc", "43"]
 
+  # Venus E mini as a real device reports it (issue #86): GetDevice
+  # "VNSEM-0", ver 301. SYS + UPS, slots 0-5.
   mock-marstek-26:
     <<: *default-logging
     build:
@@ -402,7 +459,531 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.46
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.46", "--device", "Venus E mini", "--ver", "150", "--ble-mac", "02deadbeef1a", "--wifi-mac", "02cafebabe1a", "--soc", "56"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.46", "--device", "VNSEM-0", "--ver", "301", "--ble-mac", "02deadbeef1a", "--wifi-mac", "02cafebabe1a", "--soc", "56"]
+
+  # Control 151 (September 2026). Same Open API as 150; replies name the SKU
+  # in src ("VNSE3-0-<ble>", "VNSD-0-<ble>"). Emulated on .70/.71.
+  mock-marstek-27:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-27
+    profiles: ["mocks-all"]
+    environment:
+      - MOCK_IP=172.28.0.47
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.47
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.47", "--device", "VenusE 3.0", "--ver", "151", "--ble-mac", "02deadbeef1b", "--wifi-mac", "02cafebabe1b", "--soc", "62"]
+
+  mock-marstek-28:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-28
+    profiles: ["mocks-all"]
+    environment:
+      - MOCK_IP=172.28.0.48
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.48
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.48", "--device", "VenusD", "--ver", "151", "--ble-mac", "02deadbeef1c", "--wifi-mac", "02cafebabe1c", "--soc", "48", "--pv-channels", "400:40:10,350:40:8,300:40:7,250:40:6"]
+
+  # ---- Firmware emulators: the vendor's own Control firmware in Renode ----
+  # tools/firmware_emulator/README.md ("Docker"). Each emulator reports its own
+  # IP and answers the Local API on UDP 30000; healthy = Marstek.GetDevice
+  # answers. Its AstraMeter CT003 sidecar shares the emulator's network namespace
+  # and gets the firmware's port-12345 CT polls over loopback (--ct-loopback), so
+  # no other device's meter answers them. The EEPROM (the firmware's settings)
+  # persists in a named volume per device.
+  # Four run by default (Venus E/A/D 150 and HMG-50 Venus C 156); every other
+  # catalogued image is in the firmware-all profile. On a small host start them
+  # by name, at most nproc at a time (AGENTS.md, "Sandbox resource budget"):
+  #   docker compose up -d fw-venus-e-148-ct fw-venus-d-149-ct
+  # Profile images run a slower emulated MCU (--mips 40) to lower their cost.
+  # Venus E 3.0, Control 150 (current release)
+  fw-venus-e-150:
+    <<: *firmware-emulator
+    container_name: marstek-fw-venus-e-150
+    hostname: fw-venus-e-150
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.50
+    volumes:
+      - fw_venus_e_150:/state
+    command: ["--firmware", "VNSE3-0:150", "--ble-mac", "02:e0:00:00:00:50", "--wifi-mac", "02:e1:00:00:00:50", "--soc", "55"]
+
+  fw-venus-e-150-ct:
+    <<: *firmware-ct
+    container_name: marstek-fw-venus-e-150-ct
+    network_mode: service:fw-venus-e-150
+    depends_on:
+      fw-venus-e-150:
+        condition: service_healthy
+
+  # Venus A, Control 150, two PV channels
+  fw-venus-a-150:
+    <<: *firmware-emulator
+    container_name: marstek-fw-venus-a-150
+    hostname: fw-venus-a-150
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.51
+    volumes:
+      - fw_venus_a_150:/state
+    command: ["--firmware", "VNSA-0:150", "--ble-mac", "02:e0:00:00:00:51", "--wifi-mac", "02:e1:00:00:00:51", "--soc", "40", "--pv", "420,360", "--local-api-port", "30004"]
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/firmware_emulator/healthcheck.py", "--port", "30004"]
+
+  fw-venus-a-150-ct:
+    <<: *firmware-ct
+    container_name: marstek-fw-venus-a-150-ct
+    network_mode: service:fw-venus-a-150
+    depends_on:
+      fw-venus-a-150:
+        condition: service_healthy
+
+  # Venus D, Control 150, four PV channels
+  fw-venus-d-150:
+    <<: *firmware-emulator
+    container_name: marstek-fw-venus-d-150
+    hostname: fw-venus-d-150
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.52
+    volumes:
+      - fw_venus_d_150:/state
+    command: ["--firmware", "VNSD-0:150", "--ble-mac", "02:e0:00:00:00:52", "--wifi-mac", "02:e1:00:00:00:52", "--soc", "65", "--pv", "400,350,300,250"]
+
+  fw-venus-d-150-ct:
+    <<: *firmware-ct
+    container_name: marstek-fw-venus-d-150-ct
+    network_mode: service:fw-venus-d-150
+    depends_on:
+      fw-venus-d-150:
+        condition: service_healthy
+
+  # Venus E 3.0, Control 144
+  fw-venus-e-144:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-144
+    hostname: fw-venus-e-144
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.53
+    volumes:
+      - fw_venus_e_144:/state
+    command: ["--firmware", "VNSE3-0:144", "--ble-mac", "02:e0:00:00:00:53", "--wifi-mac", "02:e1:00:00:00:53", "--soc", "51", "--mips", "40"]
+
+  fw-venus-e-144-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-144-ct
+    network_mode: service:fw-venus-e-144
+    depends_on:
+      fw-venus-e-144:
+        condition: service_healthy
+
+  # Venus E 3.0, Control 147
+  fw-venus-e-147:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-147
+    hostname: fw-venus-e-147
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.54
+    volumes:
+      - fw_venus_e_147:/state
+    command: ["--firmware", "VNSE3-0:147", "--ble-mac", "02:e0:00:00:00:54", "--wifi-mac", "02:e1:00:00:00:54", "--soc", "58", "--mips", "40"]
+
+  fw-venus-e-147-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-147-ct
+    network_mode: service:fw-venus-e-147
+    depends_on:
+      fw-venus-e-147:
+        condition: service_healthy
+
+  # Venus E 3.0, Control 1476
+  fw-venus-e-1476:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-1476
+    hostname: fw-venus-e-1476
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.55
+    volumes:
+      - fw_venus_e_1476:/state
+    command: ["--firmware", "VNSE3-0:1476", "--ble-mac", "02:e0:00:00:00:55", "--wifi-mac", "02:e1:00:00:00:55", "--soc", "65", "--mips", "40"]
+
+  fw-venus-e-1476-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-1476-ct
+    network_mode: service:fw-venus-e-1476
+    depends_on:
+      fw-venus-e-1476:
+        condition: service_healthy
+
+  # Venus E 3.0, Control 148
+  fw-venus-e-148:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-148
+    hostname: fw-venus-e-148
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.56
+    volumes:
+      - fw_venus_e_148:/state
+    command: ["--firmware", "VNSE3-0:148", "--ble-mac", "02:e0:00:00:00:56", "--wifi-mac", "02:e1:00:00:00:56", "--soc", "72", "--mips", "40"]
+
+  fw-venus-e-148-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-148-ct
+    network_mode: service:fw-venus-e-148
+    depends_on:
+      fw-venus-e-148:
+        condition: service_healthy
+
+  # Venus E 3.0, Control 149
+  fw-venus-e-149:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-149
+    hostname: fw-venus-e-149
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.57
+    volumes:
+      - fw_venus_e_149:/state
+    command: ["--firmware", "VNSE3-0:149", "--ble-mac", "02:e0:00:00:00:57", "--wifi-mac", "02:e1:00:00:00:57", "--soc", "79", "--mips", "40"]
+
+  fw-venus-e-149-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-149-ct
+    network_mode: service:fw-venus-e-149
+    depends_on:
+      fw-venus-e-149:
+        condition: service_healthy
+
+  # Venus E 3.0, Control 151 (September 2026)
+  fw-venus-e-151:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-151
+    hostname: fw-venus-e-151
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.70
+    volumes:
+      - fw_venus_e_151:/state
+    command: ["--firmware", "VNSE3-0:151", "--ble-mac", "02:e0:00:00:00:70", "--wifi-mac", "02:e1:00:00:00:70", "--soc", "62", "--mips", "40"]
+
+  fw-venus-e-151-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-e-151-ct
+    network_mode: service:fw-venus-e-151
+    depends_on:
+      fw-venus-e-151:
+        condition: service_healthy
+
+  # Venus A, Control 148
+  fw-venus-a-148:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-148
+    hostname: fw-venus-a-148
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.58
+    volumes:
+      - fw_venus_a_148:/state
+    command: ["--firmware", "VNSA-0:148", "--ble-mac", "02:e0:00:00:00:58", "--wifi-mac", "02:e1:00:00:00:58", "--soc", "36", "--pv", "420,360", "--local-api-port", "30001", "--mips", "40"]
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/firmware_emulator/healthcheck.py", "--port", "30001"]
+
+  fw-venus-a-148-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-148-ct
+    network_mode: service:fw-venus-a-148
+    depends_on:
+      fw-venus-a-148:
+        condition: service_healthy
+
+  # Venus A, Control 1487
+  fw-venus-a-1487:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-1487
+    hostname: fw-venus-a-1487
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.59
+    volumes:
+      - fw_venus_a_1487:/state
+    command: ["--firmware", "VNSA-0:1487", "--ble-mac", "02:e0:00:00:00:59", "--wifi-mac", "02:e1:00:00:00:59", "--soc", "43", "--pv", "420,360", "--mips", "40"]
+
+  fw-venus-a-1487-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-1487-ct
+    network_mode: service:fw-venus-a-1487
+    depends_on:
+      fw-venus-a-1487:
+        condition: service_healthy
+
+  # Venus A, Control 149
+  fw-venus-a-149:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-149
+    hostname: fw-venus-a-149
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.60
+    volumes:
+      - fw_venus_a_149:/state
+    command: ["--firmware", "VNSA-0:149", "--ble-mac", "02:e0:00:00:00:60", "--wifi-mac", "02:e1:00:00:00:60", "--soc", "50", "--pv", "420,360", "--local-api-port", "30003", "--mips", "40"]
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/firmware_emulator/healthcheck.py", "--port", "30003"]
+
+  fw-venus-a-149-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-149-ct
+    network_mode: service:fw-venus-a-149
+    depends_on:
+      fw-venus-a-149:
+        condition: service_healthy
+
+  # VNSA-0 1508 (banner VEPRO-0), reports VenusE Pro
+  fw-venus-a-1508:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-1508
+    hostname: fw-venus-a-1508
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.61
+    volumes:
+      - fw_venus_a_1508:/state
+    command: ["--firmware", "VNSA-0:1508", "--ble-mac", "02:e0:00:00:00:61", "--wifi-mac", "02:e1:00:00:00:61", "--soc", "57", "--pv", "420,360", "--mips", "40"]
+
+  fw-venus-a-1508-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-1508-ct
+    network_mode: service:fw-venus-a-1508
+    depends_on:
+      fw-venus-a-1508:
+        condition: service_healthy
+
+  # Venus A, Control 1509 (ems build)
+  fw-venus-a-1509:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-1509
+    hostname: fw-venus-a-1509
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.62
+    volumes:
+      - fw_venus_a_1509:/state
+    command: ["--firmware", "VNSA-0:1509", "--ble-mac", "02:e0:00:00:00:62", "--wifi-mac", "02:e1:00:00:00:62", "--soc", "64", "--pv", "420,360", "--mips", "40"]
+
+  fw-venus-a-1509-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-a-1509-ct
+    network_mode: service:fw-venus-a-1509
+    depends_on:
+      fw-venus-a-1509:
+        condition: service_healthy
+
+  # Venus D, Control 147
+  fw-venus-d-147:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-147
+    hostname: fw-venus-d-147
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.63
+    volumes:
+      - fw_venus_d_147:/state
+    command: ["--firmware", "VNSD-0:147", "--ble-mac", "02:e0:00:00:00:63", "--wifi-mac", "02:e1:00:00:00:63", "--soc", "71", "--pv", "400,350,300,250", "--mips", "40"]
+
+  fw-venus-d-147-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-147-ct
+    network_mode: service:fw-venus-d-147
+    depends_on:
+      fw-venus-d-147:
+        condition: service_healthy
+
+  # Venus D, Control 149
+  fw-venus-d-149:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-149
+    hostname: fw-venus-d-149
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.64
+    volumes:
+      - fw_venus_d_149:/state
+    command: ["--firmware", "VNSD-0:149", "--ble-mac", "02:e0:00:00:00:64", "--wifi-mac", "02:e1:00:00:00:64", "--soc", "78", "--pv", "400,350,300,250", "--mips", "40"]
+
+  fw-venus-d-149-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-149-ct
+    network_mode: service:fw-venus-d-149
+    depends_on:
+      fw-venus-d-149:
+        condition: service_healthy
+
+  # Venus D, Control 1492
+  fw-venus-d-1492:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-1492
+    hostname: fw-venus-d-1492
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.65
+    volumes:
+      - fw_venus_d_1492:/state
+    command: ["--firmware", "VNSD-0:1492", "--ble-mac", "02:e0:00:00:00:65", "--wifi-mac", "02:e1:00:00:00:65", "--soc", "35", "--pv", "400,350,300,250", "--mips", "40"]
+
+  fw-venus-d-1492-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-1492-ct
+    network_mode: service:fw-venus-d-1492
+    depends_on:
+      fw-venus-d-1492:
+        condition: service_healthy
+
+  # Venus D, Control 151 (September 2026)
+  fw-venus-d-151:
+    <<: *firmware-emulator
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-151
+    hostname: fw-venus-d-151
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.71
+    volumes:
+      - fw_venus_d_151:/state
+    command: ["--firmware", "VNSD-0:151", "--ble-mac", "02:e0:00:00:00:71", "--wifi-mac", "02:e1:00:00:00:71", "--soc", "48", "--pv", "400,350,300,250", "--mips", "40"]
+
+  fw-venus-d-151-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all"]
+    container_name: marstek-fw-venus-d-151-ct
+    network_mode: service:fw-venus-d-151
+    depends_on:
+      fw-venus-d-151:
+        condition: service_healthy
+
+  # Venus C (HMG-50, STM32G4), Control 156, 2560 Wh pack: issue #82's meter channel
+  fw-venus-c-156:
+    <<: *firmware-emulator
+    container_name: marstek-fw-venus-c-156
+    hostname: fw-venus-c-156
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.66
+    volumes:
+      - fw_venus_c_156:/state
+    command: ["--firmware", "HMG-50:156", "--ble-mac", "02:e0:00:00:00:66", "--wifi-mac", "02:e1:00:00:00:66", "--soc", "60", "--capacity", "2560"]
+
+  fw-venus-c-156-ct:
+    <<: *firmware-ct
+    container_name: marstek-fw-venus-c-156-ct
+    network_mode: service:fw-venus-c-156
+    depends_on:
+      fw-venus-c-156:
+        condition: service_healthy
+
+  # Venus C, Control 153 (no EM server: EM.GetStatus is parse_state 425)
+  fw-venus-c-153:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-153
+    hostname: fw-venus-c-153
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.67
+    volumes:
+      - fw_venus_c_153:/state
+    command: ["--firmware", "HMG-50:153", "--ble-mac", "02:e0:00:00:00:67", "--wifi-mac", "02:e1:00:00:00:67", "--soc", "45", "--capacity", "2560"]
+
+  fw-venus-c-153-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-153-ct
+    network_mode: service:fw-venus-c-153
+    depends_on:
+      fw-venus-c-153:
+        condition: service_healthy
+
+  # Venus C, Control 155
+  fw-venus-c-155:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-155
+    hostname: fw-venus-c-155
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.68
+    volumes:
+      - fw_venus_c_155:/state
+    command: ["--firmware", "HMG-50:155", "--ble-mac", "02:e0:00:00:00:68", "--wifi-mac", "02:e1:00:00:00:68", "--soc", "50", "--capacity", "2560"]
+
+  fw-venus-c-155-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-155-ct
+    network_mode: service:fw-venus-c-155
+    depends_on:
+      fw-venus-c-155:
+        condition: service_healthy
+
+  # Venus E 2.0 (HMG-50 with a 5120 Wh pack), Control 156
+  fw-venus-e2-156:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-e2-156
+    hostname: fw-venus-e2-156
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.69
+    volumes:
+      - fw_venus_e2_156:/state
+    command: ["--firmware", "HMG-50:156", "--ble-mac", "02:e0:00:00:00:69", "--wifi-mac", "02:e1:00:00:00:69", "--soc", "65", "--capacity", "5120"]
+
+  fw-venus-e2-156-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-e2-156-ct
+    network_mode: service:fw-venus-e2-156
+    depends_on:
+      fw-venus-e2-156:
+        condition: service_healthy
 
 networks:
   marstek_net:
@@ -414,3 +995,53 @@ networks:
 volumes:
   ha_config:
     name: marstek-ha-config
+  fw_venus_e_150:
+    name: marstek-fw-venus-e-150
+  fw_venus_a_150:
+    name: marstek-fw-venus-a-150
+  fw_venus_d_150:
+    name: marstek-fw-venus-d-150
+  fw_venus_e_144:
+    name: marstek-fw-venus-e-144
+  fw_venus_e_147:
+    name: marstek-fw-venus-e-147
+  fw_venus_e_1476:
+    name: marstek-fw-venus-e-1476
+  fw_venus_e_148:
+    name: marstek-fw-venus-e-148
+  fw_venus_e_149:
+    name: marstek-fw-venus-e-149
+  fw_venus_a_148:
+    name: marstek-fw-venus-a-148
+  fw_venus_a_1487:
+    name: marstek-fw-venus-a-1487
+  fw_venus_a_149:
+    name: marstek-fw-venus-a-149
+  fw_venus_a_1508:
+    name: marstek-fw-venus-a-1508
+  fw_venus_a_1509:
+    name: marstek-fw-venus-a-1509
+  fw_venus_d_147:
+    name: marstek-fw-venus-d-147
+  fw_venus_d_149:
+    name: marstek-fw-venus-d-149
+  fw_venus_d_1492:
+    name: marstek-fw-venus-d-1492
+  fw_venus_e_151:
+    name: marstek-fw-venus-e-151
+  fw_venus_d_151:
+    name: marstek-fw-venus-d-151
+  fw_venus_c_156:
+    name: marstek-fw-venus-c-156
+  fw_venus_c_153:
+    name: marstek-fw-venus-c-153
+  fw_venus_c_155:
+    name: marstek-fw-venus-c-155
+  fw_venus_e2_156:
+    name: marstek-fw-venus-e2-156
+
+secrets:
+  # Build-only: optional extra CA bundle for the Renode download (see above).
+  # /dev/null (the default) means "none".
+  build_ca:
+    file: ${MARSTEK_BUILD_CA:-/dev/null}

@@ -179,10 +179,10 @@ async def test_manual_flow_already_configured(
     assert result["reason"] == "already_configured"
 
 
-async def test_manual_flow_already_configured_via_wifi_mac(
+async def test_manual_flow_adds_second_battery_on_same_access_point(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Manual add must abort when only the Wi-Fi MAC matches an existing entry."""
+    """A shared ``wifi_mac`` is the AP BSSID, so it must not block a second battery."""
     mock_config_entry.add_to_hass(hass)
 
     device_info = {
@@ -202,9 +202,37 @@ async def test_manual_flow_already_configured_via_wifi_mac(
             result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
         )
 
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == "11:22:33:44:55:66"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 2
+
+
+async def test_manual_flow_already_configured_via_ble_on_legacy_entry(
+    hass: HomeAssistant,
+) -> None:
+    """A legacy entry keyed on a Wi-Fi MAC still blocks re-adding its BLE device."""
+    MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="11:22:33:44:55:66",
+        data={"host": "192.168.1.100", "port": 30000, "ble_mac": "AA:BB:CC:DD:EE:FF"},
+    ).add_to_hass(hass)
+    device_info = {
+        "ip": "192.168.1.100",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "device_type": "VenusE 3.0",
+        "version": 150,
+    }
+
+    with patch_discovery([]):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"
-    assert hass.config_entries.async_entries(DOMAIN)[0].unique_id == "aa:bb:cc:dd:ee:ff"
 
 
 async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
@@ -306,3 +334,31 @@ async def test_manual_add_reuses_pooled_udp_client(hass: HomeAssistant) -> None:
     assert mock_get_device_info.await_args.kwargs["udp_client"] is client
     client.async_pause_receiver.assert_not_called()
     client.async_resume_receiver.assert_not_called()
+
+
+async def test_manual_flow_adds_device_a_discovery_flow_is_waiting_on(
+    hass: HomeAssistant,
+) -> None:
+    """Entering the IP of a device the scanner already offered adds it."""
+    device = {
+        "ip": "1.2.3.4",
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "mac": "11:22:33:44:55:66",
+        "device_type": "VNSEM-0",
+        "version": 301,
+        "wifi_mac": "11:22:33:44:55:66",
+    }
+    discovery = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "integration_discovery"}, data=device
+    )
+    assert discovery["step_id"] == "confirm"
+
+    with patch_discovery([]), patch_manual_connection(device_info=device):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={CONF_HOST: "1.2.3.4", CONF_PORT: 30000}
+        )
+    await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []

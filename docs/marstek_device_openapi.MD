@@ -292,7 +292,7 @@ The PDF labels PV power as watts. Observed firmware through **150.9** still enco
 | `pv_power` | number or null | W | W |
 | `ongrid_power` | number or null | W | W |
 | `offgrid_power` | number or null | W | W |
-| `bat_power` | number or null | W | W (often omitted on Venus E 3.0 / firmware 150; integration falls back to `pv_power - ongrid_power`) |
+| `bat_power` | number or null | W | W (often omitted on Venus E 3.0 / firmware 150; integration falls back to `pv_power - ongrid_power - offgrid_power`, the EPS socket load) |
 | `total_pv_energy` | number or null | **0.01 kWh** on Venus A `ver >= 149` and known families at `ver >= 150` (Rev 3.1 PDF unit); **Wh** on Venus A 148 or older | Wh (`raw × 10` when the profile uses 0.01 kWh) |
 | `total_grid_output_energy` | number or null | **Wh** | Wh (never scaled with PV energy) |
 | `total_grid_input_energy` | number or null | **Wh** | Wh (never scaled with PV energy) |
@@ -422,7 +422,7 @@ Rev 3.1 adds system writes. **No GET methods are documented for DOD, Bluetooth a
 | Method | Params | Semantics | HA UI |
 |--------|--------|-----------|-------|
 | `DOD.SET` | `value` integer **30–88**, default **88** | Depth of discharge | Number entity when SYS is supported |
-| `Ble.Adv` | `enable`: **`0` enable advertising**, **`1` disable** | Polarity is inverted vs the English method name; implement from the table | Switch (on = advertising) |
+| `Ble.Adv` | `enable`: **`1` enable advertising**, **`0` disable** (firmware; the PDF says the reverse) | The PDF table lists `0` enable / `1` disable, but VNSE3-0 150 and VNSA-0 150 send `AT+QBLEADVSTART` for `1` and `AT+QBLEADVSTOP` for `0` | Switch (on = advertising) |
 | `Led.Ctrl` | `state`: **`1` on**, **`0` off** | Panel LED | Switch |
 | `Set.Ver` | `version` | Charge/discharge power “version” (800 / 1200 VA / 1500 VA / 2200 VD / 2500 VE in the PDF) | **Not exposed** |
 | `Reset.Factory` | `type` `1` clear totals, `2` keep totals (PDF wording) | Factory reset | **Not exposed** |
@@ -441,7 +441,7 @@ Result: `set_result` boolean.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `enable` | number | `0` enable Bluetooth advertising; `1` disable |
+| `enable` | number | `1` enable Bluetooth advertising; `0` disable. The PDF documents the reverse; the firmware behaviour above wins. |
 
 Result: `set_result` boolean.
 
@@ -484,7 +484,7 @@ Observed HMG-50 Control **153/155/156** can GetDevice as `VenusC` (issue #60) or
 server method from **155**. The PDF row above remains the vendor chapter-4
 matrix; shipped profile behavior for those generations is in 4.2.
 
-Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `VenusE 3.0`) **or** vendor SKUs (`VNSA-0`, `VNSD-0`, `VNSE3-0`). Both map to the same families. Venus E 2.x is **HMG-50**: Open API GetDevice reports `device: "VenusE"` (not `VenusE 3.0`). Bare `VenusE`, `HMG-50`, and `VNSE2` are rejected.
+Discovery `device` strings may be display names (`VenusA 3.0`, `Venus D`, `VenusE 3.0`) **or** vendor SKUs (`VNSA-0`, `VNSD-0`, `VNSE3-0`, and `VNSEM-0` for the Venus E mini, which reports `ver` `301`, [#86](https://github.com/taurgis/has-marstek-local-api/issues/86)). Both map to the same families. Venus E 2.x is **HMG-50**: Open API GetDevice reports `device: "VenusE"` (not `VenusE 3.0`). Bare `VenusE`, `HMG-50`, and `VNSE2` are rejected.
 
 ### 4.2 Integration firmware-profile behavior (shipped)
 

@@ -171,15 +171,84 @@ Extended documentation (with screenshots) lives in `docs/`:
 
 Firmware `ver` comes from discovery (`Marstek.GetDevice`). Unknown or unparseable `ver` stays legacy-safe (no SYS/UPS; no invented energy scaling). Unsupported capability-gated entities are **omitted**, not left permanently unavailable.
 
+The [Test matrix](#test-matrix) below shows which firmware versions we run for real in Docker, which ones are mock-only, and how to report a version we don't have yet.
+
 | Device | Status | Notes |
 |--------|--------|-------|
-| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149** ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); firmware **148 or older** stays Wh. PV channel 1 stays deciwatts (÷10) through **150.9** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). SYS/UPS from 150 |
-| Venus D 3.0 | Supported (PV) | SYS/UPS from firmware 150; PV channel 1 stays deciwatts |
+| Venus A 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149**, and from Open API `ver` **1487** (app 148.7) ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); firmware **148 or older** stays Wh. PV channel 1 stays deciwatts (÷10) through **150.9** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). SYS/UPS from 150 |
+| Venus D 3.0 | Supported (PV) | Solar energy uses 0.01 kWh → Wh from firmware **149**; SYS/UPS from firmware 150; PV channel 1 stays deciwatts |
 | Venus C | Supported with a caveat (no PV) | HMG-50 Control **153/155/156**: no SYS/UPS. `EM.GetStatus` from **155**. Open API reset-prone until **156**. GetDevice may omit result MACs ([#60](https://github.com/taurgis/has-marstek-local-api/issues/60)). Shares one Wi-Fi receive channel with its own UDP meter client (Marstek CT or Shelly), so polling can stall Auto-mode charging ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)); parallel requests and retransmits stay off |
 | Venus E 3.0 | Supported (no PV) | SYS/UPS from firmware 150; ten manual slots (0–9) |
-| Venus E mini | Supported (no PV) | SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |
+| Venus E mini | Supported (no PV) | Reports `VNSEM-0` in discovery (firmware **301**, [#86](https://github.com/taurgis/has-marstek-local-api/issues/86)). SYS without the 150 gate when `ver` is a known integer; UPS only at `ver >= 150`; **six** manual slots (0–5) |
 | Venus E 2.0 | **Not compatible** | May disconnect the device from CT003 (the shared meter channel of [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)) |
 | Other OPEN API devices | May work (untested) | Treated as unknown family (legacy-safe) |
+
+## Test matrix
+
+This table shows which device and firmware combinations we test, and how. The tests run in Docker (`.devcontainer/docker-compose.yml`). Each combination is one of three kinds:
+
+- **Real firmware**: Marstek's own firmware image runs unmodified in a [Renode](https://renode.io/) emulator ([`tools/firmware_emulator/`](tools/firmware_emulator/README.md)). Home Assistant adds and polls it like a physical battery. Every value it reports is computed by Marstek's code, so the units, scales, errors and dropped requests match your device on that firmware. The parts around the processor are simulated: an energy-counted battery, an inverter, PV strings on Venus A/D, and a CT003 meter served by [AstraMeter](https://github.com/tomquist/AstraMeter). Watts and state of charge therefore follow a simulated home, but the firmware turns them into Open API values.
+- **Mock only**: no public image of this firmware exists, so a Python mock ([`tools/mock_device/`](tools/mock_device/README.md)) stands in. It returns what we believe that firmware sends, based on the shared firmware profile, and it runs a simulated home, battery and meter. It is only as accurate as our reading of the firmware, so reports from owners matter most here.
+- **Not covered**: we have neither. [Tell us about it](#your-device-or-firmware-is-missing).
+
+| Device | Reports as | Firmware (`ver`) | Coverage | Docker service (address) |
+|--------|-----------|------------------|----------|--------------------------|
+| Venus E 3.0 | `VenusE 3.0` | 144 | Real firmware | `fw-venus-e-144` (`172.28.0.53`) |
+| | | 145 | Mock only | `mock-marstek` (`172.28.0.20`) ★ |
+| | | 147 | Real firmware | `fw-venus-e-147` (`172.28.0.54`) |
+| | | 1476 (app 147.6) | Real firmware | `fw-venus-e-1476` (`172.28.0.55`) |
+| | | 148 | Real firmware | `fw-venus-e-148` (`172.28.0.56`) |
+| | | 149 | Real firmware | `fw-venus-e-149` (`172.28.0.57`) |
+| | | 150 | Real firmware | `fw-venus-e-150` (`172.28.0.50`) ★ |
+| | | 151 | Real firmware | `fw-venus-e-151` (`172.28.0.70`) |
+| Venus A | `Venus A` | 148 | Real firmware | `fw-venus-a-148` (`172.28.0.58:30001`) |
+| | | 1487 (app 148.7) | Real firmware | `fw-venus-a-1487` (`172.28.0.59`) |
+| | | 149 | Real firmware | `fw-venus-a-149` (`172.28.0.60:30003`) |
+| | | 150 | Real firmware | `fw-venus-a-150` (`172.28.0.51:30004`) ★ |
+| | | 1509 (app 150.9) | Real firmware | `fw-venus-a-1509` (`172.28.0.62`) |
+| Venus D | `Venus D` | 145 | Mock only | `mock-marstek-4` (`172.28.0.23:30002`) ★ |
+| | | 147 | Real firmware | `fw-venus-d-147` (`172.28.0.63`) |
+| | | 149 | Real firmware | `fw-venus-d-149` (`172.28.0.64`) |
+| | | 1492 (app 149.2) | Real firmware | `fw-venus-d-1492` (`172.28.0.65`) |
+| | | 150 | Real firmware | `fw-venus-d-150` (`172.28.0.52`) ★ |
+| | | 151 | Real firmware | `fw-venus-d-151` (`172.28.0.71`) |
+| Venus C | `VenusC` | 153 | Real firmware | `fw-venus-c-153` (`172.28.0.67`) |
+| | | 155 | Real firmware | `fw-venus-c-155` (`172.28.0.68`) |
+| | | 156 | Real firmware | `fw-venus-c-156` (`172.28.0.66`) ★ |
+| Venus E 2.0 (not compatible) | `VenusE` | 153, 155 | Real firmware: the same HMG-50 image, run as Venus C | `fw-venus-c-153`, `fw-venus-c-155` |
+| | | 156 | Real firmware | `fw-venus-e2-156` (`172.28.0.69`) |
+| Venus E mini | `Venus E mini` | 145 | Mock only | `mock-marstek-8` (`172.28.0.28`) ★ |
+| | `VNSEM-0` | 301 | Mock only | `mock-marstek-26` (`172.28.0.46`) ★ |
+| Unknown family | `VenusE Pro` | 1508 | Real firmware (a test build Marstek published under Venus A) | `fw-venus-a-1508` (`172.28.0.61`) |
+
+Firmware images come from Marstek's public update server and community archives; [`tools/firmware/catalog.json`](tools/firmware/catalog.json) lists each one with its source and SHA-256. Every real-firmware version also has a matching Python mock under `--profile mocks-all`, for quick sweeps that don't need the emulator's CPU.
+
+### How we test in Docker
+
+- **★ starts by default.** A plain `docker compose up -d` in `.devcontainer/` starts Home Assistant, the four mock-only devices and four emulators: Venus E 150, Venus A 150, Venus D 150 and Venus C 156. The mix of ports 30000, 30002 and 30004 also tests that devices on different Open API ports each get their own socket.
+- **Other versions run in batches.** Each emulator needs about half a CPU core and 550 MB of RAM, so we start the others by name, a few at a time, then remove them before the next batch:
+
+  ```bash
+  cd .devcontainer
+  # Naming the -ct meter sidecar also starts its emulator
+  docker compose up -d homeassistant fw-venus-e-148-ct fw-venus-d-149-ct
+  # ... add them in Home Assistant, check the values, then:
+  docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venus-d-149
+  ```
+
+  `--profile firmware-all` defines all 22 emulators, but running them all at once needs a large machine. On a 4-CPU machine, run at most four at a time. The [sandbox resource budget](AGENTS.md#sandbox-resource-budget-cloud-agents) explains why, and gives the batch rules.
+- **Venus C and Venus E 2.0 get their own batch.** They drop many requests by design ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)), and that loss shouldn't be mistaken for load.
+- **Automated tests never need Docker.** `pytest` uses the same firmware profiles against in-process mocks.
+
+### Your device or firmware is missing?
+
+If your combination isn't in the table above, or shows **Mock only**, please **[open a firmware coverage issue](https://github.com/taurgis/has-marstek-local-api/issues/new?template=firmware_coverage.yml)**. The issue form asks for the following.
+
+1. **Your device model and firmware version.** In Home Assistant, go to **Settings → Devices & services → Marstek** and open the device. The **Device info** card shows the model and **Firmware**. That number is the Open API `ver` this table uses. If the integration isn't set up yet, run `python3 tools/query_device.py <device IP> --port <Open API port>` from a checkout of this repository and copy `device` and `ver` from the reply. The Marstek app shows a version too, but it can be written differently: `147.6` in the app is `ver` `1476` here.
+2. **What works and what doesn't.** Say so even if everything looks right. For a mock-only version, one owner confirming the values is what turns our guess into a checked fact.
+3. **Diagnostics (optional).** On the device page, open the ⋮ menu and choose **Download diagnostics**. MAC addresses, IP addresses and the Wi-Fi name are redacted, but check the file before you attach it.
+
+You don't need to send the firmware file itself. We look for a public copy on Marstek's update server and in the community archives. If you know where one is, add the link to the issue. Never post your Marstek account details or passwords.
 
 ## Services
 

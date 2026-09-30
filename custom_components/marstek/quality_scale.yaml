@@ -73,9 +73,10 @@ rules:
   devices:
     status: done
     comment: >-
-      DeviceInfo carries identifiers, the Wi-Fi/Bluetooth MAC connections,
-      manufacturer, model, serial number and firmware version, so the device
-      matches what DHCP and router integrations see.
+      DeviceInfo carries identifiers, the Bluetooth MAC connection,
+      manufacturer, model, serial number and firmware version. The reported
+      wifi_mac is the access point's BSSID, so it is registered as a network
+      MAC only for a device without a BLE MAC.
   diagnostics: done
   discovery-update-info:
     status: done

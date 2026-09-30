@@ -68,3 +68,21 @@ def pv_method_not_found_extra_data(profile: FirmwareProfile) -> int | None:
     if profile.family is DeviceFamily.VENUS_E and generation is not None and generation >= 150:
         return 424
     return None
+
+
+# From Control 151 the reply ``src`` names the SKU instead of the product:
+# the VNSE3-0 / VNSD-0 151 images answer ``"VNSE3-0-<ble_mac>"`` where 150
+# sent ``"VenusE 3.0-<ble_mac>"`` (the `` VenusE 3.0-%s`` format string became
+# ``%s-%s``). GetDevice ``device`` keeps the product name. No VNSA-0 151 image
+# exists yet, so Venus A keeps the old form.
+_SKU_SRC_MIN_GENERATION = 151
+_SRC_SKUS = {DeviceFamily.VENUS_E: "VNSE3-0", DeviceFamily.VENUS_D: "VNSD-0"}
+
+
+def openapi_src_prefix(profile: FirmwareProfile, device_name: str) -> str:
+    """Return the name the firmware puts before the BLE MAC in ``src``."""
+    generation = profile.control_generation
+    sku = _SRC_SKUS.get(profile.family)
+    if sku is None or generation is None or generation < _SKU_SRC_MIN_GENERATION:
+        return device_name
+    return sku

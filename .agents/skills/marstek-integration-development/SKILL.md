@@ -88,9 +88,13 @@ if self.consecutive_failures >= failure_threshold:
 # 1. Type checking (strict mode)
 python3 -m mypy --strict custom_components/marstek/
 
-# 2. All tests
-pytest tests/ -q
+# 2. All tests (-n splits them over xdist workers; ~60 s instead of ~140 s on 4 CPUs)
+pytest tests/ -q -n "$(nproc)"
 ```
+
+Drop `-n` while Renode firmware emulators are running; they need the cores.
+AGENTS.md → *Sandbox resource budget* has the per-device costs and the batch
+recipe for live firmware testing.
 
 **Both must pass before considering any change complete.** The repository enforces strict typing with `mypy --strict`:
 - All functions need return type annotations

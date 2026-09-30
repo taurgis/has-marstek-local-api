@@ -297,6 +297,19 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                 return
             self._ensure_listener()
 
+    def paused_socket(self) -> socket.socket | None:
+        """Return the bound socket while the receiver is paused, else None.
+
+        Broadcast discovery reads this socket instead of binding a second one
+        on the same port. Linux ``SO_REUSEPORT`` spreads the replies across
+        every socket bound there, so a reply hashed onto this paused socket
+        was never seen by discovery (issue found by the firmware emulator
+        audit: adding a device took two or more attempts).
+        """
+        if self._receiver_pause_count <= 0 or self._listen_task is not None:
+            return None
+        return self._socket
+
     async def _stop_listener(self) -> None:
         """Cancel the background UDP listener if it is running."""
         if self._listen_task and not self._listen_task.done():

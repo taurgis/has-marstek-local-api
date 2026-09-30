@@ -66,20 +66,47 @@ def format_device_name(device_info: dict[str, Any]) -> str:
 def _build_connections(device_info: dict[str, Any]) -> set[tuple[str, str]]:
     """Collect the hardware addresses Home Assistant can match this device on.
 
-    Registering the Wi-Fi MAC lets Home Assistant tie this device to the same
-    hardware seen by DHCP and by router integrations, so the device page shows
-    one device instead of several. The BLE MAC is registered too because it is
-    what Marstek firmware keeps stable across a Wi-Fi change.
+    The BLE MAC is the device's own address and the one Marstek firmware keeps
+    stable, so it is registered whenever the device reports one. ``wifi_mac``
+    (and ``mac``, which copies it) is the BSSID of the access point the
+    battery is connected to, not the battery's own Wi-Fi MAC. Registering it
+    as a network MAC would let DHCP ``registered_devices`` start a flow for
+    the access point's lease and let a router integration merge the access
+    point into this device, so it is only used when no BLE MAC exists.
     """
+    ble_mac = formatted_mac_or_none(device_info.get("ble_mac"))
+    if ble_mac is not None:
+        return {(CONNECTION_BLUETOOTH, ble_mac)}
     connections: set[tuple[str, str]] = set()
     for key in ("wifi_mac", "mac"):
         formatted = formatted_mac_or_none(device_info.get(key))
         if formatted is not None:
             connections.add((CONNECTION_NETWORK_MAC, formatted))
-    ble_mac = formatted_mac_or_none(device_info.get("ble_mac"))
-    if ble_mac is not None:
-        connections.add((CONNECTION_BLUETOOTH, ble_mac))
     return connections
+
+
+def stale_access_point_connections(
+    device_info: dict[str, Any], registered: set[tuple[str, str]]
+) -> set[tuple[str, str]]:
+    """Return registered network-MAC connections that hold the AP's BSSID.
+
+    Releases before this one registered ``wifi_mac``/``mac`` next to the BLE
+    MAC, and the device registry only ever adds connections. Only the BSSIDs
+    this device reported are returned, so a network MAC another integration
+    registered on the same device is left alone.
+    """
+    if formatted_mac_or_none(device_info.get("ble_mac")) is None:
+        return set()
+    bssids = {
+        formatted
+        for key in ("wifi_mac", "mac")
+        if (formatted := formatted_mac_or_none(device_info.get(key))) is not None
+    }
+    return {
+        connection
+        for connection in registered
+        if connection[0] == CONNECTION_NETWORK_MAC and connection[1] in bssids
+    }
 
 
 def build_device_info(device_info: dict[str, Any]) -> DeviceInfo:

@@ -24,7 +24,7 @@ from .const import (
     PLATFORMS,
 )
 from .coordinator import MarstekDataUpdateCoordinator
-from .device_info import get_device_identifier
+from .device_info import get_device_identifier, stale_access_point_connections
 from .firmware_profile import (
     FirmwareProfile,
     is_unsupported_venus_e2,
@@ -231,6 +231,34 @@ def _async_remove_unsupported_capability_entities(
         return
 
     _remove_keys(BAT_STATUS_KEYS)
+
+
+def _async_remove_access_point_connections(
+    hass: HomeAssistant, entry: ConfigEntry, device_info: dict[str, Any]
+) -> None:
+    """Drop the access point's BSSID from this device's registry connections.
+
+    Earlier releases registered ``wifi_mac`` as the battery's network MAC.
+    It is the access point's BSSID, so DHCP ``registered_devices`` matched the
+    access point's lease to this device. ``async_get_or_create`` only merges
+    connections, so the stale ones have to be replaced explicitly.
+    """
+    device_identifier = get_unique_id_from_device_info(device_info)
+    if device_identifier is None:
+        return
+    device_registry = dr.async_get(hass)
+    device = async_lookup_device_by_identifier(
+        device_registry,
+        (DOMAIN, device_identifier),
+        config_entry_id=entry.entry_id,
+    )
+    if device is None:
+        return
+    stale = stale_access_point_connections(device_info, set(device.connections))
+    if not stale:
+        return
+    _LOGGER.debug("Removing access point MAC connections from %s: %s", device.name, stale)
+    device_registry.async_update_device(device.id, new_connections=set(device.connections) - stale)
 
 
 async def _async_cleanup_last_entry(hass: HomeAssistant) -> None:
@@ -492,6 +520,7 @@ async def _async_setup_entry_with_client(
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _async_remove_access_point_connections(hass, entry, device_info_dict)
 
     return True
 

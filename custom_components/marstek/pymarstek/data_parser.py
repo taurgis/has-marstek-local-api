@@ -172,13 +172,10 @@ def parse_es_status_response(
         if (
             isinstance(pv_power, (int, float))
             and isinstance(ongrid_power, (int, float))
-            and (pv_power != 0 or ongrid_power != 0)
+            and (pv_power != 0 or ongrid_power != 0 or _is_nonzero_number(offgrid_power))
         ):
-            # Fallback when API omits bat_power (Venus A/E devices):
-            # Energy flow: battery + PV = grid export (when discharging to grid)
-            # So: bat_power = pv_power - ongrid_power (API convention: - = discharging)
-            # With pv=0, ongrid=+800 (export): bat_power = -800 (discharging)
-            raw_bat_power = pv_power - ongrid_power
+            # Fallback when API omits bat_power (Venus A/E devices).
+            raw_bat_power = _fallback_raw_battery_power(pv_power, ongrid_power, offgrid_power)
         elif (
             isinstance(pv_power, (int, float))
             and isinstance(ongrid_power, (int, float))
@@ -432,6 +429,26 @@ def total_pv_channel_power(pv_status_data: dict[str, Any]) -> float:
     return total
 
 
+def _is_nonzero_number(value: Any) -> bool:
+    """Return True for a real, non-zero number (bools are not power readings)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value != 0
+
+
+def _fallback_raw_battery_power(pv_power: float, ongrid_power: float, offgrid_power: Any) -> float:
+    """Derive battery power (API sign: + charging) when ``bat_power`` is omitted.
+
+    Power balance: PV + battery discharge = grid export (``ongrid_power``, +
+    export) + the off-grid/EPS socket load (``offgrid_power``). So
+    ``bat_power = pv_power - ongrid_power - offgrid_power``. With pv=0 and
+    ongrid=+800 the battery discharges 800 W (-800). With 300 W of PV charging
+    and 80 W on the EPS socket, the battery charges about 220 W, not 300 W.
+    """
+    raw_bat_power = pv_power - ongrid_power
+    if _is_nonzero_number(offgrid_power):
+        raw_bat_power -= offgrid_power
+    return raw_bat_power
+
+
 def _recalculate_battery_from_pv(
     status: dict[str, Any],
     pv_status_data: dict[str, Any],
@@ -446,7 +463,9 @@ def _recalculate_battery_from_pv(
 
         ongrid_power = es_status_data.get("ongrid_power")
         if isinstance(ongrid_power, (int, float)):
-            raw_bat_power = total_pv_from_channels - ongrid_power
+            raw_bat_power = _fallback_raw_battery_power(
+                total_pv_from_channels, ongrid_power, es_status_data.get("offgrid_power")
+            )
             battery_power = -raw_bat_power
             status["battery_power"] = battery_power
             if battery_power > 0:

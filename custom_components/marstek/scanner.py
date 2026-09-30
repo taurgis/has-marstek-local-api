@@ -36,7 +36,7 @@ from .helpers.flow_helpers import (
     identity_macs_from_mapping,
 )
 from .helpers.ports import discovery_scan_ports
-from .helpers.udp_clients import async_paused_udp_receivers
+from .helpers.udp_clients import async_paused_udp_receivers, paused_discovery_sockets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -203,9 +203,11 @@ class MarstekScanner:
             _LOGGER.debug("Scanner: Starting device discovery (broadcast)")
             scan_ports = self._build_scan_ports()
             broadcast_addresses = await async_broadcast_addresses(self._hass)
-            async with async_paused_udp_receivers(self._hass):
+            async with async_paused_udp_receivers(self._hass) as paused:
                 devices = await discover_devices(
-                    ports=scan_ports, broadcast_addresses=broadcast_addresses
+                    ports=scan_ports,
+                    broadcast_addresses=broadcast_addresses,
+                    shared_sockets=paused_discovery_sockets(paused),
                 )
         except asyncio.CancelledError:
             raise

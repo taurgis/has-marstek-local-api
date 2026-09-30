@@ -127,9 +127,9 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer runs **these twenty-six** mock devices. `.20`–`.29` are the
+The devcontainer defines **these twenty-eight** mock devices. Only the four with no firmware image start by default (`.20`, `.23`, `.28`, `.46`); the others repeat an image a `fw-*` emulator runs, so they need `--profile mocks-all` or their service name. `.20`–`.29` are the
 issue-log / custom-port set. `.30`–`.46` are the remaining archived Control
-images from `tools/firmware/catalog.json`.
+images from `tools/firmware/catalog.json`, and `.47`–`.48` the Control 151 images.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
@@ -154,7 +154,8 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
 | mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
-| mock-marstek-26 | 172.28.0.46 | Venus E mini | 150 | E mini with UPS + ten-slot exception still 0–5 |
+| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as the real device reports it (issue #86): SYS + UPS, slots 0–5 |
+| mock-marstek-27–28 | 172.28.0.47–.48 | VenusE 3.0, VenusD | 151 | Same Open API as 150; `src` is `VNSE3-0-<ble>` / `VNSD-0-<ble>` |
 
 Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. Venus A @ 150 is the SYS/UPS PV device; do not replace the 148/149 pair with it.
 
@@ -173,7 +174,35 @@ To add devices in Home Assistant:
     - `172.28.0.27:30004`
     - `172.28.0.28:30000`
     - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
-    - `172.28.0.30`–`172.28.0.46` archived Control variants (see table above)
+    - `172.28.0.30`–`172.28.0.48` archived Control variants (see table above)
+
+All but `.20`, `.23` and `.28` need `--profile mocks-all` or their service name. The real-firmware
+custom-port devices are `172.28.0.51:30004` (default) and `172.28.0.58:30001` / `172.28.0.60:30003`
+(`firmware-all`).
+
+#### Firmware emulators next to the mocks
+
+The same compose file also runs the **vendor Control firmware** in Renode
+(`tools/firmware_emulator/`, see its README). These are not mocks: every reply
+comes from Marstek's own code (Control board for Venus A/D/E 3.0, HMG-50 board
+for Venus C / E 2.0). All listen on UDP 30000 and carry an AstraMeter
+CT003 sidecar (`fw-*-ct`).
+
+| Service | IP | Firmware | BLE MAC | Started |
+|---------|-----|----------|---------|---------|
+| fw-venus-e-150 | 172.28.0.50 | VNSE3-0 150 | `02:e0:00:00:00:50` | default |
+| fw-venus-a-150 | 172.28.0.51 | VNSA-0 150, PV 420/360 W, Open API port 30004 | `02:e0:00:00:00:51` | default |
+| fw-venus-d-150 | 172.28.0.52 | VNSD-0 150, PV 400/350/300/250 W | `02:e0:00:00:00:52` | default |
+| fw-venus-e-144 … -149 | 172.28.0.53–.57 | VNSE3-0 144, 147, 1476, 148, 149 | `…:53`–`…:57` | `--profile firmware-all` |
+| fw-venus-a-148 … -1509 | 172.28.0.58–.62 | VNSA-0 148, 1487, 149, 1508, 1509 | `…:58`–`…:62` | `--profile firmware-all` |
+| fw-venus-d-147 … -1492 | 172.28.0.63–.65 | VNSD-0 147, 149, 1492 | `…:63`–`…:65` | `--profile firmware-all` |
+| fw-venus-c-156 | 172.28.0.66 | HMG-50 156, 2560 Wh (reports VenusC) | `02:e0:00:00:00:66` | default |
+| fw-venus-c-153, -155 | 172.28.0.67–.68 | HMG-50 153, 155, 2560 Wh | `…:67`–`…:68` | `--profile firmware-hmg50` or `firmware-all` |
+| fw-venus-e2-156 | 172.28.0.69 | HMG-50 156, 5120 Wh (reports VenusE) | `…:69` | `--profile firmware-hmg50` or `firmware-all` |
+| fw-venus-e-151 | 172.28.0.70 | VNSE3-0 151 | `…:70` | `--profile firmware-all` |
+| fw-venus-d-151 | 172.28.0.71 | VNSD-0 151, PV 400/350/300/250 W | `…:71` | `--profile firmware-all` |
+
+The Wi-Fi MAC is `02:e1:00:00:00:<same last octet>`.
 
 ## Simulation Behavior
 
@@ -279,7 +308,7 @@ outage. Accepted only when the firmware profile reports `supports_ups`
 | Venus C | 2560 Wh | 2500 W |
 | Venus D | 2560 Wh | 2200 W |
 | Venus E 3.0 | 5120 Wh | 2500 W |
-| Venus E mini | 2010 Wh | 1500 W |
+| Venus E mini | 2009 Wh | 1500 W |
 
 An unrecognised model falls back to the Venus E shape. The powers mirror the
 integration's own per-family ceilings; they are duplicated in

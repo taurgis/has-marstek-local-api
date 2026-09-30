@@ -402,6 +402,16 @@ class TestMergeDeviceStatus:
         assert result["total_pv_energy"] == 4321
         assert result["total_load_energy"] == 8765
 
+    def test_battery_power_from_pv_channels_subtracts_offgrid_load(self):
+        """The PV-channel recalculation keeps the EPS socket load in the balance."""
+        result = merge_device_status(
+            es_status_data={"pv_power": 0, "ongrid_power": 100, "offgrid_power": 80},
+            pv_status_data={"pv1_power": 400.0},
+        )
+
+        assert result["battery_power"] == -220
+        assert result["battery_status"] == "charging"
+
     def test_battery_power_recalculated_from_pv_channels(self):
         """Test battery power and pv_power are recalculated when ES.GetStatus pv_power is 0.
 

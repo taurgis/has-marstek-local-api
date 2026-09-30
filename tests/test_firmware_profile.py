@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from custom_components.marstek.const import (
@@ -31,6 +33,8 @@ from custom_components.marstek.firmware_profile import (
         ("VNSA-0", DeviceFamily.VENUS_A, True, 9),
         ("VNSD-0", DeviceFamily.VENUS_D, True, 9),
         ("VNSE3-0", DeviceFamily.VENUS_E, False, 9),
+        ("VNSEM-0", DeviceFamily.VENUS_E_MINI, False, 5),
+        ("vnsem 0", DeviceFamily.VENUS_E_MINI, False, 5),
         ("vnse3 0", DeviceFamily.VENUS_E, False, 9),
         ("VNSE2-0", DeviceFamily.UNKNOWN, False, 9),
         ("Venus E2.0", DeviceFamily.UNKNOWN, False, 9),
@@ -228,6 +232,7 @@ def test_dotted_app_firmware_labels_use_leading_open_api_integer(
         ("VenusC", 155, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),
         ("VenusC", 156, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),
         ("Venus E mini", 145, DeviceFamily.VENUS_E_MINI, 1.0, True, False, False, False, 5),
+        ("VNSEM-0", 301, DeviceFamily.VENUS_E_MINI, 10.0, True, True, True, False, 5),
         ("VenusD", 145, DeviceFamily.VENUS_D, 1.0, False, False, False, True, 9),
     ],
 )
@@ -609,8 +614,38 @@ def test_venus_a_1487_folds_to_legacy_148_generation() -> None:
     assert profile.control_generation == 148
     assert profile.supports_sys_dod is False
     assert profile.supports_ups is False
-    assert profile.pv_energy_scale == 1.0
+    assert profile.pv_energy_scale == 10.0
     assert profile.openapi_reset_prone is True
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "pv_energy_scale"),
+    [
+        ("VenusA", 1486, 1.0),
+        ("VenusA", 1487, 10.0),
+        ("VenusA", 1489, 10.0),
+        ("VenusD", 147, 1.0),
+        ("VenusD", 148, 1.0),
+        ("VenusD", 149, 10.0),
+        ("VenusD", 1492, 10.0),
+        ("VenusD", 150, 10.0),
+        ("VenusE 3.0", 149, 1.0),
+        ("VenusE 3.0", 1487, 1.0),
+    ],
+)
+def test_mppt_year_counter_firmware_scales_solar_energy(
+    device_type: str,
+    version: int,
+    pv_energy_scale: float,
+) -> None:
+    """Venus A 148.7+ and Venus D 149+ report solar energy in 0.01 kWh.
+
+    Confirmed on the VNSA-0 1487 and VNSD-0 149 images in the firmware
+    emulator: 1.01 kWh of MPPT yield reads ``total_pv_energy: 101``.
+    """
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.pv_energy_scale == pv_energy_scale
 
 
 @pytest.mark.parametrize(
@@ -653,3 +688,16 @@ def test_unusable_float_ver_stays_unknown(version: float) -> None:
 
     assert profile.firmware_version is None
     assert profile.openapi_reset_prone is True
+
+
+@pytest.mark.parametrize("device_type", ["VenusE 3.0", "VenusD"])
+def test_control_151_resolves_like_150(device_type: str) -> None:
+    """Control 151 keeps 150's Open API: same methods, fields and scales.
+
+    Checked against the VNSE3-0 / VNSD-0 151 images in the firmware emulator;
+    only ``src`` changed, to the SKU, which identity parsing does not read.
+    """
+    profile_150 = resolve_firmware_profile(device_type, 150)
+    profile_151 = resolve_firmware_profile(device_type, 151)
+
+    assert replace(profile_151, firmware_version=150) == profile_150

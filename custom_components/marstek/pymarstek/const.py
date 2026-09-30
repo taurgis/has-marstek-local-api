@@ -22,8 +22,11 @@ CMD_LED_CTRL: Final = "Led.Ctrl"
 DOD_MIN_VALUE: Final = 30
 DOD_MAX_VALUE: Final = 88
 DOD_DEFAULT_VALUE: Final = 88
-BLE_ADV_ENABLED: Final = 0
-BLE_ADV_DISABLED: Final = 1
+# The Rev 3.1 PDF documents Ble.Adv 0 = enable, 1 = disable. The firmware does
+# the opposite: VNSE3-0 150 and VNSA-0 150 send AT+QBLEADVSTART for 1 and
+# AT+QBLEADVSTOP for 0 (tools/firmware_emulator/AUDIT_FINDINGS.md).
+BLE_ADV_ENABLED: Final = 1
+BLE_ADV_DISABLED: Final = 0
 LED_ON: Final = 1
 LED_OFF: Final = 0
 

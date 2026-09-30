@@ -31,12 +31,14 @@ async def query_es_status(host: str = "192.168.0.152", port: int = 30000) -> Non
         # Extract values
         pv_power = result.get("pv_power", 0)
         ongrid_power = result.get("ongrid_power", 0)
+        offgrid_power = result.get("offgrid_power") or 0
         bat_power = result.get("bat_power")
         bat_soc = result.get("bat_soc", 0)
 
         print("=== EXTRACTED VALUES ===")
         print(f"pv_power: {pv_power}")
         print(f"ongrid_power: {ongrid_power}")
+        print(f"offgrid_power: {offgrid_power}")
         print(f"bat_power (from API): {bat_power}")
         print(f"bat_soc: {bat_soc}%")
         print()
@@ -44,10 +46,11 @@ async def query_es_status(host: str = "192.168.0.152", port: int = 30000) -> Non
         # Apply our logic
         print("=== APPLYING OUR LOGIC ===")
         if bat_power is None and "bat_power" not in result:
-            raw_bat_power = pv_power - ongrid_power
+            raw_bat_power = pv_power - ongrid_power - offgrid_power
             print(
                 f"bat_power missing - using fallback: "
-                f"pv_power - ongrid_power = {pv_power} - {ongrid_power} = {raw_bat_power}"
+                f"pv_power - ongrid_power - offgrid_power = "
+                f"{pv_power} - {ongrid_power} - {offgrid_power} = {raw_bat_power}"
             )
         else:
             raw_bat_power = bat_power if bat_power is not None else 0

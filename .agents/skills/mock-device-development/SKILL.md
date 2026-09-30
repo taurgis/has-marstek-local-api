@@ -45,7 +45,10 @@ tools/mock_device/
 
 ## Multi-Battery Setup
 
-The devcontainer supports multiple mock devices:
+The devcontainer supports multiple mock devices. A mock starts by default only
+where no firmware image exists; mocks that repeat a catalogued image carry
+`profiles: ["mocks-all"]`, because a `fw-*` emulator runs that image for real
+(`tests/test_mock_device/test_devcontainer_mocks.py` enforces this):
 
 ```yaml
 # .devcontainer/docker-compose.yml
@@ -73,7 +76,7 @@ mock-marstek-8:
 mock-marstek-9:
   command: ["python", "-m", "mock_device", "--ip", "172.28.0.29", "--device", "VenusE", "--ver", "153", "--ble-mac", "02deadbeef09"]
 
-Archived Control extras occupy `172.28.0.30`–`172.28.0.46` (see `tools/mock_device/README.md` and `tools/firmware/catalog.json`).
+Archived Control extras occupy `172.28.0.30`–`172.28.0.48` (see `tools/mock_device/README.md` and `tools/firmware/catalog.json`).
 ```
 
 Venus A firmware **148** (solar Wh, channel-1 deciwatts; same encodings as 1.0.0) and **149** (solar 0.01 kWh, channel-1 still deciwatts) must both be present so both energy encodings can be tested. Do not collapse them onto a single Venus A 150 mock. Keep a separate Venus A **150** mock for SYS/UPS plus PV1 deciwatts (firmware **150.9**, issue #57). PV1 stays deciwatts through 150.9; that is separate from the #35 solar-energy scale. Venus E mini is not Venus E: it needs its own mock for SYS-without-150 and slots 0–5.
@@ -116,7 +119,8 @@ _refresh_inputs -> _advance_power -> _settle_flows
 | `EM.GetStatus.total_power` | The P1 / CT meter, positive when the house imports |
 
 `ongrid_power` and the meter are different measurements. The integration
-derives battery power as `pv_power - ongrid_power`, so putting the meter
+derives battery power as `pv_power - ongrid_power - offgrid_power` (the EPS
+socket load), so putting the meter
 reading in `ongrid_power` makes Home Assistant show 0 W while the mock's SOC
 drains. The Venus A capture in issue #11 has them disagreeing on real
 hardware (`ongrid_power: 318` against `total_power: -16`).
@@ -254,7 +258,9 @@ mock imports from `custom_components` must also be COPYed in the Dockerfile.
 ## When to Modify
 
 - Adding new sensor entities → add to `get_state()` + handler
-- Testing multi-battery aggregation → add devices to docker-compose
+- Testing multi-battery aggregation → add devices to docker-compose (Python
+  mocks cost ~20 MB each; Renode `fw-*` emulators ~0.3-0.6 core each in Docker, so batch
+  those as AGENTS.md → *Sandbox resource budget* describes)
 - Validating mode control → modify `set_mode()` in battery.py
 - Reproducing specific states → use CLI flags or modify defaults
 - Scripting a "P1 reads X, what does the battery do?" scenario → pin the home

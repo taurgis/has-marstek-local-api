@@ -165,8 +165,12 @@ Then from `.devcontainer/` (drop `sudo` when you are root):
 sudo docker compose up -d --build
 ```
 
-Naming services (`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-6`)
-builds three mock images instead of twenty and is enough for same-port pooling
+A bare `up` starts Home Assistant, the four mocks that have no firmware image
+and the four default firmware emulators (about half of a 4-CPU sandbox). The
+other 24 mocks repeat an emulated image and need `--profile mocks-all` or their
+name. On a small machine name the services instead:
+`… up -d homeassistant mock-marstek mock-marstek-4 mock-marstek-8` starts three
+mocks and no emulator, and is enough for same-port pooling
 plus one unique-port device. Wait until `http://127.0.0.1:8123/api/onboarding`
 responds.
 
@@ -222,6 +226,9 @@ Base: `http://127.0.0.1:8123`
 
 ## Mock devices
 
+Only `.20`, `.23`, `.28` and `.46` start by default; the rest need `--profile mocks-all` or their service name.
+The Venus A 150 emulator (`172.28.0.51:30004`) covers a custom port on real firmware by default.
+
 | IP | Port | Model | What it proves |
 |----|------|-------|----------------|
 | `172.28.0.20` | 30000 | Venus E 145 | Same-port share with C |
@@ -233,7 +240,21 @@ Base: `http://127.0.0.1:8123`
 | `172.28.0.27` | 30004 | Venus A 150 | SYS/UPS + PV; firmware 150.9 encodings (#57) |
 | `172.28.0.28` | 30000 | Venus E mini 145 | SYS without 150 gate; slots 0–5; same-port |
 | `172.28.0.29` | 30000 | Venus E 2.0 / HMG-50 153 | GetDevice `VenusE`; must **not** add; no EM server |
-| `172.28.0.30`–`.46` | 30000 | Archived Control extras | VNSE3-0 144/147/1476/148/149, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150, Venus C 155/156, HMG-50 155/156, E mini 150 |
+| `172.28.0.30`–`.48` | 30000 | Archived Control extras | VNSE3-0 144/147/1476/148/149/151, VNSA-0 1487/1508/1509, VNSD-0 147/149/1492/150/151, Venus C 155/156, HMG-50 155/156, Venus E mini `VNSEM-0` 301 |
+
+Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 30000, BLE MAC `02:e0:00:00:00:<last octet>`):
+
+| IP | Firmware | Notes |
+|----|----------|-------|
+| `172.28.0.50` / `.51` / `.52` | Venus E 150 / Venus A 150 (2 PV, port 30004) / Venus D 150 (4 PV) | Default; healthy ≈100 s after start (`docker ps`) |
+| `172.28.0.53`–`.65` | Other VNSE3-0 / VNSA-0 / VNSD-0 images | `--profile firmware-all` only |
+| `172.28.0.66` | HMG-50 Venus C 156 (vendor firmware) | Default; drops many requests (#82), config flow may need a retry |
+| `172.28.0.67`–`.69` | HMG-50 Venus C 153/155, Venus E 2.0 156 | `--profile firmware-hmg50` or `firmware-all` |
+| `172.28.0.70` / `.71` | VNSE3-0 151 / VNSD-0 151 (4 PV) | `--profile firmware-all` only |
+
+Discovery reads the paused pooled socket for ports an entry already uses, so emulators on 30000 show up in the picker. If one is missing, it is usually the HMG-50 loss (#82) or an overloaded sandbox, not the port; add it with manual IP. `campaign` only walks `mock-marstek*` and starts only Home Assistant and those mocks, so `--only` also limits what starts. See `tools/firmware_emulator/README.md`.
+
+Each Renode emulator takes ~0.3-0.6 core in Docker (1-1.5 on the host without `--quantum 0.01`) and ~550 MB. Run at most `nproc` of them at once, in named batches (`docker compose up -d fw-venus-e-150-ct …`, then `docker compose rm -sf …`), and never `--profile firmware-all` in a sandbox. See AGENTS.md → *Sandbox resource budget*.
 
 Unicast check from the HA container (not the VM host):
 
@@ -554,6 +575,8 @@ python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_cdp.py campaig
 # equivalent:
 python3 .agents/skills/homeassistant-chrome-ui-testing/scripts/ha_live_campaign.py
 ```
+
+Check `nproc`, `uptime` and `docker stats --no-stream` first. On a small sandbox, pass `--skip-compose` after starting only the services you need, and split the mocks over several runs with `--only` (repeatable, e.g. `--only 172.28.0.20 --only 172.28.0.25`). Keep a list of the IPs already done so every firmware version is still covered.
 
 `campaign` brings compose up, onboard/logs in, then for **every** mock in `.devcontainer/docker-compose.yml`: reject HMG-50 `VenusE`, add supported (and unknown VenusE Pro), smoke SoC/mode/SYS/PV/diagnostics/device-actions, automations + services, disable/repairs/reconfigure/options on representatives, delete + manual re-add (stable unique IDs). Flags: `--skip-compose`, `--skip-remove`, `--skip-lifecycle`, `--only 172.28.0.20`. JSON report: `/opt/cursor/artifacts/ha_live_campaign.json`.
 

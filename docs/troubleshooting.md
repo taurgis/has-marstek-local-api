@@ -11,12 +11,14 @@ Those controls are firmware-profile gated. They are **omitted** when the device 
 
 If they are missing:
 
-1. Check the device model on the device page (Venus E mini is not Venus E).
+1. Check the device model on the device page (Venus E mini is not Venus E; it reports `VNSEM-0`).
 2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** → `firmware_profile`).
 3. Unknown or unparseable `ver` stays legacy-safe: no SYS and no UPS.
 4. After a firmware update that crosses a capability or reset-safety gate, the scanner reloads the config entry; you do not need to delete and re-add the device.
 
 The Open API documents **no GET methods** for DOD, Bluetooth advertising, or LED. Home Assistant restores the last value it successfully wrote. Changes made in the Marstek app, after a device reboot, or by another controller are not detected.
+
+Earlier versions sent the Bluetooth advertising value inverted (the Open API PDF documents `Ble.Adv` backwards), so **on** stopped advertising. If the switch state does not match the device, turn it off and on again once after upgrading.
 
 Older notes that “LED is not in the API” applied to legacy Open API firmware. Capable firmware has a **Panel LED** switch (`Led.Ctrl`).
 
@@ -123,6 +125,8 @@ Firmware **148** (including app labels such as `148.3`) keeps solar energy in
 Wh. Integration **1.1.0** introduced firmware-gated **solar energy** scaling:
 only Venus A **149** (and known families at **150+**) starts the 0.01 kWh
 encoding ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
+Venus A Open API `ver` **1487** (app 148.7) and Venus D **149** / **1492** use
+the same 0.01 kWh encoding, so later integration versions scale them as well.
 That energy fix is separate from PV1 power.
 
 ## PV1 power looks 10× too high
