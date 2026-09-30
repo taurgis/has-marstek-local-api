@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
@@ -610,7 +610,10 @@ async def test_sys_write_timeout_keeps_prior_state_and_resumes(
         client.send_request.side_effect = send
         client.resume_polling.side_effect = resume
 
-        with pytest.raises(HomeAssistantError) as err:
+        with (
+            patch("custom_components.marstek.helpers.sys_write.asyncio.sleep", AsyncMock()),
+            pytest.raises(HomeAssistantError) as err,
+        ):
             await hass.services.async_call(
                 "number",
                 "set_value",
@@ -620,7 +623,34 @@ async def test_sys_write_timeout_keeps_prior_state_and_resumes(
 
         assert err.value.translation_key == "sys_write_timeout"
         assert float(hass.states.get(entity_id).state) == DOD_DEFAULT_VALUE
-        assert order == ["pause", "send", "resume"]
+        assert order == ["pause", "send", "send", "send", "resume"]
+
+
+async def test_sys_write_retries_a_timeout_once_more(hass: HomeAssistant) -> None:
+    """A write the device missed is sent again and its acknowledgement counts."""
+    entry = _config_entry()
+    client = _sys_client()
+    with patch_marstek_integration(client=client):
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        entity_id = _entity_id(hass, "switch", "panel_led")
+        assert entity_id is not None
+        client.send_request.reset_mock()
+        client.send_request.side_effect = [
+            TimeoutError("timeout"),
+            {"result": {"set_result": True}},
+        ]
+
+        with patch("custom_components.marstek.helpers.sys_write.asyncio.sleep", AsyncMock()):
+            await hass.services.async_call(
+                "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+            )
+
+        assert hass.states.get(entity_id).state == STATE_OFF
+        sent = [call.args[0] for call in client.send_request.call_args_list]
+        assert len(sent) == 2
+        assert sent[0] == sent[1]
 
 
 async def test_sys_write_transport_error_keeps_prior_state(

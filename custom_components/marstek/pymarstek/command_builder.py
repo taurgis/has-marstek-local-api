@@ -6,7 +6,6 @@ malformed requests. See validators.py for validation rules.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -23,7 +22,7 @@ from .const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
 )
-from .validators import MAX_JSON_RPC_ID, ValidationError, validate_command
+from .validators import MAX_JSON_RPC_ID, ValidationError, json_dumps_wire, validate_command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ def build_command(
             _LOGGER.error("Command validation failed: %s", err.message)
             raise
 
-    return json.dumps(command)
+    return json_dumps_wire(command)
 
 
 def discover() -> str:
@@ -97,7 +96,7 @@ def discover() -> str:
         "params": {"ble_mac": "0"},
     }
     validate_command(command)
-    return json.dumps(command)
+    return json_dumps_wire(command)
 
 
 def get_battery_status(device_id: int = 0) -> str:

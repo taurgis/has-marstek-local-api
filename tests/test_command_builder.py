@@ -137,6 +137,25 @@ class TestDiscoverCommand:
         assert get_next_request_id() == 1
 
 
+class TestCompactWireFormat:
+    """Requests leave without insignificant whitespace (RFC 8259 section 2)."""
+
+    def test_build_command_is_compact(self) -> None:
+        reset_request_id()
+        command = set_es_mode_manual_charge(power=-400)
+
+        assert " " not in command
+        assert json.loads(command)["method"] == "ES.SetMode"
+
+    def test_discover_is_compact(self) -> None:
+        assert discover() == '{"id":0,"method":"Marstek.GetDevice","params":{"ble_mac":"0"}}'
+
+    def test_broadcast_discovery_message_is_compact(self) -> None:
+        from custom_components.marstek.discovery import _build_discovery_message
+
+        assert _build_discovery_message() == discover().encode("utf-8")
+
+
 class TestStatusCommands:
     """Tests for status command builders."""
 

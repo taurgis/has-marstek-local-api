@@ -1,7 +1,8 @@
 """Per-device pacing and serialization for Marstek Open API traffic.
 
 Marstek devices are sensitive to request bursts, so every unicast waits out a
-minimum gap since the last one to the same IP. The per-IP bookkeeping — last
+minimum gap since the last one to the same IP, and a quiet gap since the
+device last answered. The per-IP bookkeeping — last
 send time and the two locks a device needs — lives here, along with the
 pruning that keeps it from growing for every address the client ever touched.
 """
@@ -27,6 +28,7 @@ class DeviceThrottle:
     ) -> None:
         self._clock = clock
         self.last_request_time: dict[str, float] = {}
+        self.last_reply_time: dict[str, float] = {}
         self.rate_limit_locks: dict[str, asyncio.Lock] = {}
         self.device_io_locks: dict[str, asyncio.Lock] = {}
         self.max_tracked_ips = max_tracked_ips
@@ -47,20 +49,32 @@ class DeviceThrottle:
         """Stamp a send so the next request to this device waits its turn."""
         self.last_request_time[device_ip] = self._clock()
 
+    def note_reply(self, device_ip: str) -> None:
+        """Stamp a datagram received from a device."""
+        self.last_reply_time[device_ip] = self._clock()
+
     def is_crowded(self) -> bool:
         """Return True once more IPs are tracked than the cap allows."""
-        return len(self.last_request_time) > self.max_tracked_ips
+        return max(len(self.last_request_time), len(self.last_reply_time)) > self.max_tracked_ips
 
-    async def wait_turn(self, device_ip: str, min_interval: float) -> None:
+    async def wait_turn(self, device_ip: str, min_interval: float, reply_gap: float = 0.0) -> None:
         """Sleep until *min_interval* has passed since the last request.
+
+        The wait also covers *reply_gap* since the device last answered: a
+        slow reply (a write can take over a second) otherwise leaves no gap
+        at all once the send-based interval has run out.
 
         Per-IP locks mean a slow device never holds up traffic to another one.
         """
         ip_lock = await self.rate_limit_lock(device_ip)
         async with ip_lock:
-            elapsed = self._clock() - self.last_request_time.get(device_ip, 0)
-            if elapsed < min_interval:
-                wait_time = min_interval - elapsed
+            now = self._clock()
+            ready_at = self.last_request_time.get(device_ip, 0) + min_interval
+            last_reply = self.last_reply_time.get(device_ip)
+            if last_reply is not None:
+                ready_at = max(ready_at, last_reply + reply_gap)
+            if now < ready_at:
+                wait_time = ready_at - now
                 _LOGGER.debug(
                     "Rate limiting: waiting %.2fs before request to %s",
                     wait_time,
@@ -77,8 +91,14 @@ class DeviceThrottle:
         """
         current_time = self._clock()
         async with self._meta_lock:
-            if len(self.last_request_time) <= self.max_tracked_ips:
+            if not self.is_crowded():
                 return []
+
+            # Any host on the LAN can send a datagram, so reply stamps are
+            # aged out on their own and cannot outgrow the cap.
+            for device_ip, last_time in list(self.last_reply_time.items()):
+                if current_time - last_time > self.stale_after:
+                    del self.last_reply_time[device_ip]
 
             stale_ips = [
                 device_ip
@@ -87,6 +107,7 @@ class DeviceThrottle:
             ]
             for device_ip in stale_ips:
                 self.last_request_time.pop(device_ip, None)
+                self.last_reply_time.pop(device_ip, None)
                 self.rate_limit_locks.pop(device_ip, None)
                 self.device_io_locks.pop(device_ip, None)
 
@@ -97,5 +118,6 @@ class DeviceThrottle:
     def clear(self) -> None:
         """Forget every tracked device."""
         self.last_request_time.clear()
+        self.last_reply_time.clear()
         self.rate_limit_locks.clear()
         self.device_io_locks.clear()

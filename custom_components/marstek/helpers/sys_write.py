@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -15,6 +16,7 @@ from ..const import (
     DOMAIN,
 )
 from ..pymarstek import MarstekUDPClient, ValidationError
+from .command_retry import MAX_RETRY_ATTEMPTS, RETRY_DELAY
 from .polling import polling_paused
 
 
@@ -63,6 +65,22 @@ def require_sys_write_ack(response: Any) -> None:
         )
 
 
+async def _send_sys_write_with_retries(
+    udp_client: MarstekUDPClient,
+    command: str,
+    host: str,
+    port: int,
+    timeout: float,
+) -> dict[str, Any]:
+    """Send a SYS write, sending it again while the device stays silent."""
+    for _attempt in range(1, MAX_RETRY_ATTEMPTS):
+        try:
+            return await udp_client.send_request(command, host, port, timeout=timeout)
+        except TimeoutError:
+            await asyncio.sleep(RETRY_DELAY)
+    return await udp_client.send_request(command, host, port, timeout=timeout)
+
+
 async def async_send_sys_write(
     udp_client: MarstekUDPClient,
     command: str,
@@ -70,15 +88,17 @@ async def async_send_sys_write(
     port: int,
     timeout: float,
 ) -> None:
-    """Pause polling, send a SYS write, and require set_result acknowledgement."""
+    """Pause polling, send a SYS write, and require set_result acknowledgement.
+
+    A timeout is retried: the SYS methods set an absolute value, so a copy
+    that lands after a lost acknowledgement changes nothing. On the vendor
+    firmware emulators 17/30 SYS writes were acknowledged on the first try
+    and 28/30 within three, the rest lost to the CT meter task holding the
+    modem.
+    """
     async with polling_paused(udp_client, host):
         try:
-            response = await udp_client.send_request(
-                command,
-                host,
-                port,
-                timeout=timeout,
-            )
+            response = await _send_sys_write_with_retries(udp_client, command, host, port, timeout)
         except TimeoutError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

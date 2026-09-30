@@ -17,7 +17,7 @@ from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
 from .helpers.flow_helpers import get_unique_id_from_device_info
-from .pymarstek import ValidationError, discover, json_loads_strict
+from .pymarstek import ValidationError, discover, json_dumps_wire, json_loads_strict
 from .pymarstek.const import MAX_UDP_DATAGRAM_BYTES
 from .pymarstek.device_info import build_device_info, non_empty_str
 from .pymarstek.network import (
@@ -80,7 +80,7 @@ def _build_discovery_message() -> bytes:
         "method": DISCOVERY_METHOD,
         "params": {"ble_mac": "0"},
     }
-    return json.dumps(request).encode("utf-8")
+    return json_dumps_wire(request).encode("utf-8")
 
 
 def _build_device_info(

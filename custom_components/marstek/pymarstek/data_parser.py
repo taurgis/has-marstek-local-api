@@ -158,6 +158,12 @@ def parse_es_status_response(
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
     bat_soc = result.get("bat_soc")
     bat_cap = result.get("bat_cap")  # Battery capacity in Wh
+    if _is_zero(bat_cap):
+        # No battery pack has zero capacity: the BMS went silent (see
+        # _is_zero). Its SoC is the same placeholder when it reads 0 too.
+        bat_cap = None
+        if _is_zero(bat_soc):
+            bat_soc = None
     pv_power = result.get("pv_power")  # Solar power
     ongrid_power = result.get("ongrid_power")  # Grid power
     offgrid_power = result.get("offgrid_power")
@@ -381,6 +387,17 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
     """
     result = _result_fields(response)
 
+    if _is_zero(result.get("rated_capacity")):
+        # BMS silent (see _is_zero): rated capacity, remaining capacity, and
+        # a zero SoC or temperature are placeholders, not readings. The
+        # permission flags are what the firmware enforces, so they stay.
+        result = {
+            key: value
+            for key, value in result.items()
+            if key not in ("rated_capacity", "bat_capacity")
+            and not (key in ("soc", "bat_temp") and _is_zero(value))
+        }
+
     return {
         "bat_temp": result.get("bat_temp"),  # Battery temperature [°C]
         "bat_charg_flag": result.get("charg_flag"),  # Charging permission flag
@@ -389,6 +406,18 @@ def parse_bat_status_response(response: dict[str, Any]) -> dict[str, Any]:
         "bat_rated_capacity": result.get("rated_capacity"),  # Rated capacity [Wh]
         "bat_soc_detailed": result.get("soc"),  # SOC from Bat.GetStatus
     }
+
+
+def _is_zero(value: Any) -> bool:
+    """Return True for a numeric zero (``bool`` excluded).
+
+    When Control firmware stops receiving BMS CAN frames it keeps answering
+    and reports the battery fields as zeros: ES.GetMode ``bat_soc`` first,
+    then ES.GetStatus ``bat_cap``/``bat_soc`` and Bat.GetStatus capacities,
+    each field on its own schedule (seen on the vendor firmware emulators).
+    A zero capacity is the one signal no real pack can produce.
+    """
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0
 
 
 def _is_unusable_value(value: Any) -> bool:
@@ -717,6 +746,11 @@ def merge_device_status(
             for key, value in es_mode_data.items()
             if key not in _GETMODE_EM_FALLBACK_KEYS
         }
+        # ES.GetMode has no capacity to tell a drained pack from a silent BMS,
+        # and its bat_soc is the first field to drop to 0 when the BMS goes
+        # quiet. A zero only fills a gap; ES.GetStatus still reports a real 0.
+        if _is_zero(mode_core.get("battery_soc")) and status["battery_soc"] is not None:
+            mode_core.pop("battery_soc")
         _apply_updates(mode_core)
         for key, value in es_mode_data.items():
             if key not in _GETMODE_EM_FALLBACK_KEYS:
