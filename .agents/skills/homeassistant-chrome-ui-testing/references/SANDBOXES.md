@@ -83,6 +83,38 @@ honoured alongside a non-default `--user-data-dir`
 `ha_cdp.py` always passes both, plus `--no-sandbox` (Chrome's sandbox refuses
 to start as root) and `--disable-dev-shm-usage`.
 
+### Size the run to the sandbox
+
+The sandbox measured for this guide had 4 CPUs, 15 GB RAM and a fixed disk
+allowance. Check first, and again while a batch runs:
+
+```bash
+nproc; free -g; df -h .; uptime
+docker stats --no-stream
+```
+
+Python mocks are cheap (~20 MB each). Each Renode firmware emulator takes
+~0.3-0.6 core in Docker (1-1.5 on the host without `--quantum 0.01`) and
+~550 MB, so run at most `nproc` Docker emulators next to Home Assistant,
+one named batch at a time, and never `--profile firmware-all`. A load average
+above `nproc` shows up as UDP timeouts that look like integration bugs. Batch
+recipe and per-device costs: AGENTS.md → *Sandbox resource budget*.
+
+### Python 3.14.2 for the test harness
+
+`uv` older than 0.9 may offer only a 3.14 release candidate, which fails the
+harness's `requires-python >=3.14.2`. Upgrade it and install a final release:
+
+```bash
+python3 -m pip install -U uv
+python3 -m uv python install 3.14
+python3 -m uv venv -p 3.14 ~/.venvs/ha-marstek
+python3 -m uv pip install --python ~/.venvs/ha-marstek/bin/python -r requirements_test.txt
+```
+
+Pass `--python` explicitly: with only `VIRTUAL_ENV` set, `uv pip` picked the
+system 3.11.
+
 ### Run the helpers with the repo venv
 
 The system `python3` has no `aiohttp`. Use `.venv/bin/python`.

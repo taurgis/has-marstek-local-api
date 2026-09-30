@@ -17,7 +17,7 @@ In code, this is encapsulated by the `py-marstek` library (`pymarstek`).
 ## Transport & Message Shape
 
 - Transport is UDP to the device (default port **30000**).
-- Bind the local socket to the **same port the device listens on**. Several firmware builds reply to that listen port instead of the client’s ephemeral source port. The Open API port is **user-configurable**, so the integration keeps **one socket per unique listen port** (devices that share a port share a socket). `SO_REUSEPORT` is set so a second bind can share a port, but Linux then load-balances replies across every still-bound socket. **Pause does not unbind.** Broadcast discovery must pause pooled listeners and bind its own sockets. Unicast `Marstek.GetDevice` (manual add, Confirm device, repairs) must reuse the pooled `MarstekUDPClient.send_request(...)` for that port. A second bind after pause produces `cannot_connect` / `No valid response from device` while the coordinator `Recv`s the GetDevice reply.
+- Bind the local socket to the **same port the device listens on**. Several firmware builds reply to that listen port instead of the client’s ephemeral source port. The Open API port is **user-configurable**, so the integration keeps **one socket per unique listen port** (devices that share a port share a socket). `SO_REUSEPORT` is set so a second bind can share a port, but Linux then load-balances replies across every still-bound socket. **Pause does not unbind.** Broadcast discovery pauses pooled listeners and reads their sockets (`MarstekUDPClient.paused_socket()` via `paused_discovery_sockets()`); it binds its own socket only for ports no pooled client owns. Unicast `Marstek.GetDevice` (manual add, Confirm device, repairs) must reuse the pooled `MarstekUDPClient.send_request(...)` for that port. A second bind after pause produces `cannot_connect` / `No valid response from device` while the coordinator `Recv`s the GetDevice reply.
 - Messages are JSON objects with a `method` and `params`, e.g.:
   - Discovery: `Marstek.GetDevice`
   - Status: `ES.GetStatus`, `ES.GetMode`, `Bat.GetStatus`, `PV.GetStatus`, `EM.GetStatus`
@@ -26,6 +26,8 @@ In code, this is encapsulated by the `py-marstek` library (`pymarstek`).
 Discovery pattern from the spec:
 - A UDP broadcast may first receive a `Parse error` response (devices reacting to a non-JSON broadcast probe).
 - Then send a proper JSON request with `method: Marstek.GetDevice` to receive the device’s metadata including `ip`, `ble_mac`, `wifi_mac`, `device`, and `ver`.
+- `wifi_mac` is the **BSSID of the access point** the device joined, not the device's own MAC, so every battery on one AP reports the same value (`mac` defaults to it too). Identify devices by `ble_mac`; `mac`/`wifi_mac` count only when no BLE MAC is reported (`identity_macs_from_mapping`).
+- `Ble.Adv` `enable`: **1 starts advertising, 0 stops it** in the firmware (VNSE3-0/VNSA-0 150), the reverse of the Rev 3.1 PDF table.
 
 ## Key Objects & Calls (in this repo)
 

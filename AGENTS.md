@@ -338,6 +338,95 @@ Use `python3 -m ruff`, `python3 -m mypy --strict`, and `pytest` from that venv (
 
 Official setup notes: [Cursor Cloud Agent environment](https://cursor.com/docs/cloud-agent/setup), [Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/), [HA Container install](https://www.home-assistant.io/installation/linux#install-home-assistant-container).
 
+## Sandbox resource budget (cloud agents)
+
+Cloud sandboxes (Claude Code on the web, Cursor Cloud) are small, shared VMs.
+The one this guidance was measured on had **4 CPUs and 15 GB RAM**, and its
+disk is a fixed per-session allowance. Size every test run to the sandbox
+instead of starting everything at once: an overloaded VM does not fail
+cleanly. Emulated firmware misses its timers, UDP replies arrive late or not
+at all, and the result looks like an integration bug that isn't there.
+
+### Check before you start
+
+```bash
+nproc; free -g; df -h .               # what this sandbox has
+uptime                                # load average; keep it below nproc
+docker stats --no-stream              # per-container CPU % and memory, once Docker runs
+```
+
+Re-check `uptime` / `docker stats --no-stream` while a batch runs. If the load
+average stays above `nproc`, or HA logs timeouts that a smaller batch does not
+show, the batch is too big. Stop services and split it; do not "retry until
+green".
+
+### Measured cost per device
+
+| What | CPU | RAM | Notes |
+|------|-----|-----|-------|
+| Python mock (`tools/mock_device`, `mock-marstek*`) | ~0 % | ~20 MB | Cheap; all 26 fit easily |
+| Renode firmware emulator in Docker (`fw-*`) | ~0.3-0.6 core | ~550 MB | The image runs `--quantum 0.01`; profile images also `--mips 40` |
+| Renode firmware emulator on the host (`run_firmware.py`) | 1-1.5 cores | ~550 MB | Renode's default quantum; pass `--quantum 0.01` to match the image |
+| `pytest tests/` (serial) | 1 core | < 1 GB | ~140 s for the full suite |
+| `pytest tests/ -n 4` (xdist, 4 workers) | 4 cores | ~2 GB | ~60 s; coverage is combined, so `--cov-fail-under` still applies |
+
+`pytest-xdist` comes with `pytest-homeassistant-custom-component`. Use `-n <nproc>`
+(or `-n auto`, which counts physical cores,
+[pytest-xdist distribution](https://pytest-xdist.readthedocs.io/en/stable/distribution.html);
+coverage from `load` workers is combined,
+[pytest-cov xdist](https://pytest-cov.readthedocs.io/en/latest/xdist.html)).
+Do not run xdist while emulators are up: they compete for the same cores.
+
+### Test firmware versions in batches, not all at once
+
+Every firmware version still has to be covered. Cover them in several small
+runs rather than one run with all of them:
+
+1. Python mocks carry the per-version encodings and gates (`firmware_profile.py`
+   is shared), so the pytest suite and the `mock-marstek*` services cover every
+   version cheaply. Start there.
+2. Run the vendor firmware emulators **at most `nproc` at a time in Docker**
+   (the four default ones on a 4-CPU sandbox), or `nproc / 2` host
+   `run_firmware.py` instances without `--quantum 0.01`, next to Home Assistant
+   and the mocks you need. The `firmware-all` profile starts 17 more Renode
+   instances (load around 60 on 4 cores); never start it in a sandbox. On an
+   overloaded host the firmware answers `Parse error` (data 403) or times out,
+   and the CT sidecar leaves about half the requests unanswered.
+3. Name the services per batch, then remove them before the next batch
+   ([compose up](https://docs.docker.com/reference/cli/docker/compose/up/),
+   [compose rm](https://docs.docker.com/reference/cli/docker/compose/rm/)).
+   Naming a service in a profile starts it without the rest of the profile
+   ([profiles](https://docs.docker.com/compose/how-tos/profiles/)):
+
+   ```bash
+   cd .devcontainer
+   # Naming the -ct meter sidecar also starts its emulator (depends_on).
+   docker compose up -d homeassistant fw-venus-e-150-ct fw-venus-a-150-ct   # batch 1
+   # ... test, then record the result ...
+   docker compose rm -sf fw-venus-e-150-ct fw-venus-e-150 fw-venus-a-150-ct fw-venus-a-150
+   docker compose up -d fw-venus-e-148-ct fw-venus-d-149-ct                  # batch 2
+   ```
+
+   `docker compose config --services` lists every service name (`--profile
+   firmware-all` to include the profile images).
+   Group a batch by what it proves (same family across versions, or one
+   version per family) and keep a list of batches done, so no version is
+   skipped.
+4. Outside Docker, pass `--quantum 0.01` to `tools/firmware_emulator/run_firmware.py`
+   (the image's setting) and give each instance distinct
+   `--local-api-port`, `--monitor-port`, `--uart-port`, `--can-port` and
+   `--meter-port` values. Stop each instance (and its `fc41d.py` /
+   `can_peers.py` helpers) by PID when the batch is done. Don't use
+   `pkill -f`: the pattern also matches your own shell.
+5. HMG-50 images (`fw-venus-c-*`, `fw-venus-e2-156`) lose many requests by design
+   ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)), so give them a batch of their own, where the loss is not confused with load.
+
+`.cursor/start.sh` and a bare `docker compose up -d` start every mock plus the
+four default emulators, which takes about half of a 4-CPU sandbox before any
+test runs. Stop the
+emulators you are not testing (`docker compose stop fw-...`) before relying on
+timing-sensitive results.
+
 ## Development Tools
 
 The `tools/` directory contains utilities for testing, debugging, and development. **Use these tools proactively** when working on device communication, debugging issues, or improving mock data.

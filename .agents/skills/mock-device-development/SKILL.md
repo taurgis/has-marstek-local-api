@@ -116,7 +116,8 @@ _refresh_inputs -> _advance_power -> _settle_flows
 | `EM.GetStatus.total_power` | The P1 / CT meter, positive when the house imports |
 
 `ongrid_power` and the meter are different measurements. The integration
-derives battery power as `pv_power - ongrid_power`, so putting the meter
+derives battery power as `pv_power - ongrid_power - offgrid_power` (the EPS
+socket load), so putting the meter
 reading in `ongrid_power` makes Home Assistant show 0 W while the mock's SOC
 drains. The Venus A capture in issue #11 has them disagreeing on real
 hardware (`ongrid_power: 318` against `total_power: -16`).
@@ -254,7 +255,9 @@ mock imports from `custom_components` must also be COPYed in the Dockerfile.
 ## When to Modify
 
 - Adding new sensor entities → add to `get_state()` + handler
-- Testing multi-battery aggregation → add devices to docker-compose
+- Testing multi-battery aggregation → add devices to docker-compose (Python
+  mocks cost ~20 MB each; Renode `fw-*` emulators ~0.3-0.6 core each in Docker, so batch
+  those as AGENTS.md → *Sandbox resource budget* describes)
 - Validating mode control → modify `set_mode()` in battery.py
 - Reproducing specific states → use CLI flags or modify defaults
 - Scripting a "P1 reads X, what does the battery do?" scenario → pin the home
