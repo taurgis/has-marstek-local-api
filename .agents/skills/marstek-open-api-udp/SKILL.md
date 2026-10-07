@@ -75,8 +75,10 @@ Venus Control images speak Open API on two radios:
 
 For firmware the profile marks **`openapi_wifi_retransmit_safe`** (known family, known Control generation, not reset-prone — Venus 150+ / HMG-50 156+), **read-only** unicasts (`Marstek.GetDevice`, `ES.GetStatus`, `ES.GetMode`, `EM.GetStatus`, `PV.GetStatus`, `Wifi.GetStatus`, `Bat.GetStatus`) may:
 
-1. Send once, wait 500 ms. Retransmit only if that wait is silent (RFC 1122 UDP retransmission is the application's job). Ethernet replies typically land well before this, so LAN and dual-homed Ethernet IPs stay one datagram.
-2. Wait the **remaining** configured request timeout for a matching reply **without cancelling** the pending future (`asyncio.wait`, not `wait_for`). Cap is **two datagrams** inside one timeout.
+1. Send once, then send a copy at each `UNICAST_RETRANSMIT_OFFSETS` offset (0.5 s, 2.5 s, 5.0 s after the first send) **only while no reply has arrived** (RFC 1122 UDP retransmission is the application's job). Ethernet replies typically land well before 0.5 s, so LAN and dual-homed Ethernet IPs stay one datagram.
+2. Offsets at or past the caller's timeout are skipped, and the **remaining** timeout is waited **without cancelling** the pending future (`asyncio.wait`, not `wait_for`). Every copy reuses the JSON-RPC id, so a reply to any copy completes the request.
+
+Why the offsets grow: Control firmware drops an Open API reply it cannot hand to the FC41D within 500 ms (one UART mutex shared with the CT poll, MQTT and HTTP), then ignores requests for 1–2 s after answering (`POST_REPLY_QUIET_INTERVAL`). A copy inside that window is wasted, so copies after the first keep at least that gap. See `tools/firmware/WIFI_UDP_RELIABILITY.md` for the firmware trace and live measurements.
 
 Writes (`ES.SetMode`, `DOD.SET`, `Ble.Adv`, `Led.Ctrl`), unknown models, missing `ver`, and reset-prone IPs stay at one datagram and one wait. Prefer Ethernet for polling; retries cannot repair AP client isolation or Wi-Fi NAT.
 

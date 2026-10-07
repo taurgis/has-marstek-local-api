@@ -66,15 +66,18 @@ MIN_RESET_PRONE_REQUEST_INTERVAL: float = 1.0
 # reply were answered, against 13/13 after 2 s. Throttled requests therefore
 # also wait this long after the device's last datagram.
 POST_REPLY_QUIET_INTERVAL: float = 2.0
-# FC41D Wi-Fi STA power-save and AP TIM buffering often drop or delay the
-# first downlink unicast. RFC 1122 leaves UDP retransmission to the
-# application. Wait this long for a reply before sending a second copy.
-# 500 ms beat 300 ms on a live Venus E 150 Wi-Fi sweep (2/40 vs 7/40
-# timeouts) without approaching the 1000 ms delay that stalled recovery.
-# Ethernet replies are typically well under 200 ms, so LAN and dual-homed
-# Ethernet IPs still get one datagram. Writes and unknown/reset-prone IPs
-# stay one-shot.
-UNICAST_RETRANSMIT_WAIT: float = 0.5
+# Wi-Fi Open API datagrams are lost silently, and losses come in bursts: a
+# live Venus E 150 lost the 0.5 s copy 39% of the time after losing the
+# first datagram, against 24% for any first datagram. Control firmware drops
+# a reply it cannot hand to the modem within 500 ms (shared UART mutex), then
+# ignores what arrives in the next second or two (POST_REPLY_QUIET_INTERVAL).
+# A copy sent inside that window is wasted, so copies go out at growing
+# offsets from the first send (RFC 8085 section 3.1.3, RFC 7252 section 4.8),
+# and only while no reply has arrived. RFC 1122 leaves UDP retransmission to
+# the application. Ethernet replies are typically well under 200 ms, so LAN
+# and dual-homed Ethernet IPs still get one datagram. Writes and
+# unknown/reset-prone IPs stay one-shot.
+UNICAST_RETRANSMIT_OFFSETS: tuple[float, ...] = (0.5, 2.5, 5.0)
 # Upper bound on how long a unicast waits for a paused listener to resume.
 # Comfortably longer than a full discovery sweep (DISCOVERY_TIMEOUT is 10s),
 # short enough that a scan which died between pause and resume cannot wedge
@@ -97,7 +100,7 @@ _READ_ONLY_UNICAST_METHODS: frozenset[str] = frozenset(
 class _UnicastTimeoutError(TimeoutError):
     """Timeout for one unicast wait.
 
-    ``retried`` is True when a silent-wait copy was already sent.
+    ``retried`` is True when at least one silent-wait copy was sent.
     """
 
     def __init__(self, retried: bool) -> None:
@@ -500,16 +503,17 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
             self.is_openapi_retransmit_safe(target_ip) and method_name in _READ_ONLY_UNICAST_METHODS
         )
 
-    def _unicast_allows_retransmit(self, target_ip: str, method_name: str, timeout: float) -> bool:
-        """Return whether a silent first wait may be followed by a second send.
+    def _unicast_retransmit_offsets(
+        self, target_ip: str, method_name: str, timeout: float
+    ) -> tuple[float, ...]:
+        """Return when silent-wait copies may go out, relative to the first send.
 
-        Short unit-test timeouts skip the extra wait so they do not pay
-        500 ms. The remaining wait uses the caller's timeout budget.
+        Only offsets inside the caller's timeout count, so a short timeout
+        gets fewer copies (or none) and never a longer wait.
         """
-        return (
-            self._wifi_reliability_enabled(target_ip, method_name)
-            and timeout > UNICAST_RETRANSMIT_WAIT
-        )
+        if not self._wifi_reliability_enabled(target_ip, method_name):
+            return ()
+        return tuple(offset for offset in UNICAST_RETRANSMIT_OFFSETS if offset < timeout)
 
     async def _wait_for_pending_response(
         self,
@@ -540,14 +544,16 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         future: asyncio.Future[dict[str, Any]],
         *,
         bypass_rate_limit: bool,
-        allow_retransmit: bool,
+        retransmit_offsets: tuple[float, ...],
         method_name: str,
     ) -> tuple[dict[str, Any], bool]:
-        """Send one unicast and wait, retransmitting only if the first wait is silent.
+        """Send one unicast and wait, retransmitting only while every wait is silent.
 
-        The silent-wait copy stays inside *timeout* so one logical request
-        cannot consume two full timeouts. Ethernet replies that arrive
-        before 500 ms never send the copy.
+        Copies go out at *retransmit_offsets* after the first send and stay
+        inside *timeout*, so one logical request cannot consume two full
+        timeouts. Ethernet replies that arrive before the first offset never
+        send a copy. Every copy reuses the JSON-RPC id, so a reply to any of
+        them completes the request.
 
         The deadline starts once the datagram is on the wire. Per-IP
         throttling can sleep up to a second before that (reset-prone floor),
@@ -561,12 +567,15 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
             target_port,
             bypass_rate_limit=bypass_rate_limit,
         )
-        deadline = time.monotonic() + timeout
-        if allow_retransmit:
+        sent_at = time.monotonic()
+        deadline = sent_at + timeout
+        for offset in retransmit_offsets:
             try:
                 return (
-                    await self._wait_for_pending_response(future, UNICAST_RETRANSMIT_WAIT),
-                    False,
+                    await self._wait_for_pending_response(
+                        future, max(0.0, sent_at + offset - time.monotonic())
+                    ),
+                    retried,
                 )
             except TimeoutError:
                 retried = True
@@ -575,7 +584,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                     target_ip,
                     target_port,
                     method_name,
-                    UNICAST_RETRANSMIT_WAIT,
+                    offset,
                 )
                 await self._send_udp_message(
                     message,
@@ -716,7 +725,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                         timeout,
                         future,
                         bypass_rate_limit=bypass_rate_limit,
-                        allow_retransmit=self._unicast_allows_retransmit(
+                        retransmit_offsets=self._unicast_retransmit_offsets(
                             target_ip, method_name, timeout
                         ),
                         method_name=method_name,

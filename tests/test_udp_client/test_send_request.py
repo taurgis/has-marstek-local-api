@@ -7,11 +7,14 @@ import json
 import logging
 import time
 from contextlib import suppress
+from itertools import pairwise
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.marstek.const import DEFAULT_REQUEST_TIMEOUT
+from custom_components.marstek.pymarstek import udp as udp_module
 from custom_components.marstek.pymarstek.udp import (
     MIN_REQUEST_INTERVAL,
     MarstekUDPClient,
@@ -122,7 +125,7 @@ class TestSendRequest:
                 _complete_first_pending(client)
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(
                 client,
                 "_send_udp_message",
@@ -153,7 +156,7 @@ class TestSendRequest:
             _complete_first_pending(client)
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.2),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.2,)),
             patch.object(
                 client,
                 "_send_udp_message",
@@ -185,7 +188,7 @@ class TestSendRequest:
             _complete_first_pending(client)
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(
                 client,
                 "_send_udp_message",
@@ -238,7 +241,7 @@ class TestSendRequest:
             sends += 1
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(client, "_send_udp_message", AsyncMock(side_effect=count_sends)),
             pytest.raises(TimeoutError),
         ):
@@ -268,7 +271,7 @@ class TestSendRequest:
             sends += 1
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(client, "_send_udp_message", AsyncMock(side_effect=count_sends)),
             pytest.raises(TimeoutError),
         ):
@@ -296,7 +299,7 @@ class TestSendRequest:
                 _complete_first_pending(client)
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(
                 client,
                 "_send_udp_message",
@@ -329,7 +332,7 @@ class TestSendRequest:
 
         started = time.monotonic()
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(client, "_send_udp_message", AsyncMock(side_effect=count_sends)),
             pytest.raises(TimeoutError),
         ):
@@ -345,6 +348,123 @@ class TestSendRequest:
         assert sends == 2
         assert elapsed < 0.12
 
+    async def test_every_scheduled_copy_goes_out_while_silent(self) -> None:
+        """A silent device gets one copy per scheduled offset, still inside the timeout."""
+        client = _unicast_test_client()
+        client.set_openapi_retransmit_safe("192.168.1.100", True)
+        message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
+        sends = 0
+
+        async def count_sends(*_args: Any, **_kwargs: Any) -> None:
+            nonlocal sends
+            sends += 1
+
+        started = time.monotonic()
+        with (
+            patch(
+                "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS",
+                (0.01, 0.02, 0.03),
+            ),
+            patch.object(client, "_send_udp_message", AsyncMock(side_effect=count_sends)),
+            pytest.raises(TimeoutError),
+        ):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.06,
+                validate=False,
+            )
+
+        elapsed = time.monotonic() - started
+        assert sends == 4
+        assert elapsed < 0.15
+        stats = client.get_command_stats_for_ip("192.168.1.100")
+        assert stats["ES.GetStatus"]["total_timeouts"] == 1
+        assert stats["ES.GetStatus"]["total_retransmits"] == 1
+
+    async def test_copies_past_the_timeout_are_skipped(self) -> None:
+        """Offsets at or beyond the caller's timeout never send a datagram."""
+        client = _unicast_test_client()
+        client.set_openapi_retransmit_safe("192.168.1.100", True)
+        message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
+        sends = 0
+
+        async def count_sends(*_args: Any, **_kwargs: Any) -> None:
+            nonlocal sends
+            sends += 1
+
+        with (
+            patch(
+                "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS",
+                (0.01, 0.05, 0.5),
+            ),
+            patch.object(client, "_send_udp_message", AsyncMock(side_effect=count_sends)),
+            pytest.raises(TimeoutError),
+        ):
+            await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=0.05,
+                validate=False,
+            )
+
+        assert sends == 2
+
+    async def test_reply_stops_remaining_copies(self) -> None:
+        """Once any copy is answered, later offsets send nothing."""
+        client = _unicast_test_client()
+        client.set_openapi_retransmit_safe("192.168.1.100", True)
+        message = json.dumps({"id": 1, "method": "ES.GetStatus", "params": {"id": 0}})
+        sends = 0
+
+        async def send_and_complete_on_third(*_args: Any, **kwargs: Any) -> None:
+            nonlocal sends
+            sends += 1
+            if sends > 1:
+                assert kwargs.get("bypass_rate_limit") is True
+            if sends == 3:
+                _complete_first_pending(client)
+
+        with (
+            patch(
+                "custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS",
+                (0.01, 0.02, 0.03),
+            ),
+            patch.object(
+                client,
+                "_send_udp_message",
+                AsyncMock(side_effect=send_and_complete_on_third),
+            ),
+        ):
+            result = await client.send_request(
+                message,
+                "192.168.1.100",
+                30000,
+                timeout=1.0,
+                validate=False,
+            )
+
+        assert sends == 3
+        assert result["id"] == 1
+        stats = client.get_command_stats_for_ip("192.168.1.100")
+        assert stats["ES.GetStatus"]["total_success"] == 1
+        assert stats["ES.GetStatus"]["total_retransmits"] == 1
+
+    def test_default_schedule_clears_post_reply_quiet_window(self) -> None:
+        """Later copies must land after the firmware's post-reply quiet window.
+
+        A copy sent while the device ignores requests after answering one it
+        could not deliver is wasted, so offsets grow and keep the gap.
+        """
+        offsets = udp_module.UNICAST_RETRANSMIT_OFFSETS
+        assert offsets == tuple(sorted(offsets))
+        assert offsets[0] > 0
+        for earlier, later in pairwise(offsets):
+            assert later - earlier >= udp_module.POST_REPLY_QUIET_INTERVAL
+        assert offsets[-1] < DEFAULT_REQUEST_TIMEOUT
+
     async def test_late_reply_survives_first_timeout_wait(self) -> None:
         """Do not cancel the pending future when the first wait times out."""
         client = _unicast_test_client()
@@ -356,7 +476,7 @@ class TestSendRequest:
             _complete_first_pending(client)
 
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(client, "_send_udp_message", AsyncMock()),
         ):
             completer = asyncio.create_task(delayed_complete())
@@ -390,7 +510,7 @@ class TestSendRequest:
 
         caplog.set_level(logging.DEBUG)
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(
                 client,
                 "_send_udp_message",
@@ -446,7 +566,7 @@ class TestSendRequest:
 
         caplog.set_level(logging.DEBUG)
         with (
-            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_WAIT", 0.01),
+            patch("custom_components.marstek.pymarstek.udp.UNICAST_RETRANSMIT_OFFSETS", (0.01,)),
             patch.object(client, "_send_udp_message", AsyncMock()),
             pytest.raises(TimeoutError),
         ):

@@ -30,8 +30,10 @@ inter-request delay.
 - Can increase API timeouts/failures, especially on Wi-Fi.
 - Wired LAN is recommended if this mode is enabled. Firmware 150 fixed Local
   API **Ethernet** sends; Wi-Fi still goes through the FC41D module and can
-  time out more often after idle (limited local testing). Ethernet replies
-  typically arrive well under 500 ms, so the silent-wait copy is not sent.
+  time out more often (limited local testing). Read requests on Wi-Fi get up
+  to three extra copies, at 0.5 s, 2.5 s and 5 s, while the device stays
+  silent; copies past the **Request timeout** are skipped. Ethernet replies
+  typically arrive well under 500 ms, so no copy is sent.
 - Ignored on Control firmware the integration treats as reset-prone
   (generation below 150, including Open API `ver` 1476 / app 147.6). Venus E
   3.0 **150** is the vendor Local API Ethernet fix. Reset-prone devices also

@@ -271,13 +271,80 @@ than a public vendor statement.
    it is only that project's implementation choice
    ([pinned `const.py`](https://github.com/jaapp/ha-marstek-local-api/blob/624881c82941bdd68bf229299ac3b9606971caca/custom_components/marstek_local_api/const.py#L21-L29)).
 
+## Round 2: firmware trace and live schedule comparison (October 2026)
+
+Home Assistant's own counters on a Wi-Fi-only Venus E 3.0 Control 150, with
+one copy at 500 ms, after about ten days: 113,993 requests, 8,270 timeouts
+(7.3%), 28 error replies. The losses are silent timeouts, not error replies
+or a startup artefact.
+
+### What Control 150 does with the modem (VNSEE3-0 app 0150 disassembly)
+
+- Every AT exchange with the FC41D (CT poll, MQTT, HTTP, BLE, Open API
+  reply) goes through one FreeRTOS mutex (`0x20000118`). The CT poll
+  (`0x8006ce8`) holds it from `AT+QISEND` until the meter answers or its own
+  timeout runs out, about once a second.
+- The UDP reply sender (`0x8010788`) builds `AT+QISEND=<id>,<len>,"<json>",
+  "<ip>",<port>` and calls the AT helper (`0x8010384`), which waits at most
+  500 ticks for the mutex and returns without sending if it cannot get it.
+  The sender tries three times with a 100 ms pause, so a reply is lost
+  silently only when the modem stays busy for about 1.8 s or more, or the
+  module rejects the send three times. Shorter contention only delays the
+  reply.
+- The firmware issues no `AT+QLOWPOWER` or `AT+QDEEPSLEEP` in normal
+  operation and has no power-save setting, so any Wi-Fi power save is the
+  FC41D default.
+- The Local API socket is opened in direct-push mode
+  (`AT+QIOPEN=…,"UDP SERVICE",…,1`), so requests arrive as `+QIURC: "recv"`
+  on the same UART.
+
+### Live measurements (host probe on UDP 30000, same LAN)
+
+ICMP echo, which the FC41D answers without involving the MCU, lost 5-15%.
+Every Open API copy carried its own JSON-RPC id, so each reply identifies the
+copy it answers. With Home Assistant polling disabled, 240 reads (ES.GetStatus,
+ES.GetMode, EM.GetStatus, Wifi.GetStatus) in random schedule order, 3-5 s
+apart:
+
+| Schedule (copy offsets) | Answered | Lost first two copies, then rescued |
+|---|---:|---:|
+| 0.5 s (previous policy) | 57/60 (95.0%) | – |
+| 0.5 s, 1.5 s | 58/60 (96.7%) | 5 of 7 |
+| 0.5 s, 2.5 s | 59/60 (98.3%) | 1 of 2 |
+| 0.5 s, 2.5 s, 5.0 s | 60/60 (100%) | 9 of 9 (2 by the 5 s copy) |
+
+- The first copy went unanswered 57/240 times (23.8%). After that, the
+  0.5 s copy went unanswered 21/57 times (36.8%): losses come in bursts,
+  which fits a reply dropped after a busy modem followed by the post-reply
+  quiet window (`POST_REPLY_QUIET_INTERVAL`).
+- No late original reply arrived after a copy was answered, and no copy was
+  answered twice. Answered copies took 0.147 s (median), 0.445 s (p95),
+  1.83 s (max), in line with the sender's three mutex attempts.
+- A 1-byte datagram to a closed port 150 ms before the request (it reaches
+  the FC41D but not the MCU, so it would wake the radio and refresh ARP
+  without touching the mutex) did not help: 53/60 against 55/60 for the
+  0.5 s copy alone in a run with Home Assistant polling. ARP and station
+  power save are not the main cause on this unit.
+- Sixty requests per schedule is a small sample. The ordering and the
+  rescue counts point the same way, but the success-rate gaps alone are not
+  statistically significant.
+
+Retransmit precedent for the offsets: RFC 8085 section 3.1.3 asks UDP
+applications without an RTT estimate for conservative timers with backoff
+([RFC 8085](https://www.rfc-editor.org/rfc/rfc8085#section-3.1.3)), and CoAP
+doubles its retransmission timeout per attempt on lossy constrained networks
+([RFC 7252 section 4.8](https://www.rfc-editor.org/rfc/rfc7252#section-4.8)).
+Reads are safe to repeat; CoAP treats GET the same way
+([RFC 7252 section 5.8.1](https://www.rfc-editor.org/rfc/rfc7252#section-5.8.1)).
+
 ## Plugin policy (this repository)
 
 Bounded application retries stay justified by RFC 768 / RFC 1122. The
 implementation opts in only after `FirmwareProfile.openapi_wifi_retransmit_safe`
 (known family, known Control generation, not reset-prone). Read-only methods
-may send a silent-wait copy at 500 ms, then wait the remaining configured
-timeout (cap: two datagrams). Writes and unmarked IPs stay one-shot so extra
-UDP cannot hit `ES.SetMode` or reset-prone Control. `asyncio.wait` keeps the
+send copies at 0.5 s, 2.5 s and 5 s (`UNICAST_RETRANSMIT_OFFSETS`) while no
+reply has arrived, skipping any offset at or past the configured timeout
+(cap: four datagrams). Writes and unmarked IPs stay one-shot so extra UDP
+cannot hit `ES.SetMode` or reset-prone Control. `asyncio.wait` keeps the
 pending JSON-RPC future alive across those waits. Ethernet and dual-homed
-Ethernet IPs typically reply before 500 ms and never get the copy.
+Ethernet IPs typically reply before 500 ms and never get a copy.

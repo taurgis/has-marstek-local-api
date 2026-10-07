@@ -103,16 +103,18 @@ Plugin-side mitigations for **known-safe** read-only unicasts
 (`FirmwareProfile.openapi_wifi_retransmit_safe`: known family, known
 Control generation, not reset-prone):
 
-1. Wait 500 ms for a reply. Retransmit only if that wait is silent
-   (RFC 1122: UDP retransmission is the application's job). Live Venus E
-   150 Wi-Fi succeeded more often at 500 ms than 300 ms; 1000 ms delayed
-   the copy too long during stalls. Ethernet replies that succeed do so
-   in well under 200 ms, so an awake LAN radio does not get a second
-   datagram.
-2. The remaining configured request timeout is then used for a matching
-   reply **without** a nested extra wait. Cap: two datagrams inside one
-   timeout. ``asyncio.wait`` does **not** cancel the pending future, so a
-   late first reply still counts.
+1. Send copies at 0.5 s, 2.5 s and 5 s after the first datagram, each only
+   if nothing has answered yet (RFC 1122: UDP retransmission is the
+   application's job). Losses are bursty: the 150 reply sender gives up
+   only after the modem stays busy for about 1.8 s, and the firmware then
+   ignores requests for a second or two, so the later copies keep at least
+   ``POST_REPLY_QUIET_INTERVAL`` between them. Ethernet replies that succeed
+   do so in well under 200 ms, so an awake LAN radio does not get a second
+   datagram. See `WIFI_UDP_RELIABILITY.md` for the trace and measurements.
+2. Offsets at or past the configured request timeout are skipped, and the
+   rest of that timeout is used for a matching reply. Cap: four datagrams
+   inside one timeout. ``asyncio.wait`` does **not** cancel the pending
+   future, so a late reply to any copy still counts.
 3. Writes, unknown models, missing ``ver``, and reset-prone IPs stay at
    one datagram and one wait.
 
@@ -148,8 +150,9 @@ replies never arrive and retries cannot help.
    **before** the first UDP probe and points at issue #15. The pooled client
    is created and marked before the scanner starts so the first scan can
    pause an existing listener; the scanner still starts before the probe.
-7. Known-safe read-only unicasts wait 500 ms, retransmit only on silence,
-   then finish the remaining request timeout (cap: two datagrams).
+7. Known-safe read-only unicasts send copies at 0.5 s, 2.5 s and 5 s only
+   while silent, then finish the remaining request timeout (cap: four
+   datagrams).
    ``asyncio.wait`` keeps the pending future alive. Writes, unknown
    firmware, and reset-prone IPs stay at one datagram.
 
