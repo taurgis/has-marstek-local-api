@@ -562,7 +562,7 @@
     },
     "openapi_reset_prone": {
       "title": "Marstek firmware can reset Open API",
-      "description": "This {family} device reports firmware {firmware}. Control builds below 150 can disable Local API and wipe settings when polled over UDP. Battery-detail requests (Bat.GetStatus) are not sent, parallel requests stay off, and you should update to Control firmware 150 or newer."
+      "description": "This {family} device reports firmware {firmware}. Control builds below 150 can disable Local API and wipe settings when polled over UDP. Battery-detail requests (Bat.GetStatus) are not sent, parallel requests stay off, and you should update to Control firmware 150 or newer. After the device firmware is updated, reload this entry or use Reconfigure — the integration queries the device directly and stores the new version, including when broadcast discovery cannot reach it. You do not need to delete the device."
     },
     "shared_meter_udp_channel": {
       "title": "Marstek Open API can interrupt this device's own meter",

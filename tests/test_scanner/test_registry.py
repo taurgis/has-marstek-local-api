@@ -192,7 +192,7 @@ async def test_scanner_invalid_mac_skips_registry_update(
 
     with (
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
-        patch("custom_components.marstek.scanner.dr.async_get") as mock_dr_get,
+        patch("custom_components.marstek.helpers.entry_metadata.dr.async_get") as mock_dr_get,
     ):
         scanner._maybe_update_entry_metadata(bad_entry, updates_device)
 
@@ -216,7 +216,7 @@ async def test_scanner_registry_update_falls_back_to_next_mac_field(
 
     with (
         patch.object(hass.config_entries, "async_update_entry"),
-        patch("custom_components.marstek.scanner.dr.async_get") as mock_dr_get,
+        patch("custom_components.marstek.helpers.entry_metadata.dr.async_get") as mock_dr_get,
     ):
         scanner._maybe_update_entry_metadata(entry, {"version": 150})
 
@@ -243,7 +243,7 @@ async def test_scanner_skips_registry_update_when_device_missing(
     with (
         patch.object(hass.config_entries, "async_update_entry") as mock_update,
         patch(
-            "custom_components.marstek.scanner.dr.async_get", return_value=registry
+            "custom_components.marstek.helpers.entry_metadata.dr.async_get", return_value=registry
         ) as mock_dr_get,
     ):
         scanner._maybe_update_entry_metadata(mock_config_entry, updates_device)

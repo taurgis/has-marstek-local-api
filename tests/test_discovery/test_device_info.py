@@ -610,6 +610,36 @@ class TestGetDeviceInfo:
         assert result["port"] == 30000
 
     @pytest.mark.asyncio
+    async def test_pooled_client_can_keep_rate_limit(self) -> None:
+        """Background firmware refresh must not bypass the per-IP throttle."""
+        from custom_components.marstek.discovery import get_device_info
+
+        client = AsyncMock()
+        client.send_request = AsyncMock(
+            return_value={
+                "id": 1,
+                "result": {
+                    "device": "Venus A",
+                    "ver": 150,
+                    "ble_mac": "AA:BB:CC:DD:EE:FF",
+                    "ip": "1.2.3.4",
+                },
+            }
+        )
+
+        result = await get_device_info(
+            "1.2.3.4",
+            udp_client=client,
+            bypass_rate_limit=False,
+            quiet=True,
+        )
+
+        assert result is not None
+        assert result["version"] == 150
+        assert client.send_request.await_args is not None
+        assert client.send_request.await_args.kwargs["bypass_rate_limit"] is False
+
+    @pytest.mark.asyncio
     async def test_udp_client_timeout_returns_none(self) -> None:
         """Timeout on the pooled client is cannot_connect, not a crash."""
         from custom_components.marstek.discovery import get_device_info

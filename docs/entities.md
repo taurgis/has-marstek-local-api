@@ -2,7 +2,7 @@
 
 All entities are **coordinator-backed** (no per-entity polling). Names below match the English UI strings.
 
-Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only when the firmware profile supports them**. Unsupported features are omitted from the device page rather than left permanently unavailable. After a firmware update that unlocks or removes those capabilities, the scanner reloads the config entry so the entity set matches the new profile.
+Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only when the firmware profile supports them**. Unsupported features are omitted from the device page rather than left permanently unavailable. After a firmware update that unlocks or removes those capabilities, setup, the scanner, or **Reconfigure** refreshes `ver` (unicast `Marstek.GetDevice` if broadcast cannot reach the device) and reloads the config entry so the entity set matches the new profile.
 
 Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Firmware `ver >= 150` on a known family scales the wire unit 0.1 Wh → Wh; older profiles leave a present value unscaled.
 
@@ -10,7 +10,7 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 
 > ⚠️ The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically on Control firmware **150+**.
 >
-> **Reset-prone firmware (Control generation below 150):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, the scanner reloads the config entry so they can be created again (still disabled by default).
+> **Reset-prone firmware (Control generation below 150):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, setup or the scanner reloads the config entry so they can be created again (still disabled by default).
 >
 > **Upgrading an existing 150+ install?** Entities that were already registered stay enabled — upgrades never disable entities on firmware that can safely opt in. To stop `Bat.GetStatus` on a 150+ installation, disable the five entities above manually once (device page → entity → ⚙️ → *Enabled* off).
 

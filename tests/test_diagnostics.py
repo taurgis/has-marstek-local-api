@@ -83,7 +83,9 @@ async def test_async_get_config_entry_diagnostics(
     assert "polling_config" in result
     assert "coordinator" in result
     assert "coordinator_data" in result
+    assert "scanner" in result
     assert "last_exception" in result
+    assert result["scanner"] == {"initialized": False}
 
     # Verify entry data
     assert result["entry"]["title"] == "Test Marstek Device"
@@ -451,6 +453,35 @@ async def test_diagnostics_without_last_update_time(
     assert result["coordinator"]["last_update_attempt_time"] is None
     assert result["coordinator"]["time_since_last_attempt"] is None
     assert result["coordinator"]["consecutive_failures"] == 0
+
+
+async def test_diagnostics_include_scanner_last_scan(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Diagnostics expose the scanner's last broadcast and unicast result."""
+    from custom_components.marstek.scanner import MarstekScanner
+
+    mock_config_entry.runtime_data = mock_runtime_data
+    scanner = MarstekScanner(hass)
+    MarstekScanner._scanner = scanner
+    scanner._record_scan_result(
+        [],
+        None,
+        [{"entry_id": "test-entry", "status": "updated", "version": 150}],
+    )
+
+    try:
+        result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+    finally:
+        MarstekScanner._scanner = None
+
+    assert result["scanner"]["initialized"] is True
+    assert result["scanner"]["broadcast_device_count"] == 0
+    assert result["scanner"]["unicast_refreshes"] == [
+        {"entry_id": "test-entry", "status": "updated", "version": 150}
+    ]
 
 
 async def test_diagnostics_snapshot(

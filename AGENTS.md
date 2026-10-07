@@ -73,7 +73,7 @@ If you add/modify device control:
 | Config flow | `config_flow.py` | Broadcast discovery UI, DHCP updates, reauth, reconfigure |
 | Options flow | `options_flow.py` | Polling, network and power option sections |
 | Polling + error handling | `coordinator.py` | Single source of truth; tiered polling (fast/medium/slow); returns previous data on connectivity issues |
-| IP change detection | `scanner.py` | Periodic broadcast discovery (60s); triggers discovery flow to update config entries |
+| IP change detection | `scanner.py` | Periodic broadcast discovery (10 min backup) plus unicast `Marstek.GetDevice` for entries the sweep misses, so firmware `ver` still refreshes across VLANs |
 | Firmware profile | `firmware_profile.py` | Family + `ver` → capabilities and wire-to-SI scales |
 | Sensors | `sensor.py` | EntityDescription pattern; coordinator-backed; stable unique IDs; `suggested_display_precision` |
 | Binary sensors | `binary_sensor.py` | EntityDescription pattern; CT connection status |

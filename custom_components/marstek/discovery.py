@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import socket
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Protocol
 
 from .const import DEFAULT_UDP_PORT
@@ -430,18 +430,29 @@ async def discover_devices(
     return devices
 
 
+def _query_failure_log(quiet: bool) -> Callable[..., None]:
+    """Return the logger method used when a GetDevice query does not yield info."""
+    return _LOGGER.debug if quiet else _LOGGER.warning
+
+
 async def _get_device_info_via_client(
     udp_client: DeviceInfoUDPClient,
     host: str,
     port: int,
     timeout: float,
+    *,
+    bypass_rate_limit: bool,
+    quiet: bool,
 ) -> dict[str, Any] | None:
     """Query GetDevice on an already-bound UDP client.
 
     Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind never
     sees that reply: Linux hashes it onto the socket that already owns the
     port, even if that listener is paused. Reuse the pooled client instead.
+    Config-flow and repair queries bypass the throttle so the user is not
+    held behind a poll; background firmware refresh does not.
     """
+    fail = _query_failure_log(quiet)
     _LOGGER.debug("Querying device info from %s:%d via pooled UDP client", host, port)
     try:
         response = await udp_client.send_request(
@@ -450,22 +461,25 @@ async def _get_device_info_via_client(
             port,
             timeout=timeout,
             quiet_on_timeout=True,
-            bypass_rate_limit=True,
+            bypass_rate_limit=bypass_rate_limit,
         )
     except TimeoutError:
-        _LOGGER.warning("No valid response from device at %s:%d", host, port)
+        fail("No valid response from device at %s:%d", host, port)
         return None
     except (OSError, ValueError, ValidationError) as err:
-        _LOGGER.error("Socket error querying %s:%d: %s", host, port, err)
+        if quiet:
+            _LOGGER.debug("Socket error querying %s:%d: %s", host, port, err)
+        else:
+            _LOGGER.error("Socket error querying %s:%d: %s", host, port, err)
         return None
 
     if not isinstance(response, dict):
-        _LOGGER.warning("No valid response from device at %s:%d", host, port)
+        fail("No valid response from device at %s:%d", host, port)
         return None
 
     device = _device_info_from_response(response, host, port)
     if device is None:
-        _LOGGER.warning("No valid response from device at %s:%d", host, port)
+        fail("No valid response from device at %s:%d", host, port)
         return None
 
     _LOGGER.debug(
@@ -483,6 +497,8 @@ async def get_device_info(
     timeout: float = 5.0,
     *,
     udp_client: DeviceInfoUDPClient | None = None,
+    bypass_rate_limit: bool = True,
+    quiet: bool = False,
 ) -> dict[str, Any] | None:
     """Query a specific Marstek device for its info.
 
@@ -495,12 +511,22 @@ async def get_device_info(
         port: UDP port (default 30000)
         timeout: Response timeout in seconds
         udp_client: Existing client bound to this listen port, if any
+        bypass_rate_limit: Skip per-IP throttling. Config flow and repairs
+            keep this True; background refresh leaves the throttle on.
+        quiet: Log misses at debug instead of warning/error.
 
     Returns:
         Device info dict or None if no response/invalid response
     """
     if udp_client is not None:
-        return await _get_device_info_via_client(udp_client, host, port, timeout)
+        return await _get_device_info_via_client(
+            udp_client,
+            host,
+            port,
+            timeout,
+            bypass_rate_limit=bypass_rate_limit,
+            quiet=quiet,
+        )
 
     _LOGGER.debug("Querying device info from %s:%d", host, port)
 

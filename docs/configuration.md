@@ -30,7 +30,12 @@ Unique IDs are based on the device’s **BLE MAC** (falling back to other MACs w
 
 ## Firmware updates
 
-When the scanner sees a firmware or model change that unlocks or removes setup-time capabilities (for example Venus E firmware `149` → `150` adding UPS and SYS controls), the config entry reloads automatically. Cosmetic metadata such as Wi-Fi name or a firmware number that does not change those capabilities is stored without a reload. You do not need to delete and re-add the device.
+The integration stores Open API `ver` on the config entry and uses it for the firmware profile, the device-registry **Firmware** field, and the reset-prone repair warning. After a device firmware update it refreshes that value on its own:
+
+1. **Setup / reload** — a unicast `Marstek.GetDevice` to the stored IP (the same request Reconfigure uses). Broadcast discovery is not required, so a VLAN-isolated device still updates.
+2. **Background scanner** — the 10-minute broadcast sweep still updates firmware when it hears the device. If that sweep sees nothing (no broadcast forwarding), the scanner falls back to the same unicast query.
+
+When the new `ver` unlocks or removes setup-time capabilities (for example Venus A firmware `148` → `150` adding SYS controls and clearing the Open API reset warning), the config entry reloads automatically. Cosmetic metadata such as Wi-Fi name or a firmware number that does not change those capabilities is stored without a reload. You do not need to delete and re-add the device. **Reconfigure** also queries the device directly and is the manual path if you want to refresh firmware immediately.
 
 ## Unsupported devices
 

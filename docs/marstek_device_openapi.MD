@@ -98,7 +98,7 @@ LAN discovery is a UDP broadcast of `Marstek.GetDevice` with `ble_mac` set to `"
 
 The IP can also come from the Marstek app or the router. A static IP is recommended for long-term use.
 
-This integration uses the configured IP at setup. A background scanner repeats broadcast discovery to update the config entry when the IP changes. It does **not** discover during coordinator polling.
+This integration uses the configured IP at setup. A background scanner repeats broadcast discovery to update the config entry when the IP changes. Entries the broadcast sweep misses (for example across VLANs) get a unicast `Marstek.GetDevice` to the stored IP so firmware `ver` still refreshes. Setup and Reconfigure use that same unicast query. It does **not** discover during coordinator polling.
 
 ---
 
@@ -507,7 +507,7 @@ Inputs: device family + integer discovery `ver`. App labels such as `148.3` and 
 | Venus E mini | >= 150 | no | yes | yes | **0–5** | n/a | n/a | 0.1 Wh → Wh |
 | Unknown family | any | no | no | no | 0–9 | no invented scaling | deciwatt fallback unused without PV | no |
 
-When the scanner sees a `ver` or model change that unlocks or removes setup-time capabilities, the config entry reloads so entities are created or omitted. Cosmetic metadata updates do not reload.
+When setup, the scanner, or Reconfigure sees a `ver` or model change that unlocks or removes setup-time capabilities, the config entry reloads so entities are created or omitted. Cosmetic metadata updates do not reload.
 
 ### 4.3 Observed Venus E 3.0 firmware 150 (LAN read, 2026-09-15)
 

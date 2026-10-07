@@ -313,7 +313,7 @@ has-marstek-local-api/
 │   ├── power.py               # Power-limit validation
 │   ├── device_action.py       # Charge / discharge / stop device actions
 │   ├── discovery.py           # UDP discovery helpers
-│   ├── scanner.py             # Background IP/firmware change detection
+│   ├── scanner.py             # Background IP/firmware change detection (broadcast + unicast fallback)
 │   ├── diagnostics.py         # Downloadable diagnostics
 │   ├── repairs.py             # Repair issues and fix flows
 │   ├── binary_sensor.py       # CT/permission binary sensors
