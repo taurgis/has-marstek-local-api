@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+### Patch Changes
+
+- fa1e1e0: Fix stored firmware version not updating after a device firmware upgrade.
+- c1034a9: Recover more Wi-Fi Open API reads by sending further copies at 2.5 s and 5 s, after the firmware's post-reply busy window, when the 0.5 s copy also goes unanswered.
+
 ## 1.2.0
 
 ### Minor Changes
