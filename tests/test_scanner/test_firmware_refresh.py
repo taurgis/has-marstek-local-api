@@ -181,3 +181,34 @@ async def test_scanner_unicast_cooldown_skips_second_query(
 
     mock_get_device.assert_not_awaited()
     assert entry.data["version"] == 148
+
+
+async def test_scanner_unicast_error_does_not_end_scan(
+    hass: HomeAssistant,
+) -> None:
+    """A failing metadata write is recorded and the scan still finishes."""
+    entry = _venus_a_148_entry()
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+    domain_data(hass).udp_clients[30000] = MagicMock()
+    domain_data(hass).entry_bind_ports[entry.entry_id] = 30000
+
+    scanner = MarstekScanner(hass)
+    with (
+        patch(
+            "custom_components.marstek.scanner.discover_devices",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "custom_components.marstek.scanner.async_refresh_entry_from_unicast",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ),
+    ):
+        await scanner._async_scan_impl()
+
+    diagnostics = scanner.diagnostics()
+    assert diagnostics["last_scan_at"] is not None
+    assert diagnostics["unicast_refreshes"] == [{"entry_id": entry.entry_id, "status": "error"}]
+    # The attempt still counts toward the cooldown, so a broken entry is not
+    # retried on every scan trigger.
+    assert not scanner._unicast_cooldown_elapsed(entry.entry_id)

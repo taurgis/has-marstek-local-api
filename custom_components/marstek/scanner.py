@@ -293,12 +293,21 @@ class MarstekScanner:
             udp_client = get_udp_client_for_entry(self._hass, entry)
             if udp_client is None:
                 continue
-            result = await async_refresh_entry_from_unicast(
-                self._hass,
-                entry,
-                udp_client,
-            )
             self.note_firmware_query(entry.entry_id)
+            try:
+                result = await async_refresh_entry_from_unicast(
+                    self._hass,
+                    entry,
+                    udp_client,
+                )
+            except Exception:
+                # Applying the update can raise; one entry must not end the
+                # scan before the others and the unconfigured-device pass run.
+                _LOGGER.exception(
+                    "Scanner failed while refreshing firmware for %s",
+                    entry.entry_id,
+                )
+                result = {"entry_id": entry.entry_id, "status": "error"}
             results.append(result)
         return results
 

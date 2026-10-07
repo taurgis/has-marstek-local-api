@@ -382,9 +382,7 @@ async def _async_refresh_stored_firmware(
             entry.title,
             exc_info=True,
         )
-    note = getattr(scanner, "note_firmware_query", None)
-    if callable(note):
-        note(entry.entry_id)
+    scanner.note_firmware_query(entry.entry_id)
 
 
 def _build_device_info_dict(

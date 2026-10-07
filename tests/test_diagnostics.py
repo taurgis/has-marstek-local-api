@@ -16,6 +16,7 @@ from custom_components.marstek.diagnostics import async_get_config_entry_diagnos
 def mock_config_entry() -> MagicMock:
     """Create a mock config entry."""
     entry = MagicMock(spec=MarstekConfigEntry)
+    entry.entry_id = "test-entry"
     entry.title = "Test Marstek Device"
     entry.data = {
         "host": "192.168.1.100",
@@ -460,7 +461,7 @@ async def test_diagnostics_include_scanner_last_scan(
     mock_config_entry: MagicMock,
     mock_runtime_data: MagicMock,
 ) -> None:
-    """Diagnostics expose the scanner's last broadcast and unicast result."""
+    """Diagnostics expose the scanner's last scan, limited to this entry."""
     from custom_components.marstek.scanner import MarstekScanner
 
     mock_config_entry.runtime_data = mock_runtime_data
@@ -469,7 +470,10 @@ async def test_diagnostics_include_scanner_last_scan(
     scanner._record_scan_result(
         [],
         None,
-        [{"entry_id": "test-entry", "status": "updated", "version": 150}],
+        [
+            {"entry_id": "test-entry", "status": "updated", "version": 150},
+            {"entry_id": "other-entry", "status": "no_reply"},
+        ],
     )
 
     try:
