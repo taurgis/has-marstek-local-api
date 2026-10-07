@@ -221,11 +221,12 @@ class MarstekScanner:
             scan_ports = self._build_scan_ports()
             broadcast_addresses = await async_broadcast_addresses(self._hass)
             async with async_paused_udp_receivers(self._hass) as paused:
-                devices = await discover_devices(
+                discovered = await discover_devices(
                     ports=scan_ports,
                     broadcast_addresses=broadcast_addresses,
                     shared_sockets=paused_discovery_sockets(paused),
                 )
+            devices = discovered if isinstance(discovered, list) else []
         except asyncio.CancelledError:
             raise
         except Exception:
