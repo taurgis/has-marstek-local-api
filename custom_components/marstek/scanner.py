@@ -1,4 +1,4 @@
-"""Scanner for Marstek devices - detects IP changes."""
+"""Scanner for Marstek devices — detects IP and firmware changes."""
 
 from __future__ import annotations
 
@@ -14,29 +14,30 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import discovery_flow
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
-from .firmware_profile import (
-    is_unsupported_venus_e2,
-    resolve_firmware_profile_from_metadata,
-)
+from .firmware_profile import is_unsupported_venus_e2
 from .helpers.broadcast import async_broadcast_addresses
-from .helpers.device_lookup import async_lookup_device_by_identifier
-from .helpers.domain_data import domain_data
+from .helpers.entry_metadata import (
+    apply_entry_metadata_update,
+    async_refresh_entry_from_unicast,
+)
 from .helpers.flow_helpers import (
     formatted_mac_or_none,
-    get_unique_id_from_device_info,
     identities_overlap,
     identity_macs_from_entry,
     identity_macs_from_mapping,
 )
 from .helpers.ports import discovery_scan_ports
-from .helpers.udp_clients import async_paused_udp_receivers, paused_discovery_sockets
+from .helpers.udp_clients import (
+    async_paused_udp_receivers,
+    get_udp_client_for_entry,
+    paused_discovery_sockets,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,14 +51,9 @@ MIN_SCAN_INTERVAL = timedelta(seconds=30)
 # Minimum time between discovery flows for unconfigured devices
 UNCONFIGURED_DISCOVERY_DEBOUNCE = timedelta(hours=1)
 
-_DEVICE_METADATA_FIELDS: tuple[str, ...] = (
-    "device_type",
-    "version",
-    "wifi_name",
-    "wifi_mac",
-    "model",
-    "firmware",
-)
+# Setup already queries GetDevice once. Skip a second unicast if the
+# scanner's initial sweep finishes in the same minute.
+UNICAST_REFRESH_COOLDOWN = timedelta(seconds=60)
 
 
 def _build_discovery_flow_data(device: dict[str, Any]) -> dict[str, Any]:
@@ -99,6 +95,11 @@ class MarstekScanner:
         self._track_interval: CALLBACK_TYPE | None = None
         self._scan_task: asyncio.Task[None] | None = None
         self._last_scan_monotonic: float | None = None
+        self._last_scan_at: datetime | None = None
+        self._last_broadcast_device_count: int | None = None
+        self._last_broadcast_error: str | None = None
+        self._last_unicast_refreshes: list[dict[str, Any]] = []
+        self._last_unicast_monotonic: dict[str, float] = {}
         self._unconfigured_seen: dict[str, datetime] = {}
 
     @classmethod
@@ -196,32 +197,43 @@ class MarstekScanner:
         self.async_scan()
         return True
 
+    def note_firmware_query(self, entry_id: str) -> None:
+        """Record that *entry_id* already ran a unicast GetDevice recently."""
+        self._last_unicast_monotonic[entry_id] = time.monotonic()
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Return the last scan snapshot for config-entry diagnostics."""
+        last_scan_at = self._last_scan_at
+        return {
+            "last_scan_at": last_scan_at.isoformat() if last_scan_at is not None else None,
+            "broadcast_device_count": self._last_broadcast_device_count,
+            "broadcast_error": self._last_broadcast_error,
+            "unicast_refreshes": list(self._last_unicast_refreshes),
+        }
+
     async def _async_scan_impl(self) -> None:
-        """Execute device discovery and check for IP changes."""
+        """Execute device discovery and check for IP and firmware changes."""
+        devices: list[dict[str, Any]] = []
+        broadcast_error: str | None = None
         try:
             # Use local discovery module (workaround for pymarstek echo issues)
             _LOGGER.debug("Scanner: Starting device discovery (broadcast)")
             scan_ports = self._build_scan_ports()
             broadcast_addresses = await async_broadcast_addresses(self._hass)
             async with async_paused_udp_receivers(self._hass) as paused:
-                devices = await discover_devices(
+                discovered = await discover_devices(
                     ports=scan_ports,
                     broadcast_addresses=broadcast_addresses,
                     shared_sockets=paused_discovery_sockets(paused),
                 )
+            devices = discovered if isinstance(discovered, list) else []
         except asyncio.CancelledError:
             raise
         except Exception:
             _LOGGER.exception("Scanner discovery failed")
-            return
+            broadcast_error = "discovery_failed"
 
-        _LOGGER.debug("Scanner: Discovered %d device(s)", len(devices) if devices else 0)
-
-        if not devices:
-            return
-
-        # Log discovered devices for debugging
-        _LOGGER.debug("Scanner: Discovered devices:")
+        _LOGGER.debug("Scanner: Discovered %d device(s)", len(devices))
         for device in devices:
             _LOGGER.debug(
                 "  Device: %s at IP %s (BLE-MAC: %s, WiFi-MAC: %s)",
@@ -231,14 +243,12 @@ class MarstekScanner:
                 device.get("wifi_mac", "N/A"),
             )
 
-        for entry in self._hass.config_entries.async_entries(DOMAIN):
-            try:
-                self._process_discovered_entry(entry, devices)
-            except Exception:
-                _LOGGER.exception(
-                    "Scanner failed while processing entry %s",
-                    entry.entry_id,
-                )
+        matched_entry_ids = self._match_discovered_entries(devices)
+        unicast_refreshes = await self._async_unicast_unmatched_entries(matched_entry_ids)
+        self._record_scan_result(devices, broadcast_error, unicast_refreshes)
+
+        if not devices:
+            return
 
         try:
             configured_macs = self._get_configured_macs()
@@ -247,12 +257,89 @@ class MarstekScanner:
         except Exception:
             _LOGGER.exception("Scanner failed while advertising unconfigured devices")
 
+    def _match_discovered_entries(self, devices: list[dict[str, Any]]) -> set[str]:
+        """Apply broadcast hits to config entries and return matched entry ids."""
+        matched: set[str] = set()
+        if not devices:
+            return matched
+        for entry in self._hass.config_entries.async_entries(DOMAIN):
+            try:
+                if self._process_discovered_entry(entry, devices):
+                    matched.add(entry.entry_id)
+            except Exception:
+                _LOGGER.exception(
+                    "Scanner failed while processing entry %s",
+                    entry.entry_id,
+                )
+        return matched
+
+    async def _async_unicast_unmatched_entries(
+        self, matched_entry_ids: set[str]
+    ) -> list[dict[str, Any]]:
+        """Query GetDevice on loaded entries the broadcast sweep did not see.
+
+        Broadcast does not cross VLANs. Unicast to the stored IP still
+        reaches those devices and is how a firmware update is learned
+        without deleting the entry.
+        """
+        results: list[dict[str, Any]] = []
+        for entry in self._hass.config_entries.async_entries(DOMAIN):
+            if entry.entry_id in matched_entry_ids:
+                continue
+            if entry.state != ConfigEntryState.LOADED:
+                continue
+            if not self._unicast_cooldown_elapsed(entry.entry_id):
+                continue
+            udp_client = get_udp_client_for_entry(self._hass, entry)
+            if udp_client is None:
+                continue
+            self.note_firmware_query(entry.entry_id)
+            try:
+                result = await async_refresh_entry_from_unicast(
+                    self._hass,
+                    entry,
+                    udp_client,
+                )
+            except Exception:
+                # Applying the update can raise; one entry must not end the
+                # scan before the others and the unconfigured-device pass run.
+                _LOGGER.exception(
+                    "Scanner failed while refreshing firmware for %s",
+                    entry.entry_id,
+                )
+                result = {"entry_id": entry.entry_id, "status": "error"}
+            results.append(result)
+        return results
+
+    def _unicast_cooldown_elapsed(self, entry_id: str) -> bool:
+        """Return True when another unicast GetDevice is allowed for *entry_id*."""
+        last = self._last_unicast_monotonic.get(entry_id)
+        if last is None:
+            return True
+        return (time.monotonic() - last) >= UNICAST_REFRESH_COOLDOWN.total_seconds()
+
+    def _record_scan_result(
+        self,
+        devices: list[dict[str, Any]],
+        broadcast_error: str | None,
+        unicast_refreshes: list[dict[str, Any]],
+    ) -> None:
+        """Store the last scan snapshot for diagnostics."""
+        self._last_scan_at = dt_util.utcnow()
+        self._last_broadcast_device_count = len(devices)
+        self._last_broadcast_error = broadcast_error
+        self._last_unicast_refreshes = unicast_refreshes
+
     def _process_discovered_entry(
         self,
         entry: config_entries.ConfigEntry,
         devices: list[dict[str, Any]],
-    ) -> None:
-        """Match one config entry against discovered devices and update it."""
+    ) -> bool:
+        """Match one config entry against discovered devices and update it.
+
+        Returns True when a broadcast reply belonged to this entry, so the
+        unicast firmware fallback can skip it.
+        """
         _LOGGER.debug(
             "Scanner: Checking entry %s (state: %s)",
             entry.title,
@@ -267,7 +354,7 @@ class MarstekScanner:
                 entry.title,
                 entry.state,
             )
-            return
+            return False
 
         stored_macs = identity_macs_from_entry(entry)
         stored_ip = entry.data.get(CONF_HOST)
@@ -285,7 +372,7 @@ class MarstekScanner:
                 "Scanner: Skipping entry %s - missing identity MAC or IP",
                 entry.title,
             )
-            return
+            return False
 
         matched_device = self._find_device_by_identity(devices, stored_macs, entry.title)
 
@@ -295,7 +382,7 @@ class MarstekScanner:
                 entry.title,
                 stored_macs,
             )
-            return
+            return False
 
         new_ip = matched_device.get("ip")
         new_port = int(matched_device.get("port", DEFAULT_UDP_PORT))
@@ -324,7 +411,7 @@ class MarstekScanner:
                 context={"source": config_entries.SOURCE_INTEGRATION_DISCOVERY},
                 data=_build_discovery_flow_data(matched_device),
             )
-            return
+            return True
 
         self._maybe_update_entry_metadata(entry, matched_device)
         _LOGGER.debug(
@@ -333,6 +420,7 @@ class MarstekScanner:
             stored_ip,
             stored_port,
         )
+        return True
 
     def _build_scan_ports(self) -> list[int]:
         """Build the UDP port list for discovery scans."""
@@ -344,83 +432,7 @@ class MarstekScanner:
         device: dict[str, Any],
     ) -> None:
         """Update stored device metadata if discovery reports changes."""
-        updates: dict[str, Any] = {}
-        for key in _DEVICE_METADATA_FIELDS:
-            new_value = device.get(key)
-            if new_value is None:
-                continue
-            if isinstance(new_value, str) and not new_value.strip():
-                continue
-            if entry.data.get(key) != new_value:
-                updates[key] = new_value
-
-        if not updates:
-            return
-
-        old_profile = resolve_firmware_profile_from_metadata(entry.data)
-        merged = {**entry.data, **updates}
-        new_profile = resolve_firmware_profile_from_metadata(merged)
-        profile_changed = old_profile.setup_reload_signature != new_profile.setup_reload_signature
-
-        _LOGGER.debug(
-            "Scanner: Updating device metadata for %s: %s",
-            entry.title,
-            ", ".join(f"{key}={value}" for key, value in updates.items()),
-        )
-
-        if not profile_changed:
-            self._mark_suppress_reload(entry.entry_id)
-        else:
-            _LOGGER.info(
-                "Scanner: Firmware profile changed for %s; config entry will reload",
-                entry.title,
-            )
-
-        self._hass.config_entries.async_update_entry(entry, data={**entry.data, **updates})
-
-        if (
-            not profile_changed
-            and entry.state == ConfigEntryState.LOADED
-            and hasattr(entry, "runtime_data")
-        ):
-            entry.runtime_data.device_info.update(updates)
-            entry.runtime_data.coordinator.async_set_updated_data(
-                entry.runtime_data.coordinator.data or {}
-            )
-
-        self._update_device_registry(entry, updates)
-
-    def _mark_suppress_reload(self, entry_id: str) -> None:
-        """Suppress a reload for a metadata-only config entry update."""
-        domain_data(self._hass).suppress_reloads.add(entry_id)
-
-    def _update_device_registry(
-        self,
-        entry: config_entries.ConfigEntry,
-        updates: dict[str, Any],
-    ) -> None:
-        """Update device registry metadata when version/model changes."""
-        device_identifier = get_unique_id_from_device_info(entry.data)
-        if device_identifier is None:
-            return
-
-        device_registry = dr.async_get(self._hass)
-        device = async_lookup_device_by_identifier(
-            device_registry,
-            (DOMAIN, device_identifier),
-            config_entry_id=entry.entry_id,
-        )
-        if not device:
-            return
-
-        update_kwargs: dict[str, Any] = {}
-        if "version" in updates:
-            update_kwargs["sw_version"] = str(updates["version"])
-        if "device_type" in updates:
-            update_kwargs["model"] = updates["device_type"]
-
-        if update_kwargs:
-            device_registry.async_update_device(device.id, **update_kwargs)
+        apply_entry_metadata_update(self._hass, entry, device)
 
     def _find_device_by_identity(
         self,

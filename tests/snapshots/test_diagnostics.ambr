@@ -87,5 +87,8 @@
       'request_timeout': 10.0,
       'udp_rate_limit_bypassed': False,
     }),
+    'scanner': dict({
+      'initialized': False,
+    }),
   })
 # ---

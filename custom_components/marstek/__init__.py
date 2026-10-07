@@ -35,6 +35,7 @@ from .helpers.device_lookup import (
     iter_device_config_entry_ids,
 )
 from .helpers.domain_data import MARSTEK_DATA, peek_domain_data
+from .helpers.entry_metadata import async_refresh_entry_from_unicast
 from .helpers.flow_helpers import get_unique_id_from_device_info
 from .helpers.number_descriptions import NUMBER_ENTITIES
 from .helpers.switch_descriptions import SWITCH_ENTITIES
@@ -355,6 +356,35 @@ async def _async_verify_device_connection(
     )
 
 
+async def _async_refresh_stored_firmware(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    udp_client: MarstekUDPClient,
+    scanner: MarstekScanner,
+) -> None:
+    """Unicast GetDevice so a firmware update is stored before entities load.
+
+    Broadcast discovery does not cross VLANs, so this is the path that
+    picks up ``ver`` after an OTA when the scanner never hears the device.
+    A failure leaves the stored version in place and never fails setup.
+    https://developers.home-assistant.io/docs/config_entries_index/
+    """
+    try:
+        await async_refresh_entry_from_unicast(
+            hass,
+            entry,
+            udp_client,
+            reload_on_profile_change=False,
+        )
+    except Exception:
+        _LOGGER.debug(
+            "Firmware refresh failed for %s; continuing with stored version",
+            entry.title,
+            exc_info=True,
+        )
+    scanner.note_firmware_query(entry.entry_id)
+
+
 def _build_device_info_dict(
     entry: ConfigEntry,
     host: str,
@@ -464,15 +494,18 @@ async def _async_setup_entry_with_client(
         stored_ble_mac or stored_wifi_mac or "unknown",
     )
 
-    device_info_dict = _build_device_info_dict(entry, stored_ip, stored_port)
-    profile = resolve_firmware_profile(
-        device_info_dict.get("device_type"),
-        device_info_dict.get("version"),
+    stored_profile = resolve_firmware_profile(
+        entry.data.get("device_type"),
+        entry.data.get("version"),
     )
-    _sync_openapi_reset_issue(hass, entry, profile)
-    _sync_meter_channel_issue(hass, entry, profile)
-    udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone, owner=entry.entry_id)
-    udp_client.set_openapi_retransmit_safe(stored_ip, profile.openapi_wifi_retransmit_safe)
+    # Mark reset-prone from stored firmware before the first unicast so a
+    # device that is still on 148 is not burst with GetDevice + ES.GetMode.
+    udp_client.set_openapi_reset_prone(
+        stored_ip, stored_profile.openapi_reset_prone, owner=entry.entry_id
+    )
+    udp_client.set_openapi_retransmit_safe(stored_ip, stored_profile.openapi_wifi_retransmit_safe)
+    _sync_openapi_reset_issue(hass, entry, stored_profile)
+    _sync_meter_channel_issue(hass, entry, stored_profile)
 
     # Scanner starts after the pooled client exists so an immediate scan can
     # pause this listener instead of racing a probe on a missing socket.
@@ -491,6 +524,18 @@ async def _async_setup_entry_with_client(
         stored_ip,
         stored_port,
     )
+
+    await _async_refresh_stored_firmware(hass, entry, udp_client, scanner)
+
+    device_info_dict = _build_device_info_dict(entry, stored_ip, stored_port)
+    profile = resolve_firmware_profile(
+        device_info_dict.get("device_type"),
+        device_info_dict.get("version"),
+    )
+    _sync_openapi_reset_issue(hass, entry, profile)
+    _sync_meter_channel_issue(hass, entry, profile)
+    udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone, owner=entry.entry_id)
+    udp_client.set_openapi_retransmit_safe(stored_ip, profile.openapi_wifi_retransmit_safe)
 
     # Create coordinator in __init__.py (mik-laj feedback)
     # Use is_initial_setup=True for faster API request delays during first data fetch

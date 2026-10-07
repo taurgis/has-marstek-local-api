@@ -31,6 +31,7 @@ from .const import (
 )
 from .firmware_profile import firmware_profile_diagnostics, resolve_firmware_profile_from_metadata
 from .helpers.udp_clients import get_udp_client_for_entry
+from .scanner import MarstekScanner
 
 TO_REDACT = {
     CONF_HOST,
@@ -127,6 +128,24 @@ def _summarize_command_stats(stats: dict[str, Any]) -> dict[str, Any]:
     summary["timeout_rate"] = timeout_rate
     summary["last_updated"] = _format_timestamp(stats.get("last_updated"))
     return summary
+
+
+def _scanner_diagnostics(entry_id: str) -> dict[str, Any]:
+    """Return the scanner's last-scan snapshot, if the singleton exists.
+
+    The scanner is shared by every entry; keep only this entry's unicast
+    refresh so one device's diagnostics do not list the others.
+    """
+    scanner = MarstekScanner._scanner
+    if scanner is None:
+        return {"initialized": False}
+    snapshot = scanner.diagnostics()
+    snapshot["unicast_refreshes"] = [
+        result
+        for result in snapshot.get("unicast_refreshes", [])
+        if result.get("entry_id") == entry_id
+    ]
+    return {"initialized": True, **snapshot}
 
 
 def _build_polling_config(
@@ -230,5 +249,6 @@ async def async_get_config_entry_diagnostics(
         "coordinator_data": async_redact_data(
             coordinator.data if coordinator.data else {}, TO_REDACT
         ),
+        "scanner": _scanner_diagnostics(entry.entry_id),
         "last_exception": _format_exception(coordinator.last_exception),
     }
