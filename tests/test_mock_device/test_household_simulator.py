@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as datetime_module
 import itertools
+import random
 import types
 
 import pytest
@@ -120,7 +121,10 @@ class TestHouseholdSimulator:
 
     def test_daily_energy_is_realistic(self, simulated_clock) -> None:
         """A day of the profile lands near the EU average dwelling."""
-        sim = HouseholdSimulator()
+        # Pin the RNG: unseeded overlapping cooking/appliance rolls can push
+        # one simulated day over 15 kWh and fail CI (pytest flaky tests:
+        # https://docs.pytest.org/en/stable/explanation/flaky.html).
+        sim = HouseholdSimulator(rng=random.Random(0))
 
         watt_seconds = 0.0
         step = 60.0
