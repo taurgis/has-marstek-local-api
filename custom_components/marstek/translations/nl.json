@@ -1,0 +1,572 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Marstek energieopslag",
+        "description": "Selecteer hieronder je Marstek-energieopslagapparaat.{already_configured}",
+        "data": {
+          "device": "Selecteer apparaat"
+        },
+        "data_description": {
+          "device": "Kies het Marstek-apparaat dat je wilt toevoegen"
+        }
+      },
+      "manual": {
+        "title": "Apparaat handmatig instellen",
+        "description": "Er zijn geen apparaten automatisch gevonden. Voer handmatig het IP-adres van je Marstek-apparaat in. Zorg dat Open API is ingeschakeld in de Marstek-app.",
+        "data": {
+          "host": "IP-adres",
+          "port": "Poort"
+        },
+        "data_description": {
+          "host": "IP-adres van je Marstek-apparaat",
+          "port": "UDP-poort (standaard: 30000)"
+        }
+      },
+      "confirm": {
+        "title": "Apparaat bevestigen",
+        "description": "Er is een Marstek-apparaat gevonden op {host}. Bevestig het adres of pas het aan voordat je het toevoegt.",
+        "data": {
+          "host": "IP-adres",
+          "port": "Poort"
+        },
+        "data_description": {
+          "host": "IP-adres van je Marstek-apparaat",
+          "port": "UDP-poort (standaard: 30000)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Marstek-apparaat opnieuw verbinden",
+        "description": "Het apparaat op {host} reageert niet. Controleer het IP-adres of voer een nieuw adres in als het is gewijzigd.",
+        "data": {
+          "host": "IP-adres"
+        },
+        "data_description": {
+          "host": "Huidig of nieuw IP-adres van je Marstek-apparaat"
+        }
+      },
+      "reconfigure_confirm": {
+        "title": "Marstek-apparaat opnieuw configureren",
+        "description": "Werk de verbindingsinstellingen bij voor het apparaat op {host}.",
+        "data": {
+          "host": "IP-adres",
+          "port": "Poort"
+        },
+        "data_description": {
+          "host": "Nieuw IP-adres van je Marstek-apparaat",
+          "port": "UDP-poort (standaard: 30000)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kan geen verbinding maken met het apparaat",
+      "discovery_failed": "Apparaten zoeken mislukt. Controleer je netwerkverbinding en probeer het opnieuw.",
+      "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
+      "unique_id_mismatch": "Het apparaat op dit adres komt niet overeen met het gevonden apparaat",
+      "all_devices_configured": "Alle gevonden apparaten zijn al geconfigureerd. Voer handmatig een IP-adres in of zorg dat er meer apparaten op het netwerk zijn.",
+      "unsupported_device": "Venus E2.0 wordt niet ondersteund door deze integratie"
+    },
+    "abort": {
+      "already_configured": "Apparaat is al geconfigureerd",
+      "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
+      "reauth_successful": "Apparaat is opnieuw verbonden",
+      "reconfigure_successful": "Apparaat is opnieuw geconfigureerd",
+      "unsupported_device": "Venus E2.0 wordt niet ondersteund door deze integratie"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Marstek-opties",
+        "description": "Stel het opvragen van gegevens en de vermogensinstellingen in.",
+        "sections": {
+          "polling_settings": {
+            "name": "Opvraagintervallen",
+            "description": "Hoe vaak het apparaat wordt bevraagd voor verschillende soorten gegevens",
+            "data": {
+              "poll_interval_fast": "Snel opvraaginterval",
+              "poll_interval_medium": "Gemiddeld opvraaginterval",
+              "poll_interval_slow": "Langzaam opvraaginterval"
+            },
+            "data_description": {
+              "poll_interval_fast": "Batterij- en vermogensgegevens (ES.GetMode, ES.GetStatus, EM.GetStatus)",
+              "poll_interval_medium": "Zonne-/PV-gegevens",
+              "poll_interval_slow": "Wifi-signaal en batterijtemperatuur"
+            }
+          },
+          "network_settings": {
+            "name": "Netwerkinstellingen",
+            "description": "Timing van verzoeken en foutafhandeling. Let op: parallelle API-verzoeken mislukken via wifi vaker; een bekabelde verbinding wordt aanbevolen.",
+            "data": {
+              "parallel_api_requests": "Parallelle API-verzoeken (geavanceerd)",
+              "request_delay": "Vertraging tussen verzoeken",
+              "request_timeout": "Time-out verzoek",
+              "failure_threshold": "Fouten voor niet beschikbaar"
+            },
+            "data_description": {
+              "parallel_api_requests": "Verstuur alle ingeschakelde status-API-verzoeken tegelijk zonder vertraging. Dit kan via wifi vaker time-outs en fouten geven. Een bekabelde verbinding wordt aanbevolen.",
+              "request_delay": "Vertraging tussen opeenvolgende API-verzoeken voor de stabiliteit van het apparaat (genegeerd als parallelle API-verzoeken zijn ingeschakeld)",
+              "request_timeout": "Hoe lang er op een passend antwoord wordt gewacht voor een time-out. Extra wifi-herhalingen vallen binnen deze tijd.",
+              "failure_threshold": "Aantal opeenvolgende fouten voordat entiteiten niet beschikbaar worden"
+            }
+          },
+          "power_settings": {
+            "name": "Vermogensinstellingen",
+            "description": "Standaard vermogenswaarden voor apparaatacties",
+            "data": {
+              "action_charge_power": "Standaard laadvermogen",
+              "action_discharge_power": "Standaard ontlaadvermogen",
+              "socket_limit": "Ontlaadlimiet van 800 W afdwingen"
+            },
+            "data_description": {
+              "action_charge_power": "Standaard vermogen voor laadacties (negatieve waarde)",
+              "action_discharge_power": "Standaard vermogen voor ontlaadacties (positieve waarde)",
+              "socket_limit": "Beperk ontladen tot 800 W voor veilig gebruik via een stopcontact"
+            }
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_level": {
+        "name": "Batterijniveau"
+      },
+      "battery_power": {
+        "name": "Batterijvermogen"
+      },
+      "ongrid_power": {
+        "name": "Vermogen netaansluiting"
+      },
+      "offgrid_power": {
+        "name": "Vermogen off-grid"
+      },
+      "pv_power": {
+        "name": "PV-vermogen"
+      },
+      "battery_total_capacity": {
+        "name": "Totale batterijcapaciteit"
+      },
+      "device_mode": {
+        "name": "Apparaatmodus",
+        "state": {
+          "auto": "Auto",
+          "ai": "AI",
+          "manual": "Handmatig",
+          "passive": "Passief",
+          "ups": "UPS"
+        }
+      },
+      "battery_status": {
+        "name": "Batterijstatus",
+        "state": {
+          "charging": "Laden",
+          "discharging": "Ontladen",
+          "idle": "Inactief"
+        }
+      },
+      "wifi_rssi": {
+        "name": "Wifi-signaalsterkte"
+      },
+      "wifi_ip_address": {
+        "name": "Wifi-IP-adres"
+      },
+      "wifi_gateway": {
+        "name": "Wifi-gateway"
+      },
+      "wifi_subnet_mask": {
+        "name": "Wifi-subnetmasker"
+      },
+      "wifi_dns": {
+        "name": "Wifi-DNS"
+      },
+      "battery_temperature": {
+        "name": "Batterijtemperatuur"
+      },
+      "battery_remaining_capacity": {
+        "name": "Resterende batterijcapaciteit"
+      },
+      "battery_rated_capacity": {
+        "name": "Nominale batterijcapaciteit"
+      },
+      "em_total_power": {
+        "name": "Totaal vermogen"
+      },
+      "em_a_power": {
+        "name": "Vermogen fase A"
+      },
+      "em_b_power": {
+        "name": "Vermogen fase B"
+      },
+      "em_c_power": {
+        "name": "Vermogen fase C"
+      },
+      "em_input_energy": {
+        "name": "Meter ingaande energie"
+      },
+      "em_output_energy": {
+        "name": "Meter uitgaande energie"
+      },
+      "total_pv_energy": {
+        "name": "Totale zonne-energie"
+      },
+      "total_grid_output_energy": {
+        "name": "Totale energie naar net"
+      },
+      "total_grid_input_energy": {
+        "name": "Totale energie van net"
+      },
+      "total_load_energy": {
+        "name": "Totale verbruiksenergie"
+      },
+      "device_ip": {
+        "name": "Apparaat-IP"
+      },
+      "device_version": {
+        "name": "Apparaatversie"
+      },
+      "wifi_name": {
+        "name": "Wifi-naam"
+      },
+      "ble_mac": {
+        "name": "BLE-MAC"
+      },
+      "wifi_mac": {
+        "name": "Wifi-MAC"
+      },
+      "mac": {
+        "name": "MAC-adres"
+      },
+      "pv1_power": {
+        "name": "PV1-vermogen"
+      },
+      "pv1_voltage": {
+        "name": "PV1-spanning"
+      },
+      "pv1_current": {
+        "name": "PV1-stroom"
+      },
+      "pv1_state": {
+        "name": "PV1-status"
+      },
+      "pv2_power": {
+        "name": "PV2-vermogen"
+      },
+      "pv2_voltage": {
+        "name": "PV2-spanning"
+      },
+      "pv2_current": {
+        "name": "PV2-stroom"
+      },
+      "pv2_state": {
+        "name": "PV2-status"
+      },
+      "pv3_power": {
+        "name": "PV3-vermogen"
+      },
+      "pv3_voltage": {
+        "name": "PV3-spanning"
+      },
+      "pv3_current": {
+        "name": "PV3-stroom"
+      },
+      "pv3_state": {
+        "name": "PV3-status"
+      },
+      "pv4_power": {
+        "name": "PV4-vermogen"
+      },
+      "pv4_voltage": {
+        "name": "PV4-spanning"
+      },
+      "pv4_current": {
+        "name": "PV4-stroom"
+      },
+      "pv4_state": {
+        "name": "PV4-status"
+      },
+      "api_success_rate_overall": {
+        "name": "API-slagingspercentage (totaal)"
+      },
+      "api_success_rate_es_get_mode": {
+        "name": "API-slagingspercentage (ES.GetMode)"
+      },
+      "api_success_rate_es_get_status": {
+        "name": "API-slagingspercentage (ES.GetStatus)"
+      },
+      "api_success_rate_em_get_status": {
+        "name": "API-slagingspercentage (EM.GetStatus)"
+      },
+      "api_success_rate_pv_get_status": {
+        "name": "API-slagingspercentage (PV.GetStatus)"
+      },
+      "api_success_rate_wifi_get_status": {
+        "name": "API-slagingspercentage (Wifi.GetStatus)"
+      },
+      "api_success_rate_bat_get_status": {
+        "name": "API-slagingspercentage (Bat.GetStatus)"
+      },
+      "api_success_rate_es_set_mode": {
+        "name": "API-slagingspercentage (ES.SetMode)"
+      }
+    },
+    "select": {
+      "operating_mode": {
+        "name": "Werkingsmodus",
+        "state": {
+          "auto": "Auto",
+          "ai": "AI",
+          "manual": "Handmatig",
+          "passive": "Passief",
+          "ups": "UPS"
+        }
+      }
+    },
+    "binary_sensor": {
+      "ct_connection": {
+        "name": "CT-verbinding",
+        "state": {
+          "on": "Verbonden",
+          "off": "Niet verbonden"
+        }
+      },
+      "charge_permission": {
+        "name": "Laden toegestaan"
+      },
+      "discharge_permission": {
+        "name": "Ontladen toegestaan"
+      }
+    },
+    "number": {
+      "depth_of_discharge": {
+        "name": "Ontlaaddiepte"
+      }
+    },
+    "switch": {
+      "bluetooth_advertising": {
+        "name": "Bluetooth-zichtbaarheid"
+      },
+      "panel_led": {
+        "name": "Paneel-led"
+      }
+    }
+  },
+  "device_automation": {
+    "action_type": {
+      "charge": "Batterij laden",
+      "discharge": "Batterij ontladen",
+      "stop": "Laden/ontladen stoppen"
+    },
+    "extra_fields": {
+      "power": "Vermogen (W)"
+    }
+  },
+  "services": {
+    "set_passive_mode": {
+      "name": "Passieve modus instellen",
+      "description": "Zet het apparaat in passieve modus met een opgegeven vermogen en duur. Negatief vermogen laadt de batterij, positief vermogen ontlaadt.",
+      "fields": {
+        "device_id": {
+          "name": "Apparaat",
+          "description": "Het Marstek-apparaat dat je wilt bedienen"
+        },
+        "power": {
+          "name": "Vermogen",
+          "description": "Doelvermogen in watt. Negatieve waarden laden de batterij, positieve waarden ontladen."
+        },
+        "duration": {
+          "name": "Duur",
+          "description": "Duur van de passieve modus in seconden."
+        }
+      }
+    },
+    "set_manual_schedule": {
+      "name": "Handmatig schema instellen",
+      "description": "Stel een handmatig schemaslot in voor automatisch laden/ontladen.",
+      "fields": {
+        "device_id": {
+          "name": "Apparaat",
+          "description": "Het Marstek-apparaat dat je wilt bedienen"
+        },
+        "schedule_slot": {
+          "name": "Schemaslot",
+          "description": "Nummer van het schemaslot (0-9). Elk slot kan eigen instellingen hebben."
+        },
+        "start_time": {
+          "name": "Starttijd",
+          "description": "Starttijd van het schema"
+        },
+        "end_time": {
+          "name": "Eindtijd",
+          "description": "Eindtijd van het schema"
+        },
+        "power": {
+          "name": "Vermogen",
+          "description": "Doelvermogen in watt. Negatieve waarden laden de batterij, positieve waarden ontladen."
+        },
+        "days": {
+          "name": "Dagen",
+          "description": "Dagen van de week waarop dit schema actief is"
+        },
+        "enable": {
+          "name": "Inschakelen",
+          "description": "Of dit schemaslot is ingeschakeld"
+        }
+      }
+    },
+    "clear_manual_schedules": {
+      "name": "Handmatige schema's wissen",
+      "description": "Wis alle handmatige schemaslots op het apparaat.",
+      "fields": {
+        "device_id": {
+          "name": "Apparaat",
+          "description": "Het Marstek-apparaat waarvan je de schema's wilt wissen"
+        }
+      }
+    },
+    "set_manual_schedules": {
+      "name": "Meerdere handmatige schema's instellen",
+      "description": "Stel met YAML meerdere schema's voor de handmatige modus in voor de geselecteerde batterij.",
+      "fields": {
+        "device_id": {
+          "name": "Apparaat",
+          "description": "Het Marstek-apparaat dat je wilt bedienen"
+        },
+        "schedules": {
+          "name": "Schema's",
+          "description": "Lijst met in te stellen schema's. Elk item moet schedule_slot, start_time en end_time bevatten, en optioneel days, power en enable."
+        }
+      }
+    },
+    "request_data_sync": {
+      "name": "Gegevenssynchronisatie aanvragen",
+      "description": "Haal direct nieuwe gegevens op van het Marstek-apparaat.",
+      "fields": {
+        "device_id": {
+          "name": "Apparaat",
+          "description": "Het Marstek-apparaat dat je wilt verversen. Als je niets kiest, worden alle apparaten ververst."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "no_device_specified": {
+      "message": "Geen apparaat opgegeven. Selecteer een apparaat."
+    },
+    "invalid_device": {
+      "message": "Apparaat {device_id} niet gevonden. Gebruik de apparaatkiezer, een Home Assistant-apparaat-ID van 32 tekens, een Marstek-entiteit-ID of het MAC-adres van het apparaat."
+    },
+    "device_not_found": {
+      "message": "Apparaat {device_id} niet gevonden"
+    },
+    "config_invalid": {
+      "message": "Ongeldige configuratie voor apparaat {device_id}"
+    },
+    "no_config_entry": {
+      "message": "Geen geladen Marstek-configuratie gevonden voor apparaat: {device_id}"
+    },
+    "invalid_mode": {
+      "message": "Ongeldige werkingsmodus: {mode}"
+    },
+    "mode_not_supported": {
+      "message": "Werkingsmodus {mode} wordt niet ondersteund door de firmware van dit apparaat."
+    },
+    "no_host_configured": {
+      "message": "IP-adres van het apparaat is niet ingesteld"
+    },
+    "mode_change_failed": {
+      "message": "Werkingsmodus instellen op {mode} mislukt: {error}"
+    },
+    "command_failed": {
+      "message": "Opdracht versturen mislukt: {error}"
+    },
+    "clear_schedules_failed": {
+      "message": "Kan handmatige schemaslots {slots} niet wissen: {error}"
+    },
+    "invalid_time_format": {
+      "message": "Ongeldige tijdnotatie voor {field}: {value}. Gebruik UU:MM."
+    },
+    "invalid_time_range": {
+      "message": "De eindtijd moet na de starttijd liggen (start: {start}, eind: {end})."
+    },
+    "power_out_of_range": {
+      "message": "Gevraagd vermogen {requested} W valt buiten het ondersteunde bereik ({min} W tot {max} W) van dit apparaat."
+    },
+    "schedule_slot_out_of_range": {
+      "message": "Schemaslot {requested} valt buiten het toegestane bereik ({min} tot {max}) van dit apparaat."
+    },
+    "passive_mode_requires_service": {
+      "message": "Passieve modus vereist vermogen en duur. Gebruik de actie 'Passieve modus instellen' (marstek.set_passive_mode) in Ontwikkelhulpmiddelen > Acties of in een automatisering."
+    },
+    "manual_mode_requires_service": {
+      "message": "Handmatige modus vereist een schema. Gebruik de actie 'Handmatig schema instellen' (marstek.set_manual_schedule) in Ontwikkelhulpmiddelen > Acties of in een automatisering."
+    },
+    "sys_write_timeout": {
+      "message": "Time-out bij het wijzigen van de apparaatinstelling"
+    },
+    "sys_write_failed": {
+      "message": "Wijzigen van de apparaatinstelling mislukt: {error}"
+    },
+    "sys_write_rpc_error": {
+      "message": "Het apparaat heeft de wijziging geweigerd ({code}: {message})"
+    },
+    "sys_write_rejected": {
+      "message": "Het apparaat heeft de wijziging niet bevestigd"
+    },
+    "sys_write_invalid": {
+      "message": "Ongeldige instelling: {error}"
+    },
+    "unsupported_device": {
+      "message": "Venus E2.0 wordt niet ondersteund door deze integratie"
+    },
+    "setup_cannot_connect": {
+      "message": "Kan geen verbinding maken met het Marstek-apparaat op {host} ({error}). Home Assistant probeert het opnieuw en de scanner werkt het adres automatisch bij als het apparaat is verplaatst."
+    },
+    "setup_no_data": {
+      "message": "Het Marstek-apparaat op {host} reageerde op de verbindingscontrole maar gaf geen statusgegevens terug: {error}"
+    },
+    "update_failed": {
+      "message": "Opvragen van het Marstek-apparaat op {host} mislukt (poging #{attempt}): {error}"
+    }
+  },
+  "issues": {
+    "cannot_connect": {
+      "title": "Marstek-apparaat niet bereikbaar",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Apparaatverbinding bijwerken",
+            "description": "Het apparaat op {host} reageert niet. Werk de verbindingsinstellingen bij als het IP-adres is gewijzigd.",
+            "data": {
+              "host": "IP-adres",
+              "port": "Poort"
+            },
+            "data_description": {
+              "host": "IP-adres van je Marstek-apparaat",
+              "port": "UDP-poort (standaard: 30000)"
+            }
+          }
+        },
+        "error": {
+          "cannot_connect": "Kan geen verbinding maken met het apparaat",
+          "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
+          "unique_id_mismatch": "Het apparaat op dit adres is een ander apparaat",
+          "unsupported_device": "Venus E2.0 wordt niet ondersteund door deze integratie"
+        },
+        "abort": {
+          "entry_not_found": "De configuratie is niet gevonden.",
+          "missing_config": "Configuratiegegevens voor deze reparatie ontbreken."
+        }
+      }
+    },
+    "openapi_reset_prone": {
+      "title": "Marstek-firmware kan Open API resetten",
+      "description": "Dit {family}-apparaat meldt firmware {firmware}. Control-versies onder 150 kunnen de Local API uitschakelen en instellingen wissen wanneer ze via UDP worden bevraagd. Batterijdetailverzoeken (Bat.GetStatus) worden niet verstuurd, parallelle verzoeken blijven uit, en je kunt het beste updaten naar Control-firmware 150 of nieuwer. Herlaad deze integratie of gebruik Opnieuw configureren nadat de firmware is bijgewerkt: de integratie vraagt het apparaat dan direct op en slaat de nieuwe versie op, ook als broadcast-detectie het apparaat niet bereikt. Je hoeft het apparaat niet te verwijderen."
+    },
+    "shared_meter_udp_channel": {
+      "title": "Marstek Open API kan de eigen meter van dit apparaat verstoren",
+      "description": "Dit {family}-apparaat meldt firmware {firmware}, een HMG-50 Control-versie. HMG-50 laat de Local API-server en de eigen UDP-meterclient van het apparaat één wifi-ontvangstkanaal delen, waardoor Open API-verzoeken concurreren met de metermetingen waarop de modus Eigen verbruik (Auto) regelt. Als die metingen verloren gaan, beschouwt het apparaat de meter als losgekoppeld en stopt het met laden van overtollige zonne-energie, totdat Open API uit en weer aan wordt gezet of Home Assistant stopt met opvragen. Marstek waarschuwt voor hetzelfde defect bij Venus E2.0 en CT003. Parallelle verzoeken en wifi-herhalingen zijn hier uitgeschakeld, maar alleen Marstek kan de firmware repareren: verhoog de opvraagintervallen, of gebruik een aparte meterintegratie voor het netvermogen als de Auto-modus blijft haperen."
+    }
+  }
+}
