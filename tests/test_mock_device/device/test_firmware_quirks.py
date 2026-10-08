@@ -134,15 +134,19 @@ class TestVenusEFirmware150Capture:
         [
             ("VenusE 3.0", 150, "VenusE 3.0"),
             ("VenusE 3.0", 151, "VNSE3-0"),
+            ("VenusD", 150, "VenusD"),
             ("VenusD", 151, "VNSD-0"),
-            ("VenusA", 151, "VenusA"),
+            ("VenusA", 150, "VenusA"),
+            ("VenusA", 1509, "VNSA-0"),
+            ("VenusA", 151, "VNSA-0"),
+            ("VenusE Pro", 1508, "VenusE Pro"),
             ("VenusC", 156, "VenusC"),
         ],
     )
     def test_src_names_the_sku_from_control_151(
         self, device_name: str, ver: int, prefix: str
     ) -> None:
-        """VNSE3-0 / VNSD-0 151 put the SKU in ``src``; ``device`` keeps the name."""
+        """SKU-style ``src`` starts at 151 for E3/D and at 1509 for Venus A."""
         device = MockMarstekDevice(
             simulate=False,
             device_config={"device": device_name, "ver": ver, "ble_mac": "02deadbeef01"},

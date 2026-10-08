@@ -233,22 +233,40 @@ Checked by string diff and by running both images in the emulator next to
   including `Set.Ver`, `Reset.Factory` and `Marstek.GetData`. There are no new
   reply fields, and the values and encodings match 150 (Venus D still reports
   PV1 in deciwatts). `DOD.SET`, `Ble.Adv`, `Led.Ctrl` and `ES.SetMode`
-  answer as on 150. The AI-strategy query and the `debug`/`read_inv*` strings
-  belong to the cloud (MQTT) side; no Open API method was added for them.
+  answer as on 150. The AI-strategy query, the MQTT `Get INV DEBUG info`
+  command (`debug=`), and the `read_inv*` strings belong to the cloud side;
+  no Open API method was added for them.
 - **`src` names the SKU.** Replies carry `"VNSE3-0-<ble_mac>"` /
   `"VNSD-0-<ble_mac>"`, where 150 sent `"VenusE 3.0-<ble_mac>"`. The format
-  string `` VenusE 3.0-%s`` became `%s-%s`. `Marstek.GetDevice` `device` still
-  reads `VenusE 3.0` / `VenusD`, so family detection is unaffected, and the MAC
-  fallback from `src` (issue #60) still finds the BLE MAC.
-- Cloud-side only: the HTTP host moved from `%s.hamedata.com` to
-  `api-%s.marstekcloud.com`, `AT+QHTTPPOST` timeouts went from 60 to 120 s, a
+  string `` VenusE 3.0-%s`` became `%s-%s` next to the SKU literal.
+  `Marstek.GetDevice` `device` still reads `VenusE 3.0` / `VenusD`, so family
+  detection is unaffected, and the MAC fallback from `src` (issue #60) still
+  finds the BLE MAC. Venus A **1509** already made the same switch
+  (`VenusA-%s` → `%s-%s` next to `VNSA-0`, so `src` is `VNSA-0-<ble_mac>`),
+  even though `ver` 1509 still folds to generation 150. VNSA-0 **150** still
+  has `VenusA-%s`. VNSA-0 **1508** is VEPRO-0 / VenusE Pro, not Venus A: its
+  src site is `%s-%s` next to the product name `VenusE Pro`, not `VNSA-0`.
+- **`[HTTP]ch395 reset!!!!` is gone.** 150 added that log on the HTTP path
+  next to `[HTTP]fc41d reset!!!!`. 151 still has the Wi-Fi
+  `[HTTP]fc41d reset!!!!` and the general `CH395 reset!!!` strings; only the
+  HTTP CH395 log string is confirmed removed. The reset behaviour itself is
+  unverified. Venus A 1509 also dropped it (VNSA-0 150 still has it; VEPRO-0
+  1508 already lacks it).
+- The vendor changelog's `Bin type mismatch!` OTA guard is in the 151 blobs
+  (`Bin type mismatch! Upgrade aborted` and
+  `Bin type mismatch! file=%s expect=%d got=%d`) and in Venus A 1509; 150
+  has neither.
+- Cloud-side only: the getDateInfo HTTP host moved from `%s.hamedata.com` to
+  `api-%s.marstekcloud.com`, `AT+QHTTPPOST` timeouts went from 60 to 120 s
+  (`AT+QHTTPPOST=%d,120,120`; Venus A 1509 still posts `,60,60`), a
   `cd=19,ct_st=…` CT statistics line and a `df=` status field were added, and
   the BLE name is built from `MST_VNSE3_` / `MST_VNSD_`.
 - Initial SP moved to `0x20021df8` (VNSE3-0) and `0x20022010` (VNSD-0).
 
 The firmware profile resolves 151 exactly like 150
 (`tests/test_firmware_profile.py::test_control_151_resolves_like_150`). No
-VNSA-0 151 has been published.
+VNSA-0 151 has been published; Venus A 1509 is the first archived VNSA-0
+image whose Open API `src` names the SKU.
 
 ## Archived Control matrix (community OTA)
 
