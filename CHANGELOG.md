@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+### Patch Changes
+
+- 52e04ea: Correct the Venus A 1509 mock Open API src to the SKU form and record the matching firmware string diffs.
+
 ## 1.2.1
 
 ### Patch Changes
