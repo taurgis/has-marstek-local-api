@@ -159,7 +159,7 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-10–14 | 172.28.0.30–.34 | VenusE 3.0 | 144, 147, 1476, 148, 149 | Distinct VNSE3-0 Control images (1476 is app 147.6) |
 | mock-marstek-15 | 172.28.0.35 | VenusA | 1487 | Dotted 148.7; no SYS |
 | mock-marstek-16 | 172.28.0.36 | VenusE Pro | 1508 | VEPRO-0 banners; unknown family, not Venus A |
-| mock-marstek-17 | 172.28.0.37 | VenusA | 1509 | App 150.9 as Open API `ver` 1509 |
+| mock-marstek-17 | 172.28.0.37 | VenusA | 1509 | App 150.9 as Open API `ver` 1509; `src` is `VNSA-0-<ble>` |
 | mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
 | mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |

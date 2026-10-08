@@ -71,19 +71,41 @@ def pv_method_not_found_extra_data(profile: FirmwareProfile) -> int | None:
 
 
 # From Control 151 the reply ``src`` names the SKU instead of the product:
-# the VNSE3-0 / VNSD-0 151 images answer ``"VNSE3-0-<ble_mac>"`` where 150
-# sent ``"VenusE 3.0-<ble_mac>"`` (the `` VenusE 3.0-%s`` format string became
-# ``%s-%s``). GetDevice ``device`` keeps the product name. No VNSA-0 151 image
-# exists yet, so Venus A keeps the old form.
+# VNSE3-0 / VNSD-0 151 answer ``"VNSE3-0-<ble_mac>"`` where 150 sent
+# ``"VenusE 3.0-<ble_mac>"`` (`` VenusE 3.0-%s`` became ``%s-%s`` next to the
+# SKU literal). GetDevice ``device`` keeps the product name.
+#
+# Venus A 1509 (app 150.9) already made that switch even though ``ver`` 1509
+# still folds to generation 150: ``VenusA-%s`` became ``%s-%s`` next to
+# ``VNSA-0``. VNSA-0 150 still has ``VenusA-%s``. VNSA-0 1508 banners
+# VEPRO-0 / VenusE Pro (unknown family); its src site is ``%s-%s`` next to
+# the product name ``VenusE Pro``, not the SKU ``VNSA-0``.
 _SKU_SRC_MIN_GENERATION = 151
-_SRC_SKUS = {DeviceFamily.VENUS_E: "VNSE3-0", DeviceFamily.VENUS_D: "VNSD-0"}
+_VNSA_SKU_SRC_MIN_VERSION = 1509
+_SRC_SKUS = {
+    DeviceFamily.VENUS_E: "VNSE3-0",
+    DeviceFamily.VENUS_D: "VNSD-0",
+    DeviceFamily.VENUS_A: "VNSA-0",
+}
+
+
+def _uses_sku_src(profile: FirmwareProfile) -> bool:
+    """Return whether this image formats ``src`` as ``<SKU>-<ble_mac>``."""
+    generation = profile.control_generation
+    if generation is not None and generation >= _SKU_SRC_MIN_GENERATION:
+        return True
+    version = profile.firmware_version
+    return (
+        profile.family is DeviceFamily.VENUS_A
+        and version is not None
+        and version >= _VNSA_SKU_SRC_MIN_VERSION
+    )
 
 
 def openapi_src_prefix(profile: FirmwareProfile, device_name: str) -> str:
     """Return the name the firmware puts before the BLE MAC in ``src``."""
-    generation = profile.control_generation
     sku = _SRC_SKUS.get(profile.family)
-    if sku is None or generation is None or generation < _SKU_SRC_MIN_GENERATION:
+    if sku is None or not _uses_sku_src(profile):
         return device_name
     return sku
 

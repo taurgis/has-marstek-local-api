@@ -143,9 +143,9 @@ def test_mac_from_src_separated() -> None:
     assert mac_from_openapi_src("VenusC-AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
 
 
-@pytest.mark.parametrize("sku", ["VNSE3-0", "VNSD-0"])
+@pytest.mark.parametrize("sku", ["VNSE3-0", "VNSD-0", "VNSA-0"])
 def test_mac_from_src_with_control_151_sku_prefix(sku: str) -> None:
-    """Control 151 names the SKU in src; its digits must not be read as MAC."""
+    """SKU-style src (E3/D 151, Venus A 1509) must not read SKU digits as MAC."""
     from custom_components.marstek.pymarstek.network import mac_from_openapi_src
 
     assert mac_from_openapi_src(f"{sku}-AABBCCDDEEFF") == "AA:BB:CC:DD:EE:FF"
