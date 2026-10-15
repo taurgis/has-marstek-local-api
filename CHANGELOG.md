@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0
+
+### Minor Changes
+
+- 91fb75d: Add an optional setting that shows 0 W on the Off-grid power sensor instead of small negative readings.
+
+### Patch Changes
+
+- bcac6dd: Fix DHCP discovery treating a battery as a new device when its network MAC differs from its BLE MAC, and keep an ignored discovery ignored.
+- 0584ac7: Fix off-grid power reading about 65 kW, and battery power spiking with it, when firmware sends a small negative value as unsigned 16-bit.
+
 ## 1.2.3
 
 ### Patch Changes
