@@ -73,14 +73,19 @@ rules:
   devices:
     status: done
     comment: >-
-      DeviceInfo carries identifiers, the Bluetooth MAC connection,
+      DeviceInfo carries identifiers, the Bluetooth MAC connection, the
+      battery's own network MAC once a DHCP lease has been tied to it,
       manufacturer, model, serial number and firmware version. The reported
       wifi_mac is the access point's BSSID, so it is registered as a network
       MAC only for a device without a BLE MAC.
   diagnostics: done
   discovery-update-info:
     status: done
-    comment: _async_handle_discovery_with_unique_id updates config entry IP when device is rediscovered via scanner or DHCP
+    comment: >-
+      DHCP discovery asks Marstek.GetDevice when the lease MAC is not already
+      stored, then updates the matching entry's IP and keeps that lease MAC.
+      An ignored discovery aborts instead of being offered again. Scanner
+      rediscovery updates the same entry.
   discovery:
     status: done
     comment: Devices are discoverable via DHCP and integration discovery confirmation flow

@@ -117,9 +117,13 @@ async def test_dhcp_no_existing_entry(hass: HomeAssistant) -> None:
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
 
     # Should show confirm form (no existing entry to update)
     assert result["type"] == FlowResultType.FORM
@@ -138,9 +142,13 @@ async def test_dhcp_confirm_creates_entry(hass: HomeAssistant) -> None:
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "confirm"
 
@@ -181,9 +189,13 @@ async def test_dhcp_confirm_wifi_mac_keeps_ble_unique_id(
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "confirm"
 
@@ -259,9 +271,22 @@ async def test_dhcp_bssid_does_not_move_ble_entry(
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=discovery_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(
+            return_value={
+                "ip": "1.2.3.9",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+                "mac": "11:22:33:44:55:66",
+                "wifi_mac": "11:22:33:44:55:66",
+                "device_type": "Venus",
+                "version": 3,
+            }
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=discovery_info
+        )
 
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "confirm"
@@ -508,7 +533,7 @@ async def test_integration_discovery_wifi_only_confirms_new_device(
 
 
 async def test_confirm_unique_id_mismatch(hass: HomeAssistant) -> None:
-    """Test confirm step errors when discovered MAC does not match device."""
+    """Confirm errors when the submitted host is a different battery than the lease."""
     dhcp_info = type(
         "DhcpInfo",
         (),
@@ -519,9 +544,13 @@ async def test_confirm_unique_id_mismatch(hass: HomeAssistant) -> None:
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "confirm"
 
@@ -558,9 +587,13 @@ async def test_confirm_cannot_connect(hass: HomeAssistant) -> None:
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["step_id"] == "confirm"
 
     with patch_manual_connection(device_info=None):
@@ -586,9 +619,13 @@ async def test_confirm_keeps_custom_port_after_failure(hass: HomeAssistant) -> N
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["step_id"] == "confirm"
 
     with patch_manual_connection(device_info=None):
@@ -615,9 +652,13 @@ async def test_confirm_invalid_discovery_info(hass: HomeAssistant) -> None:
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["step_id"] == "confirm"
 
     device_info = {
@@ -652,9 +693,13 @@ async def test_confirm_value_error(hass: HomeAssistant) -> None:
         },
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "dhcp"}, data=dhcp_info
-    )
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "dhcp"}, data=dhcp_info
+        )
     assert result["step_id"] == "confirm"
 
     with patch_manual_connection(error=ValueError("invalid")):
