@@ -368,10 +368,9 @@ The MCU itself sends 0x305 and 0x300.
   are 0.01 kWh. `ES.GetStatus` reports `capy` unscaled as `total_pv_energy` on
   VNSA-0 1487/149/1491/150/1508/1509/151 and VNSD-0 149/1492/150; Venus A 148 hard-codes
   `pv_power` and `total_pv_energy` to 0. `PV.GetStatus` reports PV1 power raw
-  (0.1 W) and every other channel field ×0.1, truncated, on the VNSA-0 builds
-  checked before 1491 and 151. Those two share the same PV field strings as
-  149 and 1509 (`tools/firmware/ANALYSIS.md`); confirm the scale on the emulator
-  before treating a live reading as checked.
+  (0.1 W) and every other channel field ×0.1, truncated. Venus A 1491 and 151
+  do the same: `--pv 420,360` came back as `pv1_power` 4200 and `pv2_power` 360,
+  and Home Assistant showed 420.0 W and 360 W.
 - The MCU switches the MPPT with cmd 0x01 to type 2 addr 1 (byte 4: 1 on,
   0 off). It sends off only after an hour with no channel above 14 V and the
   inverter idle.

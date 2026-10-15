@@ -319,6 +319,16 @@ names, and the format strings next to them):
 The profile therefore keeps Venus A 151 identical to Venus A 150 apart from
 `firmware_version` (SYS/UPS, solar 0.01 kWh, PV1 deciwatts, not reset-prone).
 
+Ran in the emulator (`fw-venus-a-151`, `172.28.0.74`). `Marstek.GetDevice`
+returned `device: "Venus A"`, `ver: 151`, and `src: "VNSA-0-02e000000074"`.
+`PV.GetStatus` with the configured 420 W / 360 W strings was `pv1_power` 4200
+and `pv2_power` 360. Home Assistant set the device up with firmware **151**,
+SYS entities (depth of discharge, Bluetooth advertising, panel LED), and
+`last_exception` null. A few early reads timed out or came back `Parse error`
+data 403 while the CT task held the modem; that is the same drop already
+documented for these images, and the following read succeeded. The 1.1 s CT
+period was not measured from the running emulator.
+
 ## What Venus A 1491 changed versus 149
 
 VNSA-0 1491 (`VNSA-0_app_1491_0528_145327.bin`, 382976 bytes, built
@@ -348,6 +358,19 @@ reset-prone, `src` still `VenusA-<ble_mac>`. A JSON float `149.1` keeps
 meaning generation 149 via the leading integer; the wire value this image
 banners is the integer 1491. Nothing in the binary says which internal bug
 the alternate build fixed.
+
+Ran in the emulator (`fw-venus-a-1491`, `172.28.0.73`). `Marstek.GetDevice`
+returned `device: "Venus A"`, `ver: 1491`, and `src: "VenusA-02e000000073"`.
+PV1 was again deciwatts (`pv1_power` 4200 for 420 W). After several minutes at
+780 W, Home Assistant showed about 130 Wh of solar energy, which matches
+0.01 kWh scaled by 10 rather than a raw Wh counter left unscaled. The device
+page has no depth-of-discharge or SYS switches. Diagnostics report generation
+149, `openapi_reset_prone: true`, and the reset-prone repair for that entry
+only. One `ES.GetStatus` / `Bat.GetStatus` pair came back all zeros while
+`ES.GetMode` still had a real SoC; the integration dropped those placeholders
+and the next successful poll showed SoC again. `last_exception` was null.
+About one in three fast-tier requests timed out, consistent with the CT-mutex
+drops, not a new method.
 
 ## Archived Control matrix (community OTA)
 
