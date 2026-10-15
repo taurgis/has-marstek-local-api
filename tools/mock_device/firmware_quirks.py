@@ -77,9 +77,11 @@ def pv_method_not_found_extra_data(profile: FirmwareProfile) -> int | None:
 #
 # Venus A 1509 (app 150.9) already made that switch even though ``ver`` 1509
 # still folds to generation 150: ``VenusA-%s`` became ``%s-%s`` next to
-# ``VNSA-0``. VNSA-0 150 still has ``VenusA-%s``. VNSA-0 1508 banners
-# VEPRO-0 / VenusE Pro (unknown family); its src site is ``%s-%s`` next to
-# the product name ``VenusE Pro``, not the SKU ``VNSA-0``.
+# ``VNSA-0``. VNSA-0 150 and the 1491 alternate (app 149.1, generation 149)
+# still have ``VenusA-%s``. VNSA-0 151 follows the generation >= 151 rule, so
+# its ``src`` is ``VNSA-0-<ble>`` as well. VNSA-0 1508 banners VEPRO-0 /
+# VenusE Pro (unknown family); its src site is ``%s-%s`` next to the product
+# name ``VenusE Pro``, not the SKU ``VNSA-0``.
 _SKU_SRC_MIN_GENERATION = 151
 _VNSA_SKU_SRC_MIN_VERSION = 1509
 _SRC_SKUS = {

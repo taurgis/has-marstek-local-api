@@ -136,9 +136,10 @@ python -m mock_device --no-simulate
 
 ### With Docker Compose (devcontainer)
 
-The devcontainer defines **these twenty-eight** mock devices. Only the four with no firmware image start by default (`.20`, `.23`, `.28`, `.46`); the others repeat an image a `fw-*` emulator runs, so they need `--profile mocks-all` or their service name. `.20`–`.29` are the
+The devcontainer defines **these thirty** mock devices. Only the four with no firmware image start by default (`.20`, `.23`, `.28`, `.46`); the others repeat an image a `fw-*` emulator runs, so they need `--profile mocks-all` or their service name. `.20`–`.29` are the
 issue-log / custom-port set. `.30`–`.46` are the remaining archived Control
-images from `tools/firmware/catalog.json`, and `.47`–`.48` the Control 151 images.
+images from `tools/firmware/catalog.json`, `.47`–`.48` the Control 151 images,
+and `.49` / `.72` Venus A 1491 and 151.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
@@ -165,6 +166,8 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
 | mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as the real device reports it (issue #86): SYS + UPS, slots 0–5 |
 | mock-marstek-27–28 | 172.28.0.47–.48 | VenusE 3.0, VenusD | 151 | Same Open API as 150; `src` is `VNSE3-0-<ble>` / `VNSD-0-<ble>` |
+| mock-marstek-29 | 172.28.0.49 | VenusA | 1491 | App 149.1; generation 149, so no SYS and `src` stays `VenusA-<ble>` |
+| mock-marstek-30 | 172.28.0.72 | VenusA | 151 | Same Open API as 150; `src` is `VNSA-0-<ble>` |
 
 Venus A @ 148 vs Venus A @ 149 is the unscaled-Wh versus 0.01 kWh solar-energy pair (#35). Both encode channel-1 PV as deciwatts, and firmware 150 / 150.9 does too (#57). Venus D @ 145 remains the other PV family on legacy encoding. Venus A @ 150 is the SYS/UPS PV device; do not replace the 148/149 pair with it.
 
@@ -183,7 +186,7 @@ To add devices in Home Assistant:
     - `172.28.0.27:30004`
     - `172.28.0.28:30000`
     - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
-    - `172.28.0.30`–`172.28.0.48` archived Control variants (see table above)
+    - `172.28.0.30`–`172.28.0.49` and `172.28.0.72` archived Control variants (see table above)
 
 All but `.20`, `.23` and `.28` need `--profile mocks-all` or their service name. The real-firmware
 custom-port devices are `172.28.0.51:30004` (default) and `172.28.0.58:30001` / `172.28.0.60:30003`
@@ -210,6 +213,8 @@ CT003 sidecar (`fw-*-ct`).
 | fw-venus-e2-156 | 172.28.0.69 | HMG-50 156, 5120 Wh (reports VenusE) | `…:69` | `--profile firmware-hmg50` or `firmware-all` |
 | fw-venus-e-151 | 172.28.0.70 | VNSE3-0 151 | `…:70` | `--profile firmware-all` |
 | fw-venus-d-151 | 172.28.0.71 | VNSD-0 151, PV 400/350/300/250 W | `…:71` | `--profile firmware-all` |
+| fw-venus-a-1491 | 172.28.0.73 | VNSA-0 1491, PV 420/360 W | `…:73` | `--profile firmware-all` |
+| fw-venus-a-151 | 172.28.0.74 | VNSA-0 151, PV 420/360 W | `…:74` | `--profile firmware-all` |
 
 The Wi-Fi MAC is `02:e1:00:00:00:<same last octet>`.
 

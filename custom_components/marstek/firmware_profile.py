@@ -293,7 +293,7 @@ def _control_generation(version: int | None) -> int | None:
 
     VNSE3-0 Control **1476** is app firmware **147.6** (March 2026, before 148
     and 150). Four-digit values in 1000-1999 are that dotted encoding
-    (147.6 -> 1476, and 150.9 would be 1509 if a device ever reported it).
+    (147.6 -> 1476, 149.1 -> 1491, 150.9 -> 1509).
     """
     if version is None:
         return None
@@ -368,6 +368,8 @@ def resolve_firmware_profile(
     #   may omit result MACs; EM.GetStatus is meter-client only until 155.
     #   Venus A 148.7 (1487) and Venus D 149/149.2 (firmware emulator audit):
     #   total_pv_energy is the MPPT year counter in 0.01 kWh, like 149+.
+    #   Venus A 1491 (app 149.1) folds to generation 149, so this branch
+    #   applies; it sits outside the 1487-1489 raw-ver window below.
     scaled_pv_energy = known_family and (
         firmware_150
         or (family in _PV_FAMILIES and firmware_149)
