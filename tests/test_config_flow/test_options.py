@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -9,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.marstek.const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
@@ -19,6 +22,7 @@ from custom_components.marstek.const import (
     CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
+    DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_FAILURE_THRESHOLD,
     DEFAULT_PARALLEL_API_REQUESTS,
     DEFAULT_POLL_INTERVAL_FAST,
@@ -31,6 +35,35 @@ from tests.conftest import (
     create_mock_client,
     patch_marstek_integration,
 )
+
+
+def _options_user_input(
+    *,
+    parallel_api_requests: bool = DEFAULT_PARALLEL_API_REQUESTS,
+    request_delay: float = DEFAULT_REQUEST_DELAY,
+    clamp_negative_offgrid_power: bool = DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
+    socket_limit: bool = False,
+) -> dict[str, Any]:
+    """Build the nested options-flow payload."""
+    return {
+        "polling_settings": {
+            CONF_POLL_INTERVAL_FAST: DEFAULT_POLL_INTERVAL_FAST,
+            CONF_POLL_INTERVAL_MEDIUM: DEFAULT_POLL_INTERVAL_MEDIUM,
+            CONF_POLL_INTERVAL_SLOW: DEFAULT_POLL_INTERVAL_SLOW,
+        },
+        "network_settings": {
+            CONF_PARALLEL_API_REQUESTS: parallel_api_requests,
+            CONF_REQUEST_DELAY: request_delay,
+            CONF_REQUEST_TIMEOUT: DEFAULT_REQUEST_TIMEOUT,
+            CONF_FAILURE_THRESHOLD: DEFAULT_FAILURE_THRESHOLD,
+        },
+        "power_settings": {
+            CONF_ACTION_CHARGE_POWER: DEFAULT_ACTION_CHARGE_POWER,
+            CONF_ACTION_DISCHARGE_POWER: DEFAULT_ACTION_DISCHARGE_POWER,
+            CONF_SOCKET_LIMIT: socket_limit,
+            CONF_CLAMP_NEGATIVE_OFFGRID_POWER: clamp_negative_offgrid_power,
+        },
+    }
 
 
 async def test_options_flow_creates_entry(
@@ -50,29 +83,13 @@ async def test_options_flow_creates_entry(
     # Options flow uses sections - provide nested structure
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        user_input={
-            "polling_settings": {
-                CONF_POLL_INTERVAL_FAST: DEFAULT_POLL_INTERVAL_FAST,
-                CONF_POLL_INTERVAL_MEDIUM: DEFAULT_POLL_INTERVAL_MEDIUM,
-                CONF_POLL_INTERVAL_SLOW: DEFAULT_POLL_INTERVAL_SLOW,
-            },
-            "network_settings": {
-                CONF_PARALLEL_API_REQUESTS: DEFAULT_PARALLEL_API_REQUESTS,
-                CONF_REQUEST_DELAY: DEFAULT_REQUEST_DELAY,
-                CONF_REQUEST_TIMEOUT: DEFAULT_REQUEST_TIMEOUT,
-                CONF_FAILURE_THRESHOLD: DEFAULT_FAILURE_THRESHOLD,
-            },
-            "power_settings": {
-                CONF_ACTION_CHARGE_POWER: DEFAULT_ACTION_CHARGE_POWER,
-                CONF_ACTION_DISCHARGE_POWER: DEFAULT_ACTION_DISCHARGE_POWER,
-                CONF_SOCKET_LIMIT: False,
-            },
-        },
+        user_input=_options_user_input(),
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     # Verify data is flattened when stored
     assert result["data"][CONF_POLL_INTERVAL_FAST] == DEFAULT_POLL_INTERVAL_FAST
     assert result["data"][CONF_SOCKET_LIMIT] is False
+    assert result["data"][CONF_CLAMP_NEGATIVE_OFFGRID_POWER] is False
 
 
 async def test_options_flow_socket_limit_default_by_model(
@@ -107,6 +124,12 @@ async def test_options_flow_socket_limit_default_by_model(
         key for key in power_schema if getattr(key, "schema", None) == CONF_SOCKET_LIMIT
     )
     assert socket_key.default() is True
+    clamp_key = next(
+        key
+        for key in power_schema
+        if getattr(key, "schema", None) == CONF_CLAMP_NEGATIVE_OFFGRID_POWER
+    )
+    assert clamp_key.default() is False
 
 
 async def test_options_flow_keeps_request_delay_visible_when_parallel_enabled(
@@ -141,25 +164,33 @@ async def test_options_flow_keeps_request_delay_visible_when_parallel_enabled(
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        user_input={
-            "polling_settings": {
-                CONF_POLL_INTERVAL_FAST: DEFAULT_POLL_INTERVAL_FAST,
-                CONF_POLL_INTERVAL_MEDIUM: DEFAULT_POLL_INTERVAL_MEDIUM,
-                CONF_POLL_INTERVAL_SLOW: DEFAULT_POLL_INTERVAL_SLOW,
-            },
-            "network_settings": {
-                CONF_PARALLEL_API_REQUESTS: True,
-                CONF_REQUEST_DELAY: 7.5,
-                CONF_REQUEST_TIMEOUT: DEFAULT_REQUEST_TIMEOUT,
-                CONF_FAILURE_THRESHOLD: DEFAULT_FAILURE_THRESHOLD,
-            },
-            "power_settings": {
-                CONF_ACTION_CHARGE_POWER: DEFAULT_ACTION_CHARGE_POWER,
-                CONF_ACTION_DISCHARGE_POWER: DEFAULT_ACTION_DISCHARGE_POWER,
-                CONF_SOCKET_LIMIT: False,
-            },
-        },
+        user_input=_options_user_input(
+            parallel_api_requests=True,
+            request_delay=7.5,
+        ),
     )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_REQUEST_DELAY] == 7.5
+
+
+async def test_options_flow_stores_clamp_negative_offgrid_power(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test the off-grid clamp option can be enabled and is stored flattened."""
+    mock_config_entry.add_to_hass(hass)
+
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    assert result["type"] == FlowResultType.FORM
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input=_options_user_input(clamp_negative_offgrid_power=True),
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_CLAMP_NEGATIVE_OFFGRID_POWER] is True

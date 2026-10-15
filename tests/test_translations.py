@@ -11,6 +11,7 @@ import pytest
 from custom_components.marstek.const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
@@ -36,6 +37,13 @@ def strings_json() -> dict:
 def translations_en_json() -> dict:
     """Load translations/en.json."""
     with open(COMPONENT_DIR / "translations" / "en.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def translations_nl_json() -> dict:
+    """Load translations/nl.json."""
+    with open(COMPONENT_DIR / "translations" / "nl.json", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -75,6 +83,7 @@ class TestOptionsFlowSections:
             CONF_ACTION_CHARGE_POWER,
             CONF_ACTION_DISCHARGE_POWER,
             CONF_SOCKET_LIMIT,
+            CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
         ],
     }
 
@@ -163,28 +172,35 @@ class TestOptionsFlowSections:
 class TestTranslationParity:
     """Test that strings.json and translations/en.json have matching structure."""
 
+    @pytest.mark.parametrize(
+        "locale_fixture",
+        ["translations_en_json", "translations_nl_json"],
+    )
     def test_options_structure_matches(
-        self, strings_json: dict, translations_en_json: dict
+        self,
+        strings_json: dict,
+        locale_fixture: str,
+        request: pytest.FixtureRequest,
     ) -> None:
-        """Test that options structure matches between strings.json and en.json."""
+        """Test that options structure matches between strings.json and locales."""
+        locale_json = request.getfixturevalue(locale_fixture)
         strings_options = strings_json["options"]["step"]["init"]
-        en_options = translations_en_json["options"]["step"]["init"]
+        locale_options = locale_json["options"]["step"]["init"]
 
-        # Both should have same sections
         assert set(strings_options.get("sections", {}).keys()) == set(
-            en_options.get("sections", {}).keys()
-        ), "Section names differ between strings.json and en.json"
+            locale_options.get("sections", {}).keys()
+        ), f"Section names differ between strings.json and {locale_fixture}"
 
-        # Each section should have same fields
         for section_name in strings_options.get("sections", {}):
             strings_section = strings_options["sections"][section_name]
-            en_section = en_options["sections"][section_name]
+            locale_section = locale_options["sections"][section_name]
 
             strings_data_keys = set(strings_section.get("data", {}).keys())
-            en_data_keys = set(en_section.get("data", {}).keys())
-            assert strings_data_keys == en_data_keys, (
+            locale_data_keys = set(locale_section.get("data", {}).keys())
+            assert strings_data_keys == locale_data_keys, (
                 f"Field keys in section '{section_name}' differ: "
-                f"strings.json has {strings_data_keys}, en.json has {en_data_keys}"
+                f"strings.json has {strings_data_keys}, "
+                f"{locale_fixture} has {locale_data_keys}"
             )
 
     def test_config_flow_steps_match(self, strings_json: dict, translations_en_json: dict) -> None:

@@ -15,6 +15,7 @@ from homeassistant.helpers.selector import (
 from ..const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
@@ -156,6 +157,7 @@ def build_power_schema(
     current_charge_power: int,
     current_discharge_power: int,
     current_socket_limit: bool,
+    current_clamp_negative_offgrid_power: bool,
 ) -> vol.Schema:
     """Build power options schema."""
     return vol.Schema(
@@ -187,6 +189,10 @@ def build_power_schema(
             vol.Required(
                 CONF_SOCKET_LIMIT,
                 default=current_socket_limit,
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
+                default=current_clamp_negative_offgrid_power,
             ): BooleanSelector(),
         }
     )

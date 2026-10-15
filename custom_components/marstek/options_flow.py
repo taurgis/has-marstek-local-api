@@ -16,6 +16,7 @@ from homeassistant.data_entry_flow import section
 from .const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
@@ -26,6 +27,7 @@ from .const import (
     CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
+    DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_FAILURE_THRESHOLD,
     DEFAULT_PARALLEL_API_REQUESTS,
     DEFAULT_POLL_INTERVAL_FAST,
@@ -88,6 +90,10 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             CONF_SOCKET_LIMIT,
             device_default_socket_limit(self.config_entry.data.get("device_type")),
         )
+        current_clamp_negative_offgrid_power = self.config_entry.options.get(
+            CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
+            DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
+        )
 
         # Build schema with collapsible sections for better UX
         polling_schema = build_polling_schema(
@@ -107,6 +113,7 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             current_charge_power=current_charge_power,
             current_discharge_power=current_discharge_power,
             current_socket_limit=current_socket_limit,
+            current_clamp_negative_offgrid_power=current_clamp_negative_offgrid_power,
         )
 
         return self.async_show_form(

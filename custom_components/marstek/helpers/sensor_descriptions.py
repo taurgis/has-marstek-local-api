@@ -24,7 +24,12 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import StateType
 
-from ..const import OPERATING_MODES, ha_operating_mode
+from ..const import (
+    CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
+    DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
+    OPERATING_MODES,
+    ha_operating_mode,
+)
 from ..coordinator import MarstekDataUpdateCoordinator
 from ..pymarstek.const import (
     CMD_BATTERY_STATUS,
@@ -83,6 +88,31 @@ def _device_mode_value(
 ) -> StateType:
     """Map Open API mode names onto HA enum options (required since 2026.9)."""
     return ha_operating_mode(_value_from_data("device_mode", coordinator.data or {}))
+
+
+def _offgrid_power_value(
+    coordinator: MarstekDataUpdateCoordinator,
+    _info: dict[str, Any],
+    entry: ConfigEntry | None,
+) -> StateType:
+    """Return off-grid power, optionally clamped to 0 W for negative readings.
+
+    The parser keeps the signed value so derived battery power stays accurate.
+    This transform is display-only: it must not write back to coordinator data.
+    https://developers.home-assistant.io/docs/integration_fetching_data/
+    """
+    value = _value_from_data("offgrid_power", coordinator.data or {})
+    if (
+        entry is not None
+        and entry.options.get(
+            CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
+            DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
+        )
+        and isinstance(value, (int, float))
+        and value < 0
+    ):
+        return 0
+    return value
 
 
 def _exists_key_with_value(key: str, data: dict[str, Any]) -> bool:
@@ -178,9 +208,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda coordinator, _info, _entry: _value_from_data(
-            "offgrid_power", coordinator.data or {}
-        ),
+        value_fn=_offgrid_power_value,
         exists_fn=lambda data: _exists_key_with_value("offgrid_power", data),
     ),
     MarstekSensorEntityDescription(

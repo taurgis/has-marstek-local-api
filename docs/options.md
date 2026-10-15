@@ -50,11 +50,12 @@ flapping on an unstable device API.
 
 ## Power / behavior
 
-These settings affect automations and command validation:
+These settings affect automations, command validation, and how off-grid power is shown:
 
 - Action charge power (W, range -5000–0, default -1300): default power for the **Charge** device action
 - Action discharge power (W, range 0–5000, default 800): default power for the **Discharge** device action
 - Socket limit: toggles an internal power-limit model used to validate requested power (applies to services and actions)
+- Clamp negative off-grid power to 0 W (default **off**): the Off-grid power sensor reports 0 W instead of small negative readings some firmware reports while charging with nothing on the EPS socket. Derived battery power still uses the signed value from the parser.
 
 Socket limit defaults to **on** for Venus C, Venus D, Venus E and Venus E mini, and **off** for Venus A. While it is on, validated discharge power is capped at **800 W**. With it off, the cap is the per-family maximum:
 
