@@ -1,7 +1,7 @@
 ---
 name: "Official Docs Researcher"
 description: "Researches official documentation online and returns detailed, source-cited findings"
-model: "claude-sonnet-4-6[]"
+model: composer-2.5[]
 readonly: true
 is_background: false
 ---
