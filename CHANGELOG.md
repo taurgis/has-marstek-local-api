@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+### Patch Changes
+
+- 45e482f: Add Venus A Control 151 and 149.1 (ver 1491) to the firmware catalog, mocks, and emulators. Both keep the Open API behaviour of 150 and 149.
+
 ## 1.3.0
 
 ### Minor Changes
