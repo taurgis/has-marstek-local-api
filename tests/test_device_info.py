@@ -71,6 +71,39 @@ def test_build_device_info_registers_only_ble_mac() -> None:
     assert device["serial_number"] == "aa:bb:cc:dd:ee:ff"
 
 
+def test_build_device_info_registers_a_learned_dhcp_mac() -> None:
+    """The NIC from a DHCP lease is registered; the AP BSSID still is not."""
+    device = build_device_info(
+        {
+            "ble_mac": "00:9b:08:05:ea:92",
+            "wifi_mac": "dc:39:6f:4d:00:84",
+            "mac": "dc:39:6f:4d:00:84",
+            "network_mac": "00:9b:08:06:38:ee",
+            "device_type": "VenusE 3.0",
+        }
+    )
+
+    assert device["connections"] == {
+        (CONNECTION_BLUETOOTH, "00:9b:08:05:ea:92"),
+        (CONNECTION_NETWORK_MAC, "00:9b:08:06:38:ee"),
+    }
+
+
+def test_build_device_info_does_not_register_bssid_as_network_mac() -> None:
+    """A network_mac equal to wifi_mac is the access point and is dropped."""
+    device = build_device_info(
+        {
+            "ble_mac": "00:9b:08:05:ea:92",
+            "wifi_mac": "dc:39:6f:4d:00:84",
+            "mac": "dc:39:6f:4d:00:84",
+            "network_mac": "dc:39:6f:4d:00:84",
+            "device_type": "VenusE 3.0",
+        }
+    )
+
+    assert device["connections"] == {(CONNECTION_BLUETOOTH, "00:9b:08:05:ea:92")}
+
+
 def test_build_device_info_falls_back_to_network_mac_without_ble() -> None:
     """Without a BLE MAC the reported MACs are all Home Assistant can match on."""
     device = build_device_info(

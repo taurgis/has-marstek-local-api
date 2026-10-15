@@ -400,6 +400,7 @@ def _build_device_info_dict(
         "wifi_name": entry.data.get("wifi_name", ""),
         "wifi_mac": entry.data.get("wifi_mac", ""),
         "ble_mac": entry.data.get("ble_mac", ""),
+        "network_mac": entry.data.get("network_mac", ""),
     }
 
 

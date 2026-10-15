@@ -12,7 +12,11 @@ from homeassistant.helpers.device_registry import (
 )
 
 from .const import DOMAIN
-from .helpers.flow_helpers import formatted_mac_or_none, get_unique_id_from_device_info
+from .helpers.flow_helpers import (
+    formatted_mac_or_none,
+    get_unique_id_from_device_info,
+    normalized_network_mac,
+)
 
 
 def get_device_identifier(device_info: dict[str, Any]) -> str:
@@ -67,17 +71,25 @@ def _build_connections(device_info: dict[str, Any]) -> set[tuple[str, str]]:
     """Collect the hardware addresses Home Assistant can match this device on.
 
     The BLE MAC is the device's own address and the one Marstek firmware keeps
-    stable, so it is registered whenever the device reports one. ``wifi_mac``
-    (and ``mac``, which copies it) is the BSSID of the access point the
-    battery is connected to, not the battery's own Wi-Fi MAC. Registering it
-    as a network MAC would let DHCP ``registered_devices`` start a flow for
-    the access point's lease and let a router integration merge the access
-    point into this device, so it is only used when no BLE MAC exists.
+    stable, so it is registered whenever the device reports one. A DHCP lease
+    MAC stored as ``network_mac`` is the battery's NIC and is registered next
+    to it, which is what lets ``registered_devices`` follow later IP changes.
+    ``wifi_mac`` (and ``mac``, which copies it) is the BSSID of the access
+    point the battery is connected to, not the battery's own Wi-Fi MAC.
+    Registering it as a network MAC would let DHCP ``registered_devices``
+    start a flow for the access point's lease and let a router integration
+    merge the access point into this device, so it is only used when no BLE
+    MAC exists.
     """
+    connections: set[tuple[str, str]] = set()
     ble_mac = formatted_mac_or_none(device_info.get("ble_mac"))
     if ble_mac is not None:
-        return {(CONNECTION_BLUETOOTH, ble_mac)}
-    connections: set[tuple[str, str]] = set()
+        connections.add((CONNECTION_BLUETOOTH, ble_mac))
+        # The DHCP lease MAC is the battery's own NIC. The AP BSSID is not.
+        network_mac = normalized_network_mac(device_info)
+        if network_mac is not None:
+            connections.add((CONNECTION_NETWORK_MAC, network_mac))
+        return connections
     for key in ("wifi_mac", "mac"):
         formatted = formatted_mac_or_none(device_info.get(key))
         if formatted is not None:
@@ -97,6 +109,8 @@ def stale_access_point_connections(
     """
     if formatted_mac_or_none(device_info.get("ble_mac")) is None:
         return set()
+    # ``mac`` is included even when it copies the BLE MAC: an older release
+    # registered that field as a network connection, and it has to come off.
     bssids = {
         formatted
         for key in ("wifi_mac", "mac")

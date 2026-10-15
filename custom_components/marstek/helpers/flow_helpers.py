@@ -14,7 +14,10 @@ from homeassistant.helpers.device_registry import format_mac
 # Preference order for a stable device identity: the BLE MAC is the unique id
 # Marstek firmware keeps across IP and Wi-Fi changes. Anything reading a MAC
 # out of a device dict or an entry must walk these in this order.
-IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", CONF_MAC, "wifi_mac")
+# ``network_mac`` is the NIC address a DHCP lease reported for this battery.
+# It sits beside the BLE MAC: the BLE MAC stays the unique id, and the lease
+# MAC lets a later DHCP sighting find the same entry.
+IDENTITY_MAC_KEYS: tuple[str, ...] = ("ble_mac", "network_mac", CONF_MAC, "wifi_mac")
 # ``wifi_mac`` is the BSSID of the access point the device joined (the
 # ``bssid=`` field of the Wi-Fi module's state), not the device's own MAC, so
 # batteries on one AP share it. ``mac`` is ``wifi_mac or ble_mac``, so it is
@@ -34,6 +37,33 @@ def formatted_mac_or_none(value: Any) -> str | None:
     except (TypeError, ValueError):
         return None
     if _FORMATTED_MAC.fullmatch(formatted) is None:
+        return None
+    return formatted
+
+
+def reported_bssids(data: Mapping[str, Any]) -> set[str]:
+    """Return access-point BSSIDs reported alongside a BLE MAC.
+
+    ``wifi_mac`` is the AP BSSID, and ``mac`` copies it when Wi-Fi is known.
+    A value equal to the BLE MAC is the battery itself, not the access point.
+    Without a BLE MAC these fields are the only identity the device offered,
+    so they are not BSSIDs here.
+    """
+    ble_mac = formatted_mac_or_none(data.get("ble_mac"))
+    if ble_mac is None:
+        return set()
+    bssids: set[str] = set()
+    for key in ("wifi_mac", CONF_MAC):
+        formatted = formatted_mac_or_none(data.get(key))
+        if formatted is not None and formatted != ble_mac:
+            bssids.add(formatted)
+    return bssids
+
+
+def normalized_network_mac(data: Mapping[str, Any]) -> str | None:
+    """Return the battery's own NIC MAC, never the access-point BSSID."""
+    formatted = formatted_mac_or_none(data.get("network_mac"))
+    if formatted is None or formatted in reported_bssids(data):
         return None
     return formatted
 
@@ -150,6 +180,9 @@ def metadata_from_device_info(device_info: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, str) and not value.strip():
             continue
         updates[key] = value
+    network_mac = normalized_network_mac(device_info)
+    if network_mac is not None:
+        updates["network_mac"] = network_mac
     return updates
 
 
@@ -169,7 +202,7 @@ def get_unique_id_from_device_info(device_info: Mapping[str, Any]) -> str | None
 
 def build_entry_data(host: str, port: int, device_info: dict[str, Any]) -> dict[str, Any]:
     """Build config entry data from device info."""
-    return {
+    data: dict[str, Any] = {
         CONF_HOST: host,
         CONF_PORT: port,
         CONF_MAC: device_info.get("mac"),
@@ -181,6 +214,10 @@ def build_entry_data(host: str, port: int, device_info: dict[str, Any]) -> dict[
         "model": device_info.get("model"),
         "firmware": device_info.get("firmware"),
     }
+    network_mac = normalized_network_mac(device_info)
+    if network_mac is not None:
+        data["network_mac"] = network_mac
+    return data
 
 
 def async_apply_entry_update(

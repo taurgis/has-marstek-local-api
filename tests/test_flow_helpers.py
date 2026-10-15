@@ -17,6 +17,7 @@ from custom_components.marstek.helpers.flow_helpers import (
     identities_overlap,
     identity_macs_from_entry,
     identity_macs_from_mapping,
+    normalized_network_mac,
     split_devices_by_configured,
 )
 
@@ -66,6 +67,36 @@ def test_identity_macs_from_mapping_falls_back_without_ble_mac() -> None:
         {"ble_mac": "", "wifi_mac": "11:22:33:44:55:66", "mac": "11:22:33:44:55:66"}
     )
     assert macs == {"11:22:33:44:55:66"}
+
+
+def test_network_mac_joins_ble_without_replacing_it() -> None:
+    """A learned DHCP MAC is a second identity; the unique id stays the BLE MAC."""
+    data = {
+        "ble_mac": "00:9b:08:05:ea:92",
+        "network_mac": "00:9b:08:06:38:ee",
+        "wifi_mac": "dc:39:6f:4d:00:84",
+        "mac": "dc:39:6f:4d:00:84",
+    }
+    assert get_unique_id_from_device_info(data) == "00:9b:08:05:ea:92"
+    assert identity_macs_from_mapping(data) == {
+        "00:9b:08:05:ea:92",
+        "00:9b:08:06:38:ee",
+    }
+    assert "dc:39:6f:4d:00:84" not in identity_macs_from_mapping(data)
+
+
+def test_normalized_network_mac_rejects_the_access_point() -> None:
+    """The AP BSSID must not be stored as the battery's NIC address."""
+    battery = {
+        "ble_mac": "00:9b:08:05:ea:92",
+        "wifi_mac": "dc:39:6f:4d:00:84",
+        "mac": "dc:39:6f:4d:00:84",
+    }
+    assert normalized_network_mac({**battery, "network_mac": "dc:39:6f:4d:00:84"}) is None
+    assert (
+        normalized_network_mac({**battery, "network_mac": "00:9b:08:06:38:ee"})
+        == "00:9b:08:06:38:ee"
+    )
 
 
 def test_batteries_on_one_access_point_do_not_share_an_identity() -> None:

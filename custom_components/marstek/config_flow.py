@@ -8,11 +8,10 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from . import MarstekConfigEntry
@@ -32,13 +31,14 @@ from .helpers.flow_helpers import (
     identity_macs_from_entry,
     identity_macs_from_mapping,
     metadata_from_device_info,
+    reported_bssids,
     split_devices_by_configured,
 )
 from .helpers.flow_schemas import (
     build_host_port_schema,
     build_manual_entry_schema,
 )
-from .helpers.ports import discovery_scan_ports
+from .helpers.ports import configured_device_port, discovery_scan_ports
 from .helpers.udp_clients import (
     async_paused_udp_receivers,
     bind_port_for_host,
@@ -63,6 +63,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     _discovered_port: int | None = None
     _discovered_metadata: dict[str, Any] | None = None
     _discovered_identity_macs: set[str] | None = None
+    _discovered_network_mac: str | None = None
 
     @staticmethod
     def async_get_options_flow(
@@ -187,11 +188,19 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfo
     ) -> config_entries.ConfigFlowResult:
-        """Handle DHCP discovery to update IP address when it changes (mik-laj feedback)."""
-        if not discovery_info.macaddress or not discovery_info.ip:
+        """Handle a DHCP lease, including one whose MAC is not the BLE MAC.
+
+        Venus firmware answers ``Marstek.GetDevice`` with the BLE MAC and the
+        access-point BSSID. The address a DHCP server sees is a third MAC, so
+        the lease alone cannot be the flow unique id. Ask the device which
+        battery owns the IP, store that lease MAC on the BLE entry, and leave
+        a configured Open API port alone. A lease already stored, or an
+        ignored lease with no configured battery, does not query the device.
+        """
+        mac = formatted_mac_or_none(discovery_info.macaddress)
+        if mac is None or not discovery_info.ip:
             return self.async_abort(reason="invalid_discovery_info")
 
-        mac = format_mac(discovery_info.macaddress)
         _LOGGER.debug(
             "DHCP discovery triggered: MAC=%s, IP=%s, Hostname=%s",
             mac,
@@ -199,13 +208,27 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             discovery_info.hostname,
         )
 
-        await self.async_set_unique_id(mac)
         self._discovered_ip = discovery_info.ip
+        # DHCP does not know the Open API port. Leaving this unset keeps a
+        # custom port the user configured.
         self._discovered_port = None
+        self._discovered_network_mac = mac
         self._discovered_metadata = {}
         self._discovered_identity_macs = {mac}
+        await self.async_set_unique_id(mac)
 
-        # Use shared discovery handler to update existing entries or confirm new ones
+        if self._configured_entry_has_mac(mac):
+            self._discovered_metadata = {"network_mac": mac}
+            return await self._async_handle_discovery_with_unique_id()
+
+        if not self._async_current_entries(include_ignore=False) and self._ignore_has_mac(mac):
+            return await self._async_handle_discovery_with_unique_id()
+
+        device, unsupported = await self._async_probe_dhcp_lease(discovery_info.ip, mac)
+        if unsupported:
+            return self.async_abort(reason="unsupported_device")
+        if device is not None:
+            await self._async_bind_lease_to_device(device, mac)
         return await self._async_handle_discovery_with_unique_id()
 
     async def async_step_integration_discovery(
@@ -286,7 +309,11 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                             return self.async_create_entry(
                                 title=f"Marstek {device_info.get('device_type', 'Device')}",
-                                data=build_entry_data(host, port, device_info),
+                                data=build_entry_data(
+                                    host,
+                                    port,
+                                    self._device_info_with_lease_mac(host, device_info),
+                                ),
                             )
 
             except (ConnectionError, OSError, TimeoutError):
@@ -453,7 +480,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Build UDP ports to probe during initial config flow discovery."""
         return discovery_scan_ports(self._async_current_entries(include_ignore=False))
 
-    async def _async_get_device_info(self, host: str, port: int) -> dict[str, Any] | None:
+    async def _async_get_device_info(
+        self, host: str, port: int, *, quiet: bool = False
+    ) -> dict[str, Any] | None:
         """Unicast GetDevice on the pooled client when one already owns this port.
 
         Firmware replies to the listen port. A second ``SO_REUSEPORT`` bind
@@ -464,7 +493,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         async with discovery_lock(self.hass):
             udp_client = get_udp_client(self.hass, bind_port_for_host(host, port))
-            return await get_device_info(host=host, port=port, udp_client=udp_client)
+            return await get_device_info(host=host, port=port, udp_client=udp_client, quiet=quiet)
 
     async def _async_discover_devices(self, scan_ports: list[int]) -> list[dict[str, Any]]:
         """Broadcast discovery while pooled listeners are paused."""
@@ -479,62 +508,184 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_handle_discovery_with_unique_id(
         self,
     ) -> config_entries.ConfigFlowResult:
-        """Handle any discovery with a unique id (similar to Yeelight pattern)."""
+        """Update a matching entry, honor an ignore, or ask the user to confirm.
+
+        Configured entries win over an ignore of the same hardware: the card
+        stays hidden and the real entry still learns the new IP. An ignore on
+        its own aborts with nothing written, which is what makes Ignore stick
+        across the next DHCP lease and the next restart.
+        """
         if not self.unique_id or not self._discovered_ip:
             return self.async_abort(reason="invalid_discovery_info")
 
         for entry in self._async_current_entries(include_ignore=False):
-            # Check if unique_id matches
-            if not self._entry_matches_flow_identity(entry):
-                continue
+            if self._entry_matches_flow_identity(entry):
+                self._async_apply_discovery_update(entry)
+                return self.async_abort(reason="already_configured")
 
-            discovered_port = self._discovered_port
-            current_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
-            updates: dict[str, Any] = {}
-
-            if entry.data.get(CONF_HOST) != self._discovered_ip:
-                _LOGGER.debug(
-                    "Discovery: Device %s IP changed from %s to %s, updating config entry",
-                    entry.unique_id,
-                    entry.data.get(CONF_HOST),
-                    self._discovered_ip,
-                )
-                updates[CONF_HOST] = self._discovered_ip
-
-            if discovered_port is not None and current_port != discovered_port:
-                _LOGGER.debug(
-                    "Discovery: Device %s port changed from %s to %s, updating config entry",
-                    entry.unique_id,
-                    current_port,
-                    discovered_port,
-                )
-                updates[CONF_PORT] = discovered_port
-
-            for key, value in (self._discovered_metadata or {}).items():
-                if entry.data.get(key) != value:
-                    updates[key] = value
-
-            if updates:
-                old_host = entry.data.get(CONF_HOST)
-                new_host = updates.get(CONF_HOST, old_host)
-                new_port = updates.get(CONF_PORT)
-                if isinstance(old_host, str) and isinstance(new_host, str):
-                    transfer_reset_prone_mark_for_entry(
-                        self.hass,
-                        entry,
-                        old_host,
-                        new_host,
-                        new_port=new_port if isinstance(new_port, int) else None,
-                    )
-                async_apply_entry_update(self.hass, entry, {**entry.data, **updates})
-            elif entry.state is ConfigEntryState.SETUP_RETRY:
-                # Nothing to write, but the device is answering again, so
-                # stop waiting out Home Assistant's setup-retry backoff.
-                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        if self._ignored_entry_matches():
             return self.async_abort(reason="already_configured")
 
-        # No existing entry found, confirm discovery
         return await self.async_step_confirm()
+
+    def _async_apply_discovery_update(self, entry: config_entries.ConfigEntry) -> None:
+        """Write a rediscovered host, port, and metadata onto *entry*."""
+        discovered_port = self._discovered_port
+        current_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
+        updates: dict[str, Any] = {}
+
+        if entry.data.get(CONF_HOST) != self._discovered_ip:
+            _LOGGER.debug(
+                "Discovery: Device %s IP changed from %s to %s, updating config entry",
+                entry.unique_id,
+                entry.data.get(CONF_HOST),
+                self._discovered_ip,
+            )
+            updates[CONF_HOST] = self._discovered_ip
+
+        if discovered_port is not None and current_port != discovered_port:
+            _LOGGER.debug(
+                "Discovery: Device %s port changed from %s to %s, updating config entry",
+                entry.unique_id,
+                current_port,
+                discovered_port,
+            )
+            updates[CONF_PORT] = discovered_port
+
+        for key, value in (self._discovered_metadata or {}).items():
+            if entry.data.get(key) != value:
+                updates[key] = value
+
+        if updates:
+            old_host = entry.data.get(CONF_HOST)
+            new_host = updates.get(CONF_HOST, old_host)
+            new_port = updates.get(CONF_PORT)
+            if isinstance(old_host, str) and isinstance(new_host, str):
+                transfer_reset_prone_mark_for_entry(
+                    self.hass,
+                    entry,
+                    old_host,
+                    new_host,
+                    new_port=new_port if isinstance(new_port, int) else None,
+                )
+            async_apply_entry_update(self.hass, entry, {**entry.data, **updates})
+        elif entry.state is ConfigEntryState.SETUP_RETRY:
+            # Nothing to write, but the device is answering again, so
+            # stop waiting out Home Assistant's setup-retry backoff.
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    def _dhcp_probe_ports(self) -> list[int]:
+        """Return 30000, then any Open API port a configured entry already uses.
+
+        Common custom ports are not scanned from DHCP. One extra GetDevice is
+        enough to name the battery, and HMG-50 shares this UDP channel with
+        its CT meter.
+        """
+        ports = [DEFAULT_UDP_PORT]
+        for entry in self._async_current_entries(include_ignore=False):
+            port = configured_device_port(entry)
+            if port not in ports:
+                ports.append(port)
+        return ports
+
+    async def _async_probe_dhcp_lease(
+        self, ip: str, dhcp_mac: str
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Ask GetDevice which battery owns *ip*.
+
+        Port 30000 is first. An answer whose identity is already configured is
+        returned immediately. Otherwise later configured ports are tried, and
+        a hit that matches an existing entry wins over an unrelated listener.
+        A lease MAC equal to the answered BSSID is the access point, not the
+        battery. The second item is True when every answer was Venus E2.
+        """
+        first_other: dict[str, Any] | None = None
+        saw_unsupported = False
+        saw_answer = False
+        for port in self._dhcp_probe_ports():
+            device = await self._async_query_lease_port(ip, port)
+            if device is None:
+                continue
+            saw_answer = True
+            if is_unsupported_venus_e2(device.get("device_type")):
+                saw_unsupported = True
+                continue
+            if self._lease_is_access_point(device, dhcp_mac):
+                continue
+            if get_unique_id_from_device_info(device) is None:
+                # No MAC to bind, so keep looking for another port.
+                continue
+            if self._device_matches_configured(device):
+                return device, False
+            if first_other is None:
+                first_other = device
+        if first_other is not None:
+            return first_other, False
+        return None, saw_unsupported and saw_answer
+
+    async def _async_query_lease_port(self, ip: str, port: int) -> dict[str, Any] | None:
+        """GetDevice for a DHCP probe; a miss is None, not a raised error."""
+        try:
+            return await self._async_get_device_info(ip, port, quiet=True)
+        except (ConnectionError, OSError, TimeoutError, ValueError):
+            return None
+
+    def _lease_is_access_point(self, device: dict[str, Any], dhcp_mac: str) -> bool:
+        """Return True when the lease MAC is the AP BSSID this battery reported."""
+        formatted = formatted_mac_or_none(dhcp_mac)
+        return formatted is not None and formatted in reported_bssids(device)
+
+    def _device_matches_configured(self, device: dict[str, Any]) -> bool:
+        """Return True when *device* is already a configured entry."""
+        macs = identity_macs_from_mapping(device)
+        return any(
+            identities_overlap(macs, identity_macs_from_entry(entry))
+            for entry in self._async_current_entries(include_ignore=False)
+        )
+
+    async def _async_bind_lease_to_device(self, device: dict[str, Any], dhcp_mac: str) -> None:
+        """Point this flow at the BLE identity GetDevice returned for the lease."""
+        unique_id = get_unique_id_from_device_info(device)
+        # The probe only binds an answer that already has an identity MAC.
+        assert unique_id is not None
+        await self.async_set_unique_id(unique_id)
+        identity = identity_macs_from_mapping(device)
+        formatted = formatted_mac_or_none(dhcp_mac)
+        if formatted is not None and formatted not in reported_bssids(device):
+            identity.add(formatted)
+            self._discovered_network_mac = formatted
+        self._discovered_identity_macs = identity
+        self._discovered_metadata = metadata_from_device_info(
+            {**device, "network_mac": self._discovered_network_mac}
+        )
+
+    def _device_info_with_lease_mac(self, host: str, device_info: dict[str, Any]) -> dict[str, Any]:
+        """Attach the lease MAC when the user confirmed the discovered host."""
+        network_mac = self._discovered_network_mac
+        if network_mac is None or host != self._discovered_ip:
+            return device_info
+        return {**device_info, "network_mac": network_mac}
+
+    def _configured_entry_has_mac(self, mac: str) -> bool:
+        """Return True when a configured entry already knows *mac*."""
+        return any(
+            mac in identity_macs_from_entry(entry)
+            for entry in self._async_current_entries(include_ignore=False)
+        )
+
+    def _ignore_has_mac(self, mac: str) -> bool:
+        """Return True when an ignored discovery was stored under *mac*."""
+        return any(
+            entry.source == SOURCE_IGNORE and mac in identity_macs_from_entry(entry)
+            for entry in self._async_current_entries(include_ignore=True)
+        )
+
+    def _ignored_entry_matches(self) -> bool:
+        """Return True when an ignored entry is this same battery."""
+        return any(
+            entry.source == SOURCE_IGNORE and self._entry_matches_flow_identity(entry)
+            for entry in self._async_current_entries(include_ignore=True)
+        )
 
     async def _async_handle_host_update(
         self,
