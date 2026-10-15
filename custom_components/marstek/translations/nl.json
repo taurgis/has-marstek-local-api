@@ -112,16 +112,18 @@
           },
           "power_settings": {
             "name": "Vermogensinstellingen",
-            "description": "Standaard vermogenswaarden voor apparaatacties",
+            "description": "Standaard vermogenswaarden voor apparaatacties en weergave van off-grid vermogen",
             "data": {
               "action_charge_power": "Standaard laadvermogen",
               "action_discharge_power": "Standaard ontlaadvermogen",
-              "socket_limit": "Ontlaadlimiet van 800 W afdwingen"
+              "socket_limit": "Ontlaadlimiet van 800 W afdwingen",
+              "clamp_negative_offgrid_power": "Negatief off-grid vermogen op 0 W zetten"
             },
             "data_description": {
               "action_charge_power": "Standaard vermogen voor laadacties (negatieve waarde)",
               "action_discharge_power": "Standaard vermogen voor ontlaadacties (positieve waarde)",
-              "socket_limit": "Beperk ontladen tot 800 W voor veilig gebruik via een stopcontact"
+              "socket_limit": "Beperk ontladen tot 800 W voor veilig gebruik via een stopcontact",
+              "clamp_negative_offgrid_power": "Indien ingeschakeld toont de Off-grid-vermogenssensor 0 W in plaats van kleine negatieve metingen die sommige firmware tijdens het laden rapporteert. Batterijvermogen blijft de echte meting gebruiken. Standaard uit."
             }
           }
         }

@@ -112,16 +112,18 @@
           },
           "power_settings": {
             "name": "Power Settings",
-            "description": "Default power values for device actions",
+            "description": "Default power values for device actions and off-grid power display",
             "data": {
               "action_charge_power": "Default charge power",
               "action_discharge_power": "Default discharge power",
-              "socket_limit": "Enforce 800 W discharge limit"
+              "socket_limit": "Enforce 800 W discharge limit",
+              "clamp_negative_offgrid_power": "Clamp negative off-grid power to 0 W"
             },
             "data_description": {
               "action_charge_power": "Default power for charge actions (negative value)",
               "action_discharge_power": "Default power for discharge actions (positive value)",
-              "socket_limit": "Limit discharge to 800 W for plug socket safety"
+              "socket_limit": "Limit discharge to 800 W for plug socket safety",
+              "clamp_negative_offgrid_power": "When enabled, the Off-grid power sensor reports 0 W instead of small negative readings some firmware reports while charging. Battery power still uses the real measurement. Off by default."
             }
           }
         }

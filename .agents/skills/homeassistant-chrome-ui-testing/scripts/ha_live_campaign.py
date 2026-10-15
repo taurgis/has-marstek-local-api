@@ -1378,6 +1378,7 @@ class Campaign:
                 "action_charge_power": -1300,
                 "action_discharge_power": 800,
                 "socket_limit": False,
+                "clamp_negative_offgrid_power": False,
             },
         }
 
