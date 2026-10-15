@@ -204,8 +204,10 @@ This table shows which device and firmware combinations we test, and how. The te
 | Venus A | `Venus A` | 148 | Real firmware | `fw-venus-a-148` (`172.28.0.58:30001`) |
 | | | 1487 (app 148.7) | Real firmware | `fw-venus-a-1487` (`172.28.0.59`) |
 | | | 149 | Real firmware | `fw-venus-a-149` (`172.28.0.60:30003`) |
+| | | 1491 (app 149.1) | Real firmware | `fw-venus-a-1491` (`172.28.0.73`) |
 | | | 150 | Real firmware | `fw-venus-a-150` (`172.28.0.51:30004`) ★ |
 | | | 1509 (app 150.9) | Real firmware | `fw-venus-a-1509` (`172.28.0.62`) |
+| | | 151 | Real firmware | `fw-venus-a-151` (`172.28.0.74`) |
 | Venus D | `Venus D` | 145 | Mock only | `mock-marstek-4` (`172.28.0.23:30002`) ★ |
 | | | 147 | Real firmware | `fw-venus-d-147` (`172.28.0.63`) |
 | | | 149 | Real firmware | `fw-venus-d-149` (`172.28.0.64`) |
@@ -236,7 +238,7 @@ Firmware images come from Marstek's public update server and community archives;
   docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venus-d-149
   ```
 
-  `--profile firmware-all` defines all 22 emulators, but running them all at once needs a large machine. On a 4-CPU machine, run at most four at a time. The [sandbox resource budget](AGENTS.md#sandbox-resource-budget-cloud-agents) explains why, and gives the batch rules.
+  `--profile firmware-all` defines all 24 emulators, but running them all at once needs a large machine. On a 4-CPU machine, run at most four at a time. The [sandbox resource budget](AGENTS.md#sandbox-resource-budget-cloud-agents) explains why, and gives the batch rules.
 - **Venus C and Venus E 2.0 get their own batch.** They drop many requests by design ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)), and that loss shouldn't be mistaken for load.
 - **Automated tests never need Docker.** `pytest` uses the same firmware profiles against in-process mocks.
 

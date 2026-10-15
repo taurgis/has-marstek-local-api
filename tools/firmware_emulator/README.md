@@ -44,7 +44,7 @@ the same board and serves the Local API. Checked with `Marstek.GetDevice`,
 | Family | Versions | Reports |
 |--------|----------|---------|
 | VNSE3-0 | 144, 147, 1476, 148, 149, 150, 151 | `VenusE 3.0`; `PV.GetStatus` is `Method not found` |
-| VNSA-0 | 148, 1487, 149, 150, 1509 (ems) | `Venus A` |
+| VNSA-0 | 148, 1487, 149, 1491, 150, 1509 (ems), 151 (ems) | `Venus A` |
 | VNSA-0 | 1508 (banner VEPRO-0) | `VenusE Pro` |
 | VNSD-0 | 147, 149, 1492, 150, 151 | `Venus D` |
 
@@ -213,6 +213,7 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | `fw-venus-a-148`, `-1487`, `-149`, `-1508`, `-1509` | .58-.62 | VNSA-0, PV 420/360 W; 148 on port 30001, 149 on 30003 | `firmware-all` |
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
 | `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
+| `fw-venus-a-1491`, `fw-venus-a-151` | .73-.74 | VNSA-0 1491 and 151, PV 420/360 W | `firmware-all` |
 
 ```bash
 cd .devcontainer
@@ -224,7 +225,7 @@ docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venu
 
 The four defaults are `fw-venus-e-150`, `-a-150`, `-d-150` and the HMG-50
 `fw-venus-c-156`. `docker compose --profile firmware-all up -d` starts all
-twenty-two emulators. That needs a large host: each takes 0.3-0.6 core and
+twenty-four emulators. That needs a large host: each takes 0.3-0.6 core and
 about 550 MB, and on a 4-CPU sandbox the load reaches about 60 and the firmware
 answers `Parse error` or times out. On a small machine, run at most `nproc`
 emulators at a time in named batches; see AGENTS.md, *Sandbox resource budget*.
@@ -365,9 +366,12 @@ The MCU itself sends 0x305 and 0x300.
   state/err/war/temp, 2-4 the channels, 5 `capd` u32 + `pve`/`pvs` u8 + `pow` u16,
   6 `capm` u32 + `capy` u32, 7 MPPT-side battery readings. The yield counters
   are 0.01 kWh. `ES.GetStatus` reports `capy` unscaled as `total_pv_energy` on
-  VNSA-0 1487/149/150/1508/1509 and VNSD-0 149/1492/150; Venus A 148 hard-codes
+  VNSA-0 1487/149/1491/150/1508/1509/151 and VNSD-0 149/1492/150; Venus A 148 hard-codes
   `pv_power` and `total_pv_energy` to 0. `PV.GetStatus` reports PV1 power raw
-  (0.1 W) and every other channel field ×0.1, truncated, on all six VNSA-0 builds.
+  (0.1 W) and every other channel field ×0.1, truncated, on the VNSA-0 builds
+  checked before 1491 and 151. Those two share the same PV field strings as
+  149 and 1509 (`tools/firmware/ANALYSIS.md`); confirm the scale on the emulator
+  before treating a live reading as checked.
 - The MCU switches the MPPT with cmd 0x01 to type 2 addr 1 (byte 4: 1 on,
   0 off). It sends off only after an hour with no channel above 14 V and the
   inverter idle.

@@ -264,9 +264,90 @@ Checked by string diff and by running both images in the emulator next to
 - Initial SP moved to `0x20021df8` (VNSE3-0) and `0x20022010` (VNSD-0).
 
 The firmware profile resolves 151 exactly like 150
-(`tests/test_firmware_profile.py::test_control_151_resolves_like_150`). No
-VNSA-0 151 has been published; Venus A 1509 is the first archived VNSA-0
-image whose Open API `src` names the SKU.
+(`tests/test_firmware_profile.py::test_control_151_resolves_like_150`),
+including Venus A. Venus A 1509 was the first archived VNSA-0 image whose
+Open API `src` names the SKU; VNSA-0 151 does the same because its generation
+is 151.
+
+## What Venus A 151 changed versus 150 and 1509
+
+VNSA-0 151 (`VNSA-0_ems_app_0151_0928_095826.bin`, 391168 bytes, built
+28 September 2026 09:54:57) is the official EU OTA image. SHA-256
+`5cceb230f28c9c3a67be5e897afd5722f795b3e8f6c39d58d5a2c2873d994346` matches
+the download and the community archive
+([sphings79 metadata](https://github.com/sphings79/marstek-firmware-archiv/blob/main/firmwares/VNSA-0/Control/151/metadata.json)).
+The vendor changelog is the same text as VNSE3-0 / VNSD-0 151: Modbus TCP
+stability, the DOD state that blocked discharge, a Ymodel upgrade-type
+check, AI-mode validation and an AI-strategy query, the pre-release server
+URL, HTTPS upload stability, and CT polling every 1.1 s. Initial SP is
+`0x20022010` and reset is `0x08004a71`, the same layout as VNSD-0 151 and
+the Venus A 1509 ems build.
+
+String diff against VNSA-0 150 and 1509 (dotted method names, JSON field
+names, and the format strings next to them):
+
+- **The Open API method list is unchanged.** 149, 1491, 150, 1509 and 151
+  carry the same dotted names: `Marstek.GetDevice`, `Marstek.GetData`,
+  `ES.GetMode`, `ES.SetMode`, `ES.GetStatus`, `EM.GetStatus`, `PV.GetStatus`,
+  `Wifi.GetStatus`, `Bat.GetStatus`, `BLE.GetStatus`, `DOD.SET`, `Ble.Adv`,
+  `Led.Ctrl`, `Set.Ver`, `Reset.Factory`, `Ota.Set`. No new reply field name
+  appears (`bat_power` is still absent; `total_pv_energy`, `pv2_power` through
+  `pv4_power`, `ongrid_power`, `offgrid_power`, `ct_state` stay). `Wifi.SetConfig`
+  is still absent. GetDevice `device` is still `Venus A`.
+- **`src` names the SKU**, as on 1509 and on E3/D 151. 150's `VenusA-%s` is
+  gone; `%s-%s` sits next to the `VNSA-0` literal, so replies are
+  `VNSA-0-<ble_mac>`. Generation 151 already selects that form in the mock.
+- **Versus 150, 151 picked up the 1509 cloud/OTA strings** and then the
+  September server-URL change. New relative to 150: `Bin type mismatch!`
+  (the Ymodel upgrade-type check; also `Bin type unrecognized!`),
+  `cd=19,ct_st=…`, `[MQTT] Type: %d, Get INV DEBUG info...` / `debug=`,
+  and the loss of `[HTTP]ch395 reset!!!!`. New relative to **both** 150 and
+  1509: the getDateInfo host moved from `%s.hamedata.com` to
+  `api-%s.marstekcloud.com`, and `AT+QHTTPPOST` timeouts went from 60 s to
+  120 s (`AT+QHTTPPOST=%d,120,120`). 1509 still posts `,60,60` and still
+  uses hamedata. A status fragment `` `AI%u=%d|%d|%d|%d|%d. `` is also only
+  in 151. `[MQTT] Type: %d, GET_AI_STRATEGY...` is already in 150.
+- **Not an Open API change, and not measured here.** `Task_Modbus_tcp`,
+  `modbus_addr` and `dod_value` / `pgn_1802_info.dischrg_dod` are already in
+  150. The DOD discharge fix and the Modbus TCP stability note are behavior,
+  not new methods or fields; the binaries do not show a new `DOD.SET`
+  parameter. The 1.1 s CT period is the vendor changelog plus the `ct_st`
+  diagnostic line (present since 1509). It is not an Open API field, and a
+  bare count of the uint16 1100 does not isolate the timer. The integration
+  does not poll the CT meter; it only reads `EM.GetStatus`.
+
+The profile therefore keeps Venus A 151 identical to Venus A 150 apart from
+`firmware_version` (SYS/UPS, solar 0.01 kWh, PV1 deciwatts, not reset-prone).
+
+## What Venus A 1491 changed versus 149
+
+VNSA-0 1491 (`VNSA-0_app_1491_0528_145327.bin`, 382976 bytes, built
+28 May 2026 14:52:08, four hours after 149's 10:23:00 stamp) is the official
+EU OTA image. SHA-256
+`271c60265478cf92eba21824814632c185d9344244112a842b547fd1e65b6a16` matches
+the download and the community archive
+([sphings79 metadata](https://github.com/sphings79/marstek-firmware-archiv/blob/main/firmwares/VNSA-0/Control/1491/metadata.json)).
+The vendor remark is only “V149替代版本” (“V149 Alternate”). Initial SP is
+`0x2001f778` and reset is `0x08004a71`, the same vector table as 149.
+
+The two images are the same length. Almost every byte differs, which fits a
+rebuild rather than a patched 149, but the printable strings do not: the
+only real string changes are the banner `VNSA-0 v1491` and the build stamp.
+Dotted methods, JSON field names, `VenusA-%s`, `Venus A`, the hamedata
+getDateInfo URL and `AT+QHTTPPOST=%d,60,60` all match 149. There is no
+`%s-%s` SKU `src`, no `Bin type mismatch!`, no `ct_st` line, and no
+marstekcloud host. `DOD.SET` is present as a string, as it already is on
+149, and Home Assistant still does not unlock SYS below generation 150
+(Rev 3.1 PDF, SYS from firmware 150:
+[Marstek Device Open API Rev 3.1](https://static-eu.marstekenergy.com/ems/resource/agreement/MarstekDeviceOpenApi.pdf)).
+
+Open API `ver` **1491** is the same dotted encoding as 1476 and 1509
+(149.1 → 1491). The profile folds 1000–1999 with `ver // 10`, so 1491 is
+generation 149: solar energy in 0.01 kWh, PV1 deciwatts, no SYS/UPS,
+reset-prone, `src` still `VenusA-<ble_mac>`. A JSON float `149.1` keeps
+meaning generation 149 via the leading integer; the wire value this image
+banners is the integer 1491. Nothing in the binary says which internal bug
+the alternate build fixed.
 
 ## Archived Control matrix (community OTA)
 
@@ -278,7 +359,7 @@ Blobs stay local-only.
 | SKU | Open API `ver` | Generation | Notes |
 |-----|----------------|------------|-------|
 | VNSE3-0 | 144, 147, 1476, 148, 149, 150, 151 | 144–151 | 1476 is app 147.6. SYS/UPS at 150. Live 150 `PV.GetStatus` is `-32601`. |
-| VNSA-0 | 148, 1487, 149, 150, 1508, 1509 | 148–150 | 1487→148, 1508/1509→150. 1508 banners `VEPRO-0` / `VenusE Pro` (unknown family). |
+| VNSA-0 | 148, 1487, 149, 1491, 150, 1508, 1509, 151 | 148–151 | 1487→148, 1491→149, 1508/1509→150. 1491 is the V149 Alternate rebuild. 1508 banners `VEPRO-0` / `VenusE Pro` (unknown family). |
 | VNSD-0 | 147, 149, 1492, 150, 151 | 147–151 | 1492→149. Venus D 149 and 1492 report solar energy in 0.01 kWh (`×10`), like Venus A 149. |
 | HMG-50 | 153, 155, 156 | 153–156 | No SYS. EM server from 155. Open API stable at 156. |
 

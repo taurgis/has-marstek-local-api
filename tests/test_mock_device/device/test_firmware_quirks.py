@@ -137,6 +137,7 @@ class TestVenusEFirmware150Capture:
             ("VenusD", 150, "VenusD"),
             ("VenusD", 151, "VNSD-0"),
             ("VenusA", 150, "VenusA"),
+            ("VenusA", 1491, "VenusA"),
             ("VenusA", 1509, "VNSA-0"),
             ("VenusA", 151, "VNSA-0"),
             ("VenusE Pro", 1508, "VenusE Pro"),
@@ -146,7 +147,11 @@ class TestVenusEFirmware150Capture:
     def test_src_names_the_sku_from_control_151(
         self, device_name: str, ver: int, prefix: str
     ) -> None:
-        """SKU-style ``src`` starts at 151 for E3/D and at 1509 for Venus A."""
+        """SKU-style ``src`` starts at 151 for E3/D/A and at 1509 for Venus A.
+
+        Venus A 1491 stays on ``VenusA-<ble>``: generation 149, and 1491 is
+        below the 1509 threshold.
+        """
         device = MockMarstekDevice(
             simulate=False,
             device_config={"device": device_name, "ver": ver, "ble_mac": "02deadbeef01"},

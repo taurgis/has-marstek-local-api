@@ -180,6 +180,23 @@
     {
       "deviceType": "VNSA-0",
       "firmwareType": "Control",
+      "version": 1491,
+      "controlGeneration": 149,
+      "filename": "VNSA-0_app_1491_0528_145327.bin",
+      "size": 382976,
+      "sha256": "271c60265478cf92eba21824814632c185d9344244112a842b547fd1e65b6a16",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260528/VNSA-0_app_1491_0528_145327.bin",
+      "buildStamp": "May 28 2026 14:52:08",
+      "banner": "VNSA-0 v1491",
+      "vectorTable": {
+        "sp": "0x2001f778",
+        "reset": "0x08004a71"
+      },
+      "remark": "V149 Alternate (vendor: V149\u66ff\u4ee3\u7248\u672c). Same-day rebuild of 149. Open API strings match 149; ver 1491 folds to generation 149. No SYS. src stays VenusA-<ble>."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
       "version": 150,
       "controlGeneration": 150,
       "filename": "VNSA-0_app_0150_0811_114724.bin",
@@ -227,6 +244,23 @@
         "reset": "0x08004a71"
       },
       "remark": "App 150.9. Open API ver 1509 folds to generation 150. PV dropout and CT stability fixes."
+    },
+    {
+      "deviceType": "VNSA-0",
+      "firmwareType": "Control",
+      "version": 151,
+      "controlGeneration": 151,
+      "filename": "VNSA-0_ems_app_0151_0928_095826.bin",
+      "size": 391168,
+      "sha256": "5cceb230f28c9c3a67be5e897afd5722f795b3e8f6c39d58d5a2c2873d994346",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260928/VNSA-0_ems_app_0151_0928_095826.bin",
+      "buildStamp": "Sep 28 2026 09:54:57",
+      "banner": "VNSA-0 v151",
+      "vectorTable": {
+        "sp": "0x20022010",
+        "reset": "0x08004a71"
+      },
+      "remark": "Same vendor changelog as VNSE3-0/VNSD-0 151: Modbus TCP stability, DOD discharge fix, Ymodel upgrade-type check, AI mode check, pre-release server URL, HTTPS upload, CT every 1.1 s. Open API methods and fields match 150; src is VNSA-0-<ble>, as on 1509."
     },
     {
       "deviceType": "VNSD-0",

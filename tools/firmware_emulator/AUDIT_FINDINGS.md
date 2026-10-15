@@ -1,6 +1,6 @@
 # Integration findings from the firmware emulator audits
 
-The Venus E 3.0 (VNSE3-0 144-151), Venus A (VNSA-0 148-1509), Venus D (VNSD-0
+The Venus E 3.0 (VNSE3-0 144-151), Venus A (VNSA-0 148-151, including 1491), Venus D (VNSD-0
 147-151) and HMG-50 (153-156) images were run in Renode against Home Assistant
 and checked against their disassembly. Bugs 1-5 and 7-11 are fixed in
 `custom_components/marstek/` with tests and a changeset each; 6 is kept by design.
@@ -21,8 +21,10 @@ and checked against their disassembly. Bugs 1-5 and 7-11 are fixed in
 | 10 | `helpers/sys_write.py` | `DOD.SET`, `Led.Ctrl` and `Ble.Adv` were sent once. In HA the DOD number and both switches failed with *timed out* on every run on Venus E 150. | With HA polling, Venus E 151 acknowledged 17/30 SYS writes on the first try and 28/30 within three. | Fixed: a timeout is retried up to three times. The methods set an absolute value, so a copy that lands after a lost acknowledgement changes nothing. HA then passed 16/16 SYS writes on the four 150/151 images. |
 | 11 | `pymarstek/data_parser.py` | Venus A 148 reports `ES.GetStatus` `pv_power` 0, and the PV-channel correction ran only on polls that carried `PV.GetStatus`, a medium-tier read. In between, HA showed *PV power* 0 W and the battery *idle*, then 780 W *charging* again: 12 flips in 17 minutes. | Venus A 148 in HA, from the state history. | Fixed: the correction uses the channels kept from the previous PV read. On the same image, HA then held 780 W *charging* with no flip. |
 
-Control 151 (VNSE3-0, VNSD-0) needed no integration change: same Open API as
-150, only `src` now names the SKU. See `tools/firmware/ANALYSIS.md`.
+Control 151 (VNSE3-0, VNSD-0, VNSA-0) needed no integration change: same
+Open API as 150, only `src` now names the SKU. Venus A 1491 (app 149.1) folds
+to generation 149 and matches 149, including `VenusA-<ble>` `src`. See
+`tools/firmware/ANALYSIS.md`.
 
 ## Conservative gates
 
@@ -55,6 +57,6 @@ docker compose up -d homeassistant fw-venus-a-1487-ct fw-venus-d-149-ct fw-venus
 docker compose rm -sf fw-venus-a-1487-ct fw-venus-a-1487 fw-venus-d-149-ct fw-venus-d-149 fw-venus-d-1492-ct fw-venus-d-1492
 ```
 
-`--profile firmware-all up -d` starts all twenty-two, which only a large host carries.
+`--profile firmware-all up -d` starts all twenty-four, which only a large host carries.
 
 The service table is in `tools/mock_device/README.md`.

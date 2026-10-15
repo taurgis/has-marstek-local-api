@@ -690,14 +690,36 @@ def test_unusable_float_ver_stays_unknown(version: float) -> None:
     assert profile.openapi_reset_prone is True
 
 
-@pytest.mark.parametrize("device_type", ["VenusE 3.0", "VenusD"])
+@pytest.mark.parametrize("device_type", ["VenusE 3.0", "VenusD", "VenusA"])
 def test_control_151_resolves_like_150(device_type: str) -> None:
     """Control 151 keeps 150's Open API: same methods, fields and scales.
 
-    Checked against the VNSE3-0 / VNSD-0 151 images in the firmware emulator;
-    only ``src`` changed, to the SKU, which identity parsing does not read.
+    Checked against the VNSE3-0, VNSD-0 and VNSA-0 151 images. Only ``src``
+    changed, to the SKU, which identity parsing does not read. Venus A 151
+    uses the same stack pointer as the 1509 ems build.
     """
     profile_150 = resolve_firmware_profile(device_type, 150)
     profile_151 = resolve_firmware_profile(device_type, 151)
 
+    assert profile_151.control_generation == 151
     assert replace(profile_151, firmware_version=150) == profile_150
+
+
+def test_venus_a_1491_resolves_like_149() -> None:
+    """Open API ver 1491 is app 149.1 and folds to generation 149.
+
+    The VNSA-0 1491 image is the vendor's same-day 'V149 Alternate' rebuild.
+    Its Open API strings match 149, including ``VenusA-%s`` rather than the
+    SKU ``src`` that starts at 1509. A JSON float ``149.1`` is the leading
+    generation only; the wire integer is 1491, same encoding as 1487 and 1509.
+    """
+    profile_149 = resolve_firmware_profile("VenusA", 149)
+    profile_1491 = resolve_firmware_profile("VenusA", 1491)
+
+    assert profile_1491.firmware_version == 1491
+    assert profile_1491.control_generation == 149
+    assert profile_1491.supports_sys_dod is False
+    assert profile_1491.supports_ups is False
+    assert profile_1491.pv_energy_scale == 10.0
+    assert profile_1491.openapi_reset_prone is True
+    assert replace(profile_1491, firmware_version=149) == profile_149
