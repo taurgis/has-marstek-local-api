@@ -115,7 +115,7 @@ def parse_es_mode_response(
         "battery_soc": battery_soc,
         "device_mode": device_mode,
         "ongrid_power": ongrid_power,
-        "offgrid_power": result.get("offgrid_power"),
+        "offgrid_power": _unwrap_uint16_power(result.get("offgrid_power")),
         # Don't set battery_power here - it comes from ES.GetStatus
     }
 
@@ -173,7 +173,7 @@ def parse_es_status_response(
             bat_soc = None
     pv_power = result.get("pv_power")  # Solar power
     ongrid_power = result.get("ongrid_power")  # Grid power
-    offgrid_power = result.get("offgrid_power")
+    offgrid_power = _unwrap_uint16_power(result.get("offgrid_power"))
     raw_bat_power: Any | None
     if "bat_power" in result:
         raw_bat_power = result.get("bat_power")
@@ -469,6 +469,18 @@ def total_pv_channel_power(pv_status_data: dict[str, Any]) -> float:
 def _is_nonzero_number(value: Any) -> bool:
     """Return True for a real, non-zero number (bools are not power readings)."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value != 0
+
+
+def _unwrap_uint16_power(value: Any) -> Any:
+    """Read a power the firmware sent as unsigned 16 bits back as signed.
+
+    Venus E 3.0 firmware 144 reports a small negative ``offgrid_power`` while
+    charging above about 1.5 kW as e.g. 65526 instead of -10. No device draws
+    more than 32 kW, so anything above that is a wrapped negative value.
+    """
+    if _is_nonzero_number(value) and value > 32767:
+        return value - 65536
+    return value
 
 
 def _fallback_raw_battery_power(pv_power: float, ongrid_power: float, offgrid_power: Any) -> float:

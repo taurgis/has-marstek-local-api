@@ -337,6 +337,14 @@ class TestParseEsModeResponse:
 
         assert result["device_mode"] is None
 
+    def test_parse_reads_wrapped_offgrid_power_as_signed(self) -> None:
+        """Venus E 3.0 firmware 144 sends -10 W off-grid as unsigned 16-bit 65526."""
+        result = parse_es_mode_response(
+            {"id": 1, "result": {"mode": "Auto", "ongrid_power": -1856, "offgrid_power": 65526}}
+        )
+
+        assert result["offgrid_power"] == -10
+
 
 class TestParseEsStatusResponse:
     """Tests for parse_es_status_response."""
@@ -480,6 +488,44 @@ class TestParseEsStatusResponse:
 
         assert result["battery_power"] == 150
         assert result["battery_status"] == "discharging"
+
+    @pytest.mark.parametrize(
+        ("wire_offgrid", "expected"),
+        [(65526, -10), (65515, -21), (0, 0), (150, 150), (32767, 32767)],
+    )
+    def test_parse_reads_wrapped_offgrid_power_as_signed(
+        self, wire_offgrid: int, expected: int
+    ) -> None:
+        """Venus E 3.0 firmware 144 sends a small negative ``offgrid_power`` as uint16.
+
+        65526 is -10 W. Real readings up to the int16 maximum pass through unchanged.
+        """
+        result = parse_es_status_response(
+            {"id": 1, "result": {"bat_soc": 55, "bat_power": 0, "offgrid_power": wire_offgrid}}
+        )
+
+        assert result["offgrid_power"] == expected
+
+    def test_parse_missing_bat_power_fallback_uses_signed_offgrid(self) -> None:
+        """A wrapped ``offgrid_power`` must not inflate the derived battery power.
+
+        Charging at 1856 W from the grid, 65526 read as-is gave +63670 W
+        (discharging). Read as -10 W, the battery charges 1866 W.
+        """
+        response = {
+            "id": 1,
+            "result": {
+                "bat_soc": 55,
+                "pv_power": 0,
+                "ongrid_power": -1856,
+                "offgrid_power": 65526,
+            },
+        }
+
+        result = parse_es_status_response(response)
+
+        assert result["battery_power"] == -1866
+        assert result["battery_status"] == "charging"
 
     def test_parse_missing_bat_power_zero_values_keeps_missing(self):
         """Test missing bat_power with zero pv/grid keeps battery values unset."""
