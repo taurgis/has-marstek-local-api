@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.2
+
+### Patch Changes
+
+- 0cd8c90: Send Venus E mini Manual `ES.SetMode` with documented `manual_set` and a non-negative power magnitude (Home Assistant services stay signed).
+- ccc7c52: Show a Venus E mini parse error for Passive mode instead of a request timeout when the device answers with JSON-RPC id 0.
+
 ## 1.3.1
 
 ### Patch Changes
