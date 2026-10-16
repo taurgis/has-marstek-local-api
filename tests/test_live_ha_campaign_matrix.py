@@ -51,6 +51,9 @@ def test_compose_mocks_cover_supported_and_rejected_devices() -> None:
     assert by_host["172.28.0.28"].supports_sys is True
     assert by_host["172.28.0.28"].supports_ups is False
     assert by_host["172.28.0.28"].max_manual_schedule_slot == 5
+    assert by_host["172.28.0.28"].family == "Venus E mini"
+    assert by_host["172.28.0.46"].family == "Venus E mini"
+    assert by_host["172.28.0.46"].ver == 301
     assert by_host["172.28.0.22"].unique_port is True
     assert by_host["172.28.0.20"].unique_port is False
     assert by_host["172.28.0.20"].ble_mac == campaign.DEFAULT_MOCK_BLE_MAC

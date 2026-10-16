@@ -103,6 +103,7 @@ async def test_async_get_config_entry_diagnostics(
         "supports_ups": False,
         "supports_em_status": False,
         "max_manual_schedule_slot": 9,
+        "requires_manual_set": False,
         "control_generation": 1,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
@@ -153,6 +154,7 @@ async def test_diagnostics_reports_capable_firmware_profile(
         "supports_ups": True,
         "supports_em_status": True,
         "max_manual_schedule_slot": 9,
+        "requires_manual_set": False,
         "control_generation": 150,
         "openapi_reset_prone": False,
         "parallel_requests_safe": True,
@@ -183,6 +185,7 @@ async def test_diagnostics_reports_unknown_e_mini_firmware(
     assert profile["supports_sys_dod"] is False
     assert profile["supports_ups"] is False
     assert profile["max_manual_schedule_slot"] == 5
+    assert profile["requires_manual_set"] is True
     assert profile["control_generation"] is None
     assert profile["openapi_reset_prone"] is True
     assert profile["parallel_requests_safe"] is False

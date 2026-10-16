@@ -249,6 +249,18 @@ class TestValidateManualConfig:
         valid_manual_config["end_time"] = "09:00"
         validate_manual_config(valid_manual_config)  # Should not raise
 
+    def test_optional_manual_set_accepted(self, valid_manual_config: dict) -> None:
+        """Venus E mini ``manual_set`` 0-3 is accepted when present."""
+        valid_manual_config["manual_set"] = 1
+        validate_manual_config(valid_manual_config)
+
+    def test_invalid_manual_set_rejected(self, valid_manual_config: dict) -> None:
+        """Out-of-range ``manual_set`` is rejected before it reaches the device."""
+        valid_manual_config["manual_set"] = 4
+        with pytest.raises(ValidationError) as exc_info:
+            validate_manual_config(valid_manual_config)
+        assert exc_info.value.field == "manual_set"
+
 
 class TestValidatePassiveConfig:
     """Tests for validate_passive_config."""

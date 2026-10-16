@@ -157,6 +157,7 @@ def build_manual_schedule_config(
     power: int,
     days: list[str],
     enable: bool,
+    include_manual_set: bool = False,
 ) -> tuple[dict[str, Any], str, str]:
     """Build manual schedule config and normalized time strings."""
     start_time_str = normalize_time_value(start_time_raw, ATTR_START_TIME)
@@ -171,5 +172,6 @@ def build_manual_schedule_config(
         start_time=start_time_str,
         end_time=end_time_str,
         week_set=week_set,
+        include_manual_set=include_manual_set,
     )
     return config, start_time_str, end_time_str

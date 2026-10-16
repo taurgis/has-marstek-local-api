@@ -447,9 +447,10 @@ services:
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.45", "--device", "VenusE", "--ver", "156", "--ble-mac", "02deadbeef19", "--wifi-mac", "02cafebabe19", "--soc", "43"]
 
   # Venus E mini as VNSEM-0 ver 301. Reads and UDP rules are the issue #86
-  # capture. ES.SetMode follows the issue #104 report: Manual power stays
-  # unset, and Passive is a parse error with JSON-RPC id 0. Not a capture
-  # of a Manual or Passive command the app completed. SYS + UPS, slots 0-5.
+  # capture. ES.SetMode follows the issue #104 report when manual_set is
+  # omitted (Manual power stays unset; Passive is a parse error with
+  # JSON-RPC id 0). A valid Rev 3.1 manual_set is applied as
+  # documentation-based behaviour, not a capture. SYS + UPS, slots 0-5.
   mock-marstek-26:
     <<: *default-logging
     build:

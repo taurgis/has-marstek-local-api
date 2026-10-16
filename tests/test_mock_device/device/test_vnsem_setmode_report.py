@@ -81,6 +81,46 @@ class TestVnsem301SetModeReport:
         finally:
             device.simulator.stop()
 
+    @pytest.mark.parametrize(
+        ("power", "manual_set", "expected_power"),
+        [
+            (100, 1, -100),
+            (-250, 1, -250),
+            (800, 2, 800),
+            (-800, 2, 800),
+            (0, 3, 0),
+            (500, 0, None),
+        ],
+    )
+    def test_documented_manual_set_applies_power(
+        self,
+        power: int,
+        manual_set: int,
+        expected_power: int | None,
+    ) -> None:
+        """Rev 3.1 ``manual_set`` is documentation-based, not a capture."""
+        device = _device("VNSEM-0", 301)
+        request = {
+            "id": 0,
+            "config": {
+                "mode": "Manual",
+                "manual_cfg": {
+                    **_MANUAL["config"]["manual_cfg"],
+                    "power": power,
+                    "manual_set": manual_set,
+                },
+            },
+        }
+        try:
+            response = device.build_response(862, "ES.SetMode", request)
+            assert response is not None
+            assert response["result"]["set_result"] is True
+            slot = device.simulator.manual_schedules[0]
+            assert slot["power"] == expected_power
+            assert slot["manual_set"] == manual_set
+        finally:
+            device.simulator.stop()
+
     def test_auto_still_changes_mode(self) -> None:
         """The report is Manual and Passive only."""
         device = _device("VNSEM-0", 301)

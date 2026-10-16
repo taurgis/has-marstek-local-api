@@ -28,7 +28,7 @@ Older notes that “LED is not in the API” applied to legacy Open API firmware
 
 On `VNSEM-0` firmware **301** these are two different results ([#104](https://github.com/taurgis/has-marstek-local-api/issues/104)).
 
-**Manual.** `Set manual schedule` can succeed, and the Marstek app shows the slot's time, weekday and enabled state, while the power stays `---`. The device answered `set_result: true` for the documented `manual_cfg`, including a positive, negative and zero `power`. Home Assistant is sending the fields from the Open API table. It cannot fill in a power value the device did not store.
+**Manual.** `Set manual schedule` can succeed, and the Marstek app shows the slot's time, weekday and enabled state, while the power stays `---` when `manual_set` is omitted. The device answered `set_result: true` for the six shared `manual_cfg` fields, including a positive, negative and zero `power`. Rev 3.1 documents an extra `manual_set` field for Venus E mini only (0 disable, 1 charge, 2 discharge, 3 auto). This integration now sends that field, derived from the slot's signed power. Whether firmware 301 then stores a numeric power is unverified without a real-device capture.
 
 **Passive.** The same device answers `ES.SetMode` Passive with `Parse error` (`-32700`, data `401`) and JSON-RPC id `0`, not the request id. Older integration versions ignored that reply and reported `Request timeout`. Current versions show the parse error after the usual retries. Auto, AI, UPS and the panel LED use other payloads and are outside that report.
 

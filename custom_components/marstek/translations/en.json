@@ -405,7 +405,7 @@
         },
         "power": {
           "name": "Power",
-          "description": "Target power in watts. Negative values charge the battery, positive values discharge."
+          "description": "Target power in watts. Negative values charge the battery, positive values discharge. On Venus E mini this sign also selects the Open API charge or discharge flag."
         },
         "days": {
           "name": "Days",

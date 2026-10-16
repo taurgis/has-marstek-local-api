@@ -13,7 +13,15 @@ from custom_components.marstek.const import (
     MODE_UPS,
     WEEKDAYS_ALL,
 )
-from custom_components.marstek.mode_config import build_mode_config
+from custom_components.marstek.mode_config import (
+    MANUAL_SET_AUTO,
+    MANUAL_SET_CHARGE,
+    MANUAL_SET_DISABLE,
+    MANUAL_SET_DISCHARGE,
+    build_manual_mode_config,
+    build_mode_config,
+    manual_set_for_slot,
+)
 
 
 class TestBuildModeConfig:
@@ -45,6 +53,7 @@ class TestBuildModeConfig:
         assert manual_cfg["week_set"] == WEEKDAYS_ALL
         assert manual_cfg["power"] == 0
         assert manual_cfg["enable"] == 0
+        assert "manual_set" not in manual_cfg
 
     def test_passive_mode(self) -> None:
         """Test building Passive mode configuration."""
@@ -98,3 +107,32 @@ class TestBuildModeConfig:
 
         ups_config = build_mode_config(MODE_UPS)
         assert ups_config["mode"] == API_MODE_UPS
+
+
+class TestManualSetForSlot:
+    """Rev 3.1 Venus E mini ``manual_set`` is derived from signed power."""
+
+    def test_disable_when_slot_is_off(self) -> None:
+        """A disabled slot always sends 0, even if power is set."""
+        assert manual_set_for_slot(power=-500, enable=False) == MANUAL_SET_DISABLE
+        assert manual_set_for_slot(power=800, enable=False) == MANUAL_SET_DISABLE
+
+    def test_charge_from_negative_power(self) -> None:
+        """Negative watts mean charge on every other Marstek payload."""
+        assert manual_set_for_slot(power=-2000, enable=True) == MANUAL_SET_CHARGE
+
+    def test_discharge_from_positive_power(self) -> None:
+        """Positive watts mean discharge."""
+        assert manual_set_for_slot(power=800, enable=True) == MANUAL_SET_DISCHARGE
+
+    def test_auto_from_zero_power(self) -> None:
+        """An enabled zero-watt slot is the documented auto value."""
+        assert manual_set_for_slot(power=0, enable=True) == MANUAL_SET_AUTO
+
+    def test_payload_includes_manual_set_only_when_requested(self) -> None:
+        """Venus A/C/D/E omit the field; the mini includes it."""
+        without = build_manual_mode_config(power=-500, enable=True)
+        assert "manual_set" not in without["manual_cfg"]
+        with_field = build_manual_mode_config(power=-500, enable=True, include_manual_set=True)
+        assert with_field["manual_cfg"]["manual_set"] == MANUAL_SET_CHARGE
+        assert with_field["manual_cfg"]["power"] == -500

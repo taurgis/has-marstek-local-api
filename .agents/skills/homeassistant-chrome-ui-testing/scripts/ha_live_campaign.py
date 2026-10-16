@@ -1324,10 +1324,14 @@ class Campaign:
             "set_passive_mode",
             {"device_id": row["device_id"], "power": -400, "duration": 30},
         )
+        passive_failed = isinstance(passive, dict) and passive.get("ok") is False
+        # VNSEM-0 301 answers Passive with a parse error (issue #104). Other
+        # mocks accept the documented power + cd_time payload.
+        passive_expected_ok = not (target.family == "Venus E mini" and target.ver == 301)
         self.record(
             "passive-mode",
-            not (isinstance(passive, dict) and passive.get("ok") is False),
-            passive if isinstance(passive, dict) and passive.get("ok") is False else None,
+            (not passive_failed) if passive_expected_ok else passive_failed,
+            passive if passive_failed else None,
         )
         schedule = await self.service(
             "marstek",
@@ -1440,7 +1444,7 @@ class Campaign:
             (
                 m
                 for m in self.mocks
-                if m.device == "Venus E mini" and m.host in self.entry_by_host
+                if m.family == "Venus E mini" and m.host in self.entry_by_host
             ),
             None,
         )

@@ -37,6 +37,7 @@ from .helpers.device_lookup import (
 )
 from .helpers.polling import polling_paused
 from .helpers.udp_clients import get_udp_client_for_entry
+from .firmware_profile import FirmwareProfile
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
 from .pymarstek import MarstekUDPClient, build_command, get_es_status, parse_es_status_response
@@ -242,7 +243,9 @@ async def async_call_action_from_config(
     if enable:
         _validate_action_power_runtime(entry, power)
 
-    command = _build_set_mode_command(power, enable)
+    command = _build_set_mode_command(
+        power, enable, include_manual_set=_entry_requires_manual_set(entry)
+    )
 
     # Get the UDP client bound to this device's Open API port
     udp_client = get_udp_client_for_entry(hass, entry)
@@ -388,7 +391,15 @@ def _validate_action_power_runtime(entry: ConfigEntry, power: int) -> None:
     validate_power_for_entry(entry, power, _runtime_power_error)
 
 
-def _build_set_mode_command(power: int, enable: int) -> str:
+def _entry_requires_manual_set(entry: ConfigEntry) -> bool:
+    """Return whether this entry's firmware needs ``manual_cfg.manual_set``."""
+    runtime = getattr(entry, "runtime_data", None)
+    coordinator = getattr(runtime, "coordinator", None)
+    profile = getattr(coordinator, "profile", None)
+    return isinstance(profile, FirmwareProfile) and profile.requires_manual_set
+
+
+def _build_set_mode_command(power: int, enable: int, *, include_manual_set: bool = False) -> str:
     """Build ES.SetMode command with manual configuration."""
     payload = {
         "id": 0,
@@ -399,6 +410,7 @@ def _build_set_mode_command(power: int, enable: int) -> str:
             start_time=MANUAL_MODE_START_TIME,
             end_time=MANUAL_MODE_END_TIME,
             week_set=MANUAL_MODE_WEEK_SET,
+            include_manual_set=include_manual_set,
         ),
     }
     return build_command(CMD_ES_SET_MODE, payload)

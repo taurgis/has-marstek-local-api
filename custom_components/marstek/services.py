@@ -179,6 +179,7 @@ async def async_set_manual_schedule(hass: HomeAssistant, call: ServiceCall) -> N
         power=power,
         days=days,
         enable=enable,
+        include_manual_set=entry.runtime_data.coordinator.profile.requires_manual_set,
     )
 
     await send_mode_command_with_retries(
@@ -247,6 +248,7 @@ async def async_clear_manual_schedules(hass: HomeAssistant, call: ServiceCall) -
                 start_time="00:00",
                 end_time="00:00",
                 week_set=0,
+                include_manual_set=entry.runtime_data.coordinator.profile.requires_manual_set,
             )
 
             try:
@@ -314,6 +316,7 @@ async def async_set_manual_schedules(hass: HomeAssistant, call: ServiceCall) -> 
                 power=power,
                 days=days,
                 enable=enable,
+                include_manual_set=entry.runtime_data.coordinator.profile.requires_manual_set,
             )
             _validate_power_for_device(power, entry)
             await send_mode_command_with_retries(

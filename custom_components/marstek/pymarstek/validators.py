@@ -555,6 +555,22 @@ def validate_manual_config(config: dict[str, Any]) -> None:
             "enable",
         )
 
+    # Rev 3.1 documents ``manual_set`` only for Venus E mini. Other families
+    # omit it; when present it must be 0-3 so a bad extra field cannot reach
+    # the device.
+    if "manual_set" in config:
+        manual_set = config["manual_set"]
+        if (
+            isinstance(manual_set, bool)
+            or not isinstance(manual_set, int)
+            or manual_set not in (0, 1, 2, 3)
+        ):
+            raise ValidationError(
+                "manual_set must be 0 (disable), 1 (charge), "
+                f"2 (discharge) or 3 (auto) (got {manual_set})",
+                "manual_set",
+            )
+
 
 def validate_ups_config(config: dict[str, Any]) -> None:
     """Validate UPS mode configuration.

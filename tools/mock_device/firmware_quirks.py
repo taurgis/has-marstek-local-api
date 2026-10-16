@@ -136,13 +136,30 @@ def vnsem_301_setmode_report(profile: FirmwareProfile) -> bool:
     """Return whether to emulate the issue #104 VNSEM-0 301 SetMode report.
 
     Manual keeps time, weekday and enable and answers ``set_result: true``,
-    while power is left unset. Passive is rejected with a parse error whose
-    JSON-RPC id is 0. Other Venus E mini versions keep the generic simulator.
+    while power is left unset unless the payload also has Rev 3.1
+    ``manual_set`` (documentation-based; not a capture). Passive is
+    rejected with a parse error whose JSON-RPC id is 0. Other Venus E mini
+    versions keep the generic simulator.
     """
     return (
         profile.family is DeviceFamily.VENUS_E_MINI
         and profile.firmware_version == _VNSEM_REPORTED_SETMODE_VERSION
     )
+
+
+def documented_manual_set(config: dict[str, Any]) -> int | None:
+    """Return a Rev 3.1 ``manual_set`` if the payload includes a valid one.
+
+    Documentation-based, not captured. 0 disable, 1 charge, 2 discharge,
+    3 auto. Missing or invalid values are treated as absent so the #104
+    report (power stays unset) still applies.
+    """
+    value = config.get("manual_set")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value not in (0, 1, 2, 3):
+        return None
+    return value
 
 
 def vnsem_301_passive_parse_error(src: str) -> dict[str, Any]:
