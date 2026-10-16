@@ -340,6 +340,14 @@ Unknown firmware does not invent PV energy scaling.
 | `power` | number | W |
 | `cd_time` | number | Countdown seconds |
 
+**VNSEM-0 firmware 301 (issue [#104](https://github.com/taurgis/has-marstek-local-api/issues/104), device report).** A Manual write using the `manual_cfg` fields above was answered `set_result: true`. The Marstek app showed that slot's time, weekday and enable, and the power as `---` for a positive, negative and zero `power`. A Passive write using the `passive_cfg` fields above (`power` 0, `cd_time` 60, both numbers) was answered:
+
+```json
+{"id":0,"error":{"code":-32700,"message":"Parse error","data":401}}
+```
+
+The JSON-RPC id is 0, not the request id. [JSON-RPC 2.0](https://www.jsonrpc.org/specification) says a parse error whose id cannot be read must use null; this reply uses 0. This integration attributes that one-shot error to the in-flight write so the user sees the parse error. What `data` 401 means, and which JSON the official app sends for a slot whose power is a number, are not in any capture we have. Do not guess a different field name.
+
 **`ups_cfg`**
 
 | Property | Type | Description |
@@ -542,3 +550,4 @@ The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wi
 - **2026-09-18** Venus A Docker mocks: firmware **148** (solar Wh, channel-1 deciwatts; 148 or older) beside firmware **149** (solar 0.01 kWh, channel-1 still deciwatts). App firmware labels such as `148.3` use the leading Open API integer.
 - **2026-09-19** Docker mocks: Venus A firmware **150** / **150.9** (SYS/UPS, scaled solar, PV1 deciwatts) and Venus E mini firmware **145** (SYS without the 150 gate, slots 0–5). Venus C **153** GetDevice omits result MAC fields (issue #60). Venus A **147** GetMode CT zeros and legacy EM energy keys match GitHub issue logs. Venus E 2.0 / HMG-50 **153** (`172.28.0.29`, GetDevice `VenusE`) is present so discovery cannot treat it as Venus E 3.x.
 - **2026-09-19** Community Control firmware matrix: Venus C 153/155/156 follow HMG-50 (no SYS/UPS; EM server from 155; Open API stable at 156). Docker mocks cover every archived VNSE3-0 / VNSA-0 / VNSD-0 / HMG-50 Control `ver`. `VenusE Pro` 1508 stays an unknown family.
+- **2026-10-16** VNSEM-0 firmware 301 report ([#104](https://github.com/taurgis/has-marstek-local-api/issues/104)): Manual `ES.SetMode` is acknowledged while the app shows slot power as `---`; Passive comes back as `Parse error` data 401 with JSON-RPC id 0. Not a capture of a working app command.

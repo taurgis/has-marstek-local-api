@@ -7,6 +7,8 @@ mock answers the way those images dispatch Open API methods.
 
 from __future__ import annotations
 
+from typing import Any
+
 from custom_components.marstek.firmware_profile import DeviceFamily, FirmwareProfile
 
 # ``Set.Ver`` / ``Reset.Factory`` join the recv list at Control generation 149.
@@ -120,6 +122,40 @@ def answers_unknown_methods(profile: FirmwareProfile) -> bool:
     answering other requests, so it drops them silently.
     """
     return profile.family is not DeviceFamily.VENUS_E_MINI
+
+
+# Issue #104, reported on real VNSEM-0 firmware 301. Not a capture of a
+# command the Marstek app completed with a numeric power. Issue #86's
+# capture is reads and UDP rules only. The device answered ES.SetMode
+# Passive with JSON-RPC id 0 (not the request id), code -32700, data 401.
+_VNSEM_REPORTED_SETMODE_VERSION = 301
+_VNSEM_REPORTED_PASSIVE_PARSE_DATA = 401
+
+
+def vnsem_301_setmode_report(profile: FirmwareProfile) -> bool:
+    """Return whether to emulate the issue #104 VNSEM-0 301 SetMode report.
+
+    Manual keeps time, weekday and enable and answers ``set_result: true``,
+    while power is left unset. Passive is rejected with a parse error whose
+    JSON-RPC id is 0. Other Venus E mini versions keep the generic simulator.
+    """
+    return (
+        profile.family is DeviceFamily.VENUS_E_MINI
+        and profile.firmware_version == _VNSEM_REPORTED_SETMODE_VERSION
+    )
+
+
+def vnsem_301_passive_parse_error(src: str) -> dict[str, Any]:
+    """Return the Passive ES.SetMode reply reported in issue #104."""
+    return {
+        "id": 0,
+        "src": src,
+        "error": {
+            "code": -32700,
+            "message": "Parse error",
+            "data": _VNSEM_REPORTED_PASSIVE_PARSE_DATA,
+        },
+    }
 
 
 def uses_broadcast_reply_rules(profile: FirmwareProfile) -> bool:
