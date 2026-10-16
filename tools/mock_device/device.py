@@ -35,11 +35,13 @@ from .const import (
 )
 from .firmware_quirks import (
     answers_unknown_methods,
+    documented_manual_set,
     openapi_src_prefix,
     pv_method_not_found_extra_data,
     reports_es_bat_power,
     supports_set_ver_and_factory_reset,
     supports_wifi_set_config,
+    undocumented_manual_set_reason,
     uses_broadcast_reply_rules,
     vnsem_301_passive_parse_error,
     vnsem_301_setmode_report,
@@ -649,11 +651,23 @@ class MockMarstekDevice:
             and mode == MODE_MANUAL
             and isinstance(manual_config, dict)
         ):
+            manual_set = documented_manual_set(manual_config)
+            unknown = undocumented_manual_set_reason(manual_config)
             if self.simulate:
-                self.simulator.store_manual_slot_without_power(manual_config)
+                if manual_set is None:
+                    self.simulator.store_manual_slot_without_power(manual_config)
+                    if unknown:
+                        print(f"   Manual payload unknown ({unknown}); power left unset")
+                    else:
+                        print("   Manual schedule stored without power (issue #104)")
+                else:
+                    self.simulator.store_manual_slot_from_documented_manual_set(manual_config)
+                    print(
+                        "   Manual schedule stored from Rev 3.1 manual_set "
+                        f"{manual_set} (documentation-based, not captured)"
+                    )
             else:
                 self._static_mode = mode
-            print("   Manual schedule stored without power (issue #104)")
             return handle_es_set_mode(request_id, src)
 
         if self.simulate:

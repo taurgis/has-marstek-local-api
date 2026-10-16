@@ -318,6 +318,7 @@ class TestModeCommands:
             assert manual_cfg["start_time"] == "00:00"
             assert manual_cfg["end_time"] == "23:59"
             assert manual_cfg["week_set"] == 127
+            assert "manual_set" not in manual_cfg
 
 
 class TestSysCommands:

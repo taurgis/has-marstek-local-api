@@ -163,6 +163,140 @@ async def test_e_mini_single_schedule_rejects_slot_six_before_udp(
         client.send_request.assert_not_called()
 
 
+def _last_manual_cfg(client: object) -> dict[str, object]:
+    """Return the last ES.SetMode ``manual_cfg`` sent on *client*."""
+    command = client.send_request.call_args.args[0]  # type: ignore[attr-defined]
+    return json.loads(command)["params"]["config"]["manual_cfg"]
+
+
+@pytest.mark.asyncio
+async def test_e_mini_manual_schedule_sends_manual_set_from_power_sign(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Venus E mini Manual writes include Rev 3.1 ``manual_set`` from signed power."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VNSEM-0",
+            "version": 301,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device is not None
+        client.send_request.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MANUAL_SCHEDULE,
+            {
+                ATTR_DEVICE_ID: device.id,
+                ATTR_SCHEDULE_SLOT: 0,
+                ATTR_START_TIME: "08:00",
+                ATTR_END_TIME: "16:00",
+                ATTR_POWER: -500,
+                ATTR_DAYS: ["mon"],
+                ATTR_ENABLE: True,
+            },
+            blocking=True,
+        )
+
+        slot = _last_manual_cfg(client)
+        assert slot["power"] == 500
+        assert slot["enable"] == 1
+        assert slot["manual_set"] == 1
+
+
+@pytest.mark.asyncio
+async def test_e_mini_zero_watt_enabled_slot_sends_charge_flag(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Enabled 0 W on the mini sends ``manual_set`` 1, not auto (3)."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "Venus E mini",
+            "version": 145,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device is not None
+        client.send_request.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MANUAL_SCHEDULE,
+            {
+                ATTR_DEVICE_ID: device.id,
+                ATTR_SCHEDULE_SLOT: 0,
+                ATTR_START_TIME: "08:00",
+                ATTR_END_TIME: "16:00",
+                ATTR_POWER: 0,
+                ATTR_DAYS: ["mon"],
+                ATTR_ENABLE: True,
+            },
+            blocking=True,
+        )
+
+        slot = _last_manual_cfg(client)
+        assert slot["power"] == 0
+        assert slot["enable"] == 1
+        assert slot["manual_set"] == 1
+
+
+@pytest.mark.asyncio
+async def test_venus_e_manual_schedule_omits_manual_set(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Venus E 3.0 keeps the six-field ``manual_cfg`` it already accepts."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device is not None
+        client.send_request.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MANUAL_SCHEDULE,
+            {
+                ATTR_DEVICE_ID: device.id,
+                ATTR_SCHEDULE_SLOT: 0,
+                ATTR_START_TIME: "08:00",
+                ATTR_END_TIME: "16:00",
+                ATTR_POWER: -500,
+                ATTR_DAYS: ["mon"],
+                ATTR_ENABLE: True,
+            },
+            blocking=True,
+        )
+
+        slot = _last_manual_cfg(client)
+        assert slot["power"] == -500
+        assert "manual_set" not in slot
+
+
 @pytest.mark.asyncio
 async def test_clear_manual_schedules_service(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
@@ -233,6 +367,11 @@ async def test_e_mini_clear_sends_six_commands_with_single_pause(
         assert client.send_request.call_count == 6
         client.pause_polling.assert_awaited_once()
         client.resume_polling.assert_awaited_once()
+        slot = json.loads(client.send_request.call_args_list[0].args[0])["params"]["config"][
+            "manual_cfg"
+        ]
+        assert slot["manual_set"] == 0
+        assert slot["enable"] == 0
 
 
 async def _clear_with_failing_slots(
@@ -359,6 +498,66 @@ async def test_set_manual_schedules_service(
         # Polling should be paused/resumed once for the batch
         assert client.pause_polling.call_count == 1
         assert client.resume_polling.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_e_mini_batch_schedules_send_unsigned_power_and_manual_set(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Bulk mini writes use ``coordinator_profile`` the same way as a single slot."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VNSEM-0",
+            "version": 301,
+        },
+    )
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device is not None
+        client.send_request.reset_mock()
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_MANUAL_SCHEDULES,
+            {
+                ATTR_DEVICE_ID: device.id,
+                ATTR_SCHEDULES: [
+                    {
+                        ATTR_SCHEDULE_SLOT: 0,
+                        ATTR_START_TIME: "08:00",
+                        ATTR_END_TIME: "16:00",
+                        ATTR_POWER: -2000,
+                        ATTR_DAYS: ["mon", "tue"],
+                        ATTR_ENABLE: True,
+                    },
+                    {
+                        ATTR_SCHEDULE_SLOT: 1,
+                        ATTR_START_TIME: "18:00",
+                        ATTR_END_TIME: "22:00",
+                        ATTR_POWER: 800,
+                        ATTR_ENABLE: True,
+                    },
+                ],
+            },
+            blocking=True,
+        )
+
+        slots = [
+            json.loads(call.args[0])["params"]["config"]["manual_cfg"]
+            for call in client.send_request.call_args_list
+            if isinstance(call.args[0], str) and "ES.SetMode" in call.args[0]
+        ]
+        assert len(slots) == 2
+        assert slots[0]["power"] == 2000
+        assert slots[0]["manual_set"] == 1
+        assert slots[1]["power"] == 800
+        assert slots[1]["manual_set"] == 2
 
 
 @pytest.mark.asyncio

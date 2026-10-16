@@ -160,6 +160,17 @@ class FirmwareProfile:
         return generation < 150
 
     @property
+    def requires_manual_set(self) -> bool:
+        """Return whether Manual ``ES.SetMode`` must include ``manual_set``.
+
+        Rev 3.1 documents ``manual_cfg.manual_set`` only for Venus E mini
+        (0 disable, 1 charge, 2 discharge, 3 auto). Other families omit it
+        so they keep the signed six-field payload they already accept. The
+        mini also sends ``abs(power)``; direction lives in ``manual_set``.
+        """
+        return self.family is DeviceFamily.VENUS_E_MINI
+
+    @property
     def es_bat_cap_is_remaining(self) -> bool:
         """Return whether ES.GetStatus ``bat_cap`` is the remaining energy.
 
@@ -416,6 +427,7 @@ def firmware_profile_diagnostics(profile: FirmwareProfile) -> dict[str, Any]:
         "supports_ups": profile.supports_ups,
         "supports_em_status": profile.supports_em_status,
         "max_manual_schedule_slot": profile.max_manual_schedule_slot,
+        "requires_manual_set": profile.requires_manual_set,
         "control_generation": profile.control_generation,
         "openapi_reset_prone": profile.openapi_reset_prone,
         "parallel_requests_safe": profile.parallel_requests_safe,

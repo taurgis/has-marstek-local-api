@@ -672,6 +672,50 @@ class BatterySimulator:
                 self.manual_schedules.append(schedule)
             print(f"[SIM] Manual schedule slot {slot} stored without power: {schedule}")
 
+    def store_manual_slot_from_documented_manual_set(self, config: dict[str, Any]) -> None:
+        """Apply Rev 3.1 ``manual_set`` 0-2 with unsigned ``power``.
+
+        Documentation-based, not a capture. Charge is stored as negative
+        watts internally so the simulator's signed physics still run. Auto
+        (``manual_set`` 3) and a negative wire ``power`` are not handled
+        here; the caller must not invoke this for those payloads.
+        """
+        with self._lock:
+            self.mode = MODE_MANUAL
+            slot = config.get("time_num", 0)
+            raw_power = config.get("power")
+            if isinstance(raw_power, int) and not isinstance(raw_power, bool):
+                magnitude = raw_power
+            else:
+                magnitude = 0
+            manual_set = config.get("manual_set")
+            enable = config.get("enable", 1) == 1
+            power: int | None
+            if manual_set == 0:
+                power = None
+                enable = False
+            elif manual_set == 1:
+                power = -magnitude
+            else:
+                power = magnitude
+            schedule: dict[str, Any] = {
+                "time_num": slot,
+                "start_time": config.get("start_time", "00:00"),
+                "end_time": config.get("end_time", "23:59"),
+                "week_set": config.get("week_set", 127),
+                "power": power,
+                "enable": enable,
+                "manual_set": manual_set,
+            }
+            for index, existing in enumerate(self.manual_schedules):
+                if existing.get("time_num") == slot:
+                    self.manual_schedules[index] = schedule
+                    break
+            else:
+                self.manual_schedules.append(schedule)
+            print(f"[SIM] Manual schedule slot {slot} from documented manual_set: {schedule}")
+            self._apply_immediate_power_update()
+
     def settle(self, seconds: float = 10.0, step: float = 1.0) -> None:
         """Advance the simulation without waiting on the background thread.
 

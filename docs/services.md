@@ -62,6 +62,7 @@ Configure one schedule slot.
 - `end_time` (required): end time
 - `power` (required, W): negative = charge, positive = discharge
 	- Input range is `-5000..5000`, but the effective limit is validated per device/model (and may depend on the **Socket limit** option).
+	- On **Venus E mini** the Open API also has `manual_cfg.manual_set` (Rev 3.1: 0 disable, 1 charge, 2 discharge, 3 auto). The service stays signed. The wire payload sends `abs(power)` and derives `manual_set` (`enable` off → 0, negative → 1, positive → 2). An enabled 0 W slot sends `1` (charge), not `3` (auto), until hardware confirms auto. Other families omit the field and keep signed `power`.
 - `days` (optional): list of weekday values (default all days)
 	- Valid values: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`
 - `enable` (optional): enable/disable this slot (default `true`)

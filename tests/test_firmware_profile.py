@@ -60,6 +60,7 @@ def test_profile_resolves_family_capabilities(
     assert profile.family is family
     assert profile.supports_pv is supports_pv
     assert profile.max_manual_schedule_slot == max_slot
+    assert profile.requires_manual_set is (family is DeviceFamily.VENUS_E_MINI)
 
 
 @pytest.mark.parametrize("version", [150, "150"])
@@ -260,6 +261,7 @@ def test_github_issue_firmware_versions_resolve_observed_capabilities(
     assert profile.supports_em_energy is supports_em_energy
     assert profile.supports_pv is supports_pv
     assert profile.max_manual_schedule_slot == max_slot
+    assert profile.requires_manual_set is (family is DeviceFamily.VENUS_E_MINI)
 
 
 def test_legacy_venus_d_keeps_deciwatt_pv_and_wh_solar() -> None:
@@ -589,6 +591,7 @@ def test_shared_meter_channel_appears_in_diagnostics() -> None:
     diagnostics = firmware_profile_diagnostics(resolve_firmware_profile("VenusC", 156))
 
     assert diagnostics["shared_meter_udp_channel"] is True
+    assert diagnostics["requires_manual_set"] is False
     assert diagnostics["openapi_reset_prone"] is False
     assert diagnostics["parallel_requests_safe"] is False
     assert diagnostics["openapi_wifi_retransmit_safe"] is False

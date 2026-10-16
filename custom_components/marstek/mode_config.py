@@ -14,6 +14,28 @@ from .const import (
     WEEKDAYS_ALL,
 )
 
+# Rev 3.1 ``manual_cfg.manual_set``, Venus E mini only. The PDF also lists
+# ``3`` (auto). This integration does not send 3 until a real device
+# confirms it: an enabled 0 W slot sends charge (1) with power 0.
+MANUAL_SET_DISABLE = 0
+MANUAL_SET_CHARGE = 1
+MANUAL_SET_DISCHARGE = 2
+
+
+def manual_set_for_slot(*, power: int, enable: bool) -> int:
+    """Derive Rev 3.1 Venus E mini ``manual_set`` from signed user power.
+
+    Home Assistant services and device actions stay signed (negative charge,
+    positive discharge). The Open API field is a separate flag; the official
+    Manual example pairs ``power`` 100 with ``manual_set`` 1. Disabled slots
+    send 0. An enabled zero-watt slot sends charge (1), not auto (3).
+    """
+    if not enable:
+        return MANUAL_SET_DISABLE
+    if power > 0:
+        return MANUAL_SET_DISCHARGE
+    return MANUAL_SET_CHARGE
+
 
 def build_manual_mode_config(
     power: int,
@@ -23,18 +45,27 @@ def build_manual_mode_config(
     start_time: str = "00:00",
     end_time: str = "23:59",
     week_set: int = WEEKDAYS_ALL,
+    include_manual_set: bool = False,
 ) -> dict[str, Any]:
-    """Build manual mode configuration payload."""
+    """Build manual mode configuration payload.
+
+    When ``include_manual_set`` is true (Venus E mini), ``power`` on the
+    wire is ``abs(power)`` and ``manual_set`` carries the direction.
+    Other families keep the signed ``power`` they already accept.
+    """
+    manual_cfg: dict[str, Any] = {
+        "time_num": time_num,
+        "start_time": start_time,
+        "end_time": end_time,
+        "week_set": week_set,
+        "power": abs(power) if include_manual_set else power,
+        "enable": 1 if enable else 0,
+    }
+    if include_manual_set:
+        manual_cfg["manual_set"] = manual_set_for_slot(power=power, enable=enable)
     return {
         "mode": MODE_TO_API.get(MODE_MANUAL, MODE_MANUAL),
-        "manual_cfg": {
-            "time_num": time_num,
-            "start_time": start_time,
-            "end_time": end_time,
-            "week_set": week_set,
-            "power": power,
-            "enable": 1 if enable else 0,
-        },
+        "manual_cfg": manual_cfg,
     }
 
 
