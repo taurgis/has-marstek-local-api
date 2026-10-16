@@ -704,7 +704,16 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
         await self._enter_unicast_exchange()
         try:
             pending_ip = await self._resolve_unicast_ip(target_ip)
-            request_id, future = self._router.track(request_id, device_ip=pending_ip)
+            # One-shot exchanges (writes, and reads that will not retransmit)
+            # accept a parse-error reply whose JSON-RPC id is 0. Reads that
+            # still have Wi-Fi copies to send leave the error unmatched so
+            # the first busy reply does not cancel those copies.
+            retransmit_offsets = self._unicast_retransmit_offsets(target_ip, method_name, timeout)
+            request_id, future = self._router.track(
+                request_id,
+                device_ip=pending_ip,
+                accept_orphan_parse_error=not retransmit_offsets,
+            )
 
             try:
                 self._ensure_listener()
@@ -725,9 +734,7 @@ class MarstekUDPClient(BroadcastDiscoveryMixin):
                         timeout,
                         future,
                         bypass_rate_limit=bypass_rate_limit,
-                        retransmit_offsets=self._unicast_retransmit_offsets(
-                            target_ip, method_name, timeout
-                        ),
+                        retransmit_offsets=retransmit_offsets,
                         method_name=method_name,
                     )
                 except TimeoutError as err:
