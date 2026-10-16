@@ -35,13 +35,13 @@ from .const import (
 )
 from .firmware_quirks import (
     answers_unknown_methods,
+    documented_manual_set,
     openapi_src_prefix,
     pv_method_not_found_extra_data,
     reports_es_bat_power,
     supports_set_ver_and_factory_reset,
     supports_wifi_set_config,
     uses_broadcast_reply_rules,
-    documented_manual_set,
     vnsem_301_passive_parse_error,
     vnsem_301_setmode_report,
 )
