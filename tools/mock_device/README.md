@@ -59,6 +59,15 @@ instead of returning `Method not found`. Its `ES.GetStatus` `bat_cap` is the
 remaining energy, equal to `Bat.GetStatus` `bat_capacity`. Loopback senders
 (the unit tests) still get unicast replies on their source port.
 
+That #86 capture is reads plus those UDP rules. It does not include a working
+`ES.SetMode`. On `VNSEM-0` firmware **301** only, the mock instead follows the
+report in [#104](https://github.com/taurgis/has-marstek-local-api/issues/104):
+Manual answers `set_result: true` and stores the time, weekday and enable, but
+leaves power unset, and Passive answers JSON-RPC id 0, `-32700` `Parse error`,
+data 401, without changing mode. Other Venus E mini versions still use the
+generic Manual and Passive implementation. That generic path was not taken
+from a VNSEM-0 capture.
+
 ## Firmware UDP quirks
 
 The mock reproduces Control firmware behavior found in VNSE3-0 / HMG-50
@@ -164,7 +173,7 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
 | mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
-| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as the real device reports it (issue #86): SYS + UPS, slots 0–5 |
+| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as `VNSEM-0` 301 (issue #86 reads and UDP rules). `ES.SetMode` follows the issue #104 report: Manual power stays unset, Passive is a parse error with JSON-RPC id 0 |
 | mock-marstek-27–28 | 172.28.0.47–.48 | VenusE 3.0, VenusD | 151 | Same Open API as 150; `src` is `VNSE3-0-<ble>` / `VNSD-0-<ble>` |
 | mock-marstek-29 | 172.28.0.49 | VenusA | 1491 | App 149.1; generation 149, so no SYS and `src` stays `VenusA-<ble>` |
 | mock-marstek-30 | 172.28.0.72 | VenusA | 151 | Same Open API as 150; `src` is `VNSA-0-<ble>` |

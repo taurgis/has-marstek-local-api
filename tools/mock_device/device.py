@@ -41,6 +41,8 @@ from .firmware_quirks import (
     supports_set_ver_and_factory_reset,
     supports_wifi_set_config,
     uses_broadcast_reply_rules,
+    vnsem_301_passive_parse_error,
+    vnsem_301_setmode_report,
 )
 from .handlers import (
     get_static_state,
@@ -587,37 +589,7 @@ class MockMarstekDevice:
             return handle_bat_get_status(request_id, src, state, self.simulator.capacity_wh)
 
         elif method == "ES.SetMode":
-            config = params.get("config", {})
-            mode = config.get("mode", MODE_AUTO)
-            if mode == MODE_UPS and not self.profile.supports_ups:
-                return handle_method_not_found(request_id, src)
-            if mode == MODE_MANUAL:
-                manual_config = config.get("manual_cfg", {})
-                schedule_slot = (
-                    manual_config.get("time_num") if isinstance(manual_config, dict) else None
-                )
-                if (
-                    isinstance(schedule_slot, bool)
-                    or not isinstance(schedule_slot, int)
-                    or schedule_slot < 0
-                    or schedule_slot > self.profile.max_manual_schedule_slot
-                ):
-                    return handle_invalid_params(request_id, src)
-
-            if self.simulate:
-                if mode == MODE_PASSIVE:
-                    self.simulator.set_mode(mode, config.get("passive_cfg", {}))
-                elif mode == MODE_MANUAL:
-                    self.simulator.set_mode(mode, config.get("manual_cfg", {}))
-                elif mode == MODE_AI:
-                    self.simulator.set_mode(mode, config.get("ai_cfg", {}))
-                else:
-                    self.simulator.set_mode(mode)
-            else:
-                self._static_mode = mode
-
-            print(f"   Mode changed to: {mode}")
-            return handle_es_set_mode(request_id, src)
+            return self._es_set_mode_response(request_id, src, params)
 
         elif method == "Wifi.SetConfig":
             if not supports_wifi_set_config(self.profile):
@@ -644,6 +616,60 @@ class MockMarstekDevice:
         # Control firmware replies JSON-RPC -32601 ("unknow method" in
         # HMG-50 / VNSE3-0 strings) instead of dropping the datagram.
         return handle_method_not_found(request_id, src)
+
+    def _es_set_mode_response(
+        self, request_id: int, src: str, params: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Apply ES.SetMode, including the VNSEM-0 301 report from issue #104."""
+        config = params.get("config", {})
+        if not isinstance(config, dict):
+            config = {}
+        mode = config.get("mode", MODE_AUTO)
+        if mode == MODE_UPS and not self.profile.supports_ups:
+            return handle_method_not_found(request_id, src)
+        manual_config = config.get("manual_cfg", {})
+        if mode == MODE_MANUAL:
+            schedule_slot = (
+                manual_config.get("time_num") if isinstance(manual_config, dict) else None
+            )
+            if (
+                isinstance(schedule_slot, bool)
+                or not isinstance(schedule_slot, int)
+                or schedule_slot < 0
+                or schedule_slot > self.profile.max_manual_schedule_slot
+            ):
+                return handle_invalid_params(request_id, src)
+
+        # Reported on real hardware. Do not treat this as a captured success.
+        if vnsem_301_setmode_report(self.profile) and mode == MODE_PASSIVE:
+            print("   Passive rejected: Parse error data 401, JSON-RPC id 0 (issue #104)")
+            return vnsem_301_passive_parse_error(src)
+        if (
+            vnsem_301_setmode_report(self.profile)
+            and mode == MODE_MANUAL
+            and isinstance(manual_config, dict)
+        ):
+            if self.simulate:
+                self.simulator.store_manual_slot_without_power(manual_config)
+            else:
+                self._static_mode = mode
+            print("   Manual schedule stored without power (issue #104)")
+            return handle_es_set_mode(request_id, src)
+
+        if self.simulate:
+            if mode == MODE_PASSIVE:
+                self.simulator.set_mode(mode, config.get("passive_cfg", {}))
+            elif mode == MODE_MANUAL:
+                self.simulator.set_mode(mode, config.get("manual_cfg", {}))
+            elif mode == MODE_AI:
+                self.simulator.set_mode(mode, config.get("ai_cfg", {}))
+            else:
+                self.simulator.set_mode(mode)
+        else:
+            self._static_mode = mode
+
+        print(f"   Mode changed to: {mode}")
+        return handle_es_set_mode(request_id, src)
 
     def _build_response(
         self, request_id: int, method: str, params: dict[str, Any]

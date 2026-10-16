@@ -13,6 +13,18 @@ RETRY_TIMEOUT = 5.0
 RETRY_DELAY = 1.0
 
 
+def format_jsonrpc_error(error: object) -> str:
+    """Return a short description of a JSON-RPC error object."""
+    if not isinstance(error, dict):
+        return str(error)
+    code = error.get("code", "unknown")
+    message = error.get("message", "unknown")
+    text = f"JSON-RPC error {code}: {message}"
+    if "data" in error:
+        text = f"{text} (data {error['data']})"
+    return text
+
+
 async def send_command_with_retries(
     udp_client: MarstekUDPClient,
     command: str,
@@ -25,7 +37,9 @@ async def send_command_with_retries(
     """Send *command* to a device, retrying while the transport fails.
 
     UDP gives no delivery guarantee and Wi-Fi devices drop the occasional
-    datagram, so a write is retried before it is called lost.
+    datagram, so a write is retried before it is called lost. A JSON-RPC
+    error object is a delivered rejection, not a successful write: it is
+    retried the same way, and the last error text is what the caller shows.
 
     Args:
         udp_client: Client owning the socket.
@@ -37,12 +51,13 @@ async def send_command_with_retries(
         logger: Logger of the calling module, so lines keep its name.
 
     Returns:
-        ``None`` once the device answers, else the last error text.
+        ``None`` once the device answers without a JSON-RPC error, else the
+        last error text.
     """
     last_error: str | None = None
     for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
         try:
-            await udp_client.send_request(
+            response = await udp_client.send_request(
                 command,
                 host,
                 port,
@@ -57,14 +72,24 @@ async def send_command_with_retries(
                 err,
             )
             last_error = str(err)
-            if attempt < MAX_RETRY_ATTEMPTS:
-                await asyncio.sleep(RETRY_DELAY)
         else:
-            logger.info(
-                "Successfully sent %s (attempt %d/%d)",
+            rpc_error = response.get("error") if isinstance(response, dict) else None
+            if rpc_error is None:
+                logger.info(
+                    "Successfully sent %s (attempt %d/%d)",
+                    description,
+                    attempt,
+                    MAX_RETRY_ATTEMPTS,
+                )
+                return None
+            last_error = format_jsonrpc_error(rpc_error)
+            logger.warning(
+                "Device rejected %s (attempt %d/%d): %s",
                 description,
                 attempt,
                 MAX_RETRY_ATTEMPTS,
+                last_error,
             )
-            return None
+        if attempt < MAX_RETRY_ATTEMPTS:
+            await asyncio.sleep(RETRY_DELAY)
     return last_error

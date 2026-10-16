@@ -21,6 +21,11 @@ _LOGGER = logging.getLogger(__name__)
 type ResponseKey = int | tuple[str, int]
 
 
+def _is_jsonrpc_error(response: dict[str, Any]) -> bool:
+    """Return True when the datagram is a JSON-RPC error object."""
+    return isinstance(response.get("error"), dict)
+
+
 class ResponseRouter:
     """Pending-reply waiters plus the short-lived cache of stray replies."""
 
@@ -34,6 +39,9 @@ class ResponseRouter:
         self._clock = clock
         self.pending: dict[ResponseKey, asyncio.Future[dict[str, Any]]] = {}
         self.cache: dict[ResponseKey, dict[str, Any]] = {}
+        # Writes opt in. A read that still has Wi-Fi copies waiting must not
+        # take an id-0 parse error, or the first busy reply cancels the retry.
+        self._orphan_parse_error: set[ResponseKey] = set()
         self.max_cached = max_cached
         self.max_age = max_age
 
@@ -45,9 +53,20 @@ class ResponseRouter:
         return (device_ip, wire_id)
 
     def track(
-        self, request_id: Any, *, device_ip: str | None = None
+        self,
+        request_id: Any,
+        *,
+        device_ip: str | None = None,
+        accept_orphan_parse_error: bool = False,
     ) -> tuple[int, asyncio.Future[dict[str, Any]]]:
-        """Register a waiter under the firmware's uint16 JSON-RPC id."""
+        """Register a waiter under the firmware's uint16 JSON-RPC id.
+
+        ``accept_orphan_parse_error`` is for a one-shot unicast. Control
+        firmware and VNSEM-0 301 answer a rejected body with JSON-RPC ``id`` 0
+        and ``-32700`` instead of the request id (JSON-RPC 2.0 would use
+        null). A read that will retransmit stays opted out so that first
+        busy reply does not cancel the copies.
+        """
         wire_id = json_rpc_wire_id(request_id)
         if wire_id is None:
             raise ValueError("Invalid message: missing id")
@@ -58,11 +77,16 @@ class ResponseRouter:
             raise ValueError(f"Duplicate pending JSON-RPC id {wire_id}{target}")
         future: asyncio.Future[dict[str, Any]] = asyncio.Future()
         self.pending[key] = future
+        self._orphan_parse_error.discard(key)
+        if accept_orphan_parse_error and isinstance(key, tuple):
+            self._orphan_parse_error.add(key)
         return wire_id, future
 
     def drop_waiter(self, wire_id: int, *, device_ip: str | None = None) -> None:
         """Forget a waiter whose exchange has finished."""
-        self.pending.pop(self.key(wire_id, device_ip), None)
+        key = self.key(wire_id, device_ip)
+        self.pending.pop(key, None)
+        self._orphan_parse_error.discard(key)
 
     def pop_waiter(
         self, request_id: int, *, source_ip: str | None = None
@@ -88,6 +112,8 @@ class ResponseRouter:
             "timestamp": self._clock(),
         }
         future = self.pop_waiter(request_id, source_ip=addr[0])
+        if future is None and request_id == 0 and _is_jsonrpc_error(response):
+            future = self._take_orphan_parse_error_waiter(addr[0])
         if future and not future.done():
             future.set_result(response)
         elif future is None:
@@ -152,10 +178,30 @@ class ResponseRouter:
                 to_remove + len(stale_ids),
             )
 
+    def _take_orphan_parse_error_waiter(
+        self, source_ip: str
+    ) -> asyncio.Future[dict[str, Any]] | None:
+        """Take the one in-flight unicast that opted in to an id-0 error.
+
+        Two opted-in exchanges on the same host stay unmatched: the datagram
+        does not say which request the firmware failed to parse.
+        """
+        matches = [
+            key
+            for key in self._orphan_parse_error
+            if isinstance(key, tuple) and key[0] == source_ip and key in self.pending
+        ]
+        if len(matches) != 1:
+            return None
+        key = matches[0]
+        self._orphan_parse_error.discard(key)
+        return self.pending.pop(key)
+
     def cancel_all(self) -> None:
         """Cancel every waiter and forget every cached reply."""
         waiters = list(self.pending.values())
         self.pending.clear()
+        self._orphan_parse_error.clear()
         for future in waiters:
             if not future.done():
                 future.cancel()

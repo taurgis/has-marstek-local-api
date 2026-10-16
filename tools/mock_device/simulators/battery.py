@@ -87,6 +87,20 @@ _UPS_CHARGE_FRACTION = 0.5
 _PHASE_SPLIT_UPDATE_SECONDS = 60.0
 
 
+def _schedule_power_w(schedule: dict[str, Any] | None) -> int:
+    """Return the watts a manual slot commands.
+
+    A slot stored without ``power`` commands nothing. VNSEM-0 301 does that
+    for every power the reporter tried (issue #104).
+    """
+    if not schedule:
+        return 0
+    power = schedule.get("power")
+    if isinstance(power, bool) or not isinstance(power, int | float):
+        return 0
+    return int(power)
+
+
 class BatterySimulator:
     """Simulates realistic Marstek battery behavior with P1 meter feedback.
 
@@ -368,7 +382,7 @@ class BatterySimulator:
 
         if self.mode == MODE_MANUAL:
             schedule = self._get_active_schedule()
-            return schedule.get("power", 0) if schedule else 0
+            return _schedule_power_w(schedule)
 
         if self.mode == MODE_UPS:
             # Backup mode: fill the pack and hold it there.
@@ -630,6 +644,33 @@ class BatterySimulator:
 
             else:
                 self._apply_immediate_power_update()
+
+    def store_manual_slot_without_power(self, config: dict[str, Any]) -> None:
+        """Store a Manual slot and leave its power unset.
+
+        Issue #104: VNSEM-0 301 answers ``set_result: true`` and keeps the
+        time, weekday and enable. The Marstek app shows the power as ``---``
+        for a positive, negative or zero value. The slot must not drive the
+        inverter.
+        """
+        with self._lock:
+            self.mode = MODE_MANUAL
+            slot = config.get("time_num", 0)
+            schedule: dict[str, Any] = {
+                "time_num": slot,
+                "start_time": config.get("start_time", "00:00"),
+                "end_time": config.get("end_time", "23:59"),
+                "week_set": config.get("week_set", 127),
+                "power": None,
+                "enable": config.get("enable", 1) == 1,
+            }
+            for index, existing in enumerate(self.manual_schedules):
+                if existing.get("time_num") == slot:
+                    self.manual_schedules[index] = schedule
+                    break
+            else:
+                self.manual_schedules.append(schedule)
+            print(f"[SIM] Manual schedule slot {slot} stored without power: {schedule}")
 
     def settle(self, seconds: float = 10.0, step: float = 1.0) -> None:
         """Advance the simulation without waiting on the background thread.
