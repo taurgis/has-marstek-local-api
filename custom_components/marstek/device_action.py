@@ -31,13 +31,13 @@ from .const import (
     DEFAULT_UDP_PORT,
     DOMAIN,
 )
+from .firmware_profile import FirmwareProfile
 from .helpers.device_lookup import (
     async_find_marstek_device,
     async_get_marstek_entry,
 )
 from .helpers.polling import polling_paused
 from .helpers.udp_clients import get_udp_client_for_entry
-from .firmware_profile import FirmwareProfile
 from .mode_config import build_manual_mode_config
 from .power import validate_power_for_entry
 from .pymarstek import MarstekUDPClient, build_command, get_es_status, parse_es_status_response
