@@ -405,7 +405,7 @@
         },
         "power": {
           "name": "Vermogen",
-          "description": "Doelvermogen in watt. Negatieve waarden laden de batterij, positieve waarden ontladen. Op Venus E mini kiest dit teken ook de Open API-vlag voor laden of ontladen."
+          "description": "Doelvermogen in watt. Negatieve waarden laden de batterij, positieve waarden ontladen. Op Venus E mini kiest dit teken laden of ontladen en wordt de absolute waarde naar het apparaat gestuurd."
         },
         "days": {
           "name": "Dagen",

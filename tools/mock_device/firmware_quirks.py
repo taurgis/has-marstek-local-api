@@ -137,7 +137,9 @@ def vnsem_301_setmode_report(profile: FirmwareProfile) -> bool:
 
     Manual keeps time, weekday and enable and answers ``set_result: true``,
     while power is left unset unless the payload also has Rev 3.1
-    ``manual_set`` (documentation-based; not a capture). Passive is
+    ``manual_set`` 0-2 with a non-negative ``power`` (documentation-based;
+    not a capture). Negative ``power`` with ``manual_set``, and
+    ``manual_set`` 3 (auto), are unknown and left unset. Passive is
     rejected with a parse error whose JSON-RPC id is 0. Other Venus E mini
     versions keep the generic simulator.
     """
@@ -148,18 +150,38 @@ def vnsem_301_setmode_report(profile: FirmwareProfile) -> bool:
 
 
 def documented_manual_set(config: dict[str, Any]) -> int | None:
-    """Return a Rev 3.1 ``manual_set`` if the payload includes a valid one.
+    """Return a Rev 3.1 ``manual_set`` the mock is willing to apply.
 
-    Documentation-based, not captured. 0 disable, 1 charge, 2 discharge,
-    3 auto. Missing or invalid values are treated as absent so the #104
-    report (power stays unset) still applies.
+    Documentation-based, not captured. Accepts 0 disable, 1 charge, 2
+    discharge with a non-negative ``power`` (the official example is
+    ``power`` 100 with ``manual_set`` 1). ``manual_set`` 3 (auto) and a
+    negative ``power`` are unknown — not applied — so the mock cannot
+    silently treat +100 and -100 as the same write.
     """
     value = config.get("manual_set")
     if isinstance(value, bool) or not isinstance(value, int):
         return None
-    if value not in (0, 1, 2, 3):
+    if value not in (0, 1, 2):
+        return None
+    power = config.get("power")
+    if isinstance(power, bool) or not isinstance(power, int) or power < 0:
         return None
     return value
+
+
+def undocumented_manual_set_reason(config: dict[str, Any]) -> str | None:
+    """Return why a ``manual_set`` payload is unknown, or None if omitted."""
+    if "manual_set" not in config:
+        return None
+    if documented_manual_set(config) is not None:
+        return None
+    value = config.get("manual_set")
+    power = config.get("power")
+    if value == 3:
+        return "manual_set 3 (auto) is documented in Rev 3.1 but not captured"
+    if isinstance(power, int) and not isinstance(power, bool) and power < 0:
+        return "negative power with manual_set is not the Rev 3.1 unsigned example"
+    return "manual_set is present but not a captured 0-2 unsigned payload"
 
 
 def vnsem_301_passive_parse_error(src: str) -> dict[str, Any]:

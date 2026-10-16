@@ -31,10 +31,10 @@ from .const import (
     DEFAULT_UDP_PORT,
     DOMAIN,
 )
-from .firmware_profile import FirmwareProfile
 from .helpers.device_lookup import (
     async_find_marstek_device,
     async_get_marstek_entry,
+    coordinator_profile,
 )
 from .helpers.polling import polling_paused
 from .helpers.udp_clients import get_udp_client_for_entry
@@ -244,7 +244,7 @@ async def async_call_action_from_config(
         _validate_action_power_runtime(entry, power)
 
     command = _build_set_mode_command(
-        power, enable, include_manual_set=_entry_requires_manual_set(entry)
+        power, enable, include_manual_set=coordinator_profile(entry).requires_manual_set
     )
 
     # Get the UDP client bound to this device's Open API port
@@ -389,14 +389,6 @@ def _validate_action_power_config(entry: ConfigEntry, power: int) -> None:
 def _validate_action_power_runtime(entry: ConfigEntry, power: int) -> None:
     """Validate power during runtime execution (raises HomeAssistantError)."""
     validate_power_for_entry(entry, power, _runtime_power_error)
-
-
-def _entry_requires_manual_set(entry: ConfigEntry) -> bool:
-    """Return whether this entry's firmware needs ``manual_cfg.manual_set``."""
-    runtime = getattr(entry, "runtime_data", None)
-    coordinator = getattr(runtime, "coordinator", None)
-    profile = getattr(coordinator, "profile", None)
-    return isinstance(profile, FirmwareProfile) and profile.requires_manual_set
 
 
 def _build_set_mode_command(power: int, enable: int, *, include_manual_set: bool = False) -> str:

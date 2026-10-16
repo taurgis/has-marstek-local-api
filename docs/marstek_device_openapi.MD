@@ -330,9 +330,9 @@ Unknown firmware does not invent PV energy scaling.
 | `start_time` | string | `HH:MM` |
 | `end_time` | string | `HH:MM` |
 | `week_set` | number | Bitmask, low 7 bits. `1` = Monday … `127` = all days |
-| `power` | number | W (negative charge / positive discharge in this integration) |
+| `power` | number | W. Venus A/C/D/E: signed (negative charge / positive discharge). **Venus E mini:** non-negative magnitude; direction is `manual_set`. |
 | `enable` | number | `1` on, `0` off |
-| `manual_set` | number | **Venus E mini only.** Rev 3.1: `0` disable, `1` enable charge, `2` enable discharge, `3` auto. This integration derives it from signed `power` and `enable` and omits the field on other families. The official Manual example includes `"manual_set": 1`. |
+| `manual_set` | number | **Venus E mini only.** Rev 3.1: `0` disable, `1` enable charge, `2` enable discharge, `3` auto. This integration derives 0/1/2 from the signed Home Assistant `power` and omits the field on other families. Enabled 0 W sends `1` (charge), not `3` (auto), until a real device confirms auto. The official Manual example includes `"manual_set": 1` with `"power": 100`. |
 
 **`passive_cfg`**
 
@@ -341,7 +341,7 @@ Unknown firmware does not invent PV energy scaling.
 | `power` | number | W |
 | `cd_time` | number | Countdown seconds |
 
-**VNSEM-0 firmware 301 (issue [#104](https://github.com/taurgis/has-marstek-local-api/issues/104), device report).** A Manual write that omitted `manual_set` (the six shared `manual_cfg` fields only) was answered `set_result: true`. The Marstek app showed that slot's time, weekday and enable, and the power as `---` for a positive, negative and zero `power`. This integration now sends `manual_set` for Venus E mini, derived from signed `power`. That matches the Rev 3.1 field table and the official Manual example; it has not been confirmed on a real VNSEM-0. A Passive write using the `passive_cfg` fields above (`power` 0, `cd_time` 60, both numbers) was answered:
+**VNSEM-0 firmware 301 (issue [#104](https://github.com/taurgis/has-marstek-local-api/issues/104), device report).** A Manual write that omitted `manual_set` (the six shared `manual_cfg` fields only) was answered `set_result: true`. The Marstek app showed that slot's time, weekday and enable, and the power as `---` for a positive, negative and zero `power`. This integration now sends `manual_set` for Venus E mini with a non-negative `power` magnitude. Whether that combination stores a numeric power is unconfirmed. A Passive write using the `passive_cfg` fields above (`power` 0, `cd_time` 60, both numbers) was answered:
 
 ```json
 {"id":0,"error":{"code":-32700,"message":"Parse error","data":401}}
@@ -552,4 +552,4 @@ The Docker mock `mock-marstek-2` (`172.28.0.25`, `--ver 150`) reproduces this wi
 - **2026-09-19** Docker mocks: Venus A firmware **150** / **150.9** (SYS/UPS, scaled solar, PV1 deciwatts) and Venus E mini firmware **145** (SYS without the 150 gate, slots 0–5). Venus C **153** GetDevice omits result MAC fields (issue #60). Venus A **147** GetMode CT zeros and legacy EM energy keys match GitHub issue logs. Venus E 2.0 / HMG-50 **153** (`172.28.0.29`, GetDevice `VenusE`) is present so discovery cannot treat it as Venus E 3.x.
 - **2026-09-19** Community Control firmware matrix: Venus C 153/155/156 follow HMG-50 (no SYS/UPS; EM server from 155; Open API stable at 156). Docker mocks cover every archived VNSE3-0 / VNSA-0 / VNSD-0 / HMG-50 Control `ver`. `VenusE Pro` 1508 stays an unknown family.
 - **2026-10-16** VNSEM-0 firmware 301 report ([#104](https://github.com/taurgis/has-marstek-local-api/issues/104)): Manual `ES.SetMode` is acknowledged while the app shows slot power as `---`; Passive comes back as `Parse error` data 401 with JSON-RPC id 0. Not a capture of a working app command.
-- **2026-10-16** Venus E mini Manual writes include Rev 3.1 `manual_set` (derived from signed power). The official PDF documents that field only for the mini; the payload that left slot power as `---` on VNSEM-0 301 omitted it. Unverified on a real device. Passive is unchanged.
+- **2026-10-16** Venus E mini Manual writes include Rev 3.1 `manual_set` and a non-negative `power` magnitude (HA services stay signed). The six-field payload that left slot power as `---` on VNSEM-0 301 omitted `manual_set`. Whether `manual_set` plus a positive magnitude stores a number is unconfirmed. Enabled 0 W sends `manual_set` 1, not auto (3). Passive is unchanged.

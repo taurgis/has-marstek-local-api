@@ -1,5 +1,6 @@
 """Tests for Marstek device actions."""
 
+import json
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -814,3 +815,80 @@ async def test_device_action_verification_exception(hass, mock_config_entry):
         await async_call_action_from_config(hass, config, {}, None)
         # Should have retried after verification exception
         assert call_count > 2
+
+
+def _manual_cfg_from_action(client: MagicMock) -> dict[str, Any]:
+    """Return the first ES.SetMode ``manual_cfg`` sent by a device action."""
+    for call in client.send_request.call_args_list:
+        raw = call.args[0]
+        if not isinstance(raw, str) or "ES.SetMode" not in raw:
+            continue
+        config = json.loads(raw)["params"]["config"]
+        if "manual_cfg" in config:
+            return config["manual_cfg"]
+    raise AssertionError("device action did not send a Manual ES.SetMode")
+
+
+async def test_e_mini_device_action_charge_sends_unsigned_power_and_manual_set(
+    hass, mock_config_entry
+) -> None:
+    """Venus E mini charge uses the same firmware profile as services."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VNSEM-0",
+            "version": 301,
+        },
+    )
+    client = _mock_client(mode_response=_verify_status(charge=True))
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device
+        client.send_request.reset_mock()
+
+        await async_call_action_from_config(
+            hass,
+            {CONF_DEVICE_ID: device.id, CONF_DOMAIN: DOMAIN, CONF_TYPE: ACTION_CHARGE},
+            {},
+            None,
+        )
+
+        slot = _manual_cfg_from_action(client)
+        assert slot["power"] == 1300
+        assert slot["enable"] == 1
+        assert slot["manual_set"] == 1
+
+
+async def test_venus_e_device_action_keeps_signed_power(hass, mock_config_entry) -> None:
+    """Venus E 3.0 device actions keep signed watts and omit ``manual_set``."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            "device_type": "VenusE 3.0",
+            "version": 150,
+        },
+    )
+    client = _mock_client(mode_response=_verify_status(charge=True))
+    with _patch_all(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        device = async_lookup_device_by_identifier(dr.async_get(hass), (DOMAIN, DEVICE_IDENTIFIER))
+        assert device
+        client.send_request.reset_mock()
+
+        await async_call_action_from_config(
+            hass,
+            {CONF_DEVICE_ID: device.id, CONF_DOMAIN: DOMAIN, CONF_TYPE: ACTION_CHARGE},
+            {},
+            None,
+        )
+
+        slot = _manual_cfg_from_action(client)
+        assert slot["power"] == -1300
+        assert "manual_set" not in slot

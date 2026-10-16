@@ -21,6 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntry, format_mac
 
 from ..const import DOMAIN
+from ..firmware_profile import FirmwareProfile
 
 _HEX_CHARS = frozenset("0123456789abcdef")
 _MIN_PREFIX_LEN = 16
@@ -263,6 +264,15 @@ def async_lookup_device_by_identifier(
             registry.async_get_device_by_identifier(identifier, config_entry_id)
         )
     return _as_main_device_entry(registry.async_get_device(identifiers={identifier}))
+
+
+def coordinator_profile(entry: ConfigEntry) -> FirmwareProfile:
+    """Return the loaded firmware profile for a Marstek config entry.
+
+    Services and device actions both read ``manual_set`` gating from this
+    so they cannot drift onto different coordinator paths.
+    """
+    return cast(FirmwareProfile, entry.runtime_data.coordinator.profile)
 
 
 def require_loaded_marstek_entry(

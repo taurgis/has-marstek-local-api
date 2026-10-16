@@ -449,8 +449,8 @@ services:
   # Venus E mini as VNSEM-0 ver 301. Reads and UDP rules are the issue #86
   # capture. ES.SetMode follows the issue #104 report when manual_set is
   # omitted (Manual power stays unset; Passive is a parse error with
-  # JSON-RPC id 0). A valid Rev 3.1 manual_set is applied as
-  # documentation-based behaviour, not a capture. SYS + UPS, slots 0-5.
+  # JSON-RPC id 0). A Rev 3.1 manual_set 0-2 with unsigned power is
+  # documentation-based, not a capture. SYS + UPS, slots 0-5.
   mock-marstek-26:
     <<: *default-logging
     build:

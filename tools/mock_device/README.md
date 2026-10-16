@@ -173,7 +173,7 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
 | mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
-| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as `VNSEM-0` 301 (issue #86 reads and UDP rules). `ES.SetMode` follows the issue #104 report when `manual_set` is omitted (Manual power stays unset; Passive is a parse error with JSON-RPC id 0). A valid Rev 3.1 `manual_set` is documentation-based, not a capture |
+| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as `VNSEM-0` 301 (issue #86 reads and UDP rules). `ES.SetMode` follows the issue #104 report when `manual_set` is omitted (Manual power stays unset; Passive is a parse error with JSON-RPC id 0). A Rev 3.1 `manual_set` 0-2 with unsigned `power` is documentation-based, not a capture. Negative `power` with `manual_set`, and auto (`3`), are unknown |
 | mock-marstek-27–28 | 172.28.0.47–.48 | VenusE 3.0, VenusD | 151 | Same Open API as 150; `src` is `VNSE3-0-<ble>` / `VNSD-0-<ble>` |
 | mock-marstek-29 | 172.28.0.49 | VenusA | 1491 | App 149.1; generation 149, so no SYS and `src` stays `VenusA-<ble>` |
 | mock-marstek-30 | 172.28.0.72 | VenusA | 151 | Same Open API as 150; `src` is `VNSA-0-<ble>` |

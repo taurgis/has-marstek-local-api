@@ -165,7 +165,8 @@ class FirmwareProfile:
 
         Rev 3.1 documents ``manual_cfg.manual_set`` only for Venus E mini
         (0 disable, 1 charge, 2 discharge, 3 auto). Other families omit it
-        so they keep the payload they already accept.
+        so they keep the signed six-field payload they already accept. The
+        mini also sends ``abs(power)``; direction lives in ``manual_set``.
         """
         return self.family is DeviceFamily.VENUS_E_MINI
 

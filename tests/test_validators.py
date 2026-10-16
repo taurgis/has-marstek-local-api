@@ -261,6 +261,14 @@ class TestValidateManualConfig:
             validate_manual_config(valid_manual_config)
         assert exc_info.value.field == "manual_set"
 
+    def test_manual_set_rejects_negative_power(self, valid_manual_config: dict) -> None:
+        """Signed watts plus ``manual_set`` is not the Rev 3.1 example shape."""
+        valid_manual_config["manual_set"] = 1
+        valid_manual_config["power"] = -500
+        with pytest.raises(ValidationError) as exc_info:
+            validate_manual_config(valid_manual_config)
+        assert exc_info.value.field == "power"
+
 
 class TestValidatePassiveConfig:
     """Tests for validate_passive_config."""

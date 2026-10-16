@@ -66,7 +66,7 @@ set_manual_schedule:
         time:
     power:
       name: Power
-      description: Target power in watts. Negative values charge the battery, positive values discharge. On Venus E mini this sign also selects the Open API charge or discharge flag.
+      description: Target power in watts. Negative values charge the battery, positive values discharge. On Venus E mini this sign selects charge or discharge and the device is sent the magnitude.
       required: true
       default: 0
       selector:

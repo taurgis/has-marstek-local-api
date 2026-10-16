@@ -671,24 +671,23 @@ class BatterySimulator:
             else:
                 self.manual_schedules.append(schedule)
             print(f"[SIM] Manual schedule slot {slot} stored without power: {schedule}")
-            self._apply_immediate_power_update()
 
     def store_manual_slot_from_documented_manual_set(self, config: dict[str, Any]) -> None:
-        """Apply Rev 3.1 ``manual_set`` (documentation-based, not a capture).
+        """Apply Rev 3.1 ``manual_set`` 0-2 with unsigned ``power``.
 
-        0 disable, 1 charge, 2 discharge, 3 auto. Magnitude comes from
-        ``abs(power)`` so both the official example (``power`` 100 with
-        ``manual_set`` 1) and this integration's signed watts work.
+        Documentation-based, not a capture. Charge is stored as negative
+        watts internally so the simulator's signed physics still run. Auto
+        (``manual_set`` 3) and a negative wire ``power`` are not handled
+        here; the caller must not invoke this for those payloads.
         """
         with self._lock:
             self.mode = MODE_MANUAL
             slot = config.get("time_num", 0)
             raw_power = config.get("power")
-            magnitude = (
-                abs(int(raw_power))
-                if isinstance(raw_power, int) and not isinstance(raw_power, bool)
-                else 0
-            )
+            if isinstance(raw_power, int) and not isinstance(raw_power, bool):
+                magnitude = raw_power
+            else:
+                magnitude = 0
             manual_set = config.get("manual_set")
             enable = config.get("enable", 1) == 1
             power: int | None
@@ -697,10 +696,8 @@ class BatterySimulator:
                 enable = False
             elif manual_set == 1:
                 power = -magnitude
-            elif manual_set == 2:
-                power = magnitude
             else:
-                power = 0
+                power = magnitude
             schedule: dict[str, Any] = {
                 "time_num": slot,
                 "start_time": config.get("start_time", "00:00"),

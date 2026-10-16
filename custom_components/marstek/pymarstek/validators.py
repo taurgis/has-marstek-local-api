@@ -557,7 +557,8 @@ def validate_manual_config(config: dict[str, Any]) -> None:
 
     # Rev 3.1 documents ``manual_set`` only for Venus E mini. Other families
     # omit it; when present it must be 0-3 so a bad extra field cannot reach
-    # the device.
+    # the device. The official Manual example uses a non-negative magnitude
+    # with the flag, so a signed ``power`` plus ``manual_set`` is rejected.
     if "manual_set" in config:
         manual_set = config["manual_set"]
         if (
@@ -569,6 +570,12 @@ def validate_manual_config(config: dict[str, Any]) -> None:
                 "manual_set must be 0 (disable), 1 (charge), "
                 f"2 (discharge) or 3 (auto) (got {manual_set})",
                 "manual_set",
+            )
+        power = config["power"]
+        if isinstance(power, int) and not isinstance(power, bool) and power < 0:
+            raise ValidationError(
+                f"manual_set requires a non-negative power magnitude (got {power})",
+                "power",
             )
 
 
