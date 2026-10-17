@@ -102,7 +102,8 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 ### Options
 
 - `--port PORT` - UDP port (default: 30000)
-- `--ip IP` - Override reported IP address
+- `--ip IP` - Override the live address (`Wifi.GetStatus` `sta_ip`, and `Marstek.GetDevice` `ip` unless `--stale-ip` is set)
+- `--stale-ip IP` - Put this address in `Marstek.GetDevice` `ip` while `sta_ip` stays the live address. Reproduces Venus E firmware that keeps the previous DHCP address (issue #108)
 - `--device TYPE` - Device type (default: `"VenusE 3.0"`)
 - `--ver INTEGER` - Non-negative firmware version returned by discovery (default: 145)
 - `--ble-mac MAC` - BLE MAC address (unique per device)

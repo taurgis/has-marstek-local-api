@@ -24,7 +24,7 @@ After setup you’ll see a device page with sensors/entities grouped under the d
 
 ## IP changes
 
-If your device IP changes (DHCP), the integration’s background scanner will detect it and update the config entry.
+If your device IP changes (DHCP), the background scanner updates the config entry to the address the device answered from. A `Marstek.GetDevice` payload can keep naming the previous address after a lease change; that value is not written over a host that is still answering. A DHCP lease from Home Assistant still updates the host.
 
 Unique IDs are based on the device’s **BLE MAC** (falling back to other MACs when needed) so entities remain stable across IP changes.
 

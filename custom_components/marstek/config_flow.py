@@ -54,6 +54,25 @@ _LOGGER = logging.getLogger(__name__)
 _MANUAL_DEVICE_OPTION = "__manual__"
 
 
+def _stored_host_is_answering(entry: config_entries.ConfigEntry) -> bool:
+    """Return True when *entry* is loaded and its last poll succeeded.
+
+    Setup retry, a missing coordinator, and a coordinator that has started
+    failing all mean the stored address is not known to be reachable. One
+    failed poll (``last_update_success`` false) is enough, even before the
+    failure count leaves zero.
+    """
+    if entry.state is not ConfigEntryState.LOADED:
+        return False
+    runtime_data = getattr(entry, "runtime_data", None)
+    coordinator = getattr(runtime_data, "coordinator", None)
+    if coordinator is None:
+        return False
+    if getattr(coordinator, "consecutive_failures", 0) != 0:
+        return False
+    return getattr(coordinator, "last_update_success", False) is True
+
+
 class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Marstek."""
 
@@ -534,7 +553,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         current_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
         updates: dict[str, Any] = {}
 
-        if entry.data.get(CONF_HOST) != self._discovered_ip:
+        if entry.data.get(CONF_HOST) != self._discovered_ip and self._may_replace_host(entry):
             _LOGGER.debug(
                 "Discovery: Device %s IP changed from %s to %s, updating config entry",
                 entry.unique_id,
@@ -542,6 +561,13 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._discovered_ip,
             )
             updates[CONF_HOST] = self._discovered_ip
+        elif entry.data.get(CONF_HOST) != self._discovered_ip:
+            _LOGGER.debug(
+                "Discovery reported %s for %s but %s is still answering; keeping it",
+                self._discovered_ip,
+                entry.unique_id,
+                entry.data.get(CONF_HOST),
+            )
 
         if discovered_port is not None and current_port != discovered_port:
             _LOGGER.debug(
@@ -573,6 +599,17 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Nothing to write, but the device is answering again, so
             # stop waiting out Home Assistant's setup-retry backoff.
             self.hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    def _may_replace_host(self, entry: config_entries.ConfigEntry) -> bool:
+        """Return True when the stored host may be replaced.
+
+        A DHCP lease is the address the device requested. A scanner payload
+        is not: Venus E firmware can name a previous lease while answering
+        from the new one, and a host whose last poll succeeded is left alone.
+        """
+        if self.source == config_entries.SOURCE_DHCP:
+            return True
+        return not _stored_host_is_answering(entry)
 
     def _dhcp_probe_ports(self) -> list[int]:
         """Return 30000, then any Open API port a configured entry already uses.

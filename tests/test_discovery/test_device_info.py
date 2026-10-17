@@ -758,8 +758,8 @@ class TestUnusableClaimedIp:
         assert info is not None
         assert info["ip"] == "192.168.1.9"
 
-    def test_usable_claimed_ip_still_wins_and_is_normalized(self) -> None:
-        """The claimed address remains authoritative when it is usable."""
+    def test_reply_source_wins_when_claimed_ip_differs(self) -> None:
+        """A usable payload ip does not replace the address that answered."""
         from custom_components.marstek.discovery import _device_info_from_response
 
         info = _device_info_from_response(
@@ -769,7 +769,33 @@ class TestUnusableClaimedIp:
         )
 
         assert info is not None
-        assert info["ip"] == "192.168.9.92"
+        assert info["ip"] == "192.168.1.9"
+
+    def test_leading_zero_claimed_ip_does_not_override_same_source(self) -> None:
+        """Leading zeros normalise to the socket address instead of replacing it."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.001.009"}},
+            "192.168.1.9",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.1.9"
+
+    def test_claimed_ip_is_used_when_observed_host_is_unusable(self) -> None:
+        """No socket address leaves the normalised payload ip as the fallback."""
+        from custom_components.marstek.discovery import _device_info_from_response
+
+        info = _device_info_from_response(
+            {"result": {"ble_mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.002.173"}},
+            "0.0.0.0",
+            30000,
+        )
+
+        assert info is not None
+        assert info["ip"] == "192.168.2.173"
 
 
 class TestOversizedReply:
