@@ -114,6 +114,13 @@ class MockMarstekDevice:
             raise ValueError("Mock firmware version must be a non-negative integer")
         self.config["ver"] = self.profile.firmware_version
         self.ip = ip_override or get_local_ip()
+        # Venus E 3.0 can keep answering from a new DHCP address while
+        # Marstek.GetDevice still reports the previous one (issue #108).
+        # ``sta_ip`` stays on ``self.ip``, the address the socket replies from.
+        stale_ip = self.config.pop("stale_ip", None)
+        self.stale_ip: str | None = (
+            stale_ip if isinstance(stale_ip, str) and stale_ip.strip() else None
+        )
         self.sock: socket.socket | None = None
         # Venus E mini UDP rules (issue #86); see uses_broadcast_reply_rules.
         self._broadcast_rules = uses_broadcast_reply_rules(self.profile)
@@ -223,6 +230,8 @@ class MockMarstekDevice:
         print(f"BLE MAC: {self.config['ble_mac']}")
         print(f"WiFi MAC: {self.config['wifi_mac']}")
         print(f"IP: {self.ip}")
+        if self.stale_ip:
+            print(f"GetDevice ip (stale): {self.stale_ip}")
         print(f"Listening on UDP port {self.port}")
         print(f"Simulation: {'ENABLED' if self.simulate else 'DISABLED'}")
         print(f"Initial SOC: {self.simulator.soc}%")
@@ -537,7 +546,7 @@ class MockMarstekDevice:
                 request_id,
                 src,
                 self.config,
-                self.ip,
+                self.stale_ip or self.ip,
                 omit_result_macs=omit_result_macs,
             )
 

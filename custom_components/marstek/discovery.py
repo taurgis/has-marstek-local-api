@@ -47,30 +47,56 @@ def _normalize_ip(ip: str) -> str:
         return ip
 
 
+def _usable_address(value: object) -> str | None:
+    """Return a host that can be polled, or None.
+
+    IPv4 with leading zeros is normalised. Blank and ``0.0.0.0`` are not
+    hosts. Anything else that is a non-empty string (a hostname, an address
+    the kernel already normalised) is kept as written.
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or text == "0.0.0.0":
+        return None
+    parts = text.split(".")
+    if len(parts) == 4 and all(part.isdigit() for part in parts):
+        normalized = _normalize_ip(text)
+        if normalized in ("", "0.0.0.0"):
+            return None
+        return normalized
+    return text
+
+
 def _resolve_device_ip(result: dict[str, Any], observed_ip: str) -> str:
     """Pick the address to record for a device that just answered.
 
-    The reply carries the address the device believes it has, and the socket
-    carries the address the datagram actually came from. The claimed value wins
-    when it is usable, because it is what the rest of the integration has always
-    recorded and because it survives the leading-zero forms some builds emit.
+    The socket address is where the datagram came from, so the next poll can
+    use it. ``Marstek.GetDevice`` ``ip`` is documented as the current IPv4,
+    but Venus E 3.0 firmware can keep the previous address after a DHCP
+    change until the battery is power-cycled (issue #108). ``Wifi.GetStatus``
+    ``sta_ip`` is also documented as the device IP and was not observed while
+    ``ip`` was stale, so this does not read it.
 
-    It is not always usable. ``ip`` is absent on the trimmed GetDevice payloads
-    (issue #60), null while a device is still negotiating its lease, and a bare
-    number or list on a glitched datagram; ``.split`` on any of those raises
-    ``AttributeError`` out of the config flow, which only catches ``AbortFlow``.
-    An unconfigured device reports ``0.0.0.0``, which parses fine but is not a
-    host anything can be polled at. Fall back to the observed address in all of
-    those cases: a datagram arrived from it, so it is known to be reachable.
+    The payload address is used only when the observed address is missing or
+    unusable: absent or non-string on trimmed payloads (issue #60), blank, or
+    ``0.0.0.0`` while a lease is still being negotiated. A glitched non-string
+    ``ip`` must not raise; the config flow only catches ``AbortFlow``.
     """
-    claimed = result.get("ip")
-    if not isinstance(claimed, str):
-        return observed_ip
-
-    normalized = _normalize_ip(claimed.strip())
-    if normalized in ("", "0.0.0.0"):
-        return observed_ip
-    return normalized
+    observed = _usable_address(observed_ip)
+    claimed = _usable_address(result.get("ip"))
+    if observed is not None:
+        if claimed is not None and claimed != observed:
+            _LOGGER.debug(
+                "GetDevice reported ip %s but the reply came from %s; recording %s",
+                claimed,
+                observed,
+                observed,
+            )
+        return observed
+    if claimed is not None:
+        return claimed
+    return observed_ip
 
 
 def _build_discovery_message() -> bytes:

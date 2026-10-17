@@ -98,6 +98,8 @@ LAN discovery is a UDP broadcast of `Marstek.GetDevice` with `ble_mac` set to `"
 
 The IP can also come from the Marstek app or the router. A static IP is recommended for long-term use.
 
+The spec calls `result.ip` the current address. On Venus E 3.0 firmware 144 and 147 it can stay at the previous DHCP address for hours after a lease change that did not power-cycle the battery, while the device keeps answering from the new address ([#108](https://github.com/taurgis/has-marstek-local-api/issues/108)). `Wifi.GetStatus` `sta_ip` is also documented as the device IP; it was not captured in that stale window, so this integration does not read it to choose a host. The address recorded from a `Marstek.GetDevice` reply is the UDP source address. The payload `ip` is used only when that source is missing or unusable (absent, not a string, blank, or `0.0.0.0`). A config entry whose last poll succeeded is not rewritten to a different address from a scanner discovery. A DHCP lease still updates the host, because that address is the one the device requested.
+
 This integration uses the configured IP at setup. A background scanner repeats broadcast discovery to update the config entry when the IP changes. Entries the broadcast sweep misses (for example across VLANs) get a unicast `Marstek.GetDevice` to the stored IP so firmware `ver` still refreshes. Setup and Reconfigure use that same unicast query. It does **not** discover during coordinator polling.
 
 ---

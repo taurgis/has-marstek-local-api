@@ -32,6 +32,15 @@ def main() -> None:
         help=f"UDP port (default: {DEFAULT_UDP_PORT})",
     )
     parser.add_argument("--ip", type=str, help="Override reported IP address")
+    parser.add_argument(
+        "--stale-ip",
+        type=str,
+        default=None,
+        help=(
+            "IPv4 to put in Marstek.GetDevice ip while Wifi.GetStatus sta_ip "
+            "stays the live address (issue #108)"
+        ),
+    )
     parser.add_argument("--device", type=str, default="VenusE 3.0", help="Device type")
     parser.add_argument(
         "--ver",
@@ -114,6 +123,9 @@ def main() -> None:
         "ble_mac": args.ble_mac.replace(":", "").lower(),
         "wifi_mac": args.wifi_mac.replace(":", "").lower(),
     }
+
+    if args.stale_ip:
+        config["stale_ip"] = args.stale_ip
 
     if args.pv_channels:
         channels: list[dict[str, float]] = []

@@ -211,7 +211,12 @@ async def test_reauth_flow_reloads_and_keeps_services(
 async def test_integration_discovery_reloads_and_keeps_services(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Test integration discovery updates IP, reloads entry, and keeps services."""
+    """A scanner IP change reloads once after the stored host has stopped answering.
+
+    A host whose last poll succeeded is left alone (issue #108). This entry has
+    already missed polls, so the new address is applied and the update listener
+    reloads it once.
+    """
     mock_config_entry.add_to_hass(hass)
 
     client = create_mock_client(
@@ -227,6 +232,9 @@ async def test_integration_discovery_reloads_and_keeps_services(
 
         assert mock_config_entry.state == ConfigEntryState.LOADED
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
+        coordinator = mock_config_entry.runtime_data.coordinator
+        coordinator.consecutive_failures = 3
+        coordinator.last_update_success = False
 
         discovery_info = {
             "ip": "192.168.1.201",
