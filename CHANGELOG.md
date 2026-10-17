@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.3
+
+### Patch Changes
+
+- 2317c53: Fix the scanner replacing a working host with the stale IP Venus E firmware keeps reporting after a DHCP change.
+
 ## 1.3.2
 
 ### Patch Changes
