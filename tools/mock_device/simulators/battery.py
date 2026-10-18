@@ -133,7 +133,21 @@ class BatterySimulator:
         spec: DeviceSpec = device_spec(device_type)
         self.spec = spec
         self.soc = initial_soc
+        # ``capacity_wh`` is the pack the physics drain. ``rated_capacity_wh``
+        # is the nameplate the Open API reports. Passing a smaller capacity
+        # simulates fade the BMS has not written into ``bat_cap``.
+        self.rated_capacity_wh = spec.capacity_wh
         self.capacity_wh = spec.capacity_wh if capacity_wh is None else capacity_wh
+        # Wall-clock seconds are multiplied by this inside ``_update_state``.
+        # Reported inverter watts are multiplied by the same factor so a
+        # Home Assistant poll that integrates power over wall time still
+        # matches the state-of-charge movement. ``configure_capacity_experiment``
+        # is what turns a faded or accelerated pack on.
+        self.time_scale = 1.0
+        self.soc_cycle = False
+        self.cycle_low_soc = 30.0
+        self.cycle_high_soc = 92.0
+        self._cycle_sign = 1
         self.max_charge_power = (
             spec.max_charge_power if max_charge_power is None else max_charge_power
         )
@@ -213,6 +227,30 @@ class BatterySimulator:
         self._persist_interval = persist_interval
         self._last_persist = time.time()
 
+    def configure_capacity_experiment(
+        self,
+        *,
+        capacity_wh: int | None = None,
+        time_scale: float = 1.0,
+        soc_cycle: bool = False,
+    ) -> None:
+        """Point the physics at a faded pack, a faster clock, or a SOC cycle.
+
+        The Open API nameplate stays at ``rated_capacity_wh``. ``time_scale``
+        must be positive. The cycle holds Passive mode between the low and
+        high state-of-charge limits.
+        """
+        if capacity_wh is not None:
+            if capacity_wh <= 0:
+                raise ValueError("capacity_wh must be positive")
+            self.capacity_wh = capacity_wh
+        if time_scale <= 0:
+            raise ValueError("time_scale must be positive")
+        self.time_scale = float(time_scale)
+        self.soc_cycle = soc_cycle
+        if soc_cycle:
+            self._engage_soc_cycle()
+
     @staticmethod
     def _default_house_pv_wp(
         house_pv_wp: int | None,
@@ -260,8 +298,30 @@ class BatterySimulator:
             with self._lock:
                 self._update_state(elapsed)
 
+    def _engage_soc_cycle(self) -> None:
+        """Hold Passive mode and walk the pack between two state-of-charge limits.
+
+        The Open API mode stays Passive, so a capacity estimator that rejects
+        mode changes still sees one long charge and one long discharge.
+        """
+        self.mode = MODE_PASSIVE
+        self._cycle_sign = -1 if self.soc <= self.cycle_low_soc else 1
+        self.passive_end_time = time.time() + 3650 * 24 * 3600
+        self._apply_soc_cycle_target()
+
+    def _apply_soc_cycle_target(self) -> None:
+        """Point the passive setpoint at the current cycle direction."""
+        if self._cycle_sign > 0 and self.soc <= self.cycle_low_soc:
+            self._cycle_sign = -1
+        elif self._cycle_sign < 0 and self.soc >= self.cycle_high_soc:
+            self._cycle_sign = 1
+        self.target_power = (
+            self.max_discharge_power if self._cycle_sign > 0 else -self.max_charge_power
+        )
+
     def _update_state(self, elapsed_seconds: float) -> None:
         """Update battery state based on elapsed time."""
+        elapsed_seconds *= self.time_scale
         # Check passive mode expiration
         if (
             self.mode == MODE_PASSIVE
@@ -376,6 +436,11 @@ class BatterySimulator:
 
     def _calculate_target_power(self, elapsed_seconds: float | None = None) -> int:
         """Calculate target battery power based on mode."""
+        if self.soc_cycle:
+            self.mode = MODE_PASSIVE
+            if self.passive_end_time is None or self.passive_end_time < time.time():
+                self.passive_end_time = time.time() + 3650 * 24 * 3600
+            self._apply_soc_cycle_target()
         if self.mode == MODE_PASSIVE:
             # Fixed power set by user (+ = discharge, - = charge)
             return self.target_power
@@ -729,6 +794,15 @@ class BatterySimulator:
                 self._update_state(min(step, remaining))
                 remaining -= step
 
+    def _reported_watts(self, watts: float) -> int:
+        """Return inverter watts as the API should report them.
+
+        At ``time_scale`` 1 this is the physical wattage. Above 1 the reported
+        wattage grows with the accelerated state of charge so an integrator
+        that only has wall-clock timestamps still recovers the true capacity.
+        """
+        return round(watts * self.time_scale)
+
     def get_state(self) -> dict[str, Any]:
         """Get current battery state for API responses."""
         with self._lock:
@@ -749,14 +823,17 @@ class BatterySimulator:
             if self.mode == MODE_PASSIVE:
                 passive_cfg = {"power": self.target_power, "cd_time": passive_remaining}
 
+            reported = self._reported_watts
             return {
                 # Core battery state
                 "soc": int(self.soc),
-                "power": self.actual_power,
+                "power": reported(self.actual_power),
                 "mode": self.mode,
                 "status": status,
-                # Inverter AC port, what ES.GetStatus calls ongrid_power
-                "ongrid_power": self.ongrid_power,
+                # Inverter AC port, what ES.GetStatus calls ongrid_power.
+                # Scaled with ``time_scale`` so wall-clock integration matches
+                # the accelerated state of charge. The meter below is not.
+                "ongrid_power": reported(self.ongrid_power),
                 # Grid/P1 meter state
                 "grid_power": self.grid_power,
                 "em_a_power": self.em_a_power,

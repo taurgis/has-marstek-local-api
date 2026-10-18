@@ -57,6 +57,31 @@ def main() -> None:
         help="Initial battery SOC percentage (default: 50)",
     )
     parser.add_argument(
+        "--capacity-wh",
+        type=int,
+        default=None,
+        help=(
+            "True DC capacity used for state-of-charge physics. "
+            "The Open API nameplate (bat_cap / rated_capacity) stays at the "
+            "family rating, so a faded pack is not visible on those fields."
+        ),
+    )
+    parser.add_argument(
+        "--time-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Accelerate pack physics and the reported inverter watts by this "
+            "factor (default: 1). Wall-clock integration of reported power "
+            "still matches state of charge."
+        ),
+    )
+    parser.add_argument(
+        "--soc-cycle",
+        action="store_true",
+        help="Hold Passive mode and cycle between 30%% and 92%% SOC at rated power",
+    )
+    parser.add_argument(
         "--pv-channels",
         type=str,
         help=(
@@ -123,6 +148,17 @@ def main() -> None:
         "ble_mac": args.ble_mac.replace(":", "").lower(),
         "wifi_mac": args.wifi_mac.replace(":", "").lower(),
     }
+
+    if args.capacity_wh is not None and args.capacity_wh <= 0:
+        raise SystemExit("--capacity-wh must be a positive number of watt-hours")
+    if args.time_scale <= 0:
+        raise SystemExit("--time-scale must be positive")
+    if args.capacity_wh is not None:
+        config["capacity_wh"] = args.capacity_wh
+    if args.time_scale != 1.0:
+        config["time_scale"] = args.time_scale
+    if args.soc_cycle:
+        config["soc_cycle"] = True
 
     if args.stale_ip:
         config["stale_ip"] = args.stale_ip

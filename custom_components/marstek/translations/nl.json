@@ -150,6 +150,12 @@
       "battery_total_capacity": {
         "name": "Totale batterijcapaciteit"
       },
+      "battery_usable_capacity": {
+        "name": "Bruikbare capaciteit"
+      },
+      "battery_state_of_health": {
+        "name": "Batterijconditie"
+      },
       "device_mode": {
         "name": "Apparaatmodus",
         "state": {
