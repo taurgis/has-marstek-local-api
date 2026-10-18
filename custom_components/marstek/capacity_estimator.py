@@ -10,12 +10,15 @@ is a stretch of one direction (charge or discharge), one operating mode, and
 no long gap. When state of charge has moved at least ``MIN_SOC_DELTA`` points
 the window's DC energy, estimated from reported watts and a fixed one-way
 efficiency, is divided by the state-of-charge fraction. The published value is
-the median of the accepted windows. Until that median exists the sensors stay
-unknown.
+the median of the accepted windows. Once both charge and discharge have at
+least three windows, the published value becomes the geometric mean of the
+two medians, which cancels a one-way efficiency that is the same in both
+directions. Until a median exists the sensors stay unknown.
 """
 
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -217,13 +220,32 @@ class UsableCapacityEstimator:
         """Return how many windows are in the median."""
         return len(self._windows)
 
+    def _published(self) -> tuple[float | None, str]:
+        """Return the watt-hour estimate and which efficiency treatment produced it.
+
+        One direction uses the median and the fixed one-way factor. Both
+        directions use the geometric mean of the two medians, which does not
+        depend on that factor when the two real efficiencies are equal.
+        """
+        if len(self._windows) < MIN_WINDOWS:
+            return None, "assumed_one_way"
+        discharge = [
+            window.capacity_wh for window in self._windows if window.direction == "discharge"
+        ]
+        charge = [window.capacity_wh for window in self._windows if window.direction == "charge"]
+        if len(discharge) >= MIN_WINDOWS and len(charge) >= MIN_WINDOWS:
+            value = math.sqrt(statistics.median(discharge) * statistics.median(charge))
+            return value, "charge_discharge_geometric_mean"
+        pooled = statistics.median(window.capacity_wh for window in self._windows)
+        return pooled, "assumed_one_way"
+
     @property
     def estimate_wh(self) -> int | None:
-        """Return the median capacity in Wh, or None until there is enough evidence."""
-        if len(self._windows) < MIN_WINDOWS:
+        """Return capacity in Wh, or None until there is enough evidence."""
+        value, _correction = self._published()
+        if value is None:
             return None
-        median = statistics.median(window.capacity_wh for window in self._windows)
-        return round(median)
+        return round(value)
 
     @property
     def state_of_health(self) -> float | None:
@@ -271,13 +293,18 @@ class UsableCapacityEstimator:
     def attributes(self) -> dict[str, Any]:
         """Return extra state attributes for the capacity and health sensors."""
         count = len(self._windows)
+        value, correction = self._published()
         attrs: dict[str, Any] = {
             "method": _METHOD,
             "windows_accepted": count,
             "confidence": self._confidence(),
             "min_soc_delta": MIN_SOC_DELTA,
             "efficiency_one_way": CHARGE_EFFICIENCY,
+            "efficiency_correction": correction,
         }
+        if value is not None and self._windows:
+            capacities = [window.capacity_wh for window in self._windows]
+            attrs["spread_wh"] = round(max(capacities) - min(capacities))
         if self._rated_wh is not None:
             attrs["rated_capacity_wh"] = round(self._rated_wh)
         health = self.state_of_health

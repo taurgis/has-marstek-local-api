@@ -127,6 +127,53 @@ def test_charge_windows_use_the_other_efficiency_and_agree() -> None:
 
     assert estimator.estimate_wh == 4600
     assert estimator.attributes()["last_window_direction"] == "charge"
+    assert estimator.attributes()["efficiency_correction"] == "assumed_one_way"
+
+
+def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
+    """Charge and discharge medians disagree when 0.93 is wrong; their geometric mean does not.
+
+    The trace is integrated with a one-way factor of 0.88. The estimator still
+    divides and multiplies by 0.93. Each direction is biased, and the biases
+    are reciprocals, so the geometric mean is the true 4600 Wh.
+    """
+    true_eta = 0.88
+    dc_wh = 0.20 * _TRUE_WH
+    discharge_step = ((dc_wh * true_eta) / _POWER_W) * 3600.0 / 20.0
+    charge_step = ((dc_wh / true_eta) / _POWER_W) * 3600.0 / 20.0
+    estimator = UsableCapacityEstimator()
+    moment = _T0
+    _feed(
+        estimator,
+        _Trace(
+            steps=60,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=discharge_step,
+            power_w=_POWER_W,
+            start_timestamp=moment,
+        ),
+    )
+    biased = _TRUE_WH * true_eta / _ONE_WAY
+    assert estimator.estimate_wh == pytest.approx(biased, rel=0.01)
+    assert estimator.attributes()["efficiency_correction"] == "assumed_one_way"
+
+    moment += 61 * discharge_step + 1.0
+    _feed(
+        estimator,
+        _Trace(
+            steps=60,
+            soc_start=20.0,
+            soc_per_step=1.0,
+            step_seconds=charge_step,
+            power_w=-_POWER_W,
+            start_timestamp=moment,
+        ),
+    )
+
+    assert estimator.estimate_wh == pytest.approx(_TRUE_WH, rel=0.01)
+    assert estimator.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
+    assert estimator.attributes()["spread_wh"] > 0
 
 
 def test_two_windows_stay_unknown() -> None:

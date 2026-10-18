@@ -61,11 +61,19 @@ It is not a measurement from Marstek hardware. It exists so a charge window
 and a discharge window describe the same DC pack: without it they disagree by
 about the square of the efficiency, and a healthy nameplate would look faded.
 
-The sensor publishes the median of the last 21 accepted windows, and only
-after three have been accepted. A window outside 300–30,000 Wh, or outside
-15–135% of the nameplate when one is known, is dropped. The median is what
-ignores a single bad stretch; there is no second outlier rule that would
-freeze the value if the pack really did fade.
+The sensor publishes a number only after three windows have been accepted,
+and it keeps the last 21. With windows in only one direction, the number is
+their median and it still depends on the 0.93 factor. Once charge and
+discharge each have three windows, the number is the geometric mean of the
+two medians. If the real charge and discharge efficiencies are equal, that
+product cancels the factor, including the case where 0.93 is wrong. A window
+outside 300–30,000 Wh, or outside 15–135% of the nameplate when one is known,
+is dropped. The median is what ignores a single bad stretch; there is no
+second outlier rule that would freeze the value if the pack really did fade.
+
+`spread_wh` is the range of the accepted windows. It is an observed spread,
+not a confidence interval. The choice of method, and the error margin that
+goes with it, is written up in [Capacity estimation methods](capacity-estimation-methods.md).
 
 State of health is `estimate / bat_cap * 100`, rounded to 0.1. It can sit a
 little above 100% when the efficiency assumption is low.
@@ -86,9 +94,12 @@ capacity, and time. Confidence counts windows. It is not a calibrated error bar.
 - State of charge is coarse. A 20-point window closed on whole percents can
   be about one point early or late, which is about 5% on that window. The
   median of several windows is tighter. This is not a lab measurement.
-- The absolute watt-hours move if the real one-way efficiency is not 0.93.
-  The long-term slope is the degradation signal either way. Charge windows
-  and discharge windows drifting apart is the sign that the factor is off.
+- With only discharge windows, or only charge windows, the absolute
+  watt-hours move if the real one-way efficiency is not 0.93. The long-term
+  slope is still the degradation signal. Once both directions have three
+  windows, the geometric mean removes a factor that is shared by both
+  directions. A remaining gap between the two medians means the two
+  efficiencies are not equal, and that gap is the residual.
 - Idle, short cycles, mode changes, and gaps longer than about three minutes
   are ignored. A battery that only trickles may take days to publish a number.
 - No extra polling is added. Disabling the two entities in the registry hides
