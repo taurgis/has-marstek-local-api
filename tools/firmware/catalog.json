@@ -391,6 +391,72 @@
         "reset": "0x08002ab1"
       },
       "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / VenusC / HMG-50). Still no SYS/UPS. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the UDP meter client (Marstek CT or Shelly; HomeWizard P1 and Eco-Tracker are read over the module's HTTP client instead); no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
+    },
+    {
+      "deviceType": "VNSEMINI-0",
+      "firmwareType": "Control",
+      "mcuType": "control",
+      "version": 301,
+      "controlGeneration": 301,
+      "filename": "VNSEMINI-0_PMU_V12D_182500_35_FF_093314.bin",
+      "size": 182532,
+      "headerSize": 32,
+      "header": "VNSEMINI-0_PMU_V12D_182500_35_FF",
+      "payloadSize": 182500,
+      "loadAddress": "0x08008000",
+      "runnable": true,
+      "sha256": "c772be72b8168d3fe92f6382ba3580b190f086ab85108920b9597b4c9c06e985",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260915/VNSEMINI-0_PMU_V12D_182500_35_FF_093314.bin",
+      "buildStamp": "Sep 11 2026 11:31:28",
+      "banner": "VNSEMINI-0 PMU 301",
+      "vectorTable": {
+        "sp": "0x200205f8",
+        "reset": "0x080081ad"
+      },
+      "source": "https://github.com/taurgis/has-marstek-local-api/issues/86#issuecomment-6273580192",
+      "remark": "Venus E mini PMU, the Control image (Open API). Posted by ViktorGozhiy on issue #86 from the official OTA CDN (getCommonOtaUpdate for device type VNSEMINI-0; cloud version on 2026-10-03, installed on the reporter's battery). 32-byte ASCII header, then the vector table; load at 0x08008000. Same GD32F30x/STM32F1 peripheral map as control.repl.in. FC41D AT commands leave on USART2 (0x40004400, IRQ 38); IRQ 74 (the other Control images' modem UART) is the default handler. uC/OS-III. No PV.GetStatus."
+    },
+    {
+      "deviceType": "VNSEMINI-0",
+      "firmwareType": "Micro",
+      "mcuType": "micro",
+      "version": 270,
+      "filename": "VNSEMINI-0_INV_V10E_100904_AA_FF_111659.bin",
+      "size": 100936,
+      "headerSize": 32,
+      "header": "VNSEMINI-0_INV_V10E_100904_AA_FF",
+      "payloadSize": 100904,
+      "loadAddress": "0x08000000",
+      "runnable": false,
+      "sha256": "395e31ef8bce3b88d02a7b89f361203f03bbf8a06ba56d578196dcd29d78e797",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260917/VNSEMINI-0_INV_V10E_100904_AA_FF_111659.bin",
+      "vectorTable": {
+        "sp": "0x20003160",
+        "reset": "0x080082d5"
+      },
+      "source": "https://github.com/taurgis/has-marstek-local-api/issues/86#issuecomment-6273580192",
+      "remark": "Venus E mini inverter micro. Catalogued for hash and header accuracy; not runnable. No Open API strings. Posted by ViktorGozhiy on issue #86 (checkSmallBalconyOTA). The 32-byte header is followed by a vector table (SP 0x20003160, reset 0x080082d5); load address is inferred as 0x08000000 from that reset, not from a boot."
+    },
+    {
+      "deviceType": "VNSEMINI-0",
+      "firmwareType": "DCDC",
+      "mcuType": "dcdc",
+      "version": 268,
+      "filename": "VNSEMINI-0_DCDC_V10C_50152_2F_FF_165432.bin",
+      "size": 50184,
+      "headerSize": 32,
+      "header": "VNSEMINI-0_DCDC_V10C_50152_2F_FF",
+      "payloadSize": 50152,
+      "loadAddress": "0x08000000",
+      "runnable": false,
+      "sha256": "0d86ba509796c24297159169221310da1b8edb6d05e759122dbd0e463d18b54a",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260806/VNSEMINI-0_DCDC_V10C_50152_2F_FF_165432.bin",
+      "vectorTable": {
+        "sp": "0x200087a0",
+        "reset": "0x080061ed"
+      },
+      "source": "https://github.com/taurgis/has-marstek-local-api/issues/86#issuecomment-6273580192",
+      "remark": "Venus E mini DCDC. Catalogued for hash and header accuracy; not runnable. No Open API strings. Posted by ViktorGozhiy on issue #86 (checkSmallBalconyOTA). The 32-byte header is followed by a vector table (SP 0x200087a0, reset 0x080061ed); load address is inferred as 0x08000000 from that reset, not from a boot."
     }
   ]
 }

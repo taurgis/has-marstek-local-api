@@ -214,6 +214,7 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
 | `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
 | `fw-venus-a-1491`, `fw-venus-a-151` | .73-.74 | VNSA-0 1491 and 151, PV 420/360 W | `firmware-all` |
+| `fw-venus-e-mini-301` | .75 | VNSEMINI-0 PMU 301 (32-byte header, load `0x08008000`). Modem is USART2. Boots and answers AT, including `AT+QWLMAC`, and does not open UDP; see `tools/firmware/ANALYSIS.md` | `firmware-all` |
 
 ```bash
 cd .devcontainer
@@ -225,7 +226,7 @@ docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venu
 
 The four defaults are `fw-venus-e-150`, `-a-150`, `-d-150` and the HMG-50
 `fw-venus-c-156`. `docker compose --profile firmware-all up -d` starts all
-twenty-four emulators. That needs a large host: each takes 0.3-0.6 core and
+twenty-five emulators. That needs a large host: each takes 0.3-0.6 core and
 about 550 MB, and on a 4-CPU sandbox the load reaches about 60 and the firmware
 answers `Parse error` or times out. On a small machine, run at most `nproc`
 emulators at a time in named batches; see AGENTS.md, *Sandbox resource budget*.

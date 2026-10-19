@@ -1,6 +1,11 @@
-// Venus E 3.0 / A / D (VNSE3-0, VNSA-0, VNSD-0) Control board: GD32F30x-class Cortex-M4F with an
-// STM32F1-compatible peripheral map. Built from Renode's stm32f103.repl
-// (Cortex-M3 -> M4F, flash at 0x08000000) plus the models below.
+// Venus E 3.0 / A / D (VNSE3-0, VNSA-0, VNSD-0) and Venus E mini PMU
+// (VNSEMINI-0 301) Control board: GD32F30x-class Cortex-M4F with an
+// STM32F1-compatible peripheral map. The mini image matches this map
+// (GPIOA 0x40010800, USART1 0x40013800, RCC 0x40021000) and is loaded at
+// 0x08008000, not 0x08004800. Its FC41D AT stream leaves on USART2
+// (IRQ 38); the other Control images use the UART at 0x40015000 (IRQ 74).
+// Built from Renode's stm32f103.repl (Cortex-M3 -> M4F, flash at 0x08000000)
+// plus the models below.
 // Template: run_firmware.py fills in the @...@ placeholders.
 
 fsmcBank1: Memory.MappedMemory @ sysbus 0x60000000
@@ -31,6 +36,7 @@ usart4: UART.STM32_UART @ sysbus <0x40004C00, +0x100>
 usart5: UART.STM32_UART @ sysbus <0x40005000, +0x100>
     -> nvic@53
 
+@DWT@
 nvic: IRQControllers.NVIC @ sysbus 0xE000E000
     priorityMask: 0xF0
     systickFrequency: 72000000
@@ -163,11 +169,16 @@ timer14: Timers.STM32_Timer @ sysbus 0x40002000
     initialLimit: 0xFFFF
 
 dma1: DMA.STM32G0DMA @ sysbus 0x40020000
-    numberOfChannels: 7
+    // Renode 1.17 treats channel index == numberOfChannels as in range, then
+    // indexes off the end of the channel array. PMU 301 reads DMA1 offset
+    // 0x94 during USART init (one past the seven STM32F103 channels) and that
+    // read killed the emulator. Eight channels makes that read land on a
+    // modelled register. IRQ lines stay the STM32F103 set.
+    numberOfChannels: 8
     [0-6] -> nvic@[11-17]
 
 dma2: DMA.STM32G0DMA @ sysbus 0x40020400
-    numberOfChannels: 5
+    numberOfChannels: 8
     [0-4] -> nvic@[56-60]
 
 afio: GPIOPort.STM32F1AFIO @ sysbus 0x40010000
@@ -271,9 +282,14 @@ gpioPortF:
     8 -> timer13@00
     9 -> timer14@00
 
-// FC41D Wi-Fi/BLE module (Quectel AT commands); IRQ 74 in the vector table.
+// FC41D Wi-Fi/BLE module (Quectel AT commands). VNSE3-0 / VNSA-0 / VNSD-0
+// service it from IRQ 74. VNSEMINI-0 PMU 301 leaves that slot as the default
+// handler and runs the extra UART at 0x40015400 from IRQ 75 instead.
 wifi_uart: UART.STM32_UART @ sysbus <0x40015000, +0x100>
     -> nvic@74
+
+uart7: UART.STM32_UART @ sysbus <0x40015400, +0x100>
+    -> nvic@75
 
 rcu: Python.PythonPeripheral @ sysbus 0x40021000
     size: 0x400
@@ -308,6 +324,14 @@ can2: CAN.STMCAN @ sysbus <0x40006800, +0x400>
     master: can1
 
 spi2: Python.PythonPeripheral @ sysbus 0x40003800
+    size: 0x400
+    initable: true
+    filename: "@RENODE_DIR@/spi2.py"
+
+// SPI1 (0x40013000). VNSEMINI-0 PMU 301 spins on SR.TXE (offset 0x08 bit 1)
+// during bring-up. The same always-ready stub as SPI2 unblocks that loop;
+// the other Control images do not touch this address.
+spi1: Python.PythonPeripheral @ sysbus 0x40013000
     size: 0x400
     initable: true
     filename: "@RENODE_DIR@/spi2.py"

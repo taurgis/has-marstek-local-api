@@ -182,6 +182,10 @@ class FC41D:
             )
         elif up == "AT+QBLEADDR?":
             self.reply(f"+QBLEADDR:{self.config.ble_mac}", "OK")
+        elif up == "AT+QWLMAC":
+            # VNSEMINI-0 PMU 301 asks this after BLE setup and waits for the
+            # info line. OK alone leaves it stuck. Same colon style as QBLEADDR.
+            self.reply(f"+QWLMAC:{self.config.wifi_mac}", "OK")
         elif up == "AT+QBLESTAT":
             state = "ADVERTISING" if self.ble_advertising else "NOADVERTISING"
             self.reply(f"+QBLESTAT:{state}", "OK")

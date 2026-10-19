@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -122,15 +123,25 @@ def test_firmware_catalog_lists_control_images_for_mocks() -> None:
     """catalog.json tracks the Control blobs the Docker matrix is based on."""
     catalog = json.loads(_CATALOG.read_text(encoding="utf-8"))
     versions_by_sku: dict[str, set[int]] = {}
+    non_runnable: set[tuple[str, str, int]] = set()
     for image in catalog["images"]:
-        assert image["firmwareType"] == "Control"
         sku = str(image["deviceType"])
-        versions_by_sku.setdefault(sku, set()).add(int(image["version"]))
+        version = int(image["version"])
+        if image.get("runnable") is False:
+            non_runnable.add((sku, str(image["firmwareType"]), version))
+            continue
+        assert image["firmwareType"] == "Control"
+        versions_by_sku.setdefault(sku, set()).add(version)
 
     assert versions_by_sku["VNSE3-0"] == {144, 147, 1476, 148, 149, 150, 151}
     assert versions_by_sku["VNSA-0"] == {148, 1487, 149, 1491, 150, 1508, 1509, 151}
     assert versions_by_sku["VNSD-0"] == {147, 149, 1492, 150, 151}
     assert versions_by_sku["HMG-50"] == {153, 155, 156}
+    assert versions_by_sku["VNSEMINI-0"] == {301}
+    assert non_runnable == {
+        ("VNSEMINI-0", "Micro", 270),
+        ("VNSEMINI-0", "DCDC", 268),
+    }
 
 
 def _mock_custom_component_modules() -> set[str]:
@@ -170,6 +181,7 @@ _SKU_BY_MOCK_DEVICE = {
     "VenusD": "VNSD-0",
     "VenusC": "HMG-50",
     "VenusE": "HMG-50",
+    "VNSEM-0": "VNSEMINI-0",
 }
 
 
@@ -203,7 +215,11 @@ def test_default_mocks_do_not_duplicate_a_firmware_emulator() -> None:
 def test_every_catalogued_image_has_a_firmware_emulator() -> None:
     """Each catalog image runs as a fw-* service, so a profiled mock is never the only copy."""
     catalog = json.loads(_CATALOG.read_text(encoding="utf-8"))
-    images = {f"{i['deviceType']}:{i['version']}" for i in catalog["images"]}
+    images = {
+        f"{i['deviceType']}:{i['version']}"
+        for i in catalog["images"]
+        if i.get("runnable", True) is not False
+    }
     emulated = {
         _flag(service["command"], "--firmware", "")
         for name, service in _compose_services().items()
@@ -248,3 +264,19 @@ def test_readme_test_matrix_names_every_emulator_and_default_mock() -> None:
     template = "firmware_coverage.yml"
     assert f"issues/new?template={template}" in matrix
     assert (_REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / template).is_file()
+
+
+def test_vnsemini_blobs_match_catalog_headers_and_hashes() -> None:
+    """The mini OTA files keep their 32-byte header and the published SHA-256."""
+    catalog = json.loads(_CATALOG.read_text(encoding="utf-8"))
+    mini = [image for image in catalog["images"] if image["deviceType"] == "VNSEMINI-0"]
+    assert {int(image["version"]) for image in mini} == {301, 270, 268}
+    for image in mini:
+        blob = _CATALOG.parent / "blobs" / str(image["filename"])
+        data = blob.read_bytes()
+        header_size = int(image["headerSize"])
+        assert len(data) == int(image["size"])
+        assert data[:header_size].decode("ascii") == image["header"]
+        assert len(data) - header_size == int(image["payloadSize"])
+        assert hashlib.sha256(data).hexdigest() == image["sha256"]
+        assert image["source"].endswith("issues/86#issuecomment-6273580192")
