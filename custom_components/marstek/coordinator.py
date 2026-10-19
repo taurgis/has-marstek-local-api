@@ -15,6 +15,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .capacity_estimator import UsableCapacityEstimator, apply_capacity_estimate
 from .const import (
     BAT_STATUS_KEYS,
     CONF_FAILURE_THRESHOLD,
@@ -37,6 +38,7 @@ from .const import (
     WIFI_STATUS_KEYS,
 )
 from .firmware_profile import FirmwareProfile, resolve_firmware_profile
+from .helpers.capacity_store import CapacityEstimateStore
 from .helpers.coordinator_helpers import raise_if_invalid_status
 from .pymarstek import MarstekUDPClient
 from .scanner import MarstekScanner
@@ -96,6 +98,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._failure_logged: bool = False
         self._marked_reset_prone_ip: str | None = None
         self._marked_retransmit_safe_ip: str | None = None
+        # Usable capacity is derived from polls this coordinator already makes.
+        # The store is loaded on the first successful fetch.
+        self._capacity = UsableCapacityEstimator()
+        self._capacity_store = CapacityEstimateStore(hass, config_entry.entry_id)
+        self._capacity_loaded = False
 
         # Get configured fast polling interval
         fast_interval = config_entry.options.get(
@@ -429,11 +436,40 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Clear any existing connection issue on successful update
             self._clear_connection_issue()
+            await self._async_record_capacity(device_status)
 
             return device_status
         except (TimeoutError, OSError, ValueError) as err:
             # Connection failed - Scanner will detect IP changes and update config entry
             return self._handle_update_error(current_ip, err)
+
+    async def _async_record_capacity(self, device_status: dict[str, Any]) -> None:
+        """Fold this poll into the usable-capacity estimate and attach it.
+
+        No extra UDP. The result stays unknown until enough clean windows exist.
+        """
+        if not self._capacity_loaded:
+            stored = await self._capacity_store.async_load()
+            self._capacity = UsableCapacityEstimator.from_dict(stored)
+            self._capacity_loaded = True
+        apply_capacity_estimate(self._capacity, device_status, time.time())
+        if not self._capacity.consume_dirty():
+            return
+        estimate = device_status.get("battery_usable_capacity")
+        if estimate is not None:
+            _LOGGER.info(
+                "Device %s usable capacity is %s Wh after %d window(s)",
+                self.device_ip,
+                estimate,
+                self._capacity.windows_accepted,
+            )
+        self._capacity_store.delay_save(self._capacity.to_dict())
+
+    async def async_save_capacity_estimate(self) -> None:
+        """Flush accepted windows. A reload before the first poll must not wipe them."""
+        if not self._capacity_loaded:
+            return
+        await self._capacity_store.async_save(self._capacity.to_dict())
 
     def clear_openapi_reset_mark(self) -> None:
         """Drop this device's reset-prone UDP flag, including stale IPs."""

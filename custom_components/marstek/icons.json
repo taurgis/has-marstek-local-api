@@ -33,6 +33,12 @@
       "battery_total_capacity": {
         "default": "mdi:battery"
       },
+      "battery_usable_capacity": {
+        "default": "mdi:battery-heart-variant"
+      },
+      "battery_state_of_health": {
+        "default": "mdi:heart-pulse"
+      },
       "device_ip": {
         "default": "mdi:ip-network"
       },

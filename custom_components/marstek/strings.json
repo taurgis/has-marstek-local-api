@@ -150,6 +150,12 @@
       "battery_total_capacity": {
         "name": "Battery total capacity"
       },
+      "battery_usable_capacity": {
+        "name": "Usable capacity"
+      },
+      "battery_state_of_health": {
+        "name": "Battery state of health"
+      },
       "device_mode": {
         "name": "Device mode",
         "state": {

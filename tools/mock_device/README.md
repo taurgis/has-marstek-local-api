@@ -109,6 +109,9 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 - `--ble-mac MAC` - BLE MAC address (unique per device)
 - `--wifi-mac MAC` - WiFi MAC address
 - `--soc PERCENT` - Initial battery SOC percentage (default: 50)
+- `--capacity-wh WH` - True DC capacity for state-of-charge physics. The reported nameplate (`bat_cap`, `rated_capacity`) stays at the family rating, so a faded pack (for example 4600 of a 5120 Wh Venus E) is not visible on those fields.
+- `--time-scale N` - Accelerate pack physics and the reported inverter watts by N (default 1) so wall-clock integration still matches state of charge.
+- `--soc-cycle` - Hold Passive mode and cycle between 30% and 92% at rated power.
 - `--pv-channels` - Optional `power:voltage:current` list (up to 4 channels). Values are the channel's **peak (STC) physical watts**; the mock scales them by the solar curve and encodes channel 1 according to the profile
 - `--house-pv-wp WATTS` - Rooftop array peak power for the simulated dwelling (default: 3500, or 0 when `--pv-channels` is given). `0` disables rooftop solar
 - `--phases {1,3}` - Phases the home is supplied on. The Venus is single-phase either way; on `3` it only offsets phase A, so `EM.GetStatus` shows one phase exporting while the others import (default: 1)

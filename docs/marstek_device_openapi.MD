@@ -197,6 +197,8 @@ Connection status only. Advertising on/off is a **SYS** write (`Ble.Adv`), not t
 |--------|---------|-----------------|
 | `Bat.GetStatus` | Temperature, remaining/rated capacity, charge/discharge flags | Slow-tier; **disabled by default** because some firmwares reset on this call ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)) |
 
+The Open API has no state-of-health, cycle-count, or cell-voltage field. `bat_capacity` / `rated_capacity` are the BMS's own remaining and nameplate watt-hours, not a measured faded capacity. The integration estimates usable capacity from `ES.GetStatus` state of charge and battery power only; see [Usable capacity](usable-capacity.md).
+
 #### 3.4.1 Bat.GetStatus
 
 **Params**

@@ -30,6 +30,7 @@ from .firmware_profile import (
     is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
+from .helpers.capacity_store import CapacityEstimateStore
 from .helpers.device_lookup import (
     async_lookup_device_by_identifier,
     iter_device_config_entry_ids,
@@ -628,6 +629,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
 
     if coordinator is not None:
         coordinator.clear_openapi_reset_mark()
+        await coordinator.async_save_capacity_estimate()
     else:
         _clear_entry_reset_prone_flag(hass, entry)
 
@@ -644,6 +646,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
 async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> None:
     """Remove a config entry and clean up stale devices."""
     _clear_entry_reset_prone_flag(hass, entry)
+    await CapacityEstimateStore(hass, entry.entry_id).async_remove()
 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)

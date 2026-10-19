@@ -24,6 +24,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import StateType
 
+from ..capacity_estimator import CAPACITY_ATTR_KEY, CAPACITY_DATA_KEY, SOH_DATA_KEY
 from ..const import (
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
@@ -117,6 +118,29 @@ def _offgrid_power_value(
 
 def _exists_key_with_value(key: str, data: dict[str, Any]) -> bool:
     return key in data
+
+
+def _nameplate_capacity_present(data: dict[str, Any]) -> bool:
+    """Return whether ES.GetStatus published a nameplate capacity.
+
+    Venus E mini stores remaining energy there instead, and the parser leaves
+    ``bat_cap`` empty. State of health needs the nameplate; the watt-hour
+    estimate does not.
+    """
+    value = data.get("bat_cap")
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _capacity_attributes(
+    coordinator: MarstekDataUpdateCoordinator,
+    _info: dict[str, Any],
+    _entry: ConfigEntry | None,
+) -> dict[str, Any] | None:
+    """Return the estimate's attributes, or None before the first poll."""
+    raw = (coordinator.data or {}).get(CAPACITY_ATTR_KEY)
+    if isinstance(raw, dict):
+        return raw
+    return None
 
 
 def _exists_present_value(key: str, data: dict[str, Any]) -> bool:
@@ -233,6 +257,32 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
             "bat_cap", coordinator.data or {}
         ),
         exists_fn=lambda data: _exists_key_with_value("bat_cap", data),
+    ),
+    # Derived from the fast-tier polls above. Unknown until three clean
+    # windows exist; no extra device traffic.
+    MarstekSensorEntityDescription(
+        key=CAPACITY_DATA_KEY,
+        translation_key="battery_usable_capacity",
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            CAPACITY_DATA_KEY, coordinator.data or {}
+        ),
+        attributes_fn=_capacity_attributes,
+    ),
+    MarstekSensorEntityDescription(
+        key=SOH_DATA_KEY,
+        translation_key="battery_state_of_health",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            SOH_DATA_KEY, coordinator.data or {}
+        ),
+        attributes_fn=_capacity_attributes,
+        exists_fn=_nameplate_capacity_present,
     ),
     MarstekSensorEntityDescription(
         key="device_mode",

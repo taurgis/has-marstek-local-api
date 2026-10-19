@@ -153,6 +153,7 @@ class MockMarstekDevice:
             house_pv_wp=house_pv_wp,
             phases=phases,
         )
+        self._apply_capacity_experiment()
         self.simulate = simulate
 
         # BLE connection state (for mock purposes always disconnected)
@@ -181,6 +182,23 @@ class MockMarstekDevice:
         self._dropped: Counter[str] = Counter()
         self._last_drop_sender = "unknown"
         self._last_drop_log = 0.0
+
+    def _apply_capacity_experiment(self) -> None:
+        """Honor optional fade, time scale, and SOC-cycle keys in the config."""
+        capacity = self.config.pop("capacity_wh", None)
+        time_scale = self.config.pop("time_scale", 1.0)
+        soc_cycle = bool(self.config.pop("soc_cycle", False))
+        capacity_wh = (
+            capacity if isinstance(capacity, int) and not isinstance(capacity, bool) else None
+        )
+        scale = float(time_scale) if isinstance(time_scale, (int, float)) else 1.0
+        if capacity_wh is None and scale == 1.0 and not soc_cycle:
+            return
+        self.simulator.configure_capacity_experiment(
+            capacity_wh=capacity_wh,
+            time_scale=scale,
+            soc_cycle=soc_cycle,
+        )
 
     def start(self) -> None:
         """Start the mock device server."""
@@ -236,10 +254,18 @@ class MockMarstekDevice:
         print(f"Simulation: {'ENABLED' if self.simulate else 'DISABLED'}")
         print(f"Initial SOC: {self.simulator.soc}%")
         print(
-            f"Pack: {self.simulator.capacity_wh} Wh, "
+            f"Pack: {self.simulator.capacity_wh} Wh true, "
+            f"{self.simulator.rated_capacity_wh} Wh nameplate, "
             f"charge {self.simulator.max_charge_power} W / "
             f"discharge {self.simulator.max_discharge_power} W"
         )
+        if self.simulator.time_scale != 1.0:
+            print(f"Time scale: {self.simulator.time_scale:g}x (reported inverter watts scale too)")
+        if self.simulator.soc_cycle:
+            print(
+                "SOC cycle: Passive "
+                f"{self.simulator.cycle_low_soc:g}-{self.simulator.cycle_high_soc:g}%"
+            )
         print(
             f"Home: {self.simulator.solar.peak_power_w} Wp rooftop PV, "
             f"{self.simulator.phases}-phase supply"
@@ -555,7 +581,7 @@ class MockMarstekDevice:
 
         elif method == "ES.GetStatus":
             # State includes energy stats from simulator
-            state_with_capacity = {**state, "capacity_wh": self.simulator.capacity_wh}
+            state_with_capacity = {**state, "capacity_wh": self.simulator.rated_capacity_wh}
             return handle_es_get_status(
                 request_id,
                 src,
@@ -597,7 +623,7 @@ class MockMarstekDevice:
             return handle_em_get_status(request_id, src, state, profile=self.profile)
 
         elif method == "Bat.GetStatus":
-            return handle_bat_get_status(request_id, src, state, self.simulator.capacity_wh)
+            return handle_bat_get_status(request_id, src, state, self.simulator.rated_capacity_wh)
 
         elif method == "ES.SetMode":
             return self._es_set_mode_response(request_id, src, params)
