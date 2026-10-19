@@ -238,9 +238,10 @@ resetting some devices (issue
 HMG-50 (Venus C, and Venus E 2.0 which this integration does not set up)
 shares one Wi-Fi receive channel with its meter client, so many Open API
 datagrams are simply lost (issue
-[#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). A gap
-over 180 seconds aborts the open window. That makes HMG-50 a poor source
-of clean windows, which is another reason the sensor does not add traffic.
+[#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). A gap over the limit (180 seconds at the default poll, longer only when the
+configured fast interval itself exceeds that) aborts the open window. That
+makes HMG-50 a poor source of clean windows, which is another reason the
+sensor does not add traffic.
 
 What is trustworthy enough to integrate: `ES.GetStatus` `bat_soc`, the
 derived or reported battery watts after the parser's sign flip, and
@@ -251,14 +252,17 @@ API does not have.
 
 ## The method that those constraints allow
 
-1. Keep a window only while direction, mode, and the sample gap (180 seconds)
-   stay clean, power stays at or above 150 W, and state of charge moves at
-   least 20 points across at least four samples.
+1. Keep a window only while direction, mode, and the sample gap stay clean,
+   power stays at or above 150 W, and state of charge moves at least 20
+   points across at least four samples. The gap limit is 180 seconds, or the
+   configured fast interval plus 150 seconds when that is longer. A poll
+   that did not get `ES.GetStatus` is a hole, not a sample.
 2. Convert the AC integral with one-way efficiency 0.93 (discharge divides,
    charge multiplies). Capacity is that DC energy divided by the
    state-of-charge fraction.
 3. Drop a window outside the physical band above.
-4. Publish the median of up to 21 windows once three exist.
+4. Publish the median of the kept windows once three exist. Each direction
+   keeps its newest 21, so one session cannot crowd the other out.
 5. When both directions have three windows, replace that median with the
    geometric mean of the two direction medians.
 6. Publish state of health only against a real nameplate. Stay unknown until

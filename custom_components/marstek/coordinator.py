@@ -108,6 +108,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fast_interval = config_entry.options.get(
             CONF_POLL_INTERVAL_FAST, DEFAULT_POLL_INTERVAL_FAST
         )
+        self._capacity_poll_interval = float(fast_interval)
+        self._capacity.set_poll_interval(self._capacity_poll_interval)
 
         super().__init__(
             hass,
@@ -436,6 +438,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Clear any existing connection issue on successful update
             self._clear_connection_issue()
+            # es_status_fresh is false when ES.GetStatus did not answer and
+            # battery_power was carried forward. The recorder still runs so
+            # the sensors keep their last estimate, and that poll is a hole.
             await self._async_record_capacity(device_status)
 
             return device_status
@@ -451,6 +456,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self._capacity_loaded:
             stored = await self._capacity_store.async_load()
             self._capacity = UsableCapacityEstimator.from_dict(stored)
+            self._capacity.set_poll_interval(self._capacity_poll_interval)
             self._capacity_loaded = True
         apply_capacity_estimate(self._capacity, device_status, time.time())
         if not self._capacity.consume_dirty():

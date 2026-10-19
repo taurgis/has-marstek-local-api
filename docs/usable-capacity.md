@@ -45,8 +45,16 @@ is not created.
 
 ## Formula
 
-A window is one direction (charge or discharge), one mode, and no gap longer
-than 180 seconds. Power below 150 W ends the window. When state of charge has
+A window is one direction (charge or discharge), one mode, and no long gap.
+At the default 30 second poll the gap limit is 180 seconds. The options flow
+allows a fast poll up to 300 seconds, and Home Assistant starts that wait
+after the poll has finished, so a slow setting would step past 180 seconds
+on every successful poll. The limit then becomes the configured interval
+plus 150 seconds, which is how long one poll can spend on its own requests
+(six serial reads at the maximum 30 second delay). A missed poll is another
+full interval and still ends the window. Raising the constant to 300 seconds
+instead would let a 30 second poll stitch across a five-minute hole.
+Power below 150 W ends the window. When state of charge has
 moved at least 20 points and the window has at least four samples:
 
 ```text
@@ -62,11 +70,14 @@ and a discharge window describe the same DC pack: without it they disagree by
 about the square of the efficiency, and a healthy nameplate would look faded.
 
 The sensor publishes a number only after three windows have been accepted,
-and it keeps the last 21. With windows in only one direction, the number is
-their median and it still depends on the 0.93 factor. Once charge and
-discharge each have three windows, the number is the geometric mean of the
-two medians. If the real charge and discharge efficiencies are equal, that
-product cancels the factor, including the case where 0.93 is wrong. A window
+and it keeps the newest 21 in each direction. A long run of discharge
+windows cannot evict the charge windows, which is what used to drop the
+estimate back onto the single-direction median. With windows in only one
+direction, the number is their median and it still depends on the 0.93
+factor. Once charge and discharge each have three windows, the number is
+the geometric mean of the two medians. If the real charge and discharge
+efficiencies are equal, that product cancels the factor, including the case
+where 0.93 is wrong. A window
 outside 300–30,000 Wh, or outside 15–135% of the nameplate when one is known,
 is dropped. The median is what ignores a single bad stretch; there is no
 second outlier rule that would freeze the value if the pack really did fade.
@@ -100,7 +111,12 @@ capacity, and time. Confidence counts windows. It is not a calibrated error bar.
   windows, the geometric mean removes a factor that is shared by both
   directions. A remaining gap between the two medians means the two
   efficiencies are not equal, and that gap is the residual.
-- Idle, short cycles, mode changes, and gaps longer than about three minutes
+- A poll whose `ES.GetStatus` did not answer is not a sample. `ES.GetMode`
+  can still bring a new state of charge while battery power is the previous
+  poll's watts. That pair is a hole: the open window is dropped, and the
+  next fresh poll does not integrate across it. The power sensor still
+  shows the carried watts.
+- Idle, short cycles, mode changes, and gaps longer than the limit above
   are ignored. A battery that only trickles may take days to publish a number.
 - No extra polling is added. Disabling the two entities in the registry hides
   them; the arithmetic still runs on data the coordinator already fetched,

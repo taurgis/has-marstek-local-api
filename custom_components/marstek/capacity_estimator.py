@@ -13,7 +13,8 @@ efficiency, is divided by the state-of-charge fraction. The published value is
 the median of the accepted windows. Once both charge and discharge have at
 least three windows, the published value becomes the geometric mean of the
 two medians, which cancels a one-way efficiency that is the same in both
-directions. Until a median exists the sensors stay unknown.
+directions. Each direction keeps its own newest windows, so a long run one
+way cannot evict the other. Until a median exists the sensors stay unknown.
 """
 
 from __future__ import annotations
@@ -41,8 +42,14 @@ MIN_SAMPLES = 4
 MIN_POWER_W = 150.0
 MAX_ABS_POWER_W = 30_000.0
 MAX_GAP_SECONDS = 180.0
+# ES.GetMode plus up to five more serial reads, at the options-flow maximum
+# of 30 seconds between reads. Home Assistant starts the next wait after the
+# poll returns, so the sample gap is the configured interval plus this.
+_POLL_OCCUPANCY_SECONDS = 150.0
 MAX_WINDOW_SAMPLES = 2_000
 MIN_WINDOWS = 3
+# Newest windows kept for each direction. A single shared cap let one long
+# session evict the other direction and drop the geometric mean.
 MAX_WINDOWS = 21
 ABS_MIN_CAPACITY_WH = 300.0
 ABS_MAX_CAPACITY_WH = 30_000.0
@@ -52,6 +59,25 @@ RATED_MAX_FRACTION = 1.35
 CAPACITY_DATA_KEY = "battery_usable_capacity"
 SOH_DATA_KEY = "battery_state_of_health"
 CAPACITY_ATTR_KEY = "battery_usable_capacity_attributes"
+# Set by ``merge_device_status``. False means ES.GetStatus did not answer
+# and battery power may be the previous poll's watts.
+ES_STATUS_FRESH_KEY = "es_status_fresh"
+
+
+def gap_limit_seconds(poll_interval: float | None) -> float:
+    """Return the longest sample spacing that still belongs to one window.
+
+    180 seconds already covers the default 30 second poll, including a few
+    slow cycles. A longer configured interval would step past 180 seconds on
+    every successful poll, so the limit grows by that interval plus the time
+    one poll can spend on its own requests. A missed poll is another full
+    interval and still ends the window.
+    """
+    interval = _finite(poll_interval)
+    if interval is None or interval <= 0.0:
+        return MAX_GAP_SECONDS
+    return max(MAX_GAP_SECONDS, interval + _POLL_OCCUPANCY_SECONDS)
+
 
 _METHOD = "soc_energy_window"
 
@@ -191,6 +217,7 @@ class UsableCapacityEstimator:
         self._previous: _Sample | None = None
         self._rated_wh: float | None = None
         self._dirty = False
+        self._gap_limit = MAX_GAP_SECONDS
 
     @classmethod
     def from_dict(cls, raw: object) -> UsableCapacityEstimator:
@@ -202,8 +229,17 @@ class UsableCapacityEstimator:
         if not isinstance(windows, list):
             return estimator
         restored = [window for item in windows if (window := _window_from_dict(item)) is not None]
-        estimator._windows = restored[-MAX_WINDOWS:]
+        estimator._windows = restored
+        estimator._trim_windows()
         return estimator
+
+    def set_poll_interval(self, poll_interval: float) -> None:
+        """Widen the gap limit when the fast poll is slower than 180 seconds.
+
+        The default interval keeps the 180 second limit. A reload builds a new
+        coordinator, so this is set once from the options in force.
+        """
+        self._gap_limit = gap_limit_seconds(poll_interval)
 
     def to_dict(self) -> dict[str, Any]:
         """Return the persistent state."""
@@ -281,7 +317,7 @@ class UsableCapacityEstimator:
         elapsed = sample.timestamp - previous.timestamp
         if elapsed <= 0.0:
             return
-        if elapsed > MAX_GAP_SECONDS:
+        if elapsed > self._gap_limit:
             self._abort()
             return
         if self._conflicts(previous, sample):
@@ -389,8 +425,7 @@ class UsableCapacityEstimator:
             self._abort()
             return
         self._windows.append(window)
-        if len(self._windows) > MAX_WINDOWS:
-            self._windows = self._windows[-MAX_WINDOWS:]
+        self._trim_windows()
         self._dirty = True
         anchor = self._open[-1]
         self._open = [anchor]
@@ -408,6 +443,19 @@ class UsableCapacityEstimator:
         """Drop the open window. Accepted windows stay."""
         self._open = []
         self._open_direction = 0
+
+    def _trim_windows(self) -> None:
+        """Keep the newest ``MAX_WINDOWS`` of each direction, in time order."""
+        kept: list[_Window] = []
+        remaining = {"discharge": MAX_WINDOWS, "charge": MAX_WINDOWS}
+        for window in reversed(self._windows):
+            left = remaining.get(window.direction, 0)
+            if left <= 0:
+                continue
+            remaining[window.direction] = left - 1
+            kept.append(window)
+        kept.reverse()
+        self._windows = kept
 
     def _measure(self, samples: list[_Sample], direction: int) -> _Window | _RejectWindow | None:
         """Return a window, None to keep collecting, or reject it."""
@@ -467,8 +515,12 @@ def apply_capacity_estimate(
     Venus E mini leaves it empty; the watt-hour estimate still runs, and the
     state-of-health percentage stays unknown without a nameplate.
     """
-    soc = _finite(status.get("battery_soc"))
-    power = _finite(status.get("battery_power"))
+    # Missing means the caller already passed a fresh sample (unit traces).
+    # An explicit False is a poll whose ES.GetStatus did not answer: the
+    # watts may be carried forward while state of charge is new.
+    fresh = status.get(ES_STATUS_FRESH_KEY, True) is not False
+    soc = _finite(status.get("battery_soc")) if fresh else None
+    power = _finite(status.get("battery_power")) if fresh else None
     rated = _finite(status.get("bat_cap"))
     mode = status.get("device_mode")
     estimator.observe(

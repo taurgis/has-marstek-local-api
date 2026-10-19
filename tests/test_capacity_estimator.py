@@ -12,7 +12,9 @@ from custom_components.marstek.capacity_estimator import (
     MIN_WINDOWS,
     UsableCapacityEstimator,
     apply_capacity_estimate,
+    gap_limit_seconds,
 )
+from custom_components.marstek.pymarstek.data_parser import merge_device_status
 
 # Written here, not imported from the estimator. A trace built with this
 # one-way factor must come back as the true DC capacity; if the estimator
@@ -478,9 +480,10 @@ def test_the_median_keeps_the_newest_windows_and_confidence_rises() -> None:
             assert estimator.windows_accepted == 6
             assert estimator.attributes()["confidence"] == "medium"
 
-    assert estimator.windows_accepted == MAX_WINDOWS
+    assert estimator.windows_accepted == 24
     assert estimator.attributes()["confidence"] == "high"
     assert estimator.estimate_wh == 4600
+    assert estimator.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
 
 
 def test_an_open_window_that_never_moves_enough_is_capped() -> None:
@@ -499,3 +502,195 @@ def test_an_open_window_that_never_moves_enough_is_capped() -> None:
 
     assert estimator.windows_accepted == 0
     assert estimator.estimate_wh is None
+
+
+def test_carried_power_without_es_get_status_is_not_integrated() -> None:
+    """A timed-out ES.GetStatus must not pair old watts with a new state of charge."""
+    estimator = UsableCapacityEstimator()
+    step = _discharge_step_seconds()
+    _feed(
+        estimator,
+        _Trace(
+            steps=10,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=step,
+            power_w=_POWER_W,
+        ),
+    )
+    merged = merge_device_status(
+        es_mode_data={"battery_soc": 40, "device_mode": "auto"},
+        previous_status={
+            "battery_soc": 70,
+            "battery_power": _POWER_W,
+            "device_mode": "auto",
+            "bat_cap": _RATED_WH,
+            "es_status_fresh": True,
+        },
+    )
+    assert merged["es_status_fresh"] is False
+    assert merged["battery_power"] == _POWER_W
+    assert merged["battery_soc"] == 40
+    apply_capacity_estimate(estimator, merged, _T0 + 10 * step + 30.0)
+
+    _feed(
+        estimator,
+        _Trace(
+            steps=60,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=step,
+            power_w=_POWER_W,
+            start_timestamp=_T0 + 10 * step + 60.0,
+        ),
+    )
+
+    assert estimator.windows_accepted == MIN_WINDOWS
+    assert estimator.estimate_wh == 4600
+
+    fresh = merge_device_status(
+        es_status_data={
+            "battery_soc": 70,
+            "battery_power": _POWER_W,
+            "bat_cap": _RATED_WH,
+        },
+        previous_status={"es_status_fresh": False, "battery_power": 1},
+    )
+    assert fresh["es_status_fresh"] is True
+    assert fresh["battery_power"] == _POWER_W
+
+
+def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> None:
+    """One long discharge cannot evict charge windows, including after a restart."""
+    estimator = UsableCapacityEstimator()
+    moment = _T0
+    charge_power = _POWER_W * 4_000.0 / _TRUE_WH
+    for _ in range(3):
+        _feed(
+            estimator,
+            _Trace(
+                steps=20,
+                soc_start=30.0,
+                soc_per_step=1.0,
+                step_seconds=_charge_step_seconds(),
+                power_w=-charge_power,
+                start_timestamp=moment,
+            ),
+        )
+        moment += 21 * _charge_step_seconds() + 1_000.0
+    for _ in range(MAX_WINDOWS + 1):
+        _feed(
+            estimator,
+            _Trace(
+                steps=20,
+                soc_start=90.0,
+                soc_per_step=-1.0,
+                step_seconds=_discharge_step_seconds(),
+                power_w=_POWER_W,
+                start_timestamp=moment,
+            ),
+        )
+        moment += 21 * _discharge_step_seconds() + 1_000.0
+
+    assert estimator.windows_accepted == MAX_WINDOWS + 3
+    assert estimator.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
+    assert estimator.estimate_wh == round((4_600.0 * 4_000.0) ** 0.5)
+
+    stored = {
+        "windows": [
+            {
+                "capacity_wh": 4_000.0,
+                "direction": "charge",
+                "soc_delta": 20.0,
+                "closed_at": float(index),
+            }
+            for index in range(3)
+        ]
+        + [
+            {
+                "capacity_wh": 4_600.0,
+                "direction": "discharge",
+                "soc_delta": 20.0,
+                "closed_at": float(100 + index),
+            }
+            for index in range(MAX_WINDOWS + 4)
+        ]
+    }
+    restored = UsableCapacityEstimator.from_dict(stored)
+    assert restored.windows_accepted == MAX_WINDOWS + 3
+    assert restored.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
+    saved = restored.to_dict()
+    assert list(saved) == ["windows"]
+    assert saved["windows"][0]["direction"] == "charge"
+    assert saved["windows"][-1]["closed_at"] == float(100 + MAX_WINDOWS + 3)
+
+
+def test_a_slow_poll_interval_can_form_a_window_and_a_missed_poll_cannot() -> None:
+    """300 seconds is a legal fast interval. A missed cycle at that pace is not."""
+    assert gap_limit_seconds(30) == 180.0
+    assert gap_limit_seconds(300) == 450.0
+    assert gap_limit_seconds(None) == 180.0
+    assert gap_limit_seconds(0) == 180.0
+
+    # 400s at this wattage moves one state-of-charge point on a 4600 Wh pack.
+    slow_power = _TRUE_WH * _ONE_WAY * 0.09
+    slow = UsableCapacityEstimator()
+    slow.set_poll_interval(300)
+    _feed(
+        slow,
+        _Trace(
+            steps=60,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=400.0,
+            power_w=slow_power,
+        ),
+    )
+    assert slow.windows_accepted == MIN_WINDOWS
+    assert slow.estimate_wh == 4600
+
+    default = UsableCapacityEstimator()
+    _feed(
+        default,
+        _Trace(
+            steps=60,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=400.0,
+            power_w=slow_power,
+        ),
+    )
+    assert default.windows_accepted == 0
+
+    # 400s plus a short pause is still one poll. 400s plus 700s is a missed cycle.
+    pause = UsableCapacityEstimator()
+    pause.set_poll_interval(300)
+    _feed(
+        pause,
+        _Trace(
+            steps=24,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=400.0,
+            power_w=slow_power,
+            gap_at=10,
+            gap_seconds=40.0,
+        ),
+    )
+    assert pause.windows_accepted == 1
+
+    missed = UsableCapacityEstimator()
+    missed.set_poll_interval(300)
+    _feed(
+        missed,
+        _Trace(
+            steps=24,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=400.0,
+            power_w=slow_power,
+            gap_at=10,
+            gap_seconds=700.0,
+        ),
+    )
+    assert missed.windows_accepted == 0
