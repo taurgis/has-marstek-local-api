@@ -814,4 +814,10 @@ def merge_device_status(
     _stabilize_grid_energy_totals(status, energy_safe_previous)
     apply_energy_total_guard(status, energy_safe_previous)
 
+    # ES.GetMode can refresh state of charge while ES.GetStatus times out.
+    # previous_status has already filled battery_power in that case. The
+    # capacity estimator must not treat that pair as one measurement.
+    # Set after the previous-status copy so an old True cannot leak through.
+    status["es_status_fresh"] = es_status_data is not None
+
     return status
