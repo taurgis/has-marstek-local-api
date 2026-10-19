@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0
+
+### Minor Changes
+
+- 0f231fe: Add a usable-capacity sensor that estimates degraded battery size in Wh from state of charge and battery power, plus state of health against the nameplate.
+
+### Patch Changes
+
+- 62b55ea: Fix usable capacity so a missed battery-status reply cannot count old watts, and a long run in one direction cannot drop the other.
+
 ## 1.3.3
 
 ### Patch Changes
