@@ -35,6 +35,7 @@ usart4: UART.STM32_UART @ sysbus <0x40004C00, +0x100>
 
 usart5: UART.STM32_UART @ sysbus <0x40005000, +0x100>
     -> nvic@53
+@MINI_USART5_DMA@
 
 @DWT@
 nvic: IRQControllers.NVIC @ sysbus 0xE000E000
@@ -179,7 +180,12 @@ dma1: DMA.STM32G0DMA @ sysbus 0x40020000
 
 dma2: DMA.STM32G0DMA @ sysbus 0x40020400
     numberOfChannels: 8
+    // Channels 1-5 match the STM32F103 map (IRQ 56-60). VNSEMINI-0 also
+    // uses channel 6 (UART7 RX, IRQ 68) and channel 7 (UART7 TX, IRQ 69);
+    // the Modbus task waits on that TX-complete IRQ. Other images leave
+    // both channels disabled, and the lines stay empty for them.
     [0-4] -> nvic@[56-60]
+@MINI_DMA2_IRQ@
 
 afio: GPIOPort.STM32F1AFIO @ sysbus 0x40010000
     gpioPorts: [gpioPortA, gpioPortB, gpioPortC, gpioPortD, gpioPortE, gpioPortF, gpioPortG]
@@ -290,6 +296,7 @@ wifi_uart: UART.STM32_UART @ sysbus <0x40015000, +0x100>
 
 uart7: UART.STM32_UART @ sysbus <0x40015400, +0x100>
     -> nvic@75
+@MINI_UART7_DMA@
 
 rcu: Python.PythonPeripheral @ sysbus 0x40021000
     size: 0x400
