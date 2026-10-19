@@ -32,10 +32,12 @@ usart3: UART.STM32_UART @ sysbus <0x40004800, +0x100>
 usart4: UART.STM32_UART @ sysbus <0x40004C00, +0x100>
     -> nvic@52
     DMARequest -> dma2@3 | dma2@5
+@MINI_LINK_CLOCK@
 
 usart5: UART.STM32_UART @ sysbus <0x40005000, +0x100>
     -> nvic@53
 @MINI_USART5_DMA@
+@MINI_LINK_CLOCK@
 
 @DWT@
 nvic: IRQControllers.NVIC @ sysbus 0xE000E000
@@ -129,7 +131,7 @@ timer5: Timers.STM32_Timer @ sysbus 0x40000C00
 
 timer6: Timers.STM32_Timer @ sysbus 0x40001000
     IRQ -> nvic@54
-    UpdateInterrupt -> dma2@3
+@TIMER6_DMA@
     frequency: 10000000
     initialLimit: 0xFFFF
 
@@ -297,6 +299,7 @@ wifi_uart: UART.STM32_UART @ sysbus <0x40015000, +0x100>
 uart7: UART.STM32_UART @ sysbus <0x40015400, +0x100>
     -> nvic@75
 @MINI_UART7_DMA@
+@MINI_LINK_CLOCK@
 
 rcu: Python.PythonPeripheral @ sysbus 0x40021000
     size: 0x400
@@ -335,13 +338,13 @@ spi2: Python.PythonPeripheral @ sysbus 0x40003800
     initable: true
     filename: "@RENODE_DIR@/spi2.py"
 
-// SPI1 (0x40013000). VNSEMINI-0 PMU 301 spins on SR.TXE (offset 0x08 bit 1)
-// during bring-up. The same always-ready stub as SPI2 unblocks that loop;
-// the other Control images do not touch this address.
+// SPI1 (0x40013000). VNSEMINI-0 PMU 301 keeps its settings in a NOR flash
+// here (chip select PA4), so that board gets renode/spiflash.py. The other
+// Control images do not touch this address and keep the always-ready stub.
 spi1: Python.PythonPeripheral @ sysbus 0x40013000
     size: 0x400
     initable: true
-    filename: "@RENODE_DIR@/spi2.py"
+    filename: "@SPI1_SCRIPT@"
 
 cau: Python.PythonPeripheral @ sysbus 0xA0001000
     size: 0x400

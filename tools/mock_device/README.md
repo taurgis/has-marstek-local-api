@@ -53,7 +53,9 @@ Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be co
 Venus E mini also follows the UDP rules of a `VNSEM-0` 301 capture
 ([#86](https://github.com/taurgis/has-marstek-local-api/issues/86)) for
 non-loopback senders: it answers only requests sent from the API port, replies
-by broadcast to that port, ignores broadcast `Marstek.GetDevice` (so discovery
+by broadcast to that port at `<a.b.c>.255` (the first three octets of its IP,
+whatever the netmask, as the PMU 301 image does in the firmware emulator),
+ignores broadcast `Marstek.GetDevice` (so discovery
 does not list it), and stays silent on `PV.GetStatus` and unknown methods
 instead of returning `Method not found`. Its `ES.GetStatus` `bat_cap` is the
 remaining energy, equal to `Bat.GetStatus` `bat_capacity`. Loopback senders
@@ -62,7 +64,9 @@ remaining energy, equal to `Bat.GetStatus` `bat_capacity`. Loopback senders
 That #86 capture is reads plus those UDP rules. It does not include a working
 `ES.SetMode`. On `VNSEM-0` firmware **301** only, the mock instead follows the
 report in [#104](https://github.com/taurgis/has-marstek-local-api/issues/104):
-Manual answers `set_result: true` and stores the time, weekday and enable, but
+Manual answers `set_result: true` for any `time_num` (the PMU acknowledges
+slots outside 0-5, negative or missing ones too; the mock stores none of those)
+and, for slots 0-5, stores the time, weekday and enable, but
 leaves power unset, and Passive answers JSON-RPC id 0, `-32700` `Parse error`,
 data 401, without changing mode. Other Venus E mini versions still use the
 generic Manual and Passive implementation. That generic path was not taken

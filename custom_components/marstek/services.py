@@ -128,6 +128,12 @@ async def async_set_passive_mode(hass: HomeAssistant, call: ServiceCall) -> None
 
     entry, udp_client, host, port = _get_entry_and_client_from_device_id(hass, device_id)
 
+    if not entry.runtime_data.coordinator.profile.supports_passive:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="mode_not_supported",
+            translation_placeholders={"mode": API_MODE_PASSIVE},
+        )
     _validate_power_for_device(power, entry)
 
     config = {

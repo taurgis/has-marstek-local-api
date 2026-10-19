@@ -1,18 +1,22 @@
 """INV, DCDC and Modbus peers for the VNSEMINI-0 PMU 301 image.
 
-The PMU does not open its UDP service until two things the binary asks for
-have both happened. ``mini_peers.py`` supplies them on the UARTs the image
-actually uses; the Open API replies still come from the firmware.
+The PMU does not ask its modem for an address (``AT+QGETIP``) until the pack
+reads above a threshold, and the Open API replies stay on the limited
+broadcast until it has one. ``mini_peers.py`` supplies that reading on the
+UARTs the image actually uses; the Open API replies still come from the
+firmware.
 
 * USART4 (address ``0x81``) is the inverter link. Command ``0x02`` stores a
   big-endian pack voltage at struct ``0x2000b780+0x56`` and a second reading
-  at ``+0x58``. The UDP gate wants those above 4000 and 800.
+  at ``+0x58``. The control task wants those above 4000 and 800 before the
+  QGETIP sequencer runs.
 * USART5 (address ``0x82``) is the DCDC link. Answering it sets the peer-alive
-  flag; the UDP gate does not read those bytes.
-* UART7 is a Modbus slave. Writing register ``0xC865`` (after the ``01 02 03``
-  address handshake) sets the Wi-Fi join gate at ``0x2000009f``. The firmware
-  then sends ``AT+QSTAAPINFODEF`` with its built-in SSID, and the modem's
-  ``GOT_IP`` URC lets the UDP opener run.
+  flag; the QGETIP gate does not read those bytes.
+* UART7 is the PMU's Modbus master. It is kept connected and drained so its
+  DMA keeps moving; nothing is written back. A provisioned module joins on
+  its own (``fc41d.py --autojoin``), so the factory-join Modbus write is not
+  needed, and leaving it out keeps the image off its built-in factory AP
+  credentials.
 
 Frames use the image's own AA layout and Modbus CRC-16. Nothing here pretends
 to be an Open API datagram.
@@ -33,7 +37,6 @@ _LOGGER = logging.getLogger("mini_peers")
 _PACK_VOLTAGE = 0x1000
 _PACK_SECOND = 0x0400
 _STATUS_BYTES = 96
-_MODBUS_REGISTER = 0xC865
 
 
 def crc16(data: bytes) -> int:
@@ -55,25 +58,6 @@ def aa_frame(address: int, command: int, payload: bytes) -> bytes:
     total = 6 + len(payload) + 2
     body = bytes([0xAA, address, 0x80, (total >> 8) & 0xFF, total & 0xFF, command])
     body += payload
-    crc = crc16(body)
-    return body + bytes((crc & 0xFF, crc >> 8))
-
-
-def modbus_write(register: int, value: int, slave: int = 1) -> bytes:
-    """Function 0x10, one register, the layout the PMU's writer checks."""
-    body = bytes(
-        (
-            slave,
-            0x10,
-            (register >> 8) & 0xFF,
-            register & 0xFF,
-            0x00,
-            0x01,
-            0x02,
-            (value >> 8) & 0xFF,
-            value & 0xFF,
-        )
-    )
     crc = crc16(body)
     return body + bytes((crc & 0xFF, crc >> 8))
 
@@ -107,7 +91,6 @@ def take_frames(buffer: bytes) -> tuple[list[bytes], bytes]:
         expected = crc_bytes[0] | (crc_bytes[1] << 8)
         if crc16(body) == expected:
             frames.append(frame)
-    return frames, buffer
 
 
 def _connect(port: int, stop: threading.Event) -> socket.socket | None:
@@ -167,27 +150,15 @@ def _drain(sock: socket.socket) -> None:
 
 
 def _serve_modbus(port: int, stop: threading.Event) -> None:
-    """Handshake the slave address, then write the Wi-Fi join register."""
-    handshake = b"\x01\x02\x03"
-    write = modbus_write(_MODBUS_REGISTER, 1)
+    """Keep the Modbus UART connected and drained. Nothing is written to it."""
     while not stop.is_set():
         sock = _connect(port, stop)
         if sock is None:
             return
-        sock.settimeout(0.2)
+        sock.settimeout(0.5)
         try:
-            # One handshake. Repeating it makes the task transmit "ok" and
-            # pend on DMA TX-complete before it can accept the register write.
-            sock.sendall(handshake)
-            _drain(sock)
-            if stop.wait(1.0):
-                return
             while not stop.is_set():
-                sock.sendall(write)
                 _drain(sock)
-                _LOGGER.info("port %s wrote register 0x%04x", port, _MODBUS_REGISTER)
-                if stop.wait(1.0):
-                    return
         except OSError as exc:
             _LOGGER.info("port %s closed: %s", port, exc)
         finally:

@@ -589,9 +589,9 @@ mini version, because no other mini capture or image exists. The Manual
 ### Boot (Renode 1.17, `fw-venus-e-mini-301`)
 
 The PMU is loaded by stripping the 32-byte header and `LoadBinary` at
-`0x08008000`, then setting SP/PC from the vector table. It does start, and
-it does talk to the modem. It does not open the UDP service, so
-`Marstek.GetDevice` has no answer. Nothing was invented to paper over that.
+`0x08008000`, then setting SP/PC from the vector table. It starts, talks to
+the modem, opens its UDP service and answers the Open API itself. Nothing
+outside the PMU binary answers a datagram.
 
 What had to change before the image would run at all, each one observed:
 
@@ -616,13 +616,79 @@ What had to change before the image would run at all, each one observed:
   run that still used the modem's default Wi-Fi MAC), and `0x2000e719` was
   set to 1. `fc41d.py` now answers `AT+QWLMAC` from `--wifi-mac`.
 
-Where it stops: after that flag is set, the firmware sends no
-`AT+QSTAAPINFO` and no `AT+QIOPEN`. The CPU sits in the uC/OS idle counter
-(`0x0800d978`). The I2C EEPROM the other images use for "Local API on" and
-Wi-Fi credentials is not in this binary (no I2C1/I2C2 base), and the EEPROM
-file stayed empty, so the usual force-enable reboot never has anything to
-force. `+QSTASTAT:` and `GOT_IP` and `AT+QSTAAPINFO` are in the image, but
-this boot never reached them. Opening a fake UDP socket in the emulator
-would not be this firmware answering. Home Assistant checks for this
-combination therefore use the Python mock, which follows the capture and
-the disassembly above.
+What it took past that point, in boot order. Each step is something the
+binary waits for, found by disassembly and confirmed on the running image:
+
+1. **Settings flash.** The PMU keeps its settings in SPI1 NOR (chip select
+   PA4), not in an I2C EEPROM. An 18-byte record at `0x14000` holds the Open
+   API enable flag (byte `0x0A`), the port twice (`0x0B`, `0x0D`) and a
+   CRC-16/XMODEM at `0x10`. `renode/spiflash.py` models the part (opcodes
+   03/02/20/D8/06/05) and, like the EEPROM model of the other boards, keeps
+   the record set to "Open API on" with the configured port. A GPIOA write
+   hook hands it the PA4 level.
+2. **Pack readings.** `AT+QGETIP` is queued only by the sequencer at
+   `0x0801dfd0`, and only while the struct at `0x20014618+0x18` is set. The
+   control task sets it when the inverter's command `0x02` reply puts a pack
+   voltage above `0xFA0` at `0x2000b780+0x56` and a second reading above
+   `0x320` at `+0x58`. `mini_peers.py` answers USART4 (inverter, address
+   `0x81`) and USART5 (DCDC, `0x82`) with the image's own AA frames.
+3. **UART timing.** Renode clocks `STM32_UART` at 8 MHz. The image sets BRR
+   for a 36 MHz PCLK1, so at 8 MHz an inverter reply outlasted the next poll
+   and the frames merged; the USART4 parser (`0x080259c0`) wants one frame
+   per IDLE and dropped them. The link UARTs now get `frequency: 36000000`.
+   TIMER6 shared DMA2 request line 3 with USART4 RX and, since Renode raises
+   a timer's DMA line on every update, read an empty DR into every frame;
+   the mini board leaves that line off.
+4. **Modbus task.** The control task sends on UART7 by DMA, and the DMA
+   TX-complete IRQ clears TC and waits for a fresh TC before posting the task
+   semaphore. Renode raises TC once, when DR is written, so the task hung in
+   its pend. A bus hook keeps TC set through SR writes on UART7.
+5. **Idle window.** The sequencer also wants `0x2000b780+0x4b6 == 0`. That
+   flag stays 0 for the first 750 control ticks (`0x20014618+0x90`). After
+   that it becomes 1 in Manual mode (`0x20002cb4 == 2`) while the byte at
+   `0x2001472c+2` is 0, which a blank settings flash gives. A module that only joins on a
+   command arrives too late, so `fc41d.py --autojoin` reports
+   `WLAN_CONNECTED` and `GOT_IP` right after `AT+QWLMAC`, the way a
+   provisioned module reconnects at power-up. The image's factory-join path
+   (a Modbus write that makes it send `AT+QSTAAPINFODEF` with its built-in
+   factory AP credentials) is not used.
+
+With those, the image sends `AT+QIOPEN=3,"UDP SERVICE","",30000,30000,1`,
+then `AT+QGETIP=station` and `AT+QICFG="udp/broadcast",1`, and answers the
+Open API itself. Every reply below is the firmware's.
+
+| Request | Reply from PMU 301 |
+|---------|-------------------|
+| `Marstek.GetDevice` | `device` `VNSEM-0`, `ver` 301, BLE/Wi-Fi MAC, SSID, `ip` |
+| `ES.GetStatus` | no `bat_power`; `bat_cap` field present |
+| `ES.GetMode` | `mode` (Manual on a blank settings flash) plus the CT fields |
+| `Bat.GetStatus`, `EM.GetStatus`, `Wifi.GetStatus`, `BLE.GetStatus` | answered |
+| `ES.SetMode` Auto, AI, Manual, UPS | `set_result: true`; `ES.GetMode` follows |
+| `ES.SetMode` Passive | `id` 0, `-32700 Parse error`, `data` 401 (issue #104) |
+| `ES.SetMode` Manual, any `time_num` (6, 10, -1, missing) | `set_result: true` |
+| `DOD.SET`, `Ble.Adv`, `Led.Ctrl` | `set_result: true` |
+| `PV.GetStatus`, unknown methods | no reply |
+| any request from a source port other than 30000 | no reply |
+
+**Reply address.** Before `+QGETIP` the image sends replies to
+`255.255.255.255:<port>`. The `+QGETIP` handler then keeps the first three
+octets of the station address and sends every reply to `<a.b.c>.255:<port>`,
+whatever netmask the module reports. On a LAN that is not a /24 that address
+is not the LAN broadcast, so replies never reach Home Assistant. The Docker
+network is a /16, so the mini board runs `fc41d.py --netmask 255.255.255.0
+--lan-broadcast`: the module reports a /24 and puts `<a.b.c>.255` on the
+wire as `255.255.255.255`. That is the emulator's link layer, not a change to
+what the firmware sends.
+
+**Discovery.** The `+QIURC: "recv"` line carries only the sender's address,
+so the PMU cannot tell a broadcast request from a unicast one. In the
+emulator it answers a broadcast `Marstek.GetDevice` (Home Assistant's
+discovery list showed it). The issue #86 capture saw no answer on a real
+device; if that holds, the filter is in the Wi-Fi module or the network, not
+in this image. The integration keeps the add-by-IP advice.
+
+Home Assistant 2026.9.3 against `fw-venus-e-mini-301`: added by IP, every
+coordinator read populated, the mode select offered Auto/AI/Manual/UPS and
+each write was acknowledged, DoD, LED and BLE writes were acknowledged, and a
+Manual slot 5 write carried `manual_set`. Passive and slot 6 were refused by
+the integration before any datagram was sent.

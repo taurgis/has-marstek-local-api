@@ -226,7 +226,10 @@ def uses_broadcast_reply_rules(profile: FirmwareProfile) -> bool:
     Captured on ``VNSEM-0`` 301 (issue #86):
 
     - it answers only a request whose source port is its API port;
-    - it sends every reply to ``<subnet broadcast>:<API port>``;
+    - it sends every reply to ``<a.b.c>.255:<API port>``, the first three
+      octets of its address whatever the netmask (the PMU 301 ``+QGETIP``
+      handler, confirmed in the firmware emulator), so a mini on a LAN that
+      is not a /24 cannot reach Home Assistant;
     - it ignores a ``Marstek.GetDevice`` sent to the broadcast address, so
       LAN discovery never finds it and it must be added by IP.
 

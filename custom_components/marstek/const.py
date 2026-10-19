@@ -241,9 +241,10 @@ def device_supports_pv(device_type: str | None) -> bool:
 
 def selectable_operating_modes(profile: FirmwareProfile) -> list[str]:
     """Return operating-mode select options authorized by the firmware profile."""
-    if profile.supports_ups:
-        return list(OPERATING_MODES)
-    return list(SELECTABLE_BASE_MODES)
+    modes = list(OPERATING_MODES) if profile.supports_ups else list(SELECTABLE_BASE_MODES)
+    if not profile.supports_passive:
+        modes.remove(MODE_PASSIVE)
+    return modes
 
 
 def get_device_power_limits(

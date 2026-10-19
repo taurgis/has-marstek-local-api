@@ -56,6 +56,24 @@ def get_broadcast_address(ip: str) -> str:
     return LIMITED_BROADCAST
 
 
+def octet_broadcast(ip: str) -> str:
+    """Return ``ip`` with its last octet set to 255.
+
+    VNSEMINI-0 PMU 301's ``+QGETIP`` handler keeps the first three octets of
+    the station address and sends every Open API reply to ``<a.b.c>.255``,
+    whatever netmask the module reports. Anything that is not a dotted IPv4
+    address falls back to the limited broadcast, which is where the image
+    sends replies before it knows its address.
+    """
+    try:
+        packed = socket.inet_aton(ip)
+    except OSError:
+        return LIMITED_BROADCAST
+    if ip.count(".") != 3:
+        return LIMITED_BROADCAST
+    return socket.inet_ntoa(packed[:3] + b"\xff")
+
+
 def resolve_state_dir(state_dir: str | Path | None) -> Path:
     """Resolve the directory used to store persistent mock device state."""
     if state_dir is None:

@@ -388,7 +388,9 @@ runs rather than one run with all of them:
    also has a `fw-*` emulator running the vendor's own firmware; use it to
    confirm what a mock claims. Versions with no public image stay mock-only:
    Venus E and Venus D 145, and the Venus E mini 145. VNSEM-0 301 has a PMU
-   image (`fw-venus-e-mini-301`).
+   image (`fw-venus-e-mini-301`) that answers the Open API itself; its boot
+   path (SPI1 settings flash, `mini_peers.py`, `fc41d.py --autojoin`) is in
+   `tools/firmware/ANALYSIS.md`.
 2. Run the vendor firmware emulators **at most `nproc` at a time in Docker**
    (the four default ones on a 4-CPU sandbox), or `nproc / 2` host
    `run_firmware.py` instances without `--quantum 0.01`, next to Home Assistant

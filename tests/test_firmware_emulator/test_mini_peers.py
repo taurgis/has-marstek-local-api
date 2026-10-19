@@ -19,7 +19,7 @@ if str(_EMU) not in sys.path:
 import mini_peers  # noqa: E402
 import run_firmware  # noqa: E402
 
-# Firmware TX ``aa 80 81 00 08 01`` and the Modbus write of register 0xC865.
+# Firmware TX ``aa 80 81 00 08 01`` and a Modbus write of register 0xC865.
 _AA_BODY = bytes.fromhex("aa8081000801")
 _MODBUS_BODY = bytes.fromhex("0110c8650001020001")
 
@@ -28,7 +28,6 @@ def test_crc16_matches_the_pmu_tables() -> None:
     """The peer's CRC is the PMU's, including the stored little-endian order."""
     assert mini_peers.crc16(_AA_BODY) == 0xF3F7
     assert mini_peers.crc16(_MODBUS_BODY) == 0xA927
-    assert mini_peers.modbus_write(0xC865, 1) == _MODBUS_BODY + bytes.fromhex("27a9")
 
 
 def test_status_frame_carries_the_udp_gate_readings() -> None:
@@ -91,3 +90,43 @@ def test_mini_board_wires_the_peer_uarts(tmp_path: Path) -> None:
     assert "connector Connect sysbus.usart5 link_usart5" in resc
     assert "connector Connect sysbus.uart7 link_uart7" in resc
     assert run_firmware.BOARDS["control-mini"].eeprom_wait is False
+
+
+def test_shared_control_board_keeps_timer6_dma_and_default_uart_clock(tmp_path: Path) -> None:
+    """The mini-only clock, TIMER6 and bus-hook changes stay off the shared boards."""
+    repl, resc = _render("control", tmp_path)
+    assert "UpdateInterrupt -> dma2@3" in repl
+    assert "frequency: 36000000" not in repl
+    assert "@TIMER6_DMA@" not in repl
+    assert "@SPI1_SCRIPT@" not in repl
+    assert str(run_firmware.HERE / "renode" / "spi2.py") in repl
+    assert "SetHookBeforePeripheralWrite" not in resc
+    assert not (tmp_path / "spiflash.py").exists()
+
+
+def test_mini_board_clock_timer6_and_hooks(tmp_path: Path) -> None:
+    """PMU 301 gets its 36 MHz link UARTs, a TIMER6 without DMA and both hooks."""
+    repl, resc = _render("control-mini", tmp_path)
+    assert repl.count("frequency: 36000000") == 3
+    assert "UpdateInterrupt -> dma2@3" not in repl
+    assert str(tmp_path / "spiflash.py") in repl
+    assert run_firmware.SPI_CS_HOOK in resc
+    assert run_firmware.UART7_TC_HOOK in resc
+    script = (tmp_path / "spiflash.py").read_text()
+    assert "@SPI_FLASH@" not in script
+    assert 'int("30000")' in script
+    assert str(tmp_path / "spiflash.bin") in script
+
+
+def test_mini_board_asks_the_modem_for_a_provisioned_slash24_link() -> None:
+    """The mini's fc41d options are the ones its QGETIP gate and reply address need."""
+    args = run_firmware.BOARDS["control-mini"].modem_args
+    assert "--autojoin" in args
+    assert args[args.index("--netmask") + 1] == "255.255.255.0"
+    assert "--lan-broadcast" in args
+    assert run_firmware.BOARDS["control"].modem_args == ()
+
+
+def test_mini_peers_no_longer_write_modbus() -> None:
+    """The UART7 peer only drains; the factory-join write is gone."""
+    assert not hasattr(mini_peers, "modbus_write")

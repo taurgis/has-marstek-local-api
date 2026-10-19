@@ -17,6 +17,8 @@ UART the other Control images use. That image also gets ``mini_peers.py`` on
 USART4 (inverter), USART5 (DCDC) and UART7 (Modbus): the binary waits for a
 pack-voltage frame and a register write before it joins Wi-Fi and opens UDP.
 It never programs the I2C EEPROM, so that board skips the fresh-EEPROM reboot.
+Its settings live in an SPI1 NOR flash (``renode/spiflash.py``) instead, which
+keeps the Open API on at ``--local-api-port`` the way the EEPROM model does.
 The stack pointer and entry point come from each image's vector table.
 
 The firmware images are committed under ``tools/firmware/blobs/``;
@@ -68,7 +70,27 @@ connector Connect sysbus.{wifi_uart} wifi
 emulation CreateCANHub "canhub"
 connector Connect sysbus.{can} canhub
 connector Connect sysbus.canbridge canhub
-{links}{tuning}"""
+{links}{hooks}{tuning}"""
+
+# PA4 is the SPI1 flash chip select. BSRR bit 4 raises it, BSRR bit 20 and BRR
+# bit 4 lower it. The hook hands the level to renode/spiflash.py at 0x3F0.
+SPI_CS_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.gpioPortA "'
+    "cs = 1 if (offset == 0x10 and value & 0x10) else "
+    "(0 if ((offset == 0x10 and value & 0x100000) or (offset == 0x14 and value & 0x10)) "
+    "else -1); machine.SystemBus.WriteDoubleWord(0x400133F0, cs) if cs >= 0 else None"
+    '"'
+)
+
+# STM32_UART raises TC the moment DR is written and never again. On a real
+# UART TC follows the last stop bit, so PMU 301's DMA TX-complete IRQ clears
+# the stale TC on UART7 and waits for a fresh one before posting the Modbus
+# task. Keeping TC on through SR writes stands in for that later edge.
+UART7_TC_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.uart7 "'
+    "value = (value | 0x40) if offset == 0 else value"
+    '"'
+)
 
 
 @dataclass(frozen=True)
@@ -90,6 +112,8 @@ class Board:
     # Empty on the shared Control and HMG-50 boards.
     link_uarts: tuple[tuple[str, int], ...] = ()
     eeprom_wait: bool = True  # reboot once so a fresh EEPROM is read back
+    spi_flash: bool = False  # settings in SPI1 NOR flash (renode/spiflash.py), CS on PA4
+    modem_args: tuple[str, ...] = ()  # extra fc41d.py options for this board
 
 
 BOARDS = {
@@ -114,6 +138,13 @@ BOARDS = {
         # USART4 (INV, addr 0x81), USART5 (DCDC, addr 0x82), UART7 (Modbus).
         link_uarts=(("usart4", 3463), ("usart5", 3464), ("uart7", 3465)),
         eeprom_wait=False,  # this image never touches the I2C EEPROM
+        spi_flash=True,  # Open API enable and port live at SPI flash 0x14000
+        # QGETIP only runs while the pack is idle, which after start-up means
+        # the first 750 control ticks. A provisioned module has GOT_IP by then
+        # (--autojoin). The +QGETIP handler keeps the first three octets and
+        # sends every reply to <a.b.c>.255, so the module reports a /24 and
+        # puts that broadcast on the wider Docker network as 255.255.255.255.
+        modem_args=("--autojoin", "--netmask", "255.255.255.0", "--lan-broadcast"),
     ),
     # STM32G474 (HMG-50: Venus C / Venus E 2.0); the app sits above a 10 KiB bootloader.
     "hmg50": Board(
@@ -293,6 +324,14 @@ def _link_lines(board: Board) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def _hook_lines(board: Board) -> str:
+    """Bus hooks that stand in for hardware timing. Only PMU 301 needs any."""
+    lines = [SPI_CS_HOOK] if board.spi_flash else []
+    if board.link_uarts:
+        lines.append(UART7_TC_HOOK)
+    return "".join(line + "\n" for line in lines)
+
+
 def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load_base: int) -> Path:
     renode_dir = HERE / "renode"
     repl = (renode_dir / board.repl).read_text()
@@ -316,8 +355,24 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         "@MINI_USART5_DMA@": "    DMARequest -> dma1@8\n" if board.link_uarts else "",
         "@MINI_UART7_DMA@": ("    DMARequest -> dma2@6 | dma2@7\n" if board.link_uarts else ""),
         "@MINI_DMA2_IRQ@": "    [5-6] -> nvic@[68-69]\n" if board.link_uarts else "",
+        # Renode clocks STM32_UART at 8 MHz unless told otherwise. PMU 301 sets
+        # BRR for a 36 MHz PCLK1 (USART4 19200, USART5 115200, UART7 57600);
+        # at 8 MHz an inverter reply outlasts the next poll and the frames
+        # merge, so the parser (which wants one frame per IDLE) drops them.
+        "@MINI_LINK_CLOCK@": "    frequency: 36000000\n" if board.link_uarts else "",
+        # STM32_Timer raises its DMA line on every update, UDE or not. PMU 301
+        # runs TIMER6 with only UIE set and owns DMA2 channel 3 for USART4 RX,
+        # so the shared line would read an empty DR into every inverter frame.
+        "@TIMER6_DMA@": "" if board.link_uarts else "    UpdateInterrupt -> dma2@3\n",
     }.items():
         repl = repl.replace(key, value)
+    spi1 = renode_dir / "spi2.py"
+    if board.spi_flash:
+        spi1 = work / "spiflash.py"
+        script = (renode_dir / "spiflash.py").read_text()
+        script = script.replace("@SPI_FLASH@", str(args.eeprom.parent / "spiflash.bin"))
+        spi1.write_text(script.replace("@LOCAL_API_PORT@", str(args.local_api_port)))
+    repl = repl.replace("@SPI1_SCRIPT@", str(spi1))
     name = board.repl.removesuffix(".repl.in")
     (work / f"{name}.repl").write_text(repl)
     usarts = "\n".join(f"{u} CreateFileBackend @{work}/{u}.txt true" for u in board.uarts)
@@ -345,6 +400,7 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         wifi_uart=board.wifi_uart,
         can=board.can,
         links=_link_lines(board),
+        hooks=_hook_lines(board),
         tuning="".join(
             [
                 f'emulation SetGlobalQuantum "{args.quantum}"\n' if args.quantum else "",
@@ -504,6 +560,7 @@ def main() -> int:
         fc41d_cmd += ["--loopback-port", str(CT_PORT)]
     if args.broadcast_to:
         fc41d_cmd += ["--broadcast-to", args.broadcast_to]
+    fc41d_cmd += board.modem_args
     peers_cmd = [
         sys.executable, str(HERE / "can_peers.py"), "--port", str(args.can_port),
         "--soc", str(args.soc), "--house-load", args.house_load, "--pv", args.pv,
