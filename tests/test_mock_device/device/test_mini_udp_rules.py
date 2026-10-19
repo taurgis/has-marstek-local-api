@@ -74,12 +74,32 @@ class TestMiniUdpRules:
         device.sock.sendto.assert_not_called()
 
     def test_pv_and_unknown_methods_get_no_reply(self) -> None:
+        """PMU 301's unknown-method error reply is unreachable, so it stays silent."""
         device = _mini()
         _deliver(device, {"id": 1, "method": "PV.GetStatus", "params": {"id": 0}})
         _deliver(device, {"id": 2, "method": "Foo.Get", "params": {}})
 
         assert device.sock is not None
         device.sock.sendto.assert_not_called()
+
+    def test_other_mini_versions_answer_unknown_methods(self) -> None:
+        """Silence is proven for PMU 301 only; firmware 145 keeps Method not found."""
+        device = _mini(device="Venus E mini", ver=145)
+        _deliver(device, {"id": 2, "method": "Foo.Get", "params": {}})
+
+        assert device.sock is not None
+        payload, _target = device.sock.sendto.call_args[0]
+        body = json.loads(payload)
+        assert body["error"]["code"] == -32601
+        assert body["src"].startswith("Venus E mini-")
+
+    def test_pmu_301_src_is_the_sku_even_when_the_device_name_is_not(self) -> None:
+        """The PMU hardcodes ``VNSEM-0-%s``; the product name is not the prefix."""
+        device = _mini(device="Venus E mini", ver=301)
+        response = device.build_response(1, "Marstek.GetDevice", {"id": 0})
+
+        assert response is not None
+        assert str(response["src"]).startswith("VNSEM-0-")
 
     def test_loopback_keeps_unit_test_addressing(self) -> None:
         """Loopback senders (unit tests) still get replies on their source port."""

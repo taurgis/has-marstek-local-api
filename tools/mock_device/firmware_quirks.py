@@ -86,15 +86,22 @@ def pv_method_not_found_extra_data(profile: FirmwareProfile) -> int | None:
 # name ``VenusE Pro``, not the SKU ``VNSA-0``.
 _SKU_SRC_MIN_GENERATION = 151
 _VNSA_SKU_SRC_MIN_VERSION = 1509
+# VNSEMINI-0 PMU 301 formats every reply ``src`` as ``VNSEM-0-%s`` with that
+# literal (disassembly). Other mini versions have no image, so they keep the
+# configured device name.
+_VNSEM_PMU_VERSION = 301
 _SRC_SKUS = {
     DeviceFamily.VENUS_E: "VNSE3-0",
     DeviceFamily.VENUS_D: "VNSD-0",
     DeviceFamily.VENUS_A: "VNSA-0",
+    DeviceFamily.VENUS_E_MINI: "VNSEM-0",
 }
 
 
 def _uses_sku_src(profile: FirmwareProfile) -> bool:
     """Return whether this image formats ``src`` as ``<SKU>-<ble_mac>``."""
+    if profile.family is DeviceFamily.VENUS_E_MINI:
+        return profile.firmware_version == _VNSEM_PMU_VERSION
     generation = profile.control_generation
     if generation is not None and generation >= _SKU_SRC_MIN_GENERATION:
         return True
@@ -117,31 +124,47 @@ def openapi_src_prefix(profile: FirmwareProfile, device_name: str) -> str:
 def answers_unknown_methods(profile: FirmwareProfile) -> bool:
     """Return whether an unsupported method gets a ``-32601`` reply.
 
-    Control firmware answers it. A Venus E mini ``VNSEM-0`` 301 (issue #86)
-    sent nothing for ``PV.GetStatus`` or ``Foo.Get`` within 10 s and kept
-    answering other requests, so it drops them silently.
+    Control firmware answers it. VNSEMINI-0 PMU 301 walks an 11-name table
+    (no ``PV.GetStatus``) and the Invalid Request reply after a complete miss
+    is unreachable: the branch is ``cbnz`` on ``sp+0x140``, which is never
+    null. The handler returns without sending. That is what the issue #86
+    capture recorded for ``Foo.Get`` and ``PV.GetStatus``. The ``Method not
+    found`` string is in the image but no caller passes ``-32601``. Other
+    Venus E mini versions have no image, so they keep the generic reply.
     """
-    return profile.family is not DeviceFamily.VENUS_E_MINI
+    return not (
+        profile.family is DeviceFamily.VENUS_E_MINI
+        and profile.firmware_version == _VNSEM_PMU_VERSION
+    )
 
 
-# Issue #104, reported on real VNSEM-0 firmware 301. Not a capture of a
-# command the Marstek app completed with a numeric power. Issue #86's
-# capture is reads and UDP rules only. The device answered ES.SetMode
-# Passive with JSON-RPC id 0 (not the request id), code -32700, data 401.
-_VNSEM_REPORTED_SETMODE_VERSION = 301
+# Issue #104 on real VNSEM-0 firmware 301, confirmed in the PMU image:
+# ES.SetMode compares the mode string with Auto, AI, Manual, then UPS.
+# Anything else, including Passive (the string is absent), calls
+# error_reply(id=0, code=-32700, data=401). There is no captured command the
+# Marstek app completed with a numeric Manual power. Issue #86's capture is
+# reads and UDP rules only.
+_VNSEM_REPORTED_SETMODE_VERSION = _VNSEM_PMU_VERSION
 _VNSEM_REPORTED_PASSIVE_PARSE_DATA = 401
 
 
 def vnsem_301_setmode_report(profile: FirmwareProfile) -> bool:
-    """Return whether to emulate the issue #104 VNSEM-0 301 SetMode report.
+    """Return whether to emulate the VNSEM-0 301 ES.SetMode behaviour.
 
-    Manual keeps time, weekday and enable and answers ``set_result: true``,
-    while power is left unset unless the payload also has Rev 3.1
-    ``manual_set`` 0-2 with a non-negative ``power`` (documentation-based;
-    not a capture). Negative ``power`` with ``manual_set``, and
-    ``manual_set`` 3 (auto), are unknown and left unset. Passive is
-    rejected with a parse error whose JSON-RPC id is 0. Other Venus E mini
-    versions keep the generic simulator.
+    Passive (and any mode other than Auto, AI, Manual, UPS) is rejected
+    with a parse error whose JSON-RPC id is 0. That call is in the PMU
+    image, and it matches issue #104.
+
+    The same image extracts ``manual_set`` by searching the whole request,
+    so a ``manual_cfg`` wrapper still finds it, and a missing number becomes
+    0. It then stores that value next to ``power``. Issue #104 observed that
+    a six-field payload without ``manual_set`` left the displayed slot power
+    as ``---``. The mock follows that display: power is left unset unless
+    the payload also has Rev 3.1 ``manual_set`` 0-2 with a non-negative
+    ``power`` (the 0-2 meaning is documentation, not a capture of a stored
+    number). Negative ``power`` with ``manual_set``, and ``manual_set`` 3
+    (auto), are unknown and left unset. Other Venus E mini versions keep
+    the generic simulator.
     """
     return (
         profile.family is DeviceFamily.VENUS_E_MINI
@@ -206,5 +229,8 @@ def uses_broadcast_reply_rules(profile: FirmwareProfile) -> bool:
     - it sends every reply to ``<subnet broadcast>:<API port>``;
     - it ignores a ``Marstek.GetDevice`` sent to the broadcast address, so
       LAN discovery never finds it and it must be added by IP.
+
+    Applying the same three rules to other Venus E mini versions is inferred:
+    no other mini capture and no other mini image exist.
     """
     return profile.family is DeviceFamily.VENUS_E_MINI
