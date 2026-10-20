@@ -97,7 +97,7 @@ def test_three_clean_discharge_windows_publish_the_true_capacity() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=_discharge_step_seconds(),
@@ -119,7 +119,7 @@ def test_charge_windows_use_the_other_efficiency_and_agree() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=20.0,
             soc_per_step=1.0,
             step_seconds=_charge_step_seconds(),
@@ -148,7 +148,7 @@ def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=discharge_step,
@@ -160,11 +160,11 @@ def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
     assert estimator.estimate_wh == pytest.approx(biased, rel=0.01)
     assert estimator.attributes()["efficiency_correction"] == "assumed_one_way"
 
-    moment += 61 * discharge_step + 1.0
+    moment += 62 * discharge_step + 1.0
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=20.0,
             soc_per_step=1.0,
             step_seconds=charge_step,
@@ -184,7 +184,7 @@ def test_two_windows_stay_unknown() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=40,
+            steps=41,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=_discharge_step_seconds(),
@@ -203,7 +203,7 @@ def test_alternating_power_noise_stays_near_the_true_capacity() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=_discharge_step_seconds(),
@@ -216,13 +216,13 @@ def test_alternating_power_noise_stays_near_the_true_capacity() -> None:
 
 
 def test_integer_soc_quantization_stays_within_a_few_percent() -> None:
-    """Whole-percent readings close a window up to one point early or late."""
+    """Whole-percent readings: windows run from one step to another."""
     estimator = UsableCapacityEstimator()
     point_seconds = _discharge_step_seconds()
     _feed(
         estimator,
         _Trace(
-            steps=150,
+            steps=155,
             soc_start=90.0,
             soc_per_step=-0.4,
             step_seconds=point_seconds * 0.4,
@@ -231,7 +231,37 @@ def test_integer_soc_quantization_stays_within_a_few_percent() -> None:
         ),
     )
 
-    assert estimator.estimate_wh == pytest.approx(4600, rel=0.08)
+    # Each point is 2.5 polls, so both ends sit within 0.4 point of a step.
+    assert estimator.estimate_wh == pytest.approx(4600, rel=0.02)
+
+
+@pytest.mark.parametrize("phase", [0.05, 0.35, 0.65, 0.95])
+def test_a_single_short_window_starts_on_a_state_of_charge_step(phase: float) -> None:
+    """A 23-point evening discharge is one window, and it is not a point off.
+
+    The first poll can sit anywhere inside a whole percent. Starting the
+    window there would make one 20-point window up to 5% wrong. The window
+    starts on the first poll after the percentage changes instead, so the
+    error is the state of charge one poll moves, here 0.25 point.
+    """
+    estimator = UsableCapacityEstimator()
+    point_seconds = _discharge_step_seconds()
+    _feed(
+        estimator,
+        _Trace(
+            steps=92,
+            soc_start=80.0 - phase,
+            soc_per_step=-0.25,
+            step_seconds=point_seconds * 0.25,
+            power_w=_POWER_W,
+            integer_soc=True,
+        ),
+    )
+
+    assert estimator.windows_accepted == 1
+    window = estimator.to_dict()["windows"][0]
+    assert window["soc_delta"] == 20.0
+    assert window["capacity_wh"] == pytest.approx(_TRUE_WH, rel=0.0125)
 
 
 def test_a_long_gap_discards_the_open_window() -> None:
@@ -279,7 +309,7 @@ def test_an_implausible_window_is_rejected_and_the_median_holds() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=_discharge_step_seconds(),
@@ -291,7 +321,7 @@ def test_an_implausible_window_is_rejected_and_the_median_holds() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=20,
+            steps=21,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=_discharge_step_seconds(),
@@ -310,7 +340,7 @@ def test_restart_restores_the_median_and_a_new_window_can_join() -> None:
     _feed(
         original,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=_discharge_step_seconds(),
@@ -337,7 +367,7 @@ def test_a_smaller_nameplate_scales_state_of_health() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=step,
@@ -432,7 +462,7 @@ def test_a_missing_mode_does_not_split_the_window() -> None:
     estimator = UsableCapacityEstimator()
     step = _discharge_step_seconds()
     moment = _T0
-    for index in range(61):
+    for index in range(62):
         estimator.observe(
             timestamp=moment,
             soc=80.0 - index,
@@ -455,7 +485,7 @@ def test_the_median_keeps_the_newest_windows_and_confidence_rises() -> None:
         _feed(
             estimator,
             _Trace(
-                steps=60,
+                steps=61,
                 soc_start=90.0,
                 soc_per_step=-1.0,
                 step_seconds=discharge,
@@ -463,11 +493,11 @@ def test_the_median_keeps_the_newest_windows_and_confidence_rises() -> None:
                 start_timestamp=moment,
             ),
         )
-        moment += 61 * discharge + 1.0
+        moment += 62 * discharge + 1.0
         _feed(
             estimator,
             _Trace(
-                steps=60,
+                steps=61,
                 soc_start=30.0,
                 soc_per_step=1.0,
                 step_seconds=charge,
@@ -475,7 +505,7 @@ def test_the_median_keeps_the_newest_windows_and_confidence_rises() -> None:
                 start_timestamp=moment,
             ),
         )
-        moment += 61 * charge + 1.0
+        moment += 62 * charge + 1.0
         if lap == 0:
             assert estimator.windows_accepted == 6
             assert estimator.attributes()["confidence"] == "medium"
@@ -536,7 +566,7 @@ def test_carried_power_without_es_get_status_is_not_integrated() -> None:
     _feed(
         estimator,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=step,
@@ -569,7 +599,7 @@ def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> Non
         _feed(
             estimator,
             _Trace(
-                steps=20,
+                steps=21,
                 soc_start=30.0,
                 soc_per_step=1.0,
                 step_seconds=_charge_step_seconds(),
@@ -577,12 +607,12 @@ def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> Non
                 start_timestamp=moment,
             ),
         )
-        moment += 21 * _charge_step_seconds() + 1_000.0
+        moment += 22 * _charge_step_seconds() + 1_000.0
     for _ in range(MAX_WINDOWS + 1):
         _feed(
             estimator,
             _Trace(
-                steps=20,
+                steps=21,
                 soc_start=90.0,
                 soc_per_step=-1.0,
                 step_seconds=_discharge_step_seconds(),
@@ -590,7 +620,7 @@ def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> Non
                 start_timestamp=moment,
             ),
         )
-        moment += 21 * _discharge_step_seconds() + 1_000.0
+        moment += 22 * _discharge_step_seconds() + 1_000.0
 
     assert estimator.windows_accepted == MAX_WINDOWS + 3
     assert estimator.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
@@ -639,7 +669,7 @@ def test_a_slow_poll_interval_can_form_a_window_and_a_missed_poll_cannot() -> No
     _feed(
         slow,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=400.0,
@@ -653,7 +683,7 @@ def test_a_slow_poll_interval_can_form_a_window_and_a_missed_poll_cannot() -> No
     _feed(
         default,
         _Trace(
-            steps=60,
+            steps=61,
             soc_start=80.0,
             soc_per_step=-1.0,
             step_seconds=400.0,

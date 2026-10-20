@@ -54,8 +54,12 @@ plus 150 seconds, which is how long one poll can spend on its own requests
 (six serial reads at the maximum 30 second delay). A missed poll is another
 full interval and still ends the window. Raising the constant to 300 seconds
 instead would let a 30 second poll stitch across a five-minute hole.
-Power below 150 W ends the window. When state of charge has
-moved at least 20 points and the window has at least four samples:
+Power below 150 W ends the window. The window starts on the first poll
+after the reported state of charge changes, not on whatever poll opened it.
+It is accepted on the poll that completes a 20-point move, which is also the
+first poll after a change, so both ends sit the same distance past a step.
+When state of charge has moved at least 20 points and the window has at
+least four samples:
 
 ```text
 DC watt-hours = AC watt-hours / 0.93     while discharging
@@ -102,9 +106,12 @@ capacity, and time. Confidence counts windows. It is not a calibrated error bar.
   moves differently from the energy that actually left the pack, which is
   what a voltage recalibration or a drifted coulomb counter does. It will not
   reveal fade the BMS is hiding by stretching its own percentage.
-- State of charge is coarse. A 20-point window closed on whole percents can
-  be about one point early or late, which is about 5% on that window. The
-  median of several windows is tighter. This is not a lab measurement.
+- State of charge is coarse: whole percents. Starting on a step keeps a
+  20-point window from being a point off, which was about 5% on that window.
+  What remains is how far state of charge moves in one poll: a quarter point
+  at 1 kW on a 5 kWh pack and a 30 second poll, about 1% on one window. The
+  cost is that a run must move 21 points to yield a 20-point window. This is
+  not a lab measurement.
 - With only discharge windows, or only charge windows, the absolute
   watt-hours move if the real one-way efficiency is not 0.93. The long-term
   slope is still the degradation signal. Once both directions have three
