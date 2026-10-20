@@ -68,6 +68,7 @@ from .utils import (
     get_broadcast_address,
     get_local_ip,
     load_persistent_state,
+    octet_broadcast,
     reset_persistent_state,
     resolve_state_dir,
     save_persistent_state,
@@ -125,6 +126,7 @@ class MockMarstekDevice:
         # Venus E mini UDP rules (issue #86); see uses_broadcast_reply_rules.
         self._broadcast_rules = uses_broadcast_reply_rules(self.profile)
         self._broadcast_addr = LIMITED_BROADCAST
+        self._reply_broadcast = LIMITED_BROADCAST
         self._state_dir = resolve_state_dir(state_dir) if state_dir is not None else None
 
         # Whether to include bat_power in ES.GetStatus responses
@@ -211,6 +213,7 @@ class MockMarstekDevice:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         if self._broadcast_rules:
             self._broadcast_addr = get_broadcast_address(self.ip)
+            self._reply_broadcast = octet_broadcast(self.ip)
             if hasattr(socket, "IP_PKTINFO"):
                 self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_PKTINFO, 1)
         self.sock.bind(("0.0.0.0", self.port))
@@ -409,7 +412,7 @@ class MockMarstekDevice:
         if (
             mini_rules
             and method == "Marstek.GetDevice"
-            and destination in {self._broadcast_addr, LIMITED_BROADCAST}
+            and destination in {self._broadcast_addr, self._reply_broadcast, LIMITED_BROADCAST}
         ):
             self._log_dropped("broadcast GetDevice", sender)
             return
@@ -470,7 +473,7 @@ class MockMarstekDevice:
         if is_loopback_host(sender_ip):
             return addr
         if self._broadcast_rules:
-            return (self._broadcast_addr, self.port)
+            return (self._reply_broadcast, self.port)
         return (sender_ip, self.port)
 
     def _get_state(self) -> dict[str, Any]:
@@ -675,6 +678,11 @@ class MockMarstekDevice:
                 or schedule_slot < 0
                 or schedule_slot > self.profile.max_manual_schedule_slot
             ):
+                if vnsem_301_setmode_report(self.profile):
+                    # PMU 301 acknowledges any time_num, including a missing
+                    # or negative one (firmware emulator). Nothing is stored.
+                    print(f"   Manual slot {schedule_slot!r} acknowledged, not stored")
+                    return handle_es_set_mode(request_id, src)
                 return handle_invalid_params(request_id, src)
 
         # Reported on real hardware. Do not treat this as a captured success.

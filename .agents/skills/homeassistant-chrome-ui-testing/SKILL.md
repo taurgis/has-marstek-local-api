@@ -253,6 +253,7 @@ Firmware emulators (vendor Control firmware in Renode, `fw-*` services, UDP 3000
 | `172.28.0.67`–`.69` | HMG-50 Venus C 153/155, Venus E 2.0 156 | `--profile firmware-hmg50` or `firmware-all` |
 | `172.28.0.70` / `.71` | VNSE3-0 151 / VNSD-0 151 (4 PV) | `--profile firmware-all` only |
 | `172.28.0.73` / `.74` | VNSA-0 1491 / VNSA-0 151 (2 PV) | `--profile firmware-all` only |
+| `172.28.0.75` | VNSEMINI-0 PMU 301 (Venus E mini) | `--profile firmware-all` only |
 
 Discovery reads the paused pooled socket for ports an entry already uses, so emulators on 30000 show up in the picker. If one is missing, it is usually the HMG-50 loss (#82) or an overloaded sandbox, not the port; add it with manual IP. `campaign` only walks `mock-marstek*` and starts only Home Assistant and those mocks, so `--only` also limits what starts. See `tools/firmware_emulator/README.md`.
 

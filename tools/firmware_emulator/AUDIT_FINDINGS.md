@@ -57,6 +57,6 @@ docker compose up -d homeassistant fw-venus-a-1487-ct fw-venus-d-149-ct fw-venus
 docker compose rm -sf fw-venus-a-1487-ct fw-venus-a-1487 fw-venus-d-149-ct fw-venus-d-149 fw-venus-d-1492-ct fw-venus-d-1492
 ```
 
-`--profile firmware-all up -d` starts all twenty-four, which only a large host carries.
+`--profile firmware-all up -d` starts all twenty-five, which only a large host carries.
 
 The service table is in `tools/mock_device/README.md`.

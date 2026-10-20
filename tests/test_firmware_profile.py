@@ -726,3 +726,21 @@ def test_venus_a_1491_resolves_like_149() -> None:
     assert profile_1491.pv_energy_scale == 10.0
     assert profile_1491.openapi_reset_prone is True
     assert replace(profile_1491, firmware_version=149) == profile_149
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "expected"),
+    [
+        ("VNSEM-0", 301, False),
+        ("Venus E mini", 301, False),
+        ("Venus E mini", 145, True),
+        ("Venus E mini", None, True),
+        ("VenusE 3.0", 301, True),
+        ("VenusC", 156, True),
+    ],
+)
+def test_supports_passive_is_off_only_for_vnsem_301(
+    device_type: str, version: int | None, expected: bool
+) -> None:
+    """PMU 301 has no Passive in ES.SetMode; nothing else is known to lack it."""
+    assert resolve_firmware_profile(device_type, version).supports_passive is expected

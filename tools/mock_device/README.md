@@ -53,7 +53,9 @@ Venus E mini is a distinct family (`--device "Venus E mini"`). It must not be co
 Venus E mini also follows the UDP rules of a `VNSEM-0` 301 capture
 ([#86](https://github.com/taurgis/has-marstek-local-api/issues/86)) for
 non-loopback senders: it answers only requests sent from the API port, replies
-by broadcast to that port, ignores broadcast `Marstek.GetDevice` (so discovery
+by broadcast to that port at `<a.b.c>.255` (the first three octets of its IP,
+whatever the netmask, as the PMU 301 image does in the firmware emulator),
+ignores broadcast `Marstek.GetDevice` (so discovery
 does not list it), and stays silent on `PV.GetStatus` and unknown methods
 instead of returning `Method not found`. Its `ES.GetStatus` `bat_cap` is the
 remaining energy, equal to `Bat.GetStatus` `bat_capacity`. Loopback senders
@@ -62,7 +64,9 @@ remaining energy, equal to `Bat.GetStatus` `bat_capacity`. Loopback senders
 That #86 capture is reads plus those UDP rules. It does not include a working
 `ES.SetMode`. On `VNSEM-0` firmware **301** only, the mock instead follows the
 report in [#104](https://github.com/taurgis/has-marstek-local-api/issues/104):
-Manual answers `set_result: true` and stores the time, weekday and enable, but
+Manual answers `set_result: true` for any `time_num` (the PMU acknowledges
+slots outside 0-5, negative or missing ones too; the mock stores none of those)
+and, for slots 0-5, stores the time, weekday and enable, but
 leaves power unset, and Passive answers JSON-RPC id 0, `-32700` `Parse error`,
 data 401, without changing mode. Other Venus E mini versions still use the
 generic Manual and Passive implementation. That generic path was not taken
@@ -177,7 +181,7 @@ Archived Control extras (default UDP 30000):
 | mock-marstek-18–21 | 172.28.0.38–.41 | VenusD | 147, 149, 1492, 150 | VNSD-0 Control matrix |
 | mock-marstek-22–23 | 172.28.0.42–.43 | VenusC | 155, 156 | EM server from 155; no `bat_power`; Open API stable at 156 |
 | mock-marstek-24–25 | 172.28.0.44–.45 | VenusE | 155, 156 | Unsupported HMG-50 later Controls |
-| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as `VNSEM-0` 301 (issue #86 reads and UDP rules). `ES.SetMode` follows the issue #104 report when `manual_set` is omitted (Manual power stays unset; Passive is a parse error with JSON-RPC id 0). A Rev 3.1 `manual_set` 0-2 with unsigned `power` is documentation-based, not a capture. Negative `power` with `manual_set`, and auto (`3`), are unknown |
+| mock-marstek-26 | 172.28.0.46 | VNSEM-0 | 301 | Venus E mini as `VNSEM-0` 301, behind `mocks-all` because `fw-venus-e-mini-301` runs the PMU. Unknown methods stay silent (PMU dispatcher). Passive `ES.SetMode` is parse error id 0 data 401. Displayed Manual power stays unset without `manual_set` (issue #104); `manual_set` 0-2 with unsigned `power` is documentation-based |
 | mock-marstek-27–28 | 172.28.0.47–.48 | VenusE 3.0, VenusD | 151 | Same Open API as 150; `src` is `VNSE3-0-<ble>` / `VNSD-0-<ble>` |
 | mock-marstek-29 | 172.28.0.49 | VenusA | 1491 | App 149.1; generation 149, so no SYS and `src` stays `VenusA-<ble>` |
 | mock-marstek-30 | 172.28.0.72 | VenusA | 151 | Same Open API as 150; `src` is `VNSA-0-<ble>` |
@@ -228,6 +232,7 @@ CT003 sidecar (`fw-*-ct`).
 | fw-venus-d-151 | 172.28.0.71 | VNSD-0 151, PV 400/350/300/250 W | `…:71` | `--profile firmware-all` |
 | fw-venus-a-1491 | 172.28.0.73 | VNSA-0 1491, PV 420/360 W | `…:73` | `--profile firmware-all` |
 | fw-venus-a-151 | 172.28.0.74 | VNSA-0 151, PV 420/360 W | `…:74` | `--profile firmware-all` |
+| fw-venus-e-mini-301 | 172.28.0.75 | VNSEMINI-0 PMU 301 | `02:e0:00:00:00:75` | `--profile firmware-all` |
 
 The Wi-Fi MAC is `02:e1:00:00:00:<same last octet>`.
 

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 _LOGGER = logging.getLogger("fc41d")
 
 CRLF = b"\r\n"
+LIMITED_BROADCAST = "255.255.255.255"
 _INLINE_SEND = re.compile(rb'AT\+QISEND=(\d+),(\d+),"', re.I)
 _SEND_TAIL = re.compile(rb'"(?:,"([^"]*)",(\d+))?\r\n?')
 
@@ -44,6 +45,11 @@ class ModemConfig:
     loopback_ports: frozenset[int] = frozenset()
     dialect: str = "control"  # "control" (VNSE3-0/VNSA-0/VNSD-0) or "hmg50"
     broadcast_to: str = ""  # unicast target for LAN broadcasts; "" sends them as is
+    # Join the saved AP unprompted once the MCU has finished module setup, the
+    # way a provisioned module reconnects after power-up (see --autojoin).
+    autojoin: bool = False
+    # Send a broadcast to the reported subnet as 255.255.255.255 (--lan-broadcast).
+    lan_broadcast: bool = False
 
 
 @dataclass
@@ -78,6 +84,7 @@ class FC41D:
     # until AT+QBLESTAT reports the state it asked for, and Ble.Adv only answers
     # once it does. A fixed "ADVERTISING" left every disable request unanswered.
     ble_advertising: bool = True
+    joined: bool = False  # --autojoin already reported GOT_IP on this UART link
 
     # ---- output -------------------------------------------------------
     def send(self, data: bytes) -> None:
@@ -182,6 +189,14 @@ class FC41D:
             )
         elif up == "AT+QBLEADDR?":
             self.reply(f"+QBLEADDR:{self.config.ble_mac}", "OK")
+        elif up == "AT+QWLMAC":
+            # VNSEMINI-0 PMU 301 asks this after BLE setup and waits for the
+            # info line. OK alone leaves it stuck. Same colon style as QBLEADDR.
+            self.reply(f"+QWLMAC:{self.config.wifi_mac}", "OK")
+            if self.config.autojoin and not self.joined:
+                self.joined = True
+                self.urc("+QSTASTAT:WLAN_CONNECTED")
+                self.urc("+QSTASTAT:GOT_IP")
         elif up == "AT+QBLESTAT":
             state = "ADVERTISING" if self.ble_advertising else "NOADVERTISING"
             self.reply(f"+QBLESTAT:{state}", "OK")
@@ -287,6 +302,10 @@ class FC41D:
             if port in self.config.loopback_ports:
                 # Broadcasts included: the peer for this port shares our namespace.
                 dest = ("127.0.0.1", port)
+        if dest is not None and self.config.lan_broadcast and self._is_broadcast(dest[0]):
+            # The module puts a subnet broadcast on its LAN as a link broadcast.
+            # The host network may be wider than the mask the module reports.
+            dest = (LIMITED_BROADCAST, dest[1])
         if dest is not None and self.config.broadcast_to and self._is_broadcast(dest[0]):
             # Keep LAN broadcasts (CT discovery, app discovery) off the shared network.
             dest = (self.config.broadcast_to, dest[1])
@@ -329,6 +348,9 @@ async def _main(args: argparse.Namespace) -> None:
         loopback_ports=frozenset(args.loopback_port),
         dialect=args.dialect,
         broadcast_to=args.broadcast_to,
+        autojoin=args.autojoin,
+        netmask=args.netmask,
+        lan_broadcast=args.lan_broadcast,
     )
     while True:
         try:
@@ -376,6 +398,20 @@ def main() -> None:
         default="",
         metavar="IP",
         help="Send the firmware's LAN broadcasts (CT discovery) to this host instead",
+    )
+    parser.add_argument(
+        "--netmask", default="255.255.0.0", help="Mask the module reports (AT+QGETIP)"
+    )
+    parser.add_argument(
+        "--lan-broadcast",
+        action="store_true",
+        help="Send broadcasts to the reported subnet as 255.255.255.255",
+    )
+    parser.add_argument(
+        "--autojoin",
+        action="store_true",
+        help="Report WLAN_CONNECTED and GOT_IP after AT+QWLMAC without a join command, "
+        "like a module that already holds AP credentials (VNSEMINI-0 PMU 301)",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()

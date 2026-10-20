@@ -7,9 +7,13 @@ firmware** defect. Venus E 3.0 Control **150** is the vendor fix
 
 `catalog.json` now lists every Control image hashed from
 [rweijnen/marstek-firmware-archive](https://github.com/rweijnen/marstek-firmware-archive)
-and [sphings79/marstek-firmware-archiv](https://github.com/sphings79/marstek-firmware-archiv).
-The images themselves are committed under `blobs/`, so the emulator and the
-research here do not depend on those archives staying online.
+and [sphings79/marstek-firmware-archiv](https://github.com/sphings79/marstek-firmware-archiv),
+plus the Venus E mini (VNSEMINI-0) PMU 301, INV 270 and DCDC 268 images posted
+on [issue #86](https://github.com/taurgis/has-marstek-local-api/issues/86#issuecomment-6273580192).
+Those three come from Marstek's EU OTA CDN. The PMU is the Control image the
+emulator runs; INV and DCDC are catalogued so their hashes stay checkable and
+are not booted. The images themselves are committed under `blobs/`, so the
+emulator and the research here do not depend on those archives staying online.
 
 Issue [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)
 (Venus C 2.0 stops self-consumption charging while Home Assistant polls) is a

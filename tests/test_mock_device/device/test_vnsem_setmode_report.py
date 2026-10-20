@@ -156,6 +156,26 @@ class TestVnsem301SetModeReport:
         finally:
             device.simulator.stop()
 
+    @pytest.mark.parametrize("slot", [6, 10, -1, None])
+    def test_any_slot_is_acknowledged_but_not_stored(self, slot: int | None) -> None:
+        """PMU 301 answers set_result true for every time_num (firmware emulator)."""
+        device = _device("VNSEM-0", 301)
+        manual = dict(_MANUAL["config"]["manual_cfg"])  # type: ignore[index]
+        if slot is None:
+            del manual["time_num"]
+        else:
+            manual["time_num"] = slot
+        try:
+            before = [dict(s) for s in device.simulator.manual_schedules]
+            response = device.build_response(
+                4, "ES.SetMode", {"id": 0, "config": {"mode": "Manual", "manual_cfg": manual}}
+            )
+            assert response is not None
+            assert response["result"]["set_result"] is True
+            assert [dict(s) for s in device.simulator.manual_schedules] == before
+        finally:
+            device.simulator.stop()
+
     def test_auto_still_changes_mode(self) -> None:
         """The report is Manual and Passive only."""
         device = _device("VNSEM-0", 301)

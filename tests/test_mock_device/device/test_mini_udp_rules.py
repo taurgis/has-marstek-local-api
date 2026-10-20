@@ -8,16 +8,19 @@ from unittest.mock import MagicMock, patch
 
 from mock_device import MockMarstekDevice
 from mock_device.device import _IN_PKTINFO
-from mock_device.utils import LIMITED_BROADCAST, get_broadcast_address
+from mock_device.utils import LIMITED_BROADCAST, get_broadcast_address, octet_broadcast
 
 _LAN_SENDER = ("192.168.1.10", 30000)
 _SUBNET_BROADCAST = "192.168.1.255"
+# A /16 interface broadcast. PMU 301 still replies to the /24 address.
+_WIDE_BROADCAST = "192.168.255.255"
 
 
 def _mini(device: str = "VNSEM-0", ver: int = 301) -> MockMarstekDevice:
     mock = MockMarstekDevice(simulate=False, device_config={"device": device, "ver": ver})
     mock.sock = MagicMock()
-    mock._broadcast_addr = _SUBNET_BROADCAST
+    mock._broadcast_addr = _WIDE_BROADCAST
+    mock._reply_broadcast = octet_broadcast("192.168.1.50")
     return mock
 
 
@@ -68,18 +71,39 @@ class TestMiniUdpRules:
     def test_broadcast_get_device_is_ignored(self) -> None:
         device = _mini()
         _deliver(device, _get_device(), destination=_SUBNET_BROADCAST)
+        _deliver(device, _get_device(), destination=_WIDE_BROADCAST)
         _deliver(device, _get_device(), destination=LIMITED_BROADCAST)
 
         assert device.sock is not None
         device.sock.sendto.assert_not_called()
 
     def test_pv_and_unknown_methods_get_no_reply(self) -> None:
+        """PMU 301's unknown-method error reply is unreachable, so it stays silent."""
         device = _mini()
         _deliver(device, {"id": 1, "method": "PV.GetStatus", "params": {"id": 0}})
         _deliver(device, {"id": 2, "method": "Foo.Get", "params": {}})
 
         assert device.sock is not None
         device.sock.sendto.assert_not_called()
+
+    def test_other_mini_versions_answer_unknown_methods(self) -> None:
+        """Silence is proven for PMU 301 only; firmware 145 keeps Method not found."""
+        device = _mini(device="Venus E mini", ver=145)
+        _deliver(device, {"id": 2, "method": "Foo.Get", "params": {}})
+
+        assert device.sock is not None
+        payload, _target = device.sock.sendto.call_args[0]
+        body = json.loads(payload)
+        assert body["error"]["code"] == -32601
+        assert body["src"].startswith("Venus E mini-")
+
+    def test_pmu_301_src_is_the_sku_even_when_the_device_name_is_not(self) -> None:
+        """The PMU hardcodes ``VNSEM-0-%s``; the product name is not the prefix."""
+        device = _mini(device="Venus E mini", ver=301)
+        response = device.build_response(1, "Marstek.GetDevice", {"id": 0})
+
+        assert response is not None
+        assert str(response["src"]).startswith("VNSEM-0-")
 
     def test_loopback_keeps_unit_test_addressing(self) -> None:
         """Loopback senders (unit tests) still get replies on their source port."""
@@ -134,3 +158,17 @@ class TestBroadcastAddress:
     def test_missing_fcntl_falls_back(self) -> None:
         with patch.dict("sys.modules", {"fcntl": None}):
             assert get_broadcast_address("192.168.1.50") == LIMITED_BROADCAST
+
+
+class TestOctetBroadcast:
+    """PMU 301 replies to the first three octets plus .255, whatever the mask."""
+
+    def test_last_octet_becomes_255(self) -> None:
+        assert octet_broadcast("172.28.0.75") == "172.28.0.255"
+        assert octet_broadcast("10.1.2.3") == "10.1.2.255"
+
+    def test_non_dotted_addresses_fall_back_to_limited_broadcast(self) -> None:
+        assert octet_broadcast("") == LIMITED_BROADCAST
+        assert octet_broadcast("not-an-ip") == LIMITED_BROADCAST
+        # inet_aton accepts the short form; the PMU only ever sees dotted quads.
+        assert octet_broadcast("10.1") == LIMITED_BROADCAST

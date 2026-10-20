@@ -395,14 +395,14 @@ def test_select_current_option_normalizes_open_api_auto() -> None:
 
 
 @pytest.mark.parametrize(
-    ("device_type", "version", "expect_ups"),
+    ("device_type", "version", "expect_ups", "expect_passive"),
     [
-        ("VenusE 3.0", 145, False),
-        ("VenusE 3.0", 150, True),
-        ("Venus E mini", 150, True),
-        ("VNSEM-0", 301, True),
-        ("Venus E mini", "not-a-version", False),
-        ("Marstek Energy Storage", 150, False),
+        ("VenusE 3.0", 145, False, True),
+        ("VenusE 3.0", 150, True, True),
+        ("Venus E mini", 150, True, True),
+        ("VNSEM-0", 301, True, False),
+        ("Venus E mini", "not-a-version", False, True),
+        ("Marstek Energy Storage", 150, False, True),
     ],
 )
 async def test_select_options_follow_firmware_profile(
@@ -411,8 +411,9 @@ async def test_select_options_follow_firmware_profile(
     device_type: str,
     version: object,
     expect_ups: bool,
+    expect_passive: bool,
 ) -> None:
-    """UPS appears on the existing select only for UPS-capable profiles."""
+    """UPS and Passive appear on the select only for profiles that accept them."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
@@ -432,7 +433,7 @@ async def test_select_options_follow_firmware_profile(
     options = state.attributes.get("options")
     assert options is not None
     for mode in SELECTABLE_BASE_MODES:
-        assert mode in options
+        assert (mode in options) is (mode != MODE_PASSIVE or expect_passive)
     if expect_ups:
         assert MODE_UPS in options
     else:

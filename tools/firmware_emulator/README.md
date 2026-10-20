@@ -214,6 +214,7 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
 | `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
 | `fw-venus-a-1491`, `fw-venus-a-151` | .73-.74 | VNSA-0 1491 and 151, PV 420/360 W | `firmware-all` |
+| `fw-venus-e-mini-301` | .75 | VNSEMINI-0 PMU 301 (32-byte header, load `0x08008000`). Modem is USART2. Settings in SPI1 NOR (`renode/spiflash.py`). `mini_peers.py` answers the inverter and DCDC UARTs; `fc41d.py --autojoin --netmask 255.255.255.0 --lan-broadcast`. Opens UDP and answers the Open API itself; replies go to `<a.b.c>.255`. See `tools/firmware/ANALYSIS.md` | `firmware-all` |
 
 ```bash
 cd .devcontainer
@@ -225,7 +226,7 @@ docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venu
 
 The four defaults are `fw-venus-e-150`, `-a-150`, `-d-150` and the HMG-50
 `fw-venus-c-156`. `docker compose --profile firmware-all up -d` starts all
-twenty-four emulators. That needs a large host: each takes 0.3-0.6 core and
+twenty-five emulators. That needs a large host: each takes 0.3-0.6 core and
 about 550 MB, and on a 4-CPU sandbox the load reaches about 60 and the firmware
 answers `Parse error` or times out. On a small machine, run at most `nproc`
 emulators at a time in named batches; see AGENTS.md, *Sandbox resource budget*.
@@ -288,6 +289,21 @@ second try, and the first full poll can take several minutes.
   (see `custom_components/marstek/helpers/udp_clients.py`), so `healthcheck.py`
   can use an ephemeral port, while Home Assistant's port-30000 client sees the
   same thing as with a real device.
+- **Venus E mini PMU 301 link.** The mini board runs `fc41d.py --autojoin
+  --netmask 255.255.255.0 --lan-broadcast`. `--autojoin` reports `GOT_IP`
+  right after `AT+QWLMAC`, like a provisioned module after power-up; the
+  image only asks for an address in its first 750 control ticks. The PMU
+  replies to `<a.b.c>.255` whatever mask it is given, so the module reports
+  a /24 and `--lan-broadcast` sends that address as `255.255.255.255`, which
+  reaches Home Assistant on the /16 Docker network. On a real LAN that is not
+  a /24 the replies are lost. The image also hears its own broadcast replies
+  back on port 30000 and drops them (they carry no `method`).
+  `mini_peers.py` answers the inverter (USART4) and DCDC (USART5) links with
+  a fixed pack reading and only drains the UART7 Modbus link; there is no
+  battery behind it, so SoC and power read 0. Two Renode timing gaps are
+  patched for this board only: the link UARTs are clocked at 36 MHz, and a
+  bus hook keeps UART7 TC set (Renode raises TC once per DR write). TIMER6's
+  DMA line is left off because it shares DMA2 request 3 with USART4 RX.
 - **CAN pacing.** Inbound CAN frames are spread 1 ms apart in virtual time.
   With a 10 ms quantum, a burst injected at once overflowed the 3-deep RX FIFO,
   and the lost BMS frames showed up as SoC 0 for minutes at a time.
@@ -328,6 +344,8 @@ second try, and the first full poll can take several minutes.
   request unanswered. The firmware only re-reads `AT+QBLESTAT` around a
   request, so a second change right after the first can be a no-op.
 - The Local API is connection 3: `AT+QIOPEN=3,"UDP SERVICE","<ip>",2025,<port>,1`.
+  Venus E mini PMU 301 opens it as `AT+QIOPEN=3,"UDP SERVICE","",<port>,<port>,1`,
+  then sends `AT+QGETIP=station` and `AT+QICFG="udp/broadcast",1`.
 - EEPROM byte 0 marks an initialised store. The Local API enable flag is at 0x371
   and the port at 0x372 (uint16 LE).
 - HMG-50 (`--dialect hmg50`):

@@ -46,6 +46,11 @@ _UNKNOWN_CONTROL_GENERATION_MIN = 100
 _HMG50_CONTROL_MIN_GENERATION = 153
 _HMG50_EM_SERVER_GENERATION = 155
 _HMG50_OPENAPI_STABLE_GENERATION = 156
+# VNSEMINI-0 PMU 301 compares the ES.SetMode mode with Auto, AI, Manual and
+# UPS only; the string "Passive" is not in the image. Anything else gets a
+# parse error with JSON-RPC id 0 (issue #104), which no pending request
+# matches, so Passive would only time out.
+_VNSEM_NO_PASSIVE_VERSION = 301
 # HMG-50 Control shares one Wi-Fi receive channel between the Local API
 # server and its own UDP meter client, so Open API traffic competes with
 # the regulation loop that Auto mode depends on. See
@@ -169,6 +174,18 @@ class FirmwareProfile:
         mini also sends ``abs(power)``; direction lives in ``manual_set``.
         """
         return self.family is DeviceFamily.VENUS_E_MINI
+
+    @property
+    def supports_passive(self) -> bool:
+        """Return whether ES.SetMode accepts Passive on this firmware.
+
+        Venus E mini ``VNSEM-0`` 301 has no Passive branch (PMU image and
+        the firmware emulator). Other mini versions have no image and keep it.
+        """
+        return not (
+            self.family is DeviceFamily.VENUS_E_MINI
+            and self.firmware_version == _VNSEM_NO_PASSIVE_VERSION
+        )
 
     @property
     def es_bat_cap_is_remaining(self) -> bool:

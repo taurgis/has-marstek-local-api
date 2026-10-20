@@ -411,3 +411,284 @@ integration treats every **known family** below Control generation 150 as
 reset-prone, except HMG-50 Venus C which uses the 156 Open API stability
 gate. Venus E 3.0 **150** is the VNSE3-0 build with a published Local API
 Ethernet fix plus a user confirmation.
+
+## Venus E mini PMU 301 (VNSEMINI-0)
+
+Posted by ViktorGozhiy on
+[issue #86](https://github.com/taurgis/has-marstek-local-api/issues/86#issuecomment-6273580192)
+from Marstek's EU OTA CDN (`getCommonOtaUpdate` / `checkSmallBalconyOTA` for
+device type `VNSEMINI-0`). Hashes match the comment. The PMU is the Open API
+image. INV 270 and DCDC 268 are catalogued with the same 32-byte header so
+their hashes stay checkable; they have no Open API strings and are not booted
+(`runnable: false`). Their load address `0x08000000` is inferred from a reset
+vector in the `0x0800xxxx` range, not from a successful boot.
+
+### Image layout (observed)
+
+Each file starts with exactly 32 ASCII bytes and no trailing NUL. The number
+in the header is the payload size.
+
+| Part | Header | Payload | SP | Reset | Load |
+|------|--------|---------|----|-------|------|
+| PMU 301 | `VNSEMINI-0_PMU_V12D_182500_35_FF` | 182500 | `0x200205f8` | `0x080081ad` | `0x08008000` (vector sits there) |
+| INV 270 | `VNSEMINI-0_INV_V10E_100904_AA_FF` | 100904 | `0x20003160` | `0x080082d5` | inferred `0x08000000` |
+| DCDC 268 | `VNSEMINI-0_DCDC_V10C_50152_2F_FF` | 50152 | `0x200087a0` | `0x080061ed` | inferred `0x08000000` |
+
+PMU build stamp strings `Sep 11 2026` and `11:31:28` are at payload offsets
+`0x22ad4` and `0x22afc`. Banner strings include `VNSEM-0`, `VNSEMINI-0`,
+`MARS_VNSEM`, `VE-MINI`, and `HMC-1` inside an OTA URL.
+
+### MCU (observed peripheral bases, inferred exact part)
+
+No vendor string names the chip. Literal pools match the GD32F30x / STM32F1
+map already modelled by `control.repl.in`, so that board is reused rather than
+a new one:
+
+- RCC `0x40021000`, PWR `0x40007000`, FLASH `0x40022000`, DBGMCU `0xE0042000`
+- GPIOA–C at `0x40010800` stepping `0x400` (not the F4 GPIOA at `0x40020000`;
+  that address is DMA1 here and is referenced)
+- TIM1 `0x40012C00` through TIM7, USART1 `0x40013800`, USART2 `0x40004400`,
+  USART3 `0x40004800`, UART4 `0x40004C00`, UART5 `0x40005000`
+- Extra UARTs `0x40015000` (twice) and `0x40015400` (six times)
+
+The vector table is Cortex-M3/M4: MemManage, BusFault and UsageFault are
+present, and indices 7–10 and 13 are zero. It runs through index 101 (IRQ 85)
+with default handler `0x080081c7`. Indices 102–106 are code immediately before
+`Reset_Handler` at payload offset `0x1AC`. There is no F1 UID (`0x1FFFF7E8`)
+or flash-size (`0x1FFFF7E0`) read. Initial SP `0x200205f8` sits past the 64 KiB
+STM32F103 SRAM, which fits the oversized SRAM the Control board already maps.
+RTOS strings are uC/OS-III, not FreeRTOS. No CH395 strings. No I2C1/I2C2 or
+CAN1/CAN2 base hits, so the Control EEPROM “force Local API on” path and the
+CAN BMS peers are not what this image talks to. FC41D AT commands are present
+(`AT+QIOPEN` UDP SERVICE access modes 0 and 1, `AT+QISEND`, `+QIURC:`,
+`AT+QIRD`, CT port `12345`, and `60606`).
+
+IRQ 74, which the other Control images use for the FC41D UART at `0x40015000`,
+is the default handler in this image. USART2/3 and UART4/5 (IRQs 38, 39, 52,
+53) have real handlers, and so does IRQ 75 (`0x08010cdd`), whose neighbouring
+register writes use `0x40015400`. The first boot that reached the AT sender
+wrote `AT+QVERSION`, `AT+QBLEADDR?`, `AT+QBLENAME=MARS_VNSEM_` and the GATT
+setup to USART2 (`0x40004400`), not to `0x40015000` or `0x40015400`. The
+emulator therefore connects `fc41d.py` to USART2 for `VNSEMINI-0` only. That
+is from the boot log, not from guessing which extra UART the ISR belongs to.
+
+### Open API method table (observed)
+
+Eleven entries at `0x0802f2ac`, each a string pointer plus a Thumb handler,
+stride 8:
+
+`Marstek.GetDevice`, `Wifi.GetStatus`, `BLE.GetStatus`, `Bat.GetStatus`,
+`ES.GetStatus`, `ES.SetMode` (`0x08026bfc`), `ES.GetMode`, `EM.GetStatus`,
+`DOD.SET`, `Ble.Adv`, `Led.Ctrl`.
+
+The next four words are mode-name pointers, not code: `Auto`, `UPS`, `Manual`,
+`AI` (`0x0802f304`–`0x0802f310`). There is no `PV.GetStatus` string anywhere
+and no `Passive` string anywhere. `staging` sits in rodata between `ES.SetMode`
+and `Led.Ctrl` and is not in the dispatch table.
+
+### Dispatcher and errors (observed)
+
+`error_reply` at `0x0801b17c(id, code, data)` formats
+`{"id":%d,"src":"%s-%s","error":{"code":%d,"message":"%s","data":%d}}`.
+Relative to base `-32602` the switch selects `Parse error` (`-32700`),
+`Invalid Request` (`-32600`), `Method not found` (`-32601`), `Invalid params`
+(`-32602`) and `Internal error` (`-32603`). The success `src` literal is
+`VNSEM-0`, so every reply is `VNSEM-0-%s` (the second `%s` is the BLE MAC).
+That matches the issue #86 `GetDevice` `src` of `VNSEM-0-<mac>`.
+
+The dispatcher at `0x0801b03c` first `strstr`s the raw request for the decimal
+form of a halfword at global `0x200115a0+4`. If that decimal is absent it
+returns without a reply. The halfword is RAM, not a flash constant, so the
+value it filters on is not known from the image. It then extracts JSON with a
+substring search, not a tree parser, which is why a key inside `manual_cfg`
+is still found. Missing numeric keys become `atoi("")` = 0.
+
+Only three call sites pass arguments to `error_reply`, and each passes id 0:
+
+1. JSON parse failure (`0x0801b08a`): data `401` (`0x191`), code `-32700`.
+   Reachable.
+2. After the 11-name loop, if every name missed (`0x0801b0e8`): data `408`
+   (`0x198`), code `-32700+0x64` = `-32600` (`Invalid Request`). **Unreachable.**
+   The bytes at `0x0801b0da` are `add r0, sp, #0x140` then `cbnz r0`, and
+   `sp+0x140` is never null, so the error call is dead. A complete miss frees
+   the scratch buffer and returns. `Foo.Get` and `PV.GetStatus` therefore get
+   silence, which is what the issue #86 capture recorded (nothing back, not
+   even an id-0 error). The `Method not found` string has no caller that
+   passes `-32601`. The mock must not answer those methods, and must not
+   invent a data-408 reply.
+3. Unknown `ES.SetMode` mode (`0x08026d36`): see below.
+
+### ES.SetMode (observed in the image, compared with #104)
+
+`ES.SetMode` compares the mode with a substring match (`0x080082fe`, non-zero
+means match) in order `Auto`, `AI`, `Manual`, `UPS` (literals at `0x08026d78`,
+`0x08026d88`, `0x08026d8c`, `0x08026d9c`). The fall-through is
+`movw r2, #0x191` (data 401), `ldr r1` = `-32700`, `movs r0, #0` (id),
+`bl error_reply`. Passive is not a string in the image, so it takes this
+path: Parse error `-32700`, data `401`, JSON-RPC id `0`. That is the reply
+issue #104 recorded. Auto, AI, Manual and UPS are recognized. Accepting AI
+and UPS is binary-proven; the integration already exposes AI for the mini
+and UPS when `ver >= 150` (301 qualifies). Passive stays selectable in Home
+Assistant so the parse error can be shown.
+
+The Manual arm stores mode `2`, `manual_set`, `power`, `enable`, `week_set`,
+and `%d:%d` times, indexed by `time_num`, with no compare against 5. The
+slot range 0–5 is the official app and issue #104, not a bounds check in this
+function. The integration keeps 0–5. A missing `manual_set` is stored as 0
+next to `power`. Issue #104 observed the app showing slot power as `---`
+without `manual_set`. The mock follows that display and leaves power unset
+unless `manual_set` is 0–2 with a non-negative `power`. The 0–2 meaning is
+Rev 3.1 documentation, not a capture of a stored number. `manual_set` 3 and
+a negative power stay unknown.
+
+### Result templates (observed strings)
+
+- `Marstek.GetDevice`: `device`, `ver`, `ble_mac`, `wifi_mac`, `wifi_name`, `ip`.
+- `ES.GetStatus`: `bat_soc`, `bat_cap`, `pv_power`, `ongrid_power`,
+  `offgrid_power`, `total_pv_energy`, `total_grid_output_energy`,
+  `total_grid_input_energy`, `total_load_energy`. No `bat_power`.
+- `ES.GetMode`: `mode`, `ongrid_power`, `offgrid_power`, `bat_soc`, `ct_state`,
+  `a_power`, `b_power`, `c_power`, `total_power`, `input_energy`, `output_energy`.
+- `EM.GetStatus`: `ct_state`, phase powers, `total_power`, `input_energy`,
+  `output_energy`. The image also contains a meter-client request
+  `{"id":0,"method":"EM.GetStatus"...}` and `EM1.GetStatus`.
+- `Bat.GetStatus`: `soc`, `charg_flag`, `dischrg_flag`, `bat_temp`,
+  `bat_capacity`, `rated_capacity`.
+- `BLE.GetStatus`: `state`, `ble_mac`. `Wifi.GetStatus`: `wifi_mac`, `ssid`,
+  `rssi`, `sta_ip`, `sta_gate`, `sta_mask`, `sta_dns`.
+- `set_result` templates are present for the writes (`DOD.SET`, `Ble.Adv`,
+  `Led.Ctrl`, and a successful `ES.SetMode`).
+
+`bat_cap` meaning remaining energy rather than nameplate is the issue #86
+capture (`1916` at 95% SoC equals `bat_capacity`, `rated_capacity` `2009`),
+not something the format string proves. `firmware_profile.py` already treats
+`es_bat_cap_is_remaining` as true for the whole Venus E mini family. No
+integration change was required for this image: no PV, manual slots 0–5,
+`manual_set` required, SYS when `ver` is known, UPS at generation ≥ 150, and
+EM status for a known family were already in the profile.
+
+### What the mock does with this
+
+Observed, and applied only at firmware version 301 (other mini versions have
+no image, so they keep the generic replies):
+
+- Unknown methods are silent. Previously the whole mini family was silent;
+  that was an inference this image does not support.
+- `src` is `VNSEM-0-<ble>` even when the configured device name is
+  `Venus E mini`.
+- Passive (and any mode other than Auto, AI, Manual, UPS) is the id-0 parse
+  error with data 401.
+
+Inferred, and labelled as such in `firmware_quirks.py`: the three UDP rules
+captured on 301 (answer only the API source port, reply to the subnet
+broadcast, ignore broadcast `GetDevice`) are still applied to every Venus E
+mini version, because no other mini capture or image exists. The Manual
+`manual_set` 0–2 unsigned-power display is documentation plus the #104
+`---` observation, not a stored number from a capture.
+
+### Boot (Renode 1.17, `fw-venus-e-mini-301`)
+
+The PMU is loaded by stripping the 32-byte header and `LoadBinary` at
+`0x08008000`, then setting SP/PC from the vector table. It starts, talks to
+the modem, opens its UDP service and answers the Open API itself. Nothing
+outside the PMU binary answers a datagram.
+
+What had to change before the image would run at all, each one observed:
+
+- Renode's `STM32G0DMA.ReadDoubleWord` treats channel index `==
+  numberOfChannels` as in range and then indexes off the array. The first
+  boot died there during USART init, on a DMA1 read one past the seven
+  STM32F103 channels (the log stops on `dma1` offset `0x4` and the exception
+  has no address). `numberOfChannels: 8` on both DMA controllers makes that
+  read land on a modelled register. The IRQ wiring is unchanged.
+- Bring-up then spun on SPI1 `SR` at `0x40013008` bit 1 (TXE), PC
+  `0x08023886`. SPI2 already has an always-ready stub; SPI1 uses the same
+  stub. The other Control images do not touch this address.
+- AT-command timeouts read `DWT_CYCCNT` (`0xE0001004`). Unmapped, the counter
+  stays 0 and the wait never ends. The mini board inserts a peripheral that
+  steps the counter on each read. The other Control boards do not.
+- With those in place the AT stream (`AT+QVERSION`, `AT+QBLEADDR?`,
+  `AT+QBLENAME=MARS_VNSEM_0075`, the GATT setup, `AT+QBLEADVSTART`,
+  `AT+QWLMAC`) came out of USART2. IRQ 74 and `0x40015400` stayed quiet.
+- `AT+QWLMAC` with only `OK` does not advance. A `+QWLMAC:<mac>` line in the
+  same colon style as `+QBLEADDR` is stored: the bytes at `0x2000e70c` were
+  the ASCII hex of that MAC with the colons removed (`02ee00000001` on the
+  run that still used the modem's default Wi-Fi MAC), and `0x2000e719` was
+  set to 1. `fc41d.py` now answers `AT+QWLMAC` from `--wifi-mac`.
+
+What it took past that point, in boot order. Each step is something the
+binary waits for, found by disassembly and confirmed on the running image:
+
+1. **Settings flash.** The PMU keeps its settings in SPI1 NOR (chip select
+   PA4), not in an I2C EEPROM. An 18-byte record at `0x14000` holds the Open
+   API enable flag (byte `0x0A`), the port twice (`0x0B`, `0x0D`) and a
+   CRC-16/XMODEM at `0x10`. `renode/spiflash.py` models the part (opcodes
+   03/02/20/D8/06/05) and, like the EEPROM model of the other boards, keeps
+   the record set to "Open API on" with the configured port. A GPIOA write
+   hook hands it the PA4 level.
+2. **Pack readings.** `AT+QGETIP` is queued only by the sequencer at
+   `0x0801dfd0`, and only while the struct at `0x20014618+0x18` is set. The
+   control task sets it when the inverter's command `0x02` reply puts a pack
+   voltage above `0xFA0` at `0x2000b780+0x56` and a second reading above
+   `0x320` at `+0x58`. `mini_peers.py` answers USART4 (inverter, address
+   `0x81`) and USART5 (DCDC, `0x82`) with the image's own AA frames.
+3. **UART timing.** Renode clocks `STM32_UART` at 8 MHz. The image sets BRR
+   for a 36 MHz PCLK1, so at 8 MHz an inverter reply outlasted the next poll
+   and the frames merged; the USART4 parser (`0x080259c0`) wants one frame
+   per IDLE and dropped them. The link UARTs now get `frequency: 36000000`.
+   TIMER6 shared DMA2 request line 3 with USART4 RX and, since Renode raises
+   a timer's DMA line on every update, read an empty DR into every frame;
+   the mini board leaves that line off.
+4. **Modbus task.** The control task sends on UART7 by DMA, and the DMA
+   TX-complete IRQ clears TC and waits for a fresh TC before posting the task
+   semaphore. Renode raises TC once, when DR is written, so the task hung in
+   its pend. A bus hook keeps TC set through SR writes on UART7.
+5. **Idle window.** The sequencer also wants `0x2000b780+0x4b6 == 0`. That
+   flag stays 0 for the first 750 control ticks (`0x20014618+0x90`). After
+   that it becomes 1 in Manual mode (`0x20002cb4 == 2`) while the byte at
+   `0x2001472c+2` is 0, which a blank settings flash gives. A module that only joins on a
+   command arrives too late, so `fc41d.py --autojoin` reports
+   `WLAN_CONNECTED` and `GOT_IP` right after `AT+QWLMAC`, the way a
+   provisioned module reconnects at power-up. The image's factory-join path
+   (a Modbus write that makes it send `AT+QSTAAPINFODEF` with its built-in
+   factory AP credentials) is not used.
+
+With those, the image sends `AT+QIOPEN=3,"UDP SERVICE","",30000,30000,1`,
+then `AT+QGETIP=station` and `AT+QICFG="udp/broadcast",1`, and answers the
+Open API itself. Every reply below is the firmware's.
+
+| Request | Reply from PMU 301 |
+|---------|-------------------|
+| `Marstek.GetDevice` | `device` `VNSEM-0`, `ver` 301, BLE/Wi-Fi MAC, SSID, `ip` |
+| `ES.GetStatus` | no `bat_power`; `bat_cap` field present |
+| `ES.GetMode` | `mode` (Manual on a blank settings flash) plus the CT fields |
+| `Bat.GetStatus`, `EM.GetStatus`, `Wifi.GetStatus`, `BLE.GetStatus` | answered |
+| `ES.SetMode` Auto, AI, Manual, UPS | `set_result: true`; `ES.GetMode` follows |
+| `ES.SetMode` Passive | `id` 0, `-32700 Parse error`, `data` 401 (issue #104) |
+| `ES.SetMode` Manual, any `time_num` (6, 10, -1, missing) | `set_result: true` |
+| `DOD.SET`, `Ble.Adv`, `Led.Ctrl` | `set_result: true` |
+| `PV.GetStatus`, unknown methods | no reply |
+| any request from a source port other than 30000 | no reply |
+
+**Reply address.** Before `+QGETIP` the image sends replies to
+`255.255.255.255:<port>`. The `+QGETIP` handler then keeps the first three
+octets of the station address and sends every reply to `<a.b.c>.255:<port>`,
+whatever netmask the module reports. On a LAN that is not a /24 that address
+is not the LAN broadcast, so replies never reach Home Assistant. The Docker
+network is a /16, so the mini board runs `fc41d.py --netmask 255.255.255.0
+--lan-broadcast`: the module reports a /24 and puts `<a.b.c>.255` on the
+wire as `255.255.255.255`. That is the emulator's link layer, not a change to
+what the firmware sends.
+
+**Discovery.** The `+QIURC: "recv"` line carries only the sender's address,
+so the PMU cannot tell a broadcast request from a unicast one. In the
+emulator it answers a broadcast `Marstek.GetDevice` (Home Assistant's
+discovery list showed it). The issue #86 capture saw no answer on a real
+device; if that holds, the filter is in the Wi-Fi module or the network, not
+in this image. The integration keeps the add-by-IP advice.
+
+Home Assistant 2026.9.3 against `fw-venus-e-mini-301`: added by IP, every
+coordinator read populated, the mode select offered Auto/AI/Manual/UPS and
+each write was acknowledged, DoD, LED and BLE writes were acknowledged, and a
+Manual slot 5 write carried `manual_set`. Passive and slot 6 were refused by
+the integration before any datagram was sent.

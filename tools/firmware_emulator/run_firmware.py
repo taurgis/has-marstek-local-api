@@ -10,8 +10,16 @@ the grid meter reading that AstraMeter turns into CT003 replies (see README.md).
 VNSE3-0, VNSA-0 and VNSD-0 images share one board, so ``--firmware DEVICE:VERSION``
 picks any of them from ``tools/firmware/catalog.json``. HMG-50 (Venus C / Venus E
 2.0) images run on their own STM32G474 board (``renode/hmg50.repl.in``); the
-catalog's device type selects it. The stack pointer and entry point come from each
-image's vector table.
+catalog's device type selects it. VNSEMINI-0 PMU 301 uses that same GD32F30x
+board, loaded at the catalog ``loadAddress`` after its ASCII header is stripped,
+with the modem on USART2 (``0x40004400``, IRQ 38) instead of the IRQ 74
+UART the other Control images use. That image also gets ``mini_peers.py`` on
+USART4 (inverter), USART5 (DCDC) and UART7 (Modbus): the binary waits for a
+pack-voltage frame and a register write before it joins Wi-Fi and opens UDP.
+It never programs the I2C EEPROM, so that board skips the fresh-EEPROM reboot.
+Its settings live in an SPI1 NOR flash (``renode/spiflash.py``) instead, which
+keeps the Open API on at ``--local-api-port`` the way the EEPROM model does.
+The stack pointer and entry point come from each image's vector table.
 
 The firmware images are committed under ``tools/firmware/blobs/``;
 ``tools/firmware/fetch_firmware.py`` verifies them against the catalog.
@@ -35,6 +43,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -61,7 +70,27 @@ connector Connect sysbus.{wifi_uart} wifi
 emulation CreateCANHub "canhub"
 connector Connect sysbus.{can} canhub
 connector Connect sysbus.canbridge canhub
-{tuning}"""
+{links}{hooks}{tuning}"""
+
+# PA4 is the SPI1 flash chip select. BSRR bit 4 raises it, BSRR bit 20 and BRR
+# bit 4 lower it. The hook hands the level to renode/spiflash.py at 0x3F0.
+SPI_CS_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.gpioPortA "'
+    "cs = 1 if (offset == 0x10 and value & 0x10) else "
+    "(0 if ((offset == 0x10 and value & 0x100000) or (offset == 0x14 and value & 0x10)) "
+    "else -1); machine.SystemBus.WriteDoubleWord(0x400133F0, cs) if cs >= 0 else None"
+    '"'
+)
+
+# STM32_UART raises TC the moment DR is written and never again. On a real
+# UART TC follows the last stop bit, so PMU 301's DMA TX-complete IRQ clears
+# the stale TC on UART7 and waits for a fresh one before posting the Modbus
+# task. Keeping TC on through SR writes stands in for that later edge.
+UART7_TC_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.uart7 "'
+    "value = (value | 0x40) if offset == 0 else value"
+    '"'
+)
 
 
 @dataclass(frozen=True)
@@ -78,6 +107,13 @@ class Board:
     protocol: str = "control"  # can_peers.py bus layout
     boot_vector: bool = False  # reset reads 0x0; mirror SP/PC at the flash base
     uid: bool = False  # write a 96-bit device UID and the flash size
+    dwt: bool = False  # CYCCNT that advances, for images that busy-wait on it
+    # (uart name, TCP port) sockets for a peer that answers this board.
+    # Empty on the shared Control and HMG-50 boards.
+    link_uarts: tuple[tuple[str, int], ...] = ()
+    eeprom_wait: bool = True  # reboot once so a fresh EEPROM is read back
+    spi_flash: bool = False  # settings in SPI1 NOR flash (renode/spiflash.py), CS on PA4
+    modem_args: tuple[str, ...] = ()  # extra fc41d.py options for this board
 
 
 BOARDS = {
@@ -88,6 +124,27 @@ BOARDS = {
         wifi_uart="wifi_uart",
         can="can1",
         uarts=tuple(f"usart{n}" for n in range(1, 6)),
+    ),
+    # Same repl. VNSEMINI-0 PMU 301 loads at 0x08008000 (catalog loadAddress).
+    # A boot log showed the FC41D AT stream on USART2 (0x40004400, IRQ 38),
+    # so the modem is connected there instead of the IRQ 74 UART.
+    "control-mini": Board(
+        repl="control.repl.in",
+        app_base=0x08008000,
+        wifi_uart="usart2",
+        can="can1",
+        uarts=("usart1", "usart3", "usart4", "usart5", "uart7"),
+        dwt=True,
+        # USART4 (INV, addr 0x81), USART5 (DCDC, addr 0x82), UART7 (Modbus).
+        link_uarts=(("usart4", 3463), ("usart5", 3464), ("uart7", 3465)),
+        eeprom_wait=False,  # this image never touches the I2C EEPROM
+        spi_flash=True,  # Open API enable and port live at SPI flash 0x14000
+        # QGETIP only runs while the pack is idle, which after start-up means
+        # the first 750 control ticks. A provisioned module has GOT_IP by then
+        # (--autojoin). The +QGETIP handler keeps the first three octets and
+        # sends every reply to <a.b.c>.255, so the module reports a /24 and
+        # puts that broadcast on the wider Docker network as 255.255.255.255.
+        modem_args=("--autojoin", "--netmask", "255.255.255.0", "--lan-broadcast"),
     ),
     # STM32G474 (HMG-50: Venus C / Venus E 2.0); the app sits above a 10 KiB bootloader.
     "hmg50": Board(
@@ -147,18 +204,69 @@ class Monitor:
 
 
 def _vector_table(blob: Path) -> tuple[int, int]:
-    """Initial SP and reset vector: the first two words of the image."""
+    """Initial SP and reset vector: the first two words of the loaded image."""
     sp, pc = struct.unpack("<II", blob.read_bytes()[:8])
     return sp, pc
 
 
+def _catalog_images() -> list[dict[str, Any]]:
+    """Return the catalog image list."""
+    images = json.loads(CATALOG.read_text())["images"]
+    if not isinstance(images, list):
+        raise SystemExit(f"{CATALOG} has no image list")
+    return images
+
+
+def _catalog_entry(spec: str) -> dict[str, Any]:
+    """Return the catalog object for ``DEVICE:VERSION``."""
+    device, _, version = spec.partition(":")
+    for entry in _catalog_images():
+        if entry["deviceType"] == device and str(entry["version"]) == version:
+            return entry
+    raise SystemExit(f"{spec} is not in {CATALOG}")
+
+
+def _entry_for_blob(blob: Path) -> dict[str, Any] | None:
+    """Return the catalog object whose filename is ``blob``, if there is one."""
+    for entry in _catalog_images():
+        if entry["filename"] == blob.name:
+            return entry
+    return None
+
+
 def _catalog_blob(spec: str) -> Path:
     """Resolve ``DEVICE:VERSION`` (e.g. ``VNSA-0:150``) through the catalog."""
-    device, _, version = spec.partition(":")
-    for entry in json.loads(CATALOG.read_text())["images"]:
-        if entry["deviceType"] == device and str(entry["version"]) == version:
-            return CATALOG.parent / "blobs" / entry["filename"]
-    raise SystemExit(f"{spec} is not in {CATALOG}")
+    entry = _catalog_entry(spec)
+    return CATALOG.parent / "blobs" / str(entry["filename"])
+
+
+def _loadable_blob(entry: dict[str, Any] | None, blob: Path, work: Path) -> tuple[Path, int | None]:
+    """Strip a catalogued ASCII header and return ``(payload, load address)``.
+
+    The load address is None when the catalog leaves it to the board. A
+    ``runnable: false`` part (Venus E mini INV / DCDC) has no Open API image
+    to boot.
+    """
+    if entry is None:
+        return blob, None
+    if entry.get("runnable") is False:
+        raise SystemExit(
+            f"{entry['filename']} is catalogued but not a runnable Control image "
+            f"({entry.get('firmwareType')})"
+        )
+    header_size = entry.get("headerSize")
+    payload = blob
+    if isinstance(header_size, int) and header_size > 0:
+        data = blob.read_bytes()
+        if len(data) <= header_size:
+            raise SystemExit(f"{blob.name} is shorter than its {header_size}-byte header")
+        payload = work / f"{blob.name}.payload"
+        payload.write_bytes(data[header_size:])
+    load_address: int | None = None
+    raw_load = entry.get("loadAddress")
+    if isinstance(raw_load, str):
+        load_address = int(raw_load, 16)
+    return payload, load_address
 
 
 def _device_type(args: argparse.Namespace) -> str:
@@ -169,14 +277,19 @@ def _device_type(args: argparse.Namespace) -> str:
 
 
 def _board_for(args: argparse.Namespace) -> str:
-    """``--board``, else HMG-50 for its catalog entries, else the Control board."""
+    """``--board``, else the catalog device's board, else the Control board."""
     if args.board:
         return str(args.board)
-    if args.firmware and args.firmware.partition(":")[0] == "HMG-50":
+    device = args.firmware.partition(":")[0] if args.firmware else ""
+    if not device:
+        entry = _entry_for_blob(args.blob)
+        device = str(entry["deviceType"]) if entry else ""
+    if device == "HMG-50":
         return "hmg50"
-    for entry in json.loads(CATALOG.read_text())["images"]:
-        if entry["filename"] == args.blob.name and entry["deviceType"] == "HMG-50":
-            return "hmg50"
+    # PMU 301 emits FC41D AT commands on USART2. The shared Control UART
+    # (IRQ 74, 0x40015000) is the default handler in that image.
+    if device == "VNSEMINI-0":
+        return "control-mini"
     return "control"
 
 
@@ -186,7 +299,40 @@ def _uid_words(ble_mac: str) -> tuple[int, int, int]:
     return 0x00470031, int.from_bytes(mac[:4], "little"), int.from_bytes(mac[4:] + b"PH", "little")
 
 
-def _render(args: argparse.Namespace, work: Path, board: Board) -> Path:
+def _start_mini_peers(board: Board, work: Path) -> subprocess.Popen[bytes] | None:
+    """Answer the mini PMU's INV, DCDC and Modbus UARTs. Other boards skip this."""
+    if not board.link_uarts:
+        return None
+    command = [sys.executable, str(HERE / "mini_peers.py")]
+    for name, port in board.link_uarts:
+        command += [f"--{name}", str(port)]
+    # The child keeps its own copy of the log fd; the parent closes this one.
+    log = (work / "mini_peers.log").open("ab")
+    try:
+        return subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+    finally:
+        log.close()
+
+
+def _link_lines(board: Board) -> str:
+    """Server sockets for ``mini_peers.py``. Empty on every other board."""
+    lines: list[str] = []
+    for name, port in board.link_uarts:
+        terminal = f"link_{name}"
+        lines.append(f'emulation CreateServerSocketTerminal {port} "{terminal}" false')
+        lines.append(f"connector Connect sysbus.{name} {terminal}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def _hook_lines(board: Board) -> str:
+    """Bus hooks that stand in for hardware timing. Only PMU 301 needs any."""
+    lines = [SPI_CS_HOOK] if board.spi_flash else []
+    if board.link_uarts:
+        lines.append(UART7_TC_HOOK)
+    return "".join(line + "\n" for line in lines)
+
+
+def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load_base: int) -> Path:
     renode_dir = HERE / "renode"
     repl = (renode_dir / board.repl).read_text()
     for key, value in {
@@ -194,12 +340,43 @@ def _render(args: argparse.Namespace, work: Path, board: Board) -> Path:
         "@EEPROM@": str(args.eeprom),
         "@LOCAL_API_PORT@": str(args.local_api_port),
         "@CAN_PORT@": str(args.can_port),
+        "@DWT@": (
+            (
+                "dwt: Python.PythonPeripheral @ sysbus 0xE0001000\n"
+                "    size: 0x100\n"
+                "    initable: true\n"
+                f'    filename: "{renode_dir / "dwt.py"}"\n'
+            )
+            if board.dwt
+            else ""
+        ),
+        # Only the mini image drives these DMA channels. Leaving the lines in
+        # the shared repl would deliver requests the other images never armed.
+        "@MINI_USART5_DMA@": "    DMARequest -> dma1@8\n" if board.link_uarts else "",
+        "@MINI_UART7_DMA@": ("    DMARequest -> dma2@6 | dma2@7\n" if board.link_uarts else ""),
+        "@MINI_DMA2_IRQ@": "    [5-6] -> nvic@[68-69]\n" if board.link_uarts else "",
+        # Renode clocks STM32_UART at 8 MHz unless told otherwise. PMU 301 sets
+        # BRR for a 36 MHz PCLK1 (USART4 19200, USART5 115200, UART7 57600);
+        # at 8 MHz an inverter reply outlasts the next poll and the frames
+        # merge, so the parser (which wants one frame per IDLE) drops them.
+        "@MINI_LINK_CLOCK@": "    frequency: 36000000\n" if board.link_uarts else "",
+        # STM32_Timer raises its DMA line on every update, UDE or not. PMU 301
+        # runs TIMER6 with only UIE set and owns DMA2 channel 3 for USART4 RX,
+        # so the shared line would read an empty DR into every inverter frame.
+        "@TIMER6_DMA@": "" if board.link_uarts else "    UpdateInterrupt -> dma2@3\n",
     }.items():
         repl = repl.replace(key, value)
+    spi1 = renode_dir / "spi2.py"
+    if board.spi_flash:
+        spi1 = work / "spiflash.py"
+        script = (renode_dir / "spiflash.py").read_text()
+        script = script.replace("@SPI_FLASH@", str(args.eeprom.parent / "spiflash.bin"))
+        spi1.write_text(script.replace("@LOCAL_API_PORT@", str(args.local_api_port)))
+    repl = repl.replace("@SPI1_SCRIPT@", str(spi1))
     name = board.repl.removesuffix(".repl.in")
     (work / f"{name}.repl").write_text(repl)
     usarts = "\n".join(f"{u} CreateFileBackend @{work}/{u}.txt true" for u in board.uarts)
-    sp, pc = _vector_table(args.blob)
+    sp, pc = _vector_table(blob)
     boot: list[str] = []
     if board.boot_vector:
         boot += [
@@ -213,8 +390,8 @@ def _render(args: argparse.Namespace, work: Path, board: Board) -> Path:
     resc = RESC.format(
         includes="\n".join(f"include @{renode_dir}/{m}" for m in board.models),
         repl=work / f"{name}.repl",
-        blob=args.blob,
-        base=board.app_base,
+        blob=blob,
+        base=load_base,
         boot="\n".join(boot),
         sp=sp,
         pc=pc,
@@ -222,6 +399,8 @@ def _render(args: argparse.Namespace, work: Path, board: Board) -> Path:
         uart_port=args.uart_port,
         wifi_uart=board.wifi_uart,
         can=board.can,
+        links=_link_lines(board),
+        hooks=_hook_lines(board),
         tuning="".join(
             [
                 f'emulation SetGlobalQuantum "{args.quantum}"\n' if args.quantum else "",
@@ -273,7 +452,8 @@ def _boot(mon: Monitor, resc: Path, fc41d_cmd: list[str], log: Path) -> subproce
     return modem
 
 
-def main() -> int:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the emulator command line."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--renode",
@@ -348,23 +528,31 @@ def main() -> int:
     parser.add_argument(
         "--log-max-mb", type=float, default=0, help="Rotate WORK/*.log past this size (0 = never)"
     )
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
+
+def main() -> int:
+    args = _parse_args()
     if not args.renode:
-        parser.error("--renode (or $RENODE) is required")
+        raise SystemExit("--renode (or $RENODE) is required")
     if args.ip == "auto":
         args.ip = _own_ip(args.gateway)
     if args.firmware:
         args.blob = _catalog_blob(args.firmware)
     if not args.blob.is_file():
-        parser.error(f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)")
+        raise SystemExit(
+            f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)"
+        )
     board = BOARDS[_board_for(args)]
     args.work.mkdir(parents=True, exist_ok=True)
+    entry = _catalog_entry(args.firmware) if args.firmware else _entry_for_blob(args.blob)
+    blob, load_address = _loadable_blob(entry, args.blob, args.work)
     args.eeprom = (args.eeprom or args.work / "eeprom.bin").resolve()
-    resc = _render(args, args.work, board)
+    resc = _render(args, args.work, board, blob, load_address or board.app_base)
     fc41d_cmd = [
         sys.executable, str(HERE / "fc41d.py"), "--uart-port", str(args.uart_port),
         "--ip", args.ip, "--gateway", args.gateway, "--ble-mac", args.ble_mac,
+        "--wifi-mac", args.wifi_mac,
         "--bind-ip", args.bind_ip, "--dialect", board.dialect,
         "--bssid", args.bssid or args.wifi_mac, "-v",
     ]  # fmt: skip
@@ -372,6 +560,7 @@ def main() -> int:
         fc41d_cmd += ["--loopback-port", str(CT_PORT)]
     if args.broadcast_to:
         fc41d_cmd += ["--broadcast-to", args.broadcast_to]
+    fc41d_cmd += board.modem_args
     peers_cmd = [
         sys.executable, str(HERE / "can_peers.py"), "--port", str(args.can_port),
         "--soc", str(args.soc), "--house-load", args.house_load, "--pv", args.pv,
@@ -395,10 +584,11 @@ def main() -> int:
     )
     modem: subprocess.Popen[bytes] | None = None
     peers: subprocess.Popen[bytes] | None = None
+    mini: subprocess.Popen[bytes] | None = None
     signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         mon = Monitor(args.monitor_port)
-        fresh = not _eeprom_initialised(args.eeprom)
+        fresh = board.eeprom_wait and not _eeprom_initialised(args.eeprom)
         modem = _boot(mon, resc, fc41d_cmd, modem_log)
         if fresh:
             print("Fresh EEPROM: waiting for the defaults, then rebooting once", flush=True)
@@ -411,6 +601,7 @@ def main() -> int:
             modem = _boot(mon, resc, fc41d_cmd, modem_log)
         with (args.work / "can_peers.log").open("ab") as out:
             peers = subprocess.Popen(peers_cmd, stdout=out, stderr=subprocess.STDOUT)
+        mini = _start_mini_peers(board, args.work)
         print(
             f"Running {args.blob.name} as {args.ip}. Local API on UDP {args.local_api_port};"
             f" modem log {modem_log}",
@@ -429,7 +620,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        for child in (peers, modem):
+        for child in (mini, peers, modem):
             if child is not None:
                 child.terminate()
         if renode.poll() is None:
