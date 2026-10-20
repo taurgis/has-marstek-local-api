@@ -168,6 +168,35 @@ stated. They do not estimate fade from power and state of charge.
 | Recurrent | Range Score is expected range today divided by observed range when new for that configuration. Recurrent says a lab capacity in kWh is not what the car reports, and that an exact state of health from outside the vehicle is not available. | [Range Score](https://www.recurrentauto.com/news/recurrent-expands-coverage-used-ev), [why an exact health figure is not available](https://www.recurrentauto.com/questions/why-cant-recurrent-tell-me-exactly-how-healthy-my-battery-is) |
 | This integration | No BMS state of health exists on the Open API, so the sensor is the coulomb-counting estimate below. | [Open API note](marstek_device_openapi.MD) |
 
+### Marstek Capacity Monitor
+
+[Marstek Capacity Monitor](https://github.com/satscan1/marstek-capacity-monitor)
+is a community Home Assistant integration that does estimate fade from state
+of charge and power. Its method, from its
+[how-it-works page](https://github.com/satscan1/marstek-capacity-monitor/blob/main/docs/03-how-it-works.md)
+and `calc.py`:
+
+- It integrates **DC** battery power read over Modbus, and refuses AC power
+  sensors because they include conversion losses.
+- It counts only **full discharges**, from 95% or higher to 15% or lower,
+  found as swings with a 3-point hysteresis. It publishes the median of the
+  last three in the past year, scaled to the depth-of-discharge band.
+- It ignores partial discharges because, in its authors' words, one percent
+  near the bottom delivers more kWh than one near the top. That is their
+  observation; it is not backed by a measurement in that repository.
+- It compares the result with a line of 80% after 6,000 cycles, counting
+  cycles from its own DC discharge integral.
+
+What this integration takes from it, and what it does not:
+
+| Idea | Here | Why |
+| --- | --- | --- |
+| Long windows make whole-percent error small | Taken in another form: windows start and end on a state-of-charge step | A full-discharge-only rule would rarely publish on a house battery that cycles 20–60 points a day, and our AC integral already needs both directions for the geometric mean. |
+| DC power only | Not possible | The Open API has no DC current or voltage. The 0.93 factor and the geometric mean are the AC substitute. |
+| Band dependence | Not corrected | We have no measurement of energy per percent by band on Marstek packs. Windows from mixed bands go into one median. |
+| Cycle line and warranty colours | Not taken | The Open API has no cycle counter, and an AC integral is not a DC cycle count. See [Cycle counting](#cycle-counting). |
+| Automatic power sign detection | Not needed | The integration owns the sign of `battery_power`. |
+
 ## What the Marstek signals are actually worth
 
 Fast poll, default every 30 seconds, with a default 5 second gap between the
@@ -175,7 +204,7 @@ calls inside the cycle. No extra request is added for this sensor.
 
 | Signal | Granularity and trust | Used? |
 | --- | --- | --- |
-| `bat_soc` | State of charge. Captures and the mock report whole percents. A 20-point window can therefore close about one point early or late, which is about 5 percent on that one window. It is the BMS's own percentage. If that percentage is stretched to a fixed nameplate, the ratio `Q = y / x` recovers the stretched scale, not chemical fade the BMS is hiding. Plett's circular-dependence warning applies if the BMS coulomb-counts this percentage with its own capacity. | Yes. It is the only state-of-charge signal. |
+| `bat_soc` | State of charge. Captures and the mock report whole percents. A window that started on an arbitrary poll could be a point off, about 5 percent on 20 points, so windows start on the first poll after the percentage changes. It is the BMS's own percentage. If that percentage is stretched to a fixed nameplate, the ratio `Q = y / x` recovers the stretched scale, not chemical fade the BMS is hiding. Plett's circular-dependence warning applies if the BMS coulomb-counts this percentage with its own capacity. | Yes. It is the only state-of-charge signal. |
 | Battery power | Watts, integer on the wire. Venus E 3.0 and several later firmwares omit `bat_power`; the integration then uses `pv_power - ongrid_power - offgrid_power`, which for a pack with no DC input is the inverter AC port. Sign: positive discharges. This is an AC measurement, so it is not cell current. | Yes. |
 | `ES.GetMode` | Operating mode. Used only to discard a window that changes mode. A poll that omits the mode is not treated as a change. | Yes, as a gate. |
 | `bat_cap` | Nameplate watt-hours where the firmware profile says so. Venus E captures show 5120 Wh. Venus E mini stores remaining energy in this field, so it is not a nameplate and state of health is not created. It is not the estimate. | Nameplate only. |
@@ -252,7 +281,8 @@ API does not have.
 
 ## The method that those constraints allow
 
-1. Keep a window only while direction, mode, and the sample gap stay clean,
+1. Start a window on the first poll after the whole-percent state of charge
+   changes. Keep it only while direction, mode, and the sample gap stay clean,
    power stays at or above 150 W, and state of charge moves at least 20
    points across at least four samples. The gap limit is 180 seconds, or the
    configured fast interval plus 150 seconds when that is longer. A poll
@@ -274,11 +304,14 @@ These are limits, not a claim that a particular Marstek pack was checked on
 a DC meter. No real device was available for this change.
 
 - **Quantization.** One state-of-charge count on a 20-point window is about
-  5 percent. The median of several windows is tighter. On the mock, with
-  integer state of charge and the same 0.93 the estimator uses, a sampled
-  discharge lands within 6 percent of the true 4600 Wh. That 6 percent is
-  the mock's result, and it is the right order of magnitude for quantization
-  plus the mock's power noise when the efficiency assumption matches.
+  5 percent. A window that starts and ends on the first poll after a step
+  leaves only how far state of charge moves in one poll. A simulated
+  23-point discharge at 1 kW on a 4600 Wh pack, whole percents, a 30 second
+  poll and a random starting phase put the single window within 0.7 percent
+  of the true capacity at the 95th percentile, against 4.5 percent when the
+  window started on the first poll. A 60 second poll doubles that residual.
+  This is arithmetic on synthetic traces, not a published method; no paper
+  that times windows on state-of-charge steps was found.
 - **Efficiency, one direction only.** The absolute watt-hours scale by
   `η_true / 0.93` on discharge and by `0.93 / η_true` on charge. A real
   one-way efficiency of 0.90 instead of 0.93 is about a 3 percent bias. A

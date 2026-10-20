@@ -159,7 +159,7 @@ async def test_successive_polls_publish_and_unload_persists(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
         coordinator = mock_config_entry.runtime_data.coordinator
-        for offset in range(1, 61):
+        for offset in range(1, 62):
             status["battery_soc"] = 80 - offset
             await coordinator.async_refresh()
             await hass.async_block_till_done()

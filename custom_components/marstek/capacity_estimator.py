@@ -7,9 +7,11 @@ entity, and on some firmwares it is suspected of resetting the device.
 
 Each fast poll already carries ``battery_soc`` and ``battery_power``. A window
 is a stretch of one direction (charge or discharge), one operating mode, and
-no long gap. When state of charge has moved at least ``MIN_SOC_DELTA`` points
-the window's DC energy, estimated from reported watts and a fixed one-way
-efficiency, is divided by the state-of-charge fraction. The published value is
+no long gap. It starts on the first poll after the whole-percent state of
+charge changes, so both ends sit just past a step. When state of charge has
+moved at least ``MIN_SOC_DELTA`` points the window's DC energy, estimated
+from reported watts and a fixed one-way efficiency, is divided by the
+state-of-charge fraction. The published value is
 the median of the accepted windows. Once both charge and discharge have at
 least three windows, the published value becomes the geometric mean of the
 two medians, which cancels a one-way efficiency that is the same in both
@@ -214,6 +216,8 @@ class UsableCapacityEstimator:
         self._windows: list[_Window] = []
         self._open: list[_Sample] = []
         self._open_direction = 0
+        # False until the open window starts on a state-of-charge step.
+        self._aligned = False
         self._previous: _Sample | None = None
         self._rated_wh: float | None = None
         self._dirty = False
@@ -393,13 +397,25 @@ class UsableCapacityEstimator:
         return direction != self._open_direction
 
     def _start(self, previous: _Sample, sample: _Sample) -> None:
-        """Open a window on a segment that is clearly charging or discharging."""
+        """Open a window on a segment that is clearly charging or discharging.
+
+        State of charge arrives in whole percents, so a window that starts on
+        an arbitrary poll can be up to one point off. The window therefore
+        starts on the first poll after the reported percentage changes. The
+        window is accepted on the poll that completes the 20-point move, which
+        is also the first poll after a change, so both ends sit the same
+        distance past a step.
+        """
         direction = _direction(_segment_power(previous, sample))
         if direction == 0:
             return
-        self._open = [previous, sample]
         self._open_direction = direction
-        self._maybe_accept()
+        if sample.soc != previous.soc:
+            self._open = [sample]
+            self._aligned = True
+            return
+        self._open = [previous, sample]
+        self._aligned = False
 
     def _extend(self, previous: _Sample, sample: _Sample) -> None:
         """Append a compatible segment, opening a window when none is active."""
@@ -412,11 +428,16 @@ class UsableCapacityEstimator:
         if len(self._open) > MAX_WINDOW_SAMPLES:
             self._abort()
             return
+        if not self._aligned:
+            if sample.soc != previous.soc:
+                self._open = [sample]
+                self._aligned = True
+            return
         self._maybe_accept()
 
     def _maybe_accept(self) -> None:
         """Accept the open window once state of charge has moved far enough."""
-        if len(self._open) < MIN_SAMPLES or self._open_direction == 0:
+        if not self._aligned or len(self._open) < MIN_SAMPLES or self._open_direction == 0:
             return
         window = self._measure(self._open, self._open_direction)
         if window is None:
@@ -427,9 +448,12 @@ class UsableCapacityEstimator:
         self._windows.append(window)
         self._trim_windows()
         self._dirty = True
+        # The closing poll is the first after a step, so the next window
+        # starts aligned on it.
         anchor = self._open[-1]
         self._open = [anchor]
         self._open_direction = 0
+        self._aligned = True
 
     def _close_open(self) -> None:
         """Drop a window that ended before it could be accepted.
@@ -443,6 +467,7 @@ class UsableCapacityEstimator:
         """Drop the open window. Accepted windows stay."""
         self._open = []
         self._open_direction = 0
+        self._aligned = False
 
     def _trim_windows(self) -> None:
         """Keep the newest ``MAX_WINDOWS`` of each direction, in time order."""
