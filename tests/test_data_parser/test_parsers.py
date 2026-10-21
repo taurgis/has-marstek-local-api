@@ -393,6 +393,7 @@ class TestParseEsStatusResponse:
         # HA convention: positive = discharging
         assert result["battery_power"] == 800
         assert result["battery_status"] == "discharging"
+        assert result["battery_power_derived"] is False
 
     def test_parse_idle_status(self):
         """Test parsing idle battery status."""
@@ -408,6 +409,7 @@ class TestParseEsStatusResponse:
 
         assert result["battery_power"] == 0
         assert result["battery_status"] == "idle"
+        assert result["battery_power_derived"] is False
 
     def test_parse_missing_bat_power_fallback(self):
         """Test fallback calculation when bat_power is missing.
@@ -435,6 +437,7 @@ class TestParseEsStatusResponse:
         # HA convention (negate): +800 (positive = discharging)
         assert result["battery_power"] == 800
         assert result["battery_status"] == "discharging"
+        assert result["battery_power_derived"] is True
 
     def test_parse_missing_bat_power_fallback_charging(self):
         """Test fallback calculation when bat_power is missing and battery charges.

@@ -32,14 +32,14 @@ _WINDOWS = [
     },
     {
         "capacity_wh": 4600.0,
-        "direction": "charge",
-        "soc_delta": 22.0,
+        "direction": "discharge",
+        "soc_delta": 21.0,
         "closed_at": 1_700_003_600.0,
     },
     {
         "capacity_wh": 4700.0,
         "direction": "discharge",
-        "soc_delta": 21.0,
+        "soc_delta": 22.0,
         "closed_at": 1_700_007_200.0,
     },
 ]
@@ -110,6 +110,10 @@ async def test_restored_windows_publish_median_and_state_of_health(
     state = hass.states.get("sensor.venus_usable_capacity")
     assert state is not None
     assert state.state == "4600"
+    assert state.attributes["efficiency_correction"] == "discharge_median"
+    assert state.attributes["discharge_median_wh"] == 4600
+    assert "charge_median_wh" not in state.attributes
+    assert "implied_round_trip_efficiency" not in state.attributes
     health = hass.states.get("sensor.venus_battery_state_of_health")
     assert health is not None
     assert health.state == "89.8"
@@ -180,6 +184,9 @@ async def test_successive_polls_publish_and_unload_persists(
     saved = await store.async_load()
     assert isinstance(saved, dict)
     assert len(saved["windows"]) == 3
+    assert saved["windows"][0]["start_soc"] == 79.0
+    assert saved["windows"][0]["pv_share"] == 0.0
+    assert saved["windows"][0]["mode"] == "auto"
 
 
 async def test_unreadable_capacity_history_is_ignored(

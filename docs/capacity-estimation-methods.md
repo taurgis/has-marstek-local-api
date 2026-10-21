@@ -28,7 +28,10 @@ capacity", Journal of Power Sources 196 (2011) 2319–2331
 
 That is the same relation this integration uses, in watt-hours instead of
 ampere-hours, because the Open API gives power and watt-hour nameplate rather
-than a DC current sensor.
+than a DC current sensor. `Q` here is watt-hours per 100 points of reported
+state of charge. It is not reduced by the SYS depth-of-discharge setting.
+Marstek Capacity Monitor scales a full discharge to that band, so its number
+is the energy inside the band rather than `Q`.
 
 ## Methods, and whether we can run them
 
@@ -71,11 +74,38 @@ estimate scales by `η_true / η_assumed` and the charge estimate scales by
 assumed factor drops out. That is ordinary algebra on Plett's `y = Q x` once
 each `y` has been converted from AC watt-hours with the same factor. It is
 why the sensor switches to the geometric mean of the charge median and the
-discharge median once each direction has three windows.
+discharge median once each direction has three windows. Until then it
+publishes the median of whichever direction already has three windows, and
+does not pool the two.
 
-Until both directions exist, the number still uses the fixed one-way factor
-0.93 from the mock pack model. That number is not a measurement on Marstek
-hardware.
+The ratio of those medians is the round trip the assumption implies:
+
+```text
+η_discharge × η_charge ≈ η_assumed² × (discharge median / charge median)
+```
+
+With `η_assumed` at 0.93 on both paths, equal medians mean a round trip of
+0.865, which is `0.93²`. The sensor exposes that as
+`implied_round_trip_efficiency`. It is not a measured efficiency. A different
+real charge and discharge efficiency leaves `sqrt(η_discharge / η_charge)`
+on the geometric mean, and a steady self-consumption on the AC port biases
+both medians in the same direction, so the ratio does not remove it.
+
+Until one direction has three windows, nothing is published. A single
+direction still uses the fixed one-way factor 0.93 from the mock pack model.
+That number is not a measurement on Marstek hardware.
+
+PV charging power is not that AC port. On Venus A and Venus D, `ES.GetStatus`
+`pv_power` and `PV.GetStatus` are MPPT charging power
+([Open API note](marstek_device_openapi.MD), sections 3.5 and 3.6.1). The
+derived battery reading is `pv_power - ongrid_power - offgrid_power`. Running
+the 0.93 factor over the whole reading multiplies PV watt-hours by 0.93 even
+though they never entered the inverter, which pulls a PV-only charge window
+down by about 7%. The estimator applies the factor to
+`battery_power + pv_power` only, then subtracts `pv_power`. Venus E 3.0
+reports `pv_power` 0, so the expression collapses to the AC formula. A
+firmware that sends `bat_power` is left on the AC formula too: the note does
+not say that field is DC, and changing it would move those windows.
 
 Victron's battery monitor is the clearest manufacturer statement of the same
 physics, on ampere-hours rather than watt-hours. The SmartShunt manual says
@@ -192,7 +222,7 @@ What this integration takes from it, and what it does not:
 | Idea | Here | Why |
 | --- | --- | --- |
 | Long windows make whole-percent error small | Taken in another form: windows start and end on a state-of-charge step | A full-discharge-only rule would rarely publish on a house battery that cycles 20–60 points a day, and our AC integral already needs both directions for the geometric mean. |
-| DC power only | Not possible | The Open API has no DC current or voltage. The 0.93 factor and the geometric mean are the AC substitute. |
+| DC power only | Not possible on the Open API | The Open API has no DC current or voltage. The 0.93 factor and the geometric mean are the AC substitute. This integration's `battery_power` entity is that AC reading (derived from the power balance when `bat_power` is omitted). It must not be used as Capacity Monitor's DC input. |
 | Band dependence | Not corrected | We have no measurement of energy per percent by band on Marstek packs. Windows from mixed bands go into one median. |
 | Cycle line and warranty colours | Not taken | The Open API has no cycle counter, and an AC integral is not a DC cycle count. See [Cycle counting](#cycle-counting). |
 | Automatic power sign detection | Not needed | The integration owns the sign of `battery_power`. |
@@ -205,7 +235,7 @@ calls inside the cycle. No extra request is added for this sensor.
 | Signal | Granularity and trust | Used? |
 | --- | --- | --- |
 | `bat_soc` | State of charge. Captures and the mock report whole percents. A window that started on an arbitrary poll could be a point off, about 5 percent on 20 points, so windows start on the first poll after the percentage changes. It is the BMS's own percentage. If that percentage is stretched to a fixed nameplate, the ratio `Q = y / x` recovers the stretched scale, not chemical fade the BMS is hiding. Plett's circular-dependence warning applies if the BMS coulomb-counts this percentage with its own capacity. | Yes. It is the only state-of-charge signal. |
-| Battery power | Watts, integer on the wire. Venus E 3.0 and several later firmwares omit `bat_power`; the integration then uses `pv_power - ongrid_power - offgrid_power`, which for a pack with no DC input is the inverter AC port. Sign: positive discharges. This is an AC measurement, so it is not cell current. | Yes. |
+| Battery power | Watts, integer on the wire. Venus E 3.0 and several later firmwares omit `bat_power`; the integration then uses `pv_power - ongrid_power - offgrid_power`, which for a pack with no DC input is the inverter AC port. On Venus A and D the same expression mixes DC PV watts with the AC port; the capacity estimator derates only the AC port. Sign: positive discharges. This entity is not a DC shunt reading and must not be fed to a tool that integrates DC battery power. | Yes. |
 | `ES.GetMode` | Operating mode. Used only to discard a window that changes mode. A poll that omits the mode is not treated as a change. | Yes, as a gate. |
 | `bat_cap` | Nameplate watt-hours where the firmware profile says so. Venus E captures show 5120 Wh. Venus E mini stores remaining energy in this field, so it is not a nameplate and state of health is not created. It is not the estimate. | Nameplate only. |
 | Lifetime grid, PV, and load energy | House and inverter meters. Encoding changes with firmware (Wh versus 0.01 kWh, PV1 deciwatts). They do not measure charge into the cells. | No. |
@@ -284,19 +314,26 @@ API does not have.
 1. Start a window on the first poll after the whole-percent state of charge
    changes. Keep it only while direction, mode, and the sample gap stay clean,
    power stays at or above 150 W, and state of charge moves at least 20
-   points across at least four samples. The gap limit is 180 seconds, or the
+   points across at least four samples. End it when state of charge jumps
+   further than that poll's watts can move the nameplate, with a floor of
+   two points and one point of slack. The gap limit is 180 seconds, or the
    configured fast interval plus 150 seconds when that is longer. A poll
    that did not get `ES.GetStatus` is a hole, not a sample.
-2. Convert the AC integral with one-way efficiency 0.93 (discharge divides,
-   charge multiplies). Capacity is that DC energy divided by the
-   state-of-charge fraction.
+2. Convert the AC port with one-way efficiency 0.93 (discharge divides,
+   charge multiplies). On a derived reading, subtract PV watts after that
+   conversion so PV energy is not derated. Capacity is that DC energy divided
+   by the state-of-charge fraction. That is watt-hours per 100 points, not
+   watt-hours inside the depth-of-discharge setting.
 3. Drop a window outside the physical band above.
-4. Publish the median of the kept windows once three exist. Each direction
-   keeps its newest 21, so one session cannot crowd the other out.
+4. Publish one direction's median once that direction has three windows.
+   Each direction keeps its newest 21, so one session cannot crowd the other
+   out. Do not pool a short run in the other direction into that median.
 5. When both directions have three windows, replace that median with the
    geometric mean of the two direction medians.
 6. Publish state of health only against a real nameplate. Stay unknown until
-   step 4 has something to publish.
+   step 4 has something to publish. Store each window's end points, average
+   power, duration, mode, and PV share. Expose the two medians and the
+   implied round trip as sensor attributes.
 
 ## Expected error, stated as a bound rather than a calibration
 
@@ -322,8 +359,14 @@ a DC meter. No real device was available for this change.
   by both directions. If the two real one-way efficiencies differ, the
   residual factor is the square root of their ratio. A few percent of
   difference between charge and discharge leaves a residual of about half
-  that, in relative terms. The two medians stay visible in the attributes
-  through the last window and through `spread_wh`.
+  that, in relative terms. The two medians are `discharge_median_wh` and
+  `charge_median_wh`. `implied_round_trip_efficiency` is the round trip
+  those medians imply under the 0.93 assumption. A steady self-consumption
+  on the AC port is not removed by the ratio.
+- **PV on Venus A and D.** Derating the whole derived battery reading used to
+  multiply PV watt-hours by 0.93. The factor now applies only to the AC port.
+  A device `bat_power` is unchanged. `pv_share` on each stored window is the
+  fraction of the battery-power integral that PV covered.
 - **BMS state of charge.** This can dominate the arithmetic. If the
   percentage does not move when the pack has faded, the sensor will not
   move either. The sensor measures "watt-hours per reported state-of-charge

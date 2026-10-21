@@ -452,6 +452,7 @@ class TestMergeDeviceStatus:
         # Battery: -(184.5 - 169) = -15.5W (HA: negative = charging)
         assert result["battery_power"] == -15.5
         assert result["battery_status"] == "charging"
+        assert result["battery_power_derived"] is True
 
     def test_battery_power_not_recalculated_when_pv_power_correct(self):
         """Test battery/pv_power are NOT recalculated when ES.GetStatus pv_power is non-zero."""

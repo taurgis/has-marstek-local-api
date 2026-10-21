@@ -1,9 +1,20 @@
 # Usable capacity
 
-The **Usable capacity** sensor estimates how much energy the pack can actually
-store, in watt-hours. **Battery state of health** is that estimate divided by
-the nameplate (`ES.GetStatus` `bat_cap`), in percent. Both stay `unknown`
-until there is enough evidence. Neither one adds a UDP request.
+The **Usable capacity** sensor estimates how much energy the pack can store
+per 100 points of reported state of charge, in watt-hours. It is not the
+energy inside the SYS depth-of-discharge setting, and it is not the figure
+[Marstek Capacity Monitor](https://github.com/satscan1/marstek-capacity-monitor)
+publishes after scaling a full discharge to that band. **Battery state of
+health** is the estimate divided by the nameplate (`ES.GetStatus` `bat_cap`),
+in percent. Both stay `unknown` until there is enough evidence. Neither one
+adds a UDP request.
+
+`battery_power` is an AC-side wattage. On Venus E 3.0, Venus A, and Venus D
+the Open API usually omits `bat_power`, and the entity is
+`ongrid_power + offgrid_power - pv_power` (positive discharges). Do not feed
+that entity to a tool that wants DC battery power. Marstek Capacity Monitor
+refuses AC power for this reason; using this entity there counts inverter
+losses as pack energy.
 
 Home Assistant records them as long-term statistics because usable capacity
 uses `device_class: energy_storage` and `state_class: measurement`. That
@@ -73,30 +84,78 @@ It is not a measurement from Marstek hardware. It exists so a charge window
 and a discharge window describe the same DC pack: without it they disagree by
 about the square of the efficiency, and a healthy nameplate would look faded.
 
-The sensor publishes a number only after three windows have been accepted,
-and it keeps the newest 21 in each direction. A long run of discharge
-windows cannot evict the charge windows, which is what used to drop the
-estimate back onto the single-direction median. With windows in only one
-direction, the number is their median and it still depends on the 0.93
-factor. Once charge and discharge each have three windows, the number is
-the geometric mean of the two medians. If the real charge and discharge
-efficiencies are equal, that product cancels the factor, including the case
-where 0.93 is wrong. A window
-outside 300–30,000 Wh, or outside 15–135% of the nameplate when one is known,
-is dropped. The median is what ignores a single bad stretch; there is no
-second outlier rule that would freeze the value if the pack really did fade.
+On Venus A and Venus D that reported battery power is an energy balance,
+`pv_power - ongrid_power - offgrid_power` in the API sign. `pv_power` is PV
+charging power from the MPPT, on the battery side of the inverter
+([Open API note](marstek_device_openapi.MD), sections 3.5 and 3.6.1). It does
+not take the 0.93 factor. Only the AC port does:
 
-`spread_wh` is the range of the accepted windows. It is an observed spread,
-not a confidence interval. The choice of method, and the error margin that
-goes with it, is written up in [Capacity estimation methods](capacity-estimation-methods.md).
+```text
+ac = battery_power + pv_power          # derived reading, HA sign
+dc = ac / 0.93 - pv_power              when the AC port is exporting or idle
+dc = ac * 0.93 - pv_power              when the AC port is importing
+```
+
+With `pv_power` at 0 this is the formula above. Venus E 3.0 omits `bat_power`
+and reports `pv_power` 0, so its windows do not move. A device that actually
+sends `bat_power` stays on the whole-reading formula; that field is not
+split, because the Open API does not say whether it is DC. A whole window of
+PV-only charging used to be about 7% low (`× 0.93`). The share of the
+battery-power integral that PV covered is stored as `pv_share` (0 to 1).
+
+A state-of-charge step of two points or more ends the window when the watts
+of that poll, the nameplate, and one extra point of slack cannot explain it.
+A single whole-percent step never does. The usual cause is a BMS
+recalibration, often near 100%. Without a nameplate the check uses a 300 Wh
+pack, so only a jump that small pack could not make is dropped. Venus E mini
+has no nameplate in this field.
+
+The sensor publishes a number only when one direction has three windows. It
+keeps the newest 21 in each direction. A long run of discharge windows cannot
+evict the charge windows. Two charge windows plus two discharge windows stay
+unknown: the directions are not pooled into one median. With three windows in
+only one direction, the number is that direction's median and it still
+depends on the 0.93 factor. Once charge and discharge each have three
+windows, the number is the geometric mean of the two medians. If the real
+charge and discharge efficiencies are equal, that product cancels the factor,
+including the case where 0.93 is wrong. What remains is the square root of
+`η_discharge / η_charge`, plus any steady auxiliary draw the AC port has in
+both directions. A window outside 300–30,000 Wh, or outside 15–135% of the
+nameplate when one is known, is dropped. The median is what ignores a single
+bad stretch; there is no second outlier rule that would freeze the value if
+the pack really did fade.
+
+`spread_wh` is the range of the windows that entered the published number.
+Charge windows are not part of it while only the discharge median is
+published. It is an observed spread, not a confidence interval. The choice of
+method, and the error margin that goes with it, is written up in
+[Capacity estimation methods](capacity-estimation-methods.md).
 
 State of health is `estimate / bat_cap * 100`, rounded to 0.1. It can sit a
 little above 100% when the efficiency assumption is low.
 
 Attributes (not stored in long-term statistics, only the state is): method,
 windows accepted, confidence (`collecting`, `low`, `medium`, `high`), the
-20-point minimum, the 0.93 factor, nameplate, and the last window's direction,
-capacity, and time. Confidence counts windows. It is not a calibrated error bar.
+20-point minimum, the 0.93 factor, which treatment produced the number
+(`discharge_median`, `charge_median`, `charge_discharge_geometric_mean`, or
+`assumed_one_way` while still collecting), nameplate, and the last window's
+direction, capacity, and time. Once a direction has a window, its median is
+`discharge_median_wh` or `charge_median_wh`. When both exist,
+`implied_round_trip_efficiency` is `0.93 × 0.93 × discharge_median /
+charge_median`. That is the round-trip efficiency the two medians imply when
+the readings are AC and the assumed factor is the only thing that differs
+between them. It is a diagnostic, not a measured efficiency, and a PV-heavy
+window moves it. Confidence counts windows. It is not a calibrated error bar.
+
+Home Assistant writes a state row when attributes change, so attributes that
+move on every poll do not belong on a sensor
+([sensor attributes](https://developers.home-assistant.io/docs/core/entity/sensor/#attributes)).
+These change when a window is accepted.
+
+Each accepted window is stored with its start and end state of charge,
+average reported power, duration, mode, and `pv_share`. A store written
+before those fields existed still loads; the missing fields stay absent.
+The storage version is unchanged.
 
 ## Limits
 
@@ -117,7 +176,17 @@ capacity, and time. Confidence counts windows. It is not a calibrated error bar.
   slope is still the degradation signal. Once both directions have three
   windows, the geometric mean removes a factor that is shared by both
   directions. A remaining gap between the two medians means the two
-  efficiencies are not equal, and that gap is the residual.
+  efficiencies are not equal, and that gap is the residual
+  `sqrt(η_discharge / η_charge)`. A constant self-consumption on the AC port
+  biases both directions the same way and does not cancel.
+- The number is watt-hours per 100 state-of-charge points. SYS depth of
+  discharge (30–88, default 88) is not applied. Rev 3.1 has `DOD.SET` and no
+  read ([Open API note](marstek_device_openapi.MD), section 3.8), and the
+  number entity is the last successful write, not a measurement. A
+  within-DoD watt-hour attribute would publish that guess, so it is not
+  there. Marstek Capacity Monitor's figure is the energy of a full discharge
+  scaled to its depth-of-discharge band, which is a smaller number than
+  watt-hours per 100 points.
 - A poll whose `ES.GetStatus` did not answer is not a sample. `ES.GetMode`
   can still bring a new state of charge while battery power is the previous
   poll's watts. That pair is a hole: the open window is dropped, and the
