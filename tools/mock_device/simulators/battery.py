@@ -87,6 +87,15 @@ _UPS_CHARGE_FRACTION = 0.5
 _PHASE_SPLIT_UPDATE_SECONDS = 60.0
 
 
+def _efficiency(value: float | None, default: float) -> float:
+    """Return a one-way efficiency in (0, 1], or the shared default."""
+    if value is None:
+        return default
+    if not 0 < value <= 1:
+        raise ValueError("efficiency must be in (0, 1]")
+    return float(value)
+
+
 def _schedule_power_w(schedule: dict[str, Any] | None) -> int:
     """Return the watts a manual slot commands.
 
@@ -144,6 +153,13 @@ class BatterySimulator:
         # matches the state-of-charge movement. ``configure_capacity_experiment``
         # is what turns a faded or accelerated pack on.
         self.time_scale = 1.0
+        self.charge_efficiency = CHARGE_EFFICIENCY
+        self.discharge_efficiency = DISCHARGE_EFFICIENCY
+        # DC watts the pack loses without them appearing on the AC port.
+        self.pack_self_consumption_w = 0.0
+        self.soc_jump_at: float | None = None
+        self.soc_jump_by = 0.0
+        self._soc_jump_armed = False
         self.soc_cycle = False
         self.cycle_low_soc = 30.0
         self.cycle_high_soc = 92.0
@@ -233,12 +249,21 @@ class BatterySimulator:
         capacity_wh: int | None = None,
         time_scale: float = 1.0,
         soc_cycle: bool = False,
+        charge_efficiency: float | None = None,
+        discharge_efficiency: float | None = None,
+        pack_self_consumption_w: float = 0.0,
+        soc_jump_at: float | None = None,
+        soc_jump_by: float = 0.0,
+        power_fluctuation_pct: float | None = None,
     ) -> None:
         """Point the physics at a faded pack, a faster clock, or a SOC cycle.
 
         The Open API nameplate stays at ``rated_capacity_wh``. ``time_scale``
         must be positive. The cycle holds Passive mode between the low and
-        high state-of-charge limits.
+        high state-of-charge limits. Efficiencies replace the shared 0.93
+        one-way factors. ``pack_self_consumption_w`` leaves the cells without
+        showing up in reported watts. A state-of-charge jump fires once, when
+        charging crosses ``soc_jump_at``.
         """
         if capacity_wh is not None:
             if capacity_wh <= 0:
@@ -247,6 +272,20 @@ class BatterySimulator:
         if time_scale <= 0:
             raise ValueError("time_scale must be positive")
         self.time_scale = float(time_scale)
+        self.charge_efficiency = _efficiency(charge_efficiency, CHARGE_EFFICIENCY)
+        self.discharge_efficiency = _efficiency(discharge_efficiency, DISCHARGE_EFFICIENCY)
+        if pack_self_consumption_w < 0:
+            raise ValueError("pack_self_consumption_w must be non-negative")
+        self.pack_self_consumption_w = float(pack_self_consumption_w)
+        if soc_jump_by < 0:
+            raise ValueError("soc_jump_by must be non-negative")
+        self.soc_jump_at = soc_jump_at
+        self.soc_jump_by = float(soc_jump_by)
+        self._soc_jump_armed = soc_jump_at is not None and soc_jump_by > 0
+        if power_fluctuation_pct is not None:
+            if power_fluctuation_pct < 0:
+                raise ValueError("power_fluctuation_pct must be non-negative")
+            self.power_fluctuation_pct = float(power_fluctuation_pct)
         self.soc_cycle = soc_cycle
         if soc_cycle:
             self._engage_soc_cycle()
@@ -543,15 +582,41 @@ class BatterySimulator:
         self.em_b_power = int(house_side * b_ratio)
         self.em_c_power = total - self.em_a_power - self.em_b_power
 
+    def _pack_dc_w(self) -> float:
+        """Return watts leaving the pack, before hidden self-consumption.
+
+        ``pv_power`` is MPPT charging power on the battery side of the
+        inverter. It reaches the cells in full. ``ongrid_power`` is the AC
+        port (``pv_power + actual_power``); the mock EPS socket stays 0.
+        Exporting divides that port by the discharge efficiency, and
+        importing multiplies it by the charge efficiency.
+
+        With no device PV this is ``actual_power`` through the same factor,
+        so Venus E 3.0 and Venus C keep the previous state-of-charge movement.
+        """
+        if self.ongrid_power > 0:
+            from_ac = self.ongrid_power / self.discharge_efficiency
+        else:
+            from_ac = self.ongrid_power * self.charge_efficiency
+        return from_ac - max(self.pv_power, 0)
+
     def _update_soc(self, elapsed_seconds: float) -> None:
-        """Move the state of charge, paying conversion losses in both directions."""
+        """Move the state of charge, paying conversion losses on the AC port."""
         hours = elapsed_seconds / _SECONDS_PER_HOUR
-        ac_wh = self.actual_power * hours
-        # Discharging, the pack gives up more than reaches the AC port;
-        # charging, part of what the port draws is lost on the way in.
-        dc_wh = ac_wh / DISCHARGE_EFFICIENCY if ac_wh > 0 else ac_wh * CHARGE_EFFICIENCY
+        dc_wh = self._pack_dc_w() * hours
+        dc_wh += self.pack_self_consumption_w * hours
+        before = self.soc
         soc_change = -(dc_wh / self.capacity_wh) * 100
-        self.soc = max(0, min(100, self.soc + soc_change))
+        self.soc = max(0.0, min(100.0, self.soc + soc_change))
+        self._apply_soc_jump(before)
+
+    def _apply_soc_jump(self, before: float) -> None:
+        """Recalibrate once when charging crosses the armed threshold."""
+        if not self._soc_jump_armed or self.soc_jump_at is None:
+            return
+        if before < self.soc_jump_at <= self.soc:
+            self.soc = min(100.0, self.soc + self.soc_jump_by)
+            self._soc_jump_armed = False
 
     def _update_energy_stats(self, elapsed_seconds: float) -> None:
         """Update energy statistics based on power flow.
@@ -597,7 +662,9 @@ class BatterySimulator:
         climb a fixed per-tick increment produces.
         """
         self.ambient_temp = self._ambient_temperature()
-        loss_w = abs(self.actual_power) * (1 - DISCHARGE_EFFICIENCY) + self.standby_power
+        # Heat follows the AC port. PV on the DC bus does not pass the
+        # inverter. With no device PV, ongrid_power equals actual_power.
+        loss_w = abs(self.ongrid_power) * (1 - DISCHARGE_EFFICIENCY) + self.standby_power
         heat_capacity = THERMAL_CAPACITY_J_PER_K_PER_WH * self.capacity_wh
         conductance = THERMAL_CONDUCTANCE_W_PER_K_PER_WH * self.capacity_wh
         net_w = loss_w - (self.battery_temp - self.ambient_temp) * conductance
@@ -795,13 +862,28 @@ class BatterySimulator:
                 remaining -= step
 
     def _reported_watts(self, watts: float) -> int:
-        """Return inverter watts as the API should report them.
+        """Return watts as the API should report them.
 
         At ``time_scale`` 1 this is the physical wattage. Above 1 the reported
         wattage grows with the accelerated state of charge so an integrator
         that only has wall-clock timestamps still recovers the true capacity.
+        PV is included: the derived balance subtracts it from the AC port, and
+        an unscaled PV term would invent battery power.
         """
         return round(watts * self.time_scale)
+
+    def _reported_pv_channels(self) -> list[dict[str, Any]]:
+        """Return MPPT channels with power scaled like the inverter port."""
+        scaled: list[dict[str, Any]] = []
+        for channel in self.pv_channels.snapshot():
+            reading = dict(channel)
+            power = self._reported_watts(float(channel.get("pv_power", 0) or 0))
+            reading["pv_power"] = power
+            voltage = channel.get("pv_voltage") or 0
+            if isinstance(voltage, (int, float)) and not isinstance(voltage, bool) and voltage > 0:
+                reading["pv_current"] = round(power / float(voltage), 2)
+            scaled.append(reading)
+        return scaled
 
     def get_state(self) -> dict[str, Any]:
         """Get current battery state for API responses."""
@@ -859,9 +941,11 @@ class BatterySimulator:
                 "total_load_energy": int(self.total_load_energy),
                 "em_input_energy": int(self.em_input_energy),
                 "em_output_energy": int(self.em_output_energy),
-                # PV state (device DC input; zero on families without one)
-                "pv_power": self.pv_power,
+                # PV state (device DC input; zero on families without one).
+                # Scaled with the inverter port so pv - ongrid still equals
+                # the battery at any time scale.
+                "pv_power": self._reported_watts(self.pv_power),
                 "pv_voltage": self.pv_voltage,
                 "pv_current": self.pv_current,
-                "pv_channels": self.pv_channels.snapshot(),
+                "pv_channels": self._reported_pv_channels(),
             }

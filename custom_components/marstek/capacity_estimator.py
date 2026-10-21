@@ -11,12 +11,20 @@ no long gap. It starts on the first poll after the whole-percent state of
 charge changes, so both ends sit just past a step. When state of charge has
 moved at least ``MIN_SOC_DELTA`` points the window's DC energy, estimated
 from reported watts and a fixed one-way efficiency, is divided by the
-state-of-charge fraction. The published value is
-the median of the accepted windows. Once both charge and discharge have at
-least three windows, the published value becomes the geometric mean of the
-two medians, which cancels a one-way efficiency that is the same in both
-directions. Each direction keeps its own newest windows, so a long run one
-way cannot evict the other. Until a median exists the sensors stay unknown.
+state-of-charge fraction. That quotient is watt-hours per 100 points of
+reported state of charge.
+
+The published value is one direction's median once that direction has three
+windows. Charge and discharge are not pooled. Once both have three, the
+published value is the geometric mean of the two medians, which cancels a
+one-way efficiency that is the same in both directions and leaves the square
+root of the ratio of the two real efficiencies. Each direction keeps its own
+newest windows. Until a median exists the sensors stay unknown.
+
+Reported battery power is an AC quantity. Where it was derived from
+``pv_power - ongrid_power - offgrid_power``, PV watts stay on the DC bus and
+only the AC port is run through the one-way efficiency. A device ``bat_power``
+keeps the previous treatment of the whole reading.
 """
 
 from __future__ import annotations
@@ -61,9 +69,16 @@ RATED_MAX_FRACTION = 1.35
 CAPACITY_DATA_KEY = "battery_usable_capacity"
 SOH_DATA_KEY = "battery_state_of_health"
 CAPACITY_ATTR_KEY = "battery_usable_capacity_attributes"
+# Set by ``parse_es_status_response`` when battery power came from the AC
+# balance rather than a device ``bat_power``. ``merge_device_status`` copies it.
+BATTERY_POWER_DERIVED_KEY = "battery_power_derived"
 # Set by ``merge_device_status``. False means ES.GetStatus did not answer
 # and battery power may be the previous poll's watts.
 ES_STATUS_FRESH_KEY = "es_status_fresh"
+# One whole-percent step is quantization. A larger step that the watts of
+# that poll cannot explain, plus one point of slack, is a BMS jump.
+_SOC_JUMP_FLOOR = 2.0
+_SOC_JUMP_SLACK = 1.0
 
 
 def gap_limit_seconds(poll_interval: float | None) -> float:
@@ -120,29 +135,98 @@ class _Sample:
     soc: float
     power_w: float
     mode: str | None
+    pv_w: float = 0.0
+    power_derived: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class _Window:
-    """One accepted capacity observation."""
+    """One accepted capacity observation.
+
+    Windows saved before the detail fields existed load without them. A
+    missing field stays unknown; it is not invented on the way back out.
+    """
 
     capacity_wh: float
     direction: str
     soc_delta: float
     closed_at: float
+    start_soc: float | None = None
+    end_soc: float | None = None
+    average_power_w: float | None = None
+    duration_s: float | None = None
+    mode: str | None = None
+    pv_share: float | None = None
 
-    def to_dict(self) -> dict[str, float | str]:
+    def to_dict(self) -> dict[str, Any]:
         """Return the JSON form stored across restarts."""
-        return {
+        payload: dict[str, Any] = {
             "capacity_wh": self.capacity_wh,
             "direction": self.direction,
             "soc_delta": self.soc_delta,
             "closed_at": self.closed_at,
         }
+        if self.start_soc is not None:
+            payload["start_soc"] = self.start_soc
+        if self.end_soc is not None:
+            payload["end_soc"] = self.end_soc
+        if self.average_power_w is not None:
+            payload["average_power_w"] = self.average_power_w
+        if self.duration_s is not None:
+            payload["duration_s"] = self.duration_s
+        if self.mode is not None:
+            payload["mode"] = self.mode
+        if self.pv_share is not None:
+            payload["pv_share"] = self.pv_share
+        return payload
+
+
+def _optional_soc(raw: dict[Any, Any], key: str) -> float | None:
+    """Return a stored state of charge, or None when the field is absent or junk."""
+    if key not in raw:
+        return None
+    value = _finite(raw.get(key))
+    if value is None or not 0.0 <= value <= 100.0:
+        return None
+    return value
+
+
+def _optional_power(raw: dict[Any, Any]) -> float | None:
+    """Return a stored average power, or None when it is absent or absurd."""
+    if "average_power_w" not in raw:
+        return None
+    value = _finite(raw.get("average_power_w"))
+    if value is None or abs(value) > MAX_ABS_POWER_W:
+        return None
+    return value
+
+
+def _optional_duration(raw: dict[Any, Any]) -> float | None:
+    """Return a stored duration in seconds, or None when it is absent or not positive."""
+    if "duration_s" not in raw:
+        return None
+    value = _finite(raw.get("duration_s"))
+    if value is None or value <= 0.0:
+        return None
+    return value
+
+
+def _optional_share(raw: dict[Any, Any]) -> float | None:
+    """Return a stored PV share in 0-1, or None when it is absent or outside that."""
+    if "pv_share" not in raw:
+        return None
+    value = _finite(raw.get("pv_share"))
+    if value is None or not 0.0 <= value <= 1.0:
+        return None
+    return value
 
 
 def _window_from_dict(raw: object) -> _Window | None:
-    """Parse one persisted window, or return None when it is not usable."""
+    """Parse one persisted window, or return None when it is not usable.
+
+    Detail fields added later are optional. A store written by an older
+    version still contributes its capacity to the median.
+    """
     if not isinstance(raw, dict):
         return None
     capacity = _finite(raw.get("capacity_wh"))
@@ -162,6 +246,12 @@ def _window_from_dict(raw: object) -> _Window | None:
         direction=direction,
         soc_delta=soc_delta,
         closed_at=closed_at,
+        start_soc=_optional_soc(raw, "start_soc"),
+        end_soc=_optional_soc(raw, "end_soc"),
+        average_power_w=_optional_power(raw),
+        duration_s=_optional_duration(raw),
+        mode=_mode_text(raw.get("mode")) if "mode" in raw else None,
+        pv_share=_optional_share(raw),
     )
 
 
@@ -181,27 +271,121 @@ def _direction(power_w: float) -> int:
 
 
 def _segment_power(earlier: _Sample, later: _Sample) -> float:
-    """Return the trapezoidal average watts between two polls."""
+    """Return the trapezoidal average reported watts between two polls."""
     return (earlier.power_w + later.power_w) / 2.0
 
 
-def _dc_energy_wh(samples: list[_Sample]) -> float:
-    """Integrate reported watts and convert the AC total to DC watt-hours.
+def _segment_dc_power(earlier: _Sample, later: _Sample) -> float:
+    """Return DC watts between two polls, positive when the pack discharges.
 
     Discharge puts more DC energy into the AC port than the port delivers, so
-    the AC integral is divided by the discharge efficiency. Charge stores less
-    than the port draws, so the AC integral (negative) is multiplied by the
-    charge efficiency.
+    that port's watts are divided by the discharge efficiency. Charge stores
+    less than the port draws, so those watts are multiplied by the charge
+    efficiency.
+
+    A derived reading is ``battery_power = ongrid + offgrid - pv`` in the
+    Home Assistant sign. PV is charging power on the battery side of the
+    inverter (Open API ``pv_power``), so only ``battery_power + pv_power``
+    is the AC port. A device ``bat_power`` is left on the whole-reading path.
     """
+    battery = _segment_power(earlier, later)
+    if not (earlier.power_derived and later.power_derived):
+        if battery >= 0.0:
+            return battery / DISCHARGE_EFFICIENCY
+        return battery * CHARGE_EFFICIENCY
+    pv = max((earlier.pv_w + later.pv_w) / 2.0, 0.0)
+    ac = battery + pv
+    if ac >= 0.0:
+        return ac / DISCHARGE_EFFICIENCY - pv
+    return ac * CHARGE_EFFICIENCY - pv
+
+
+def _dc_energy_wh(samples: list[_Sample]) -> float:
+    """Integrate DC watts over the window. Positive energy leaves the pack."""
     energy = 0.0
     for earlier, later in pairwise(samples):
         hours = (later.timestamp - earlier.timestamp) / 3600.0
-        ac_wh = _segment_power(earlier, later) * hours
-        if ac_wh >= 0.0:
-            energy += ac_wh / DISCHARGE_EFFICIENCY
-        else:
-            energy += ac_wh * CHARGE_EFFICIENCY
+        energy += _segment_dc_power(earlier, later) * hours
     return energy
+
+
+def _pv_share(samples: list[_Sample]) -> float:
+    """Return how much of the absolute battery-power integral PV wattage covers.
+
+    0 means no PV, or a device ``bat_power`` that this correction does not
+    split. 1 means PV watts were at least the battery watts across the window.
+    """
+    pv_wh = 0.0
+    battery_wh = 0.0
+    for earlier, later in pairwise(samples):
+        hours = (later.timestamp - earlier.timestamp) / 3600.0
+        battery_wh += abs(_segment_power(earlier, later)) * hours
+        if earlier.power_derived and later.power_derived:
+            pv = max((earlier.pv_w + later.pv_w) / 2.0, 0.0)
+            pv_wh += pv * hours
+    if battery_wh <= 0.0:
+        return 0.0
+    return min(1.0, pv_wh / battery_wh)
+
+
+def _average_power_w(samples: list[_Sample]) -> float:
+    """Return the trapezoidal mean of reported battery power, signed."""
+    duration = samples[-1].timestamp - samples[0].timestamp
+    if duration <= 0.0:
+        return 0.0
+    apparent_wh = 0.0
+    for earlier, later in pairwise(samples):
+        hours = (later.timestamp - earlier.timestamp) / 3600.0
+        apparent_wh += _segment_power(earlier, later) * hours
+    return apparent_wh / (duration / 3600.0)
+
+
+def _soc_step_limit(earlier: _Sample, later: _Sample, rated_wh: float | None) -> float:
+    """Return the largest state-of-charge step this poll's watts can justify.
+
+    The budget is the DC watts of the larger endpoint, including PV on a
+    derived reading, divided by the nameplate. One extra point covers the
+    whole-percent step. Without a nameplate the smallest pack the estimator
+    will accept is used, so only a jump that pack could not physically make
+    is rejected. Two points is the floor: a single reported step is never a
+    recalibration.
+    """
+    hours = max(later.timestamp - earlier.timestamp, 0.0) / 3600.0
+    power = max(abs(earlier.power_w), abs(later.power_w))
+    pv = 0.0
+    if earlier.power_derived and later.power_derived:
+        pv = max(earlier.pv_w, later.pv_w, 0.0)
+    eta = min(CHARGE_EFFICIENCY, DISCHARGE_EFFICIENCY)
+    explained = (power / eta + pv) * hours / _jump_capacity_wh(rated_wh) * 100.0
+    return max(_SOC_JUMP_FLOOR, explained + _SOC_JUMP_SLACK)
+
+
+def _jump_capacity_wh(rated_wh: float | None) -> float:
+    """Return the watt-hours a state-of-charge jump is judged against."""
+    if rated_wh is not None and rated_wh > 0.0:
+        return rated_wh
+    return ABS_MIN_CAPACITY_WH
+
+
+def _soc_jumped(earlier: _Sample, later: _Sample, rated_wh: float | None) -> bool:
+    """Return whether state of charge moved further than this poll can explain."""
+    return abs(later.soc - earlier.soc) >= _soc_step_limit(earlier, later, rated_wh)
+
+
+def _sample_pv(pv_w: float | None, power_derived: bool) -> float | None:
+    """Return PV watts to store, or None when a derived poll's PV is unusable.
+
+    Missing PV is zero. A device ``bat_power`` does not use PV, so a bad PV
+    reading must not reject that poll. Negative PV is not generation.
+    """
+    if not power_derived:
+        return 0.0
+    if pv_w is None:
+        return 0.0
+    number = _finite(pv_w)
+    if number is None or number > MAX_ABS_POWER_W:
+        return None
+    return max(0.0, number)
 
 
 class UsableCapacityEstimator:
@@ -260,24 +444,28 @@ class UsableCapacityEstimator:
         """Return how many windows are in the median."""
         return len(self._windows)
 
+    def _capacities(self, direction: str) -> list[float]:
+        """Return accepted watt-hours for one direction, oldest first."""
+        return [window.capacity_wh for window in self._windows if window.direction == direction]
+
     def _published(self) -> tuple[float | None, str]:
         """Return the watt-hour estimate and which efficiency treatment produced it.
 
-        One direction uses the median and the fixed one-way factor. Both
-        directions use the geometric mean of the two medians, which does not
-        depend on that factor when the two real efficiencies are equal.
+        A direction with three windows publishes its own median and still
+        depends on the fixed one-way factor. The other direction is not folded
+        in. Both directions use the geometric mean of the two medians, which
+        does not depend on that factor when the two real efficiencies are equal.
         """
-        if len(self._windows) < MIN_WINDOWS:
-            return None, "assumed_one_way"
-        discharge = [
-            window.capacity_wh for window in self._windows if window.direction == "discharge"
-        ]
-        charge = [window.capacity_wh for window in self._windows if window.direction == "charge"]
+        discharge = self._capacities("discharge")
+        charge = self._capacities("charge")
         if len(discharge) >= MIN_WINDOWS and len(charge) >= MIN_WINDOWS:
             value = math.sqrt(statistics.median(discharge) * statistics.median(charge))
             return value, "charge_discharge_geometric_mean"
-        pooled = statistics.median(window.capacity_wh for window in self._windows)
-        return pooled, "assumed_one_way"
+        if len(discharge) >= MIN_WINDOWS:
+            return statistics.median(discharge), "discharge_median"
+        if len(charge) >= MIN_WINDOWS:
+            return statistics.median(charge), "charge_median"
+        return None, "assumed_one_way"
 
     @property
     def estimate_wh(self) -> int | None:
@@ -304,10 +492,17 @@ class UsableCapacityEstimator:
         power_w: float | None,
         mode: str | None,
         rated_wh: float | None,
+        pv_w: float | None = None,
+        power_derived: bool = False,
     ) -> None:
-        """Ingest one poll. Invalid samples abort the open window."""
+        """Ingest one poll. Invalid samples abort the open window.
+
+        ``power_derived`` is true when ``power_w`` came from the AC balance.
+        ``pv_w`` is then the DC PV charging power that must not take the
+        inverter efficiency. Both default to the device-``bat_power`` path.
+        """
         self._remember_rated(rated_wh)
-        sample = self._make_sample(timestamp, soc, power_w, mode)
+        sample = self._make_sample(timestamp, soc, power_w, mode, pv_w, power_derived)
         if sample is None:
             # Drop the previous poll too, so the next good sample does not
             # integrate across the hole.
@@ -321,12 +516,15 @@ class UsableCapacityEstimator:
         elapsed = sample.timestamp - previous.timestamp
         if elapsed <= 0.0:
             return
-        if elapsed > self._gap_limit:
+        if elapsed > self._gap_limit or _soc_jumped(previous, sample, self._rated_wh):
             self._abort()
             return
         if self._conflicts(previous, sample):
             self._close_open()
-            self._start(previous, sample)
+            # A device bat_power and a derived balance are different measurements.
+            # The segment between them is not part of either window.
+            if previous.power_derived == sample.power_derived:
+                self._start(previous, sample)
             return
         self._extend(previous, sample)
 
@@ -342,9 +540,10 @@ class UsableCapacityEstimator:
             "efficiency_one_way": CHARGE_EFFICIENCY,
             "efficiency_correction": correction,
         }
-        if value is not None and self._windows:
-            capacities = [window.capacity_wh for window in self._windows]
-            attrs["spread_wh"] = round(max(capacities) - min(capacities))
+        attrs.update(self._median_attributes())
+        contributing = self._contributing_capacities(correction)
+        if value is not None and contributing:
+            attrs["spread_wh"] = round(max(contributing) - min(contributing))
         if self._rated_wh is not None:
             attrs["rated_capacity_wh"] = round(self._rated_wh)
         health = self.state_of_health
@@ -363,18 +562,54 @@ class UsableCapacityEstimator:
         if rated is not None and rated > 0.0:
             self._rated_wh = rated
 
+    def _median_attributes(self) -> dict[str, Any]:
+        """Return direction medians and the round-trip efficiency they imply.
+
+        With the same assumed one-way factor η on both paths, a discharge
+        median scales by η_true_discharge / η and a charge median scales by
+        η / η_true_charge. Their ratio therefore carries the true round trip:
+
+        eta_discharge * eta_charge is about eta^2 * (discharge median / charge median).
+        """
+        discharge = self._capacities("discharge")
+        charge = self._capacities("charge")
+        attrs: dict[str, Any] = {}
+        if discharge:
+            attrs["discharge_median_wh"] = round(statistics.median(discharge))
+        if charge:
+            attrs["charge_median_wh"] = round(statistics.median(charge))
+        if discharge and charge:
+            ratio = statistics.median(discharge) / statistics.median(charge)
+            efficiency = CHARGE_EFFICIENCY * DISCHARGE_EFFICIENCY * ratio
+            attrs["implied_round_trip_efficiency"] = round(efficiency, 3)
+        return attrs
+
+    def _contributing_capacities(self, correction: str) -> list[float]:
+        """Return the windows that actually entered the published number."""
+        if correction == "charge_discharge_geometric_mean":
+            return [window.capacity_wh for window in self._windows]
+        if correction == "discharge_median":
+            return self._capacities("discharge")
+        if correction == "charge_median":
+            return self._capacities("charge")
+        return []
+
     def _make_sample(
         self,
         timestamp: float,
         soc: float | None,
         power_w: float | None,
         mode: str | None,
+        pv_w: float | None,
+        power_derived: bool,
     ) -> _Sample | None:
         """Return a sample, or None when this poll cannot be integrated."""
         moment = _finite(timestamp)
         level = _finite(soc)
         power = _finite(power_w)
-        if moment is None or level is None or power is None:
+        derived = power_derived is True
+        pv = _sample_pv(pv_w, derived)
+        if moment is None or level is None or power is None or pv is None:
             return None
         if not 0.0 <= level <= 100.0 or abs(power) > MAX_ABS_POWER_W:
             return None
@@ -383,12 +618,16 @@ class UsableCapacityEstimator:
             soc=level,
             power_w=power,
             mode=_mode_text(mode),
+            pv_w=pv,
+            power_derived=derived,
         )
 
     def _conflicts(self, previous: _Sample, sample: _Sample) -> bool:
         """Return whether this segment cannot extend the open window."""
         if not self._open:
             return False
+        if self._open[0].power_derived != sample.power_derived:
+            return True
         if _mode_changed(self._open[0].mode, sample.mode):
             return True
         direction = _direction(_segment_power(previous, sample))
@@ -502,6 +741,12 @@ class UsableCapacityEstimator:
             direction="discharge" if direction > 0 else "charge",
             soc_delta=abs(soc_delta),
             closed_at=samples[-1].timestamp,
+            start_soc=samples[0].soc,
+            end_soc=samples[-1].soc,
+            average_power_w=_average_power_w(samples),
+            duration_s=samples[-1].timestamp - samples[0].timestamp,
+            mode=samples[0].mode,
+            pv_share=_pv_share(samples),
         )
 
     def _confidence(self) -> str:
@@ -548,12 +793,16 @@ def apply_capacity_estimate(
     power = _finite(status.get("battery_power")) if fresh else None
     rated = _finite(status.get("bat_cap"))
     mode = status.get("device_mode")
+    pv_raw = status.get("pv_power") if fresh else None
+    pv = pv_raw if isinstance(pv_raw, (int, float)) and not isinstance(pv_raw, bool) else None
     estimator.observe(
         timestamp=timestamp,
         soc=soc,
         power_w=power,
         mode=mode if isinstance(mode, str) else None,
         rated_wh=rated,
+        pv_w=pv,
+        power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
     )
     status[CAPACITY_DATA_KEY] = estimator.estimate_wh
     status[SOH_DATA_KEY] = estimator.state_of_health

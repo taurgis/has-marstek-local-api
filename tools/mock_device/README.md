@@ -114,8 +114,13 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 - `--wifi-mac MAC` - WiFi MAC address
 - `--soc PERCENT` - Initial battery SOC percentage (default: 50)
 - `--capacity-wh WH` - True DC capacity for state-of-charge physics. The reported nameplate (`bat_cap`, `rated_capacity`) stays at the family rating, so a faded pack (for example 4600 of a 5120 Wh Venus E) is not visible on those fields.
-- `--time-scale N` - Accelerate pack physics and the reported inverter watts by N (default 1) so wall-clock integration still matches state of charge.
+- `--time-scale N` - Accelerate pack physics and the reported inverter and PV watts by N (default 1) so wall-clock integration still matches state of charge. PV is scaled with the AC port; an unscaled PV term would make `pv - ongrid` invent battery power.
+- `--charge-efficiency` / `--discharge-efficiency` - One-way efficiencies used by the pack physics (default 0.93 each). The Open API does not report them.
+- `--pack-self-consumption-w` - DC watts the pack loses without those watts appearing on the reported AC port.
+- `--soc-jump-at` / `--soc-jump-by` - While charging, add `soc-jump-by` percentage points once when state of charge crosses `soc-jump-at`.
+- `--power-fluctuation PERCENT` - Setpoint tracking error (default 1.5). `0` holds the commanded watts.
 - `--soc-cycle` - Hold Passive mode and cycle between 30% and 92% at rated power.
+- `--fixed-pv` - Hold `--pv-channels` at the given watts instead of following the sun.
 - `--pv-channels` - Optional `power:voltage:current` list (up to 4 channels). Values are the channel's **peak (STC) physical watts**; the mock scales them by the solar curve and encodes channel 1 according to the profile
 - `--house-pv-wp WATTS` - Rooftop array peak power for the simulated dwelling (default: 3500, or 0 when `--pv-channels` is given). `0` disables rooftop solar
 - `--phases {1,3}` - Phases the home is supplied on. The Venus is single-phase either way; on `3` it only offsets phase A, so `EM.GetStatus` shows one phase exporting while the others import (default: 1)
@@ -318,9 +323,10 @@ outage. Accepted only when the firmware profile reports `supports_ups`
 
 ### Battery physics
 
-- **Conversion losses**: 0.93 each way, an ~86% AC round trip. Charging
-  therefore costs more watt-hours than discharging returns, and the SOC
-  reflects that.
+- **Conversion losses**: 0.93 each way on the AC port (`ongrid_power`), an
+  ~86% AC round trip. Venus A/D MPPT watts (`pv_power`) reach the pack
+  without that factor. Venus E 3.0 and Venus C have no device PV, so their
+  state of charge is the AC port alone.
 - **SOC limits**: no discharge below 5%, no charge above 100%, tapering
   below 10% and above 90%, and a 10% reserve Auto mode holds back for the
   house.

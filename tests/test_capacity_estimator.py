@@ -61,6 +61,8 @@ class _Trace:
     mode_at: tuple[int, str] | None = None
     integer_soc: bool = False
     start_timestamp: float = _T0
+    pv_w: float | None = 0.0
+    power_derived: bool = False
 
 
 def _feed(estimator: UsableCapacityEstimator, trace: _Trace) -> None:
@@ -84,6 +86,8 @@ def _feed(estimator: UsableCapacityEstimator, trace: _Trace) -> None:
             power_w=trace.power_w * scale,
             mode=current_mode,
             rated_wh=trace.rated_wh,
+            pv_w=trace.pv_w,
+            power_derived=trace.power_derived,
         )
         moment += trace.step_seconds
 
@@ -111,6 +115,17 @@ def test_three_clean_discharge_windows_publish_the_true_capacity() -> None:
     assert estimator.attributes()["confidence"] == "low"
     assert estimator.attributes()["last_window_direction"] == "discharge"
     assert estimator.attributes()["method"] == "soc_energy_window"
+    assert estimator.attributes()["efficiency_correction"] == "discharge_median"
+    assert estimator.attributes()["discharge_median_wh"] == 4600
+    assert "charge_median_wh" not in estimator.attributes()
+    assert "implied_round_trip_efficiency" not in estimator.attributes()
+    window = estimator.to_dict()["windows"][0]
+    assert window["start_soc"] == 79.0
+    assert window["end_soc"] == 59.0
+    assert window["average_power_w"] == pytest.approx(_POWER_W)
+    assert window["duration_s"] == pytest.approx(20.0 * _discharge_step_seconds())
+    assert window["mode"] == "auto"
+    assert window["pv_share"] == 0.0
 
 
 def test_charge_windows_use_the_other_efficiency_and_agree() -> None:
@@ -129,7 +144,8 @@ def test_charge_windows_use_the_other_efficiency_and_agree() -> None:
 
     assert estimator.estimate_wh == 4600
     assert estimator.attributes()["last_window_direction"] == "charge"
-    assert estimator.attributes()["efficiency_correction"] == "assumed_one_way"
+    assert estimator.attributes()["efficiency_correction"] == "charge_median"
+    assert estimator.attributes()["charge_median_wh"] == 4600
 
 
 def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
@@ -158,7 +174,7 @@ def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
     )
     biased = _TRUE_WH * true_eta / _ONE_WAY
     assert estimator.estimate_wh == pytest.approx(biased, rel=0.01)
-    assert estimator.attributes()["efficiency_correction"] == "assumed_one_way"
+    assert estimator.attributes()["efficiency_correction"] == "discharge_median"
 
     moment += 62 * discharge_step + 1.0
     _feed(
@@ -176,6 +192,10 @@ def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
     assert estimator.estimate_wh == pytest.approx(_TRUE_WH, rel=0.01)
     assert estimator.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
     assert estimator.attributes()["spread_wh"] > 0
+    # eta^2 * C_d / C_c recovers the true round trip when both paths use 0.93.
+    assert estimator.attributes()["implied_round_trip_efficiency"] == pytest.approx(
+        true_eta**2, abs=0.01
+    )
 
 
 def test_two_windows_stay_unknown() -> None:

@@ -68,6 +68,16 @@ class SolarSimulator:
         self._cloud_target = 1.0
         self._overcast = False
         self._last_cloud_update = 0.0
+        self._pinned_factor: float | None = None
+
+    def pin_factor(self, factor: float) -> None:
+        """Hold production at a constant fraction of the configured peak.
+
+        Sun and cloud are what a dashboard should show. A capacity experiment
+        needs the same PV watts on every poll, so the state-of-charge movement
+        has one explanation.
+        """
+        self._pinned_factor = max(0.0, min(1.0, factor))
 
     def clear_sky_factor(self, when: datetime | None = None) -> float:
         """Return the cloudless production factor (0..1) for a moment in time.
@@ -112,6 +122,8 @@ class SolarSimulator:
 
     def get_factor(self, when: datetime | None = None, now: float | None = None) -> float:
         """Return the combined sun-and-weather production factor (0..1)."""
+        if self._pinned_factor is not None:
+            return self._pinned_factor
         clear_sky = self.clear_sky_factor(when)
         if clear_sky <= 0:
             return 0.0

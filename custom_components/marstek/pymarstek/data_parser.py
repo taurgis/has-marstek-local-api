@@ -174,6 +174,9 @@ def parse_es_status_response(
     pv_power = result.get("pv_power")  # Solar power
     ongrid_power = result.get("ongrid_power")  # Grid power
     offgrid_power = _unwrap_uint16_power(result.get("offgrid_power"))
+    # None until a numeric battery power exists. False means the device sent
+    # bat_power; True means the AC balance. A malformed payload stays None.
+    battery_power_derived: bool | None = None
     raw_bat_power: Any | None
     if "bat_power" in result:
         raw_bat_power = result.get("bat_power")
@@ -188,7 +191,9 @@ def parse_es_status_response(
             and (pv_power != 0 or ongrid_power != 0 or _is_nonzero_number(offgrid_power))
         ):
             # Fallback when API omits bat_power (Venus A/E devices).
+            # PV is DC charging power; ongrid and offgrid are the AC port.
             raw_bat_power = _fallback_raw_battery_power(pv_power, ongrid_power, offgrid_power)
+            battery_power_derived = True
         elif (
             isinstance(pv_power, (int, float))
             and isinstance(ongrid_power, (int, float))
@@ -199,6 +204,7 @@ def parse_es_status_response(
         ):
             # All reported flows are zero; treat as idle instead of keeping stale power.
             raw_bat_power = 0
+            battery_power_derived = True
             _get_logger().debug(
                 "ES.GetStatus missing bat_power with zero flows; treating battery power as idle"
             )
@@ -207,7 +213,10 @@ def parse_es_status_response(
     if raw_bat_power is None:
         battery_power = None
         battery_status = None
+        battery_power_derived = None
     else:
+        # A device bat_power leaves the flag unset; the balance sets it True.
+        battery_power_derived = battery_power_derived is True
         # Convert to Home Assistant convention:
         # HA Energy Dashboard expects: positive = DISCHARGING, negative = CHARGING
         # API returns: positive = charging, negative = discharging
@@ -233,6 +242,8 @@ def parse_es_status_response(
     return {
         "battery_soc": bat_soc,
         "battery_power": battery_power,  # HA convention: positive = discharging
+        # True when battery_power is the AC balance, not a device bat_power.
+        "battery_power_derived": battery_power_derived,
         "battery_status": battery_status,
         "ongrid_power": ongrid_power,
         "offgrid_power": offgrid_power,
@@ -517,6 +528,8 @@ def _recalculate_battery_from_pv(
             )
             battery_power = -raw_bat_power
             status["battery_power"] = battery_power
+            # The replacement is the same AC balance, even if ES had a native reading.
+            status["battery_power_derived"] = True
             if battery_power > 0:
                 status["battery_status"] = "discharging"
             elif battery_power < 0:
