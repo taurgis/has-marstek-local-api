@@ -190,16 +190,46 @@ class MockMarstekDevice:
         capacity = self.config.pop("capacity_wh", None)
         time_scale = self.config.pop("time_scale", 1.0)
         soc_cycle = bool(self.config.pop("soc_cycle", False))
+        charge_efficiency = self.config.pop("charge_efficiency", None)
+        discharge_efficiency = self.config.pop("discharge_efficiency", None)
+        self_consumption = self.config.pop("pack_self_consumption_w", 0.0)
+        soc_jump_at = self.config.pop("soc_jump_at", None)
+        soc_jump_by = self.config.pop("soc_jump_by", 0.0)
+        fluctuation = self.config.pop("power_fluctuation_pct", None)
+        if bool(self.config.pop("fixed_pv", False)):
+            self.simulator.solar.pin_factor(1.0)
         capacity_wh = (
             capacity if isinstance(capacity, int) and not isinstance(capacity, bool) else None
         )
         scale = float(time_scale) if isinstance(time_scale, (int, float)) else 1.0
-        if capacity_wh is None and scale == 1.0 and not soc_cycle:
+        experiment = (
+            capacity_wh is not None
+            or scale != 1.0
+            or soc_cycle
+            or charge_efficiency is not None
+            or discharge_efficiency is not None
+            or float(self_consumption or 0) != 0.0
+            or soc_jump_at is not None
+            or fluctuation is not None
+        )
+        if not experiment:
             return
         self.simulator.configure_capacity_experiment(
             capacity_wh=capacity_wh,
             time_scale=scale,
             soc_cycle=soc_cycle,
+            charge_efficiency=charge_efficiency
+            if isinstance(charge_efficiency, (int, float))
+            else None,
+            discharge_efficiency=(
+                discharge_efficiency if isinstance(discharge_efficiency, (int, float)) else None
+            ),
+            pack_self_consumption_w=float(self_consumption or 0),
+            soc_jump_at=float(soc_jump_at) if isinstance(soc_jump_at, (int, float)) else None,
+            soc_jump_by=float(soc_jump_by or 0),
+            power_fluctuation_pct=(
+                float(fluctuation) if isinstance(fluctuation, (int, float)) else None
+            ),
         )
 
     def start(self) -> None:

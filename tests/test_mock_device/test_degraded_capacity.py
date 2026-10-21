@@ -100,6 +100,80 @@ def test_time_scale_speeds_state_of_charge_and_reported_watts_together() -> None
     assert scaled.get_state()["power"] == pytest.approx(plain.get_state()["power"] * 4, rel=0.02)
 
 
+def test_time_scale_scales_pv_with_the_ac_port() -> None:
+    """PV watts scale with the inverter so the derived balance stays true."""
+    channels = [{"channel": 1, "pv_power": 400.0, "pv_voltage": 40.0, "pv_current": 10.0}]
+    simulator = BatterySimulator(
+        initial_soc=60,
+        device_type="VenusA",
+        pv_channels=channels,
+        rng=random.Random(4),
+    )
+    simulator.solar.pin_factor(1.0)
+    simulator.configure_capacity_experiment(time_scale=4.0, power_fluctuation_pct=0)
+    simulator.set_mode(MODE_PASSIVE, {"power": -400, "cd_time": 10_000})
+    simulator.settle(3.0)
+
+    state = simulator.get_state()
+    assert state["pv_power"] == 1600
+    assert state["pv_channels"][0]["pv_power"] == 1600
+    # Reported battery power is ongrid - pv, which is the scaled AC port.
+    assert state["ongrid_power"] - state["pv_power"] == state["power"]
+
+
+def test_asymmetric_efficiency_and_hidden_self_consumption() -> None:
+    """A lower discharge efficiency and a hidden DC load both spend the pack faster."""
+    shared = {
+        "initial_soc": 80,
+        "capacity_wh": 4600,
+        "device_type": "VenusE 3.0",
+    }
+    baseline = BatterySimulator(**shared, rng=random.Random(5))
+    lossy = BatterySimulator(**shared, rng=random.Random(5))
+    baseline.configure_capacity_experiment(power_fluctuation_pct=0)
+    lossy.configure_capacity_experiment(
+        discharge_efficiency=0.80,
+        pack_self_consumption_w=200,
+        power_fluctuation_pct=0,
+    )
+    for simulator in (baseline, lossy):
+        simulator.set_mode(MODE_PASSIVE, {"power": 2000, "cd_time": 100_000})
+        simulator.settle(600.0)
+
+    assert lossy.soc < baseline.soc - 1.0
+    idle = BatterySimulator(**shared, rng=random.Random(6))
+    idle.configure_capacity_experiment(pack_self_consumption_w=500, power_fluctuation_pct=0)
+    idle.set_mode(MODE_PASSIVE, {"power": 0, "cd_time": 100_000})
+    idle.settle(3600.0)
+    assert idle.get_state()["power"] == 0
+    assert idle.soc == pytest.approx(80 - 500 / 4600 * 100, abs=0.2)
+
+
+def test_soc_jump_fires_once_while_charging() -> None:
+    """Crossing the threshold adds the jump a single time."""
+    simulator = BatterySimulator(
+        initial_soc=80,
+        capacity_wh=5120,
+        device_type="VenusE 3.0",
+        rng=random.Random(7),
+    )
+    simulator.configure_capacity_experiment(
+        soc_jump_at=85,
+        soc_jump_by=4,
+        power_fluctuation_pct=0,
+    )
+    simulator.set_mode(MODE_PASSIVE, {"power": -2500, "cd_time": 100_000})
+    simulator.settle(420.0)
+    jumped = simulator.soc
+    # 420s of 2500 W charging is about 5.3 points. Crossing 85 adds 4 once.
+    assert jumped == pytest.approx(89.3, abs=0.5)
+
+    simulator.soc = 80.0
+    simulator.settle(420.0)
+    assert simulator.soc == pytest.approx(85.3, abs=0.4)
+    assert jumped > simulator.soc + 2
+
+
 def test_sampled_discharge_converges_on_the_true_capacity() -> None:
     """Integer SOC and the AC port, sampled like a poll, recover 4600 Wh.
 

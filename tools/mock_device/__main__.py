@@ -20,6 +20,105 @@ def firmware_version(value: str) -> int:
     return version
 
 
+def _add_experiment_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the capacity-experiment flags."""
+    parser.add_argument(
+        "--capacity-wh",
+        type=int,
+        default=None,
+        help=(
+            "True DC capacity used for state-of-charge physics. "
+            "The Open API nameplate (bat_cap / rated_capacity) stays at the "
+            "family rating, so a faded pack is not visible on those fields."
+        ),
+    )
+    parser.add_argument(
+        "--time-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Accelerate pack physics and the reported inverter and PV watts "
+            "by this factor (default: 1). Wall-clock integration of reported "
+            "power still matches state of charge."
+        ),
+    )
+    parser.add_argument(
+        "--charge-efficiency",
+        type=float,
+        default=None,
+        help="One-way AC-to-pack efficiency (default: 0.93)",
+    )
+    parser.add_argument(
+        "--discharge-efficiency",
+        type=float,
+        default=None,
+        help="One-way pack-to-AC efficiency (default: 0.93)",
+    )
+    parser.add_argument(
+        "--pack-self-consumption-w",
+        type=float,
+        default=0.0,
+        help="DC watts the pack loses without reporting them on the AC port",
+    )
+    parser.add_argument(
+        "--soc-jump-at",
+        type=float,
+        default=None,
+        help="While charging, add --soc-jump-by once state of charge crosses this",
+    )
+    parser.add_argument(
+        "--soc-jump-by",
+        type=float,
+        default=0.0,
+        help="One-shot state-of-charge jump in percentage points (default: 0)",
+    )
+    parser.add_argument(
+        "--power-fluctuation",
+        type=float,
+        default=None,
+        help="Setpoint tracking error in percent (default: the simulator's 1.5)",
+    )
+    parser.add_argument(
+        "--fixed-pv",
+        action="store_true",
+        help="Hold --pv-channels at the given watts instead of following the sun",
+    )
+    parser.add_argument(
+        "--soc-cycle",
+        action="store_true",
+        help="Hold Passive mode and cycle between 30%% and 92%% SOC at rated power",
+    )
+
+
+def _experiment_config(args: argparse.Namespace) -> dict[str, object]:
+    """Return capacity-experiment keys, or exit when a value is unusable."""
+    config: dict[str, object] = {}
+    if args.capacity_wh is not None and args.capacity_wh <= 0:
+        raise SystemExit("--capacity-wh must be a positive number of watt-hours")
+    if args.time_scale <= 0:
+        raise SystemExit("--time-scale must be positive")
+    if args.capacity_wh is not None:
+        config["capacity_wh"] = args.capacity_wh
+    if args.time_scale != 1.0:
+        config["time_scale"] = args.time_scale
+    if args.soc_cycle:
+        config["soc_cycle"] = True
+    if args.charge_efficiency is not None:
+        config["charge_efficiency"] = args.charge_efficiency
+    if args.discharge_efficiency is not None:
+        config["discharge_efficiency"] = args.discharge_efficiency
+    if args.pack_self_consumption_w:
+        config["pack_self_consumption_w"] = args.pack_self_consumption_w
+    if args.soc_jump_at is not None:
+        config["soc_jump_at"] = args.soc_jump_at
+        config["soc_jump_by"] = args.soc_jump_by
+    if args.power_fluctuation is not None:
+        config["power_fluctuation_pct"] = args.power_fluctuation
+    if args.fixed_pv:
+        config["fixed_pv"] = True
+    return config
+
+
 def main() -> None:
     """Run mock Marstek device."""
     parser = argparse.ArgumentParser(
@@ -56,31 +155,7 @@ def main() -> None:
         default=50,
         help="Initial battery SOC percentage (default: 50)",
     )
-    parser.add_argument(
-        "--capacity-wh",
-        type=int,
-        default=None,
-        help=(
-            "True DC capacity used for state-of-charge physics. "
-            "The Open API nameplate (bat_cap / rated_capacity) stays at the "
-            "family rating, so a faded pack is not visible on those fields."
-        ),
-    )
-    parser.add_argument(
-        "--time-scale",
-        type=float,
-        default=1.0,
-        help=(
-            "Accelerate pack physics and the reported inverter watts by this "
-            "factor (default: 1). Wall-clock integration of reported power "
-            "still matches state of charge."
-        ),
-    )
-    parser.add_argument(
-        "--soc-cycle",
-        action="store_true",
-        help="Hold Passive mode and cycle between 30%% and 92%% SOC at rated power",
-    )
+    _add_experiment_arguments(parser)
     parser.add_argument(
         "--pv-channels",
         type=str,
@@ -149,16 +224,7 @@ def main() -> None:
         "wifi_mac": args.wifi_mac.replace(":", "").lower(),
     }
 
-    if args.capacity_wh is not None and args.capacity_wh <= 0:
-        raise SystemExit("--capacity-wh must be a positive number of watt-hours")
-    if args.time_scale <= 0:
-        raise SystemExit("--time-scale must be positive")
-    if args.capacity_wh is not None:
-        config["capacity_wh"] = args.capacity_wh
-    if args.time_scale != 1.0:
-        config["time_scale"] = args.time_scale
-    if args.soc_cycle:
-        config["soc_cycle"] = True
+    config.update(_experiment_config(args))
 
     if args.stale_ip:
         config["stale_ip"] = args.stale_ip
