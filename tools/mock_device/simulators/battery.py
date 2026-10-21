@@ -582,13 +582,28 @@ class BatterySimulator:
         self.em_b_power = int(house_side * b_ratio)
         self.em_c_power = total - self.em_a_power - self.em_b_power
 
+    def _pack_dc_w(self) -> float:
+        """Return watts leaving the pack, before hidden self-consumption.
+
+        ``pv_power`` is MPPT charging power on the battery side of the
+        inverter. It reaches the cells in full. ``ongrid_power`` is the AC
+        port (``pv_power + actual_power``); the mock EPS socket stays 0.
+        Exporting divides that port by the discharge efficiency, and
+        importing multiplies it by the charge efficiency.
+
+        With no device PV this is ``actual_power`` through the same factor,
+        so Venus E 3.0 and Venus C keep the previous state-of-charge movement.
+        """
+        if self.ongrid_power > 0:
+            from_ac = self.ongrid_power / self.discharge_efficiency
+        else:
+            from_ac = self.ongrid_power * self.charge_efficiency
+        return from_ac - max(self.pv_power, 0)
+
     def _update_soc(self, elapsed_seconds: float) -> None:
-        """Move the state of charge, paying conversion losses in both directions."""
+        """Move the state of charge, paying conversion losses on the AC port."""
         hours = elapsed_seconds / _SECONDS_PER_HOUR
-        ac_wh = self.actual_power * hours
-        # Discharging, the pack gives up more than reaches the AC port;
-        # charging, part of what the port draws is lost on the way in.
-        dc_wh = ac_wh / self.discharge_efficiency if ac_wh > 0 else ac_wh * self.charge_efficiency
+        dc_wh = self._pack_dc_w() * hours
         dc_wh += self.pack_self_consumption_w * hours
         before = self.soc
         soc_change = -(dc_wh / self.capacity_wh) * 100
@@ -647,7 +662,9 @@ class BatterySimulator:
         climb a fixed per-tick increment produces.
         """
         self.ambient_temp = self._ambient_temperature()
-        loss_w = abs(self.actual_power) * (1 - DISCHARGE_EFFICIENCY) + self.standby_power
+        # Heat follows the AC port. PV on the DC bus does not pass the
+        # inverter. With no device PV, ongrid_power equals actual_power.
+        loss_w = abs(self.ongrid_power) * (1 - DISCHARGE_EFFICIENCY) + self.standby_power
         heat_capacity = THERMAL_CAPACITY_J_PER_K_PER_WH * self.capacity_wh
         conductance = THERMAL_CONDUCTANCE_W_PER_K_PER_WH * self.capacity_wh
         net_w = loss_w - (self.battery_temp - self.ambient_temp) * conductance

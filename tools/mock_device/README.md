@@ -323,9 +323,10 @@ outage. Accepted only when the firmware profile reports `supports_ups`
 
 ### Battery physics
 
-- **Conversion losses**: 0.93 each way, an ~86% AC round trip. Charging
-  therefore costs more watt-hours than discharging returns, and the SOC
-  reflects that.
+- **Conversion losses**: 0.93 each way on the AC port (`ongrid_power`), an
+  ~86% AC round trip. Venus A/D MPPT watts (`pv_power`) reach the pack
+  without that factor. Venus E 3.0 and Venus C have no device PV, so their
+  state of charge is the AC port alone.
 - **SOC limits**: no discharge below 5%, no charge above 100%, tapering
   below 10% and above 90%, and a 10% reserve Auto mode holds back for the
   house.

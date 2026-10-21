@@ -202,4 +202,8 @@ The mock can run a faded pack with `--capacity-wh` (physics) while `bat_cap`
 stays at the family nameplate. `--soc-cycle` holds Passive mode between 30%
 and 92%. `--time-scale` speeds the physics and the reported inverter watts by
 the same factor so a wall-clock integrator still sees the true capacity. The
-default scale is 1.
+default scale is 1. On Venus A and Venus D the mock credits MPPT watts to the
+pack directly and runs only `ongrid_power` through the one-way factor, the
+same split as the estimator, so a PV-only window lands on the true pack
+watt-hours. Venus E 3.0 and Venus C have no device PV, so that split does
+not move them.
