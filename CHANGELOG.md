@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+### Minor Changes
+
+- 7753c0b: Report charge and discharge medians and the implied round-trip efficiency on usable capacity, and stop applying the inverter efficiency to PV charging power.
+
 ## 1.4.2
 
 ### Patch Changes
