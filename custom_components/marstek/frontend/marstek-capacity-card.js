@@ -66,12 +66,27 @@ const COPY = {
     gridIn: "Grid import",
     gridOut: "Grid export",
     pvEnergy: "PV energy",
+    loadEnergy: "Load energy",
     unavailable: "Not reported",
     installed: "Installed",
+    live: "Live energy flow",
+    battery: "Battery",
+    grid: "Grid",
+    gridHint: "Import / off-grid",
+    meter: "CT meter",
+    idle: "Idle",
+    livePower: "Battery power",
+    fleet: "Batteries",
+    modes: { auto: "Auto", manual: "Manual", passive: "Passive", ai: "AI", ups: "UPS" },
+    historyTitle: "Usable capacity by week",
+    noHistory: "Weekly snapshots appear after the first estimate or energy total.",
     explain:
       "Usable capacity is the geometric mean of the discharge median and the charge median, after each direction has three windows of at least 20 percentage points of state of charge. That mean cancels a one-way efficiency shared by both directions. Equivalent cycles are lifetime grid export divided by the nameplate, drawn against a 6,000-cycle LFP line that ends at the 75% warranty floor.",
     editorDevice: "Marstek device",
     editorTitle: "Title",
+    editorFlow: "Live energy flow",
+    editorWindow: "Active window",
+    editorTabs: "Tabs",
     editorTab: "Default tab",
     editorCompact: "Compact",
     editorInstalled: "Installation date",
@@ -140,12 +155,27 @@ const COPY = {
     gridIn: "Netinvoer",
     gridOut: "Netuitvoer",
     pvEnergy: "PV-energie",
+    loadEnergy: "Verbruik",
     unavailable: "Niet gemeld",
     installed: "Geïnstalleerd",
+    live: "Live energiestroom",
+    battery: "Batterij",
+    grid: "Net",
+    gridHint: "Invoer / off-grid",
+    meter: "CT-meter",
+    idle: "Rust",
+    livePower: "Batterijvermogen",
+    fleet: "Batterijen",
+    modes: { auto: "Auto", manual: "Handmatig", passive: "Passief", ai: "AI", ups: "UPS" },
+    historyTitle: "Bruikbare capaciteit per week",
+    noHistory: "Wekelijkse momenten verschijnen na de eerste schatting of energieteller.",
     explain:
       "Bruikbare capaciteit is het meetkundig gemiddelde van de ontlaadmediaan en de laadmediaan, zodra elke richting drie vensters van minstens 20 procentpunten laadniveau heeft. Dat gemiddelde schrapt een eenrichtingsrendement dat voor laden en ontladen gelijk is. Equivalente cycli zijn de levenslange netuitvoer gedeeld door het nominale vermogen, tegen een LFP-lijn van 6.000 cycli die eindigt op de garantiegrens van 75%.",
     editorDevice: "Marstek-apparaat",
     editorTitle: "Titel",
+    editorFlow: "Live energiestroom",
+    editorWindow: "Actief venster",
+    editorTabs: "Tabbladen",
     editorTab: "Standaardtab",
     editorCompact: "Compact",
     editorInstalled: "Installatiedatum",
@@ -235,7 +265,11 @@ const STYLES = `
   table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
   th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--divider-color); white-space: nowrap; }
   th { color: var(--secondary-text-color); font-weight: 650; position: sticky; top: 0; background: var(--ha-card-background, var(--card-background-color)); }
-  .life-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .life-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
+  .flow-tile { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 12px; }
+  .flow-tile strong { font-size: 1.02rem; }
+  .flow-sub { color: var(--secondary-text-color); font-size: 0.72rem; }
   .explain { margin: 0; color: var(--secondary-text-color); font-size: 0.8rem; line-height: 1.45; }
   .foot { color: var(--secondary-text-color); font-size: 0.72rem; border-top: 1px solid var(--divider-color); padding-top: 8px; }
   .empty { margin: 0; color: var(--secondary-text-color); }
@@ -321,10 +355,40 @@ function formatDuration(hass, seconds) {
   return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
 }
 
-function stateNumber(hass, entityId) {
+function stateOf(hass, entityId) {
   const state = entityId ? hass?.states?.[entityId] : null;
   if (!state || state.state === "unknown" || state.state === "unavailable") return null;
-  return finite(state.state);
+  return state;
+}
+
+function stateNumber(hass, entityId) {
+  return finite(stateOf(hass, entityId)?.state);
+}
+
+function stateText(hass, entityId) {
+  const state = stateOf(hass, entityId);
+  return state ? state.state : null;
+}
+
+const CARD_DEFAULTS = {
+  default_tab: "overview",
+  compact_mode: false,
+  show_realtime_flow: true,
+  show_active_window: true,
+  show_tabs: true,
+};
+
+function enabled(config, key, fallback) {
+  const value = config?.[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function compactOf(config) {
+  return Boolean(config?.compact_mode || config?.compact);
+}
+
+function withDefaults(config) {
+  return { ...CARD_DEFAULTS, ...(config || {}) };
 }
 
 function entityKind(entity) {
@@ -338,6 +402,22 @@ function entityKind(entity) {
     ["gridIn", "total_grid_input_energy"],
     ["gridOut", "total_grid_output_energy"],
     ["pv", "total_pv_energy"],
+    ["load", "total_load_energy"],
+    ["power", "battery_power"],
+    ["status", "battery_status"],
+    ["ongrid", "ongrid_power"],
+    ["offgrid", "offgrid_power"],
+    ["pvPower", "pv_power"],
+    ["mode", "device_mode"],
+    ["rssi", "wifi_rssi"],
+    ["phaseA", "em_a_power"],
+    ["phaseB", "em_b_power"],
+    ["phaseC", "em_c_power"],
+    ["phaseTotal", "em_total_power"],
+    ["pv1", "pv1_power"],
+    ["pv2", "pv2_power"],
+    ["pv3", "pv3_power"],
+    ["pv4", "pv4_power"],
   ];
   for (const [kind, token] of pairs) {
     if (key === token || unique.endsWith(`_${token}`)) return kind;
@@ -464,6 +544,23 @@ function readModel(hass, config) {
     gridIn: stateNumber(hass, pack?.entities.gridIn),
     gridOut: exportWh,
     pv: stateNumber(hass, pack?.entities.pv),
+    load: stateNumber(hass, pack?.entities.load),
+    power: stateNumber(hass, pack?.entities.power),
+    status: stateText(hass, pack?.entities.status),
+    ongrid: stateNumber(hass, pack?.entities.ongrid),
+    offgrid: stateNumber(hass, pack?.entities.offgrid),
+    pvPower: stateNumber(hass, pack?.entities.pvPower),
+    mode: stateText(hass, pack?.entities.mode),
+    rssi: stateNumber(hass, pack?.entities.rssi),
+    phaseA: stateNumber(hass, pack?.entities.phaseA),
+    phaseB: stateNumber(hass, pack?.entities.phaseB),
+    phaseC: stateNumber(hass, pack?.entities.phaseC),
+    phaseTotal: stateNumber(hass, pack?.entities.phaseTotal),
+    pv1: stateNumber(hass, pack?.entities.pv1),
+    pv2: stateNumber(hass, pack?.entities.pv2),
+    pv3: stateNumber(hass, pack?.entities.pv3),
+    pv4: stateNumber(hass, pack?.entities.pv4),
+    history: Array.isArray(attrs.history) ? attrs.history : [],
     rte: rtePercent(attrs.implied_round_trip_efficiency),
     dischargeWh: finite(attrs.discharge_median_wh),
     chargeWh: finite(attrs.charge_median_wh),
@@ -472,6 +569,28 @@ function readModel(hass, config) {
     active: attrs.active_window && typeof attrs.active_window === "object" ? attrs.active_window : null,
     confidence: attrs.confidence || "collecting",
   };
+}
+
+function wattText(hass, value) {
+  const number = finite(value);
+  if (number == null) return null;
+  return `${formatNumber(hass, number, 0)} W`;
+}
+
+function flowDirection(text, model) {
+  if (model.status === "charging") return text.charging;
+  if (model.status === "discharging") return text.discharging;
+  if (model.status === "idle") return text.idle;
+  if (model.power == null) return "";
+  if (model.power > 20) return text.discharging;
+  if (model.power < -20) return text.charging;
+  return text.idle;
+}
+
+function flowTile(label, value, detail) {
+  if (value == null || value === "") return "";
+  const extra = detail ? `<span class="flow-sub">${esc(detail)}</span>` : "";
+  return `<div class="flow-tile"><span class="kicker">${esc(label)}</span><strong class="nums">${esc(value)}</strong>${extra}</div>`;
 }
 
 function point(cx, cy, radius, degrees) {
@@ -550,9 +669,22 @@ function trackerHtml(hass, model, text) {
   const right = Math.max(0, Math.min(100, Math.max(start, current)));
   const direction = active.direction === "charge" ? text.charging : text.discharging;
   const done = formatNumber(hass, finite(active.soc_delta) ?? 0, 1);
+  const target = finite(active.target_soc_delta) || 20;
+  const progress = finite(active.progress);
+  const width = progress == null ? Math.min(100, ((finite(active.soc_delta) ?? 0) / target) * 100) : Math.min(100, progress * 100);
+  const average = finite(active.average_power_w);
+  const share = finite(active.pv_share);
+  const meta = [
+    `${formatNumber(hass, start, 0)}% → ${formatNumber(hass, current, 0)}%`,
+    formatDuration(hass, active.duration_s),
+    average == null ? null : `${formatNumber(hass, average, 0)} W`,
+    share != null && share > 0 ? text.pvShare(formatPercent(hass, share * 100, 0)) : null,
+  ].filter(Boolean).join(" · ");
   return `
     <div class="tracker">
       <div class="tracker-label"><span>${esc(text.progress(direction, done))}</span><span class="nums">${esc(formatEnergy(hass, active.accumulated_wh))}</span></div>
+      <div class="bar" aria-hidden="true"><span class="${active.direction === "charge" ? "charge" : "discharge"}" style="width:${width.toFixed(1)}%"></span></div>
+      <div class="meter-meta nums"><span>${esc(meta)}</span><span>${esc(formatNumber(hass, width, 0))}%</span></div>
       <div class="soc-line nums">
         <span>0%</span>
         <div class="soc-bar" aria-hidden="true">
@@ -560,6 +692,79 @@ function trackerHtml(hass, model, text) {
           <div class="soc-now" style="left:${Math.max(0, Math.min(100, current)).toFixed(1)}%"></div>
         </div>
         <span>100%</span>
+      </div>
+    </div>`;
+}
+
+function flowHtml(hass, model, text) {
+  const phases = [
+    ["A", model.phaseA],
+    ["B", model.phaseB],
+    ["C", model.phaseC],
+  ].filter((entry) => entry[1] != null);
+  const phaseText = phases.map(([name, value]) => `${name} ${formatNumber(hass, value, 0)} W`).join(" · ");
+  const channels = [model.pv1, model.pv2, model.pv3, model.pv4]
+    .map((value, index) => [index + 1, value])
+    .filter((entry) => entry[1] != null);
+  const channelText = channels.map(([index, value]) => `PV${index} ${formatNumber(hass, value, 0)} W`).join(" · ");
+  const gridValue = model.ongrid == null && model.offgrid == null
+    ? null
+    : `${formatNumber(hass, model.ongrid ?? 0, 0)} / ${formatNumber(hass, model.offgrid ?? 0, 0)} W`;
+  const meterValue = wattText(hass, model.phaseTotal) || (phases.length ? phaseText : null);
+  const mode = text.modes[model.mode] || model.mode || "";
+  const rssi = model.rssi == null ? "" : `${formatNumber(hass, model.rssi, 0)} dBm`;
+  const tiles = [
+    flowTile(text.battery, wattText(hass, model.power), flowDirection(text, model)),
+    flowTile(text.grid, gridValue, text.gridHint),
+    flowTile(text.meter, meterValue, phases.length && model.phaseTotal != null ? phaseText : ""),
+    flowTile(text.pv, wattText(hass, model.pvPower), channelText),
+    flowTile(text.soc, model.soc == null ? null : formatPercent(hass, model.soc, 0), mode),
+    flowTile(text.temperature, model.temp == null ? null : `${formatNumber(hass, model.temp, 1)} °C`, rssi),
+  ].join("");
+  if (!tiles) return "";
+  return `<section class="flow" aria-label="${esc(text.live)}">${tiles}</section>`;
+}
+
+function historyHtml(hass, model, text) {
+  const points = Array.isArray(model.history) ? model.history : [];
+  if (!points.length) return `<p class="empty">${esc(text.noHistory)}</p>`;
+  const usable = points.filter((point) => finite(point.usable_wh) != null);
+  const width = 640;
+  const height = 120;
+  const pad = { l: 36, r: 8, t: 12, b: 18 };
+  let chart = "";
+  if (usable.length >= 2) {
+    const values = usable.map((point) => finite(point.usable_wh));
+    const minY = Math.min(...values) * 0.96;
+    const maxY = Math.max(...values) * 1.04;
+    const xOf = (index) => pad.l + (index / (usable.length - 1)) * (width - pad.l - pad.r);
+    const yOf = (wh) => pad.t + ((maxY - wh) / (maxY - minY || 1)) * (height - pad.t - pad.b);
+    const path = usable.map((point, index) => `${index === 0 ? "M" : "L"} ${xOf(index).toFixed(1)} ${yOf(finite(point.usable_wh)).toFixed(1)}`).join(" ");
+    chart = `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(text.historyTitle)}"><path d="${path}" fill="none" stroke="var(--primary-color)" stroke-width="2" /></svg>`;
+  }
+  const rows = [...points].reverse().slice(0, 12).map((point) => {
+    const rte = rtePercent(point.implied_round_trip_efficiency);
+    return `<tr>
+      <td class="nums">${esc(point.period || point.month || "—")}</td>
+      <td class="nums">${esc(formatEnergy(hass, point.usable_wh))}</td>
+      <td class="nums">${esc(formatEnergy(hass, point.discharge_median_wh))}</td>
+      <td class="nums">${esc(formatEnergy(hass, point.charge_median_wh))}</td>
+      <td class="nums">${esc(formatPercent(hass, rte, 1))}</td>
+      <td class="nums">${esc(finite(point.equivalent_cycles) == null ? "—" : formatNumber(hass, point.equivalent_cycles, 2))}</td>
+    </tr>`;
+  });
+  return `
+    <div>
+      <div class="kicker">${esc(text.historyTitle)}</div>
+      ${chart}
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>${esc(text.closed)}</th><th>${esc(text.capacity)}</th><th>${esc(text.discharge)}</th>
+            <th>${esc(text.charge)}</th><th>${esc(text.rte)}</th><th>${esc(text.cycles)}</th>
+          </tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
       </div>
     </div>`;
 }
@@ -655,6 +860,7 @@ function lifetimeHtml(hass, model, text, installed) {
     [text.gridIn, model.gridIn],
     [text.gridOut, model.gridOut],
     [text.pvEnergy, model.pv],
+    [text.loadEnergy, model.load],
   ].map(([label, value]) => `
     <div class="kpi"><strong class="nums">${esc(value == null ? text.unavailable : formatEnergy(hass, value))}</strong><span>${esc(label)}</span></div>`);
   const width = 640;
@@ -694,17 +900,23 @@ function cardHtml(hass, config, tab) {
     : "";
   const temp = model.temp == null ? "" : `<span class="chip"><ha-icon icon="mdi:thermometer"></ha-icon><span class="nums">${esc(formatNumber(hass, model.temp, 1))} °C</span></span>`;
   const soc = model.soc == null ? "" : `<span class="chip"><ha-icon icon="mdi:battery-heart"></ha-icon><span class="nums">${esc(formatPercent(hass, model.soc, 0))}</span></span>`;
+  const showFlow = enabled(config, "show_realtime_flow", true);
+  const showWindow = enabled(config, "show_active_window", true);
+  const showTabs = enabled(config, "show_tabs", true) && !compactOf(config);
+  const tracker = showWindow ? trackerHtml(hass, model, text) : "";
+  const history = historyHtml(hass, model, text);
   const panel = tab === "trend"
-    ? `${chartSvg(hass, model, text)}${tableHtml(hass, model, text)}`
+    ? `${chartSvg(hass, model, text)}${tableHtml(hass, model, text)}${history}`
     : tab === "lifetime"
-      ? lifetimeHtml(hass, model, text, config.installation_date)
-      : `${trackerHtml(hass, model, text)}${kpiHtml(hass, model, text)}`;
-  const tabs = config.compact ? "" : `
+      ? `${lifetimeHtml(hass, model, text, config.installation_date)}${history}`
+      : `${tracker}${kpiHtml(hass, model, text)}`;
+  const tabs = showTabs ? `
     <div class="tabs" role="tablist">
       ${TABS.map((name) => `<button type="button" role="tab" data-action="tab" data-tab="${name}" aria-selected="${name === tab}">${esc(text.tabs[name])}</button>`).join("")}
     </div>
-    <div class="panel" role="tabpanel">${panel}</div>`;
-  const foot = config.compact ? "" : `
+    <div class="panel" role="tabpanel">${panel}</div>` : compactOf(config) ? tracker : `${tracker}${kpiHtml(hass, model, text)}${history}`;
+  const flow = showFlow ? flowHtml(hass, model, text) : "";
+  const foot = compactOf(config) ? "" : `
     <div class="foot">
       <span>${esc(text.lastCharge)} · <span class="nums">${esc(formatWhen(hass, model.attrs.last_charge_at) || text.noneYet)}</span></span>
       <span>${esc(text.lastDischarge)} · <span class="nums">${esc(formatWhen(hass, model.attrs.last_discharge_at) || text.noneYet)}</span></span>
@@ -743,6 +955,7 @@ function cardHtml(hass, config, tab) {
             </div>
           </div>
         </section>
+        ${flow}
         ${tabs}
         ${foot}
       </div>
@@ -752,18 +965,38 @@ function cardHtml(hass, config, tab) {
 function overviewHtml(hass) {
   const text = copyFor(hass);
   const packs = listPacks(hass);
-  const rows = packs.map((pack) => {
-    const model = readModel(hass, { device_id: pack.deviceId, entity: pack.entities.capacity });
+  const models = packs.map((pack) => readModel(hass, { device_id: pack.deviceId, entity: pack.entities.capacity }));
+  const sohs = models.map((model) => model.soh).filter((value) => value != null);
+  const powers = models.map((model) => model.power).filter((value) => value != null);
+  const average = sohs.length ? sohs.reduce((sum, value) => sum + value, 0) / sohs.length : null;
+  const combined = powers.length ? powers.reduce((sum, value) => sum + value, 0) : null;
+  const header = `
+    <section class="flow" aria-label="${esc(text.live)}">
+      ${flowTile(text.fleet, String(packs.length), text.overviewTitle)}
+      ${flowTile(text.soh, average == null ? null : formatPercent(hass, average, 0), "")}
+      ${flowTile(text.livePower, combined == null ? null : `${formatNumber(hass, combined, 0)} W`, text.battery)}
+    </section>`;
+  const rows = packs.map((pack, index) => {
+    const model = models[index];
     const health = healthOf(text, model.soh, model.confidence, model.dischargeCount, model.chargeCount);
+    const live = [
+      model.soc == null ? null : formatPercent(hass, model.soc, 0),
+      model.power == null ? null : `${formatNumber(hass, model.power, 0)} W ${flowDirection(text, model)}`,
+      text.modes[model.mode] || null,
+      model.temp == null ? null : `${formatNumber(hass, model.temp, 0)} °C`,
+    ].filter(Boolean).join(" · ");
+    const active = model.active
+      ? `${formatNumber(hass, finite(model.active.soc_delta) ?? 0, 0)}/${formatNumber(hass, finite(model.active.target_soc_delta) || 20, 0)}`
+      : text.noneYet;
     return `
       <button class="row" type="button" data-action="more-info" data-entity="${esc(pack.entities.capacity)}">
         <span class="nums" style="font-size:1.2rem;font-weight:720">${esc(model.soh == null ? "—" : formatNumber(hass, model.soh, 0))}<span style="font-size:0.7rem">%</span></span>
-        <span><span class="name">${esc(deviceName(hass, pack.deviceId) || pack.entities.capacity)}</span><br><span class="meta nums">${esc(formatEnergy(hass, model.usable))} · ${esc(formatPercent(hass, model.rte, 0))}</span></span>
+        <span><span class="name">${esc(deviceName(hass, pack.deviceId) || pack.entities.capacity)}</span><br><span class="meta nums">${esc(live || formatEnergy(hass, model.usable))} · ${esc(formatPercent(hass, model.rte, 0))} · ${esc(active)}</span></span>
         <span class="pill tone-${health.tone}">${esc(health.label)}</span>
       </button>`;
   });
   const body = rows.length ? `<div class="rows">${rows.join("")}</div>` : `<p class="empty">${esc(text.overviewEmpty)}</p>`;
-  return `<style>${STYLES}</style><ha-card><div class="body"><h3 class="title">${esc(text.overviewTitle)}</h3>${body}</div></ha-card>`;
+  return `<style>${STYLES}</style><ha-card><div class="body"><h3 class="title">${esc(text.overviewTitle)}</h3>${header}${body}</div></ha-card>`;
 }
 
 function openMoreInfo(host, entityId) {
@@ -824,7 +1057,7 @@ class MarstekCapacityCard extends HTMLElement {
     const prefer = [...(entities || []), ...(entitiesFallback || [])];
     const listed = prefer.find((entityId) => isCapacityEntity(hass, entityId));
     const scanned = listed || Object.keys(hass?.states || {}).find((entityId) => isCapacityEntity(hass, entityId));
-    const config = { default_tab: "overview", compact: false };
+    const config = { ...CARD_DEFAULTS };
     if (!scanned) return config;
     config.entity = scanned;
     const deviceId = hass.entities?.[scanned]?.device_id;
@@ -836,9 +1069,9 @@ class MarstekCapacityCard extends HTMLElement {
     if (!config || typeof config !== "object" || Array.isArray(config)) {
       throw new Error("Marstek capacity card configuration must be an object");
     }
-    this._config = { default_tab: "overview", compact: false, ...config };
+    this._config = withDefaults(config);
     this._tab = normalizeTab(this._config.default_tab);
-    if (this._config.compact) this.setAttribute("compact", "");
+    if (compactOf(this._config)) this.setAttribute("compact", "");
     else this.removeAttribute("compact");
     this._signature = "";
     this._render();
@@ -854,7 +1087,8 @@ class MarstekCapacityCard extends HTMLElement {
   }
 
   getCardSize() {
-    return this._config.compact ? 4 : 8;
+    if (compactOf(this._config)) return 4;
+    return enabled(this._config, "show_tabs", true) ? 8 : 6;
   }
 
   getGridOptions() {
@@ -867,7 +1101,9 @@ class MarstekCapacityCard extends HTMLElement {
       ? listPacks(this._hass).flatMap((pack) => Object.values(pack.entities).map((entityId) => {
           const state = this._hass.states[entityId];
           const active = state?.attributes?.active_window;
-          return `${entityId}:${state?.state}:${state?.attributes?.last_window_at}:${active?.soc_delta ?? ""}:${active?.current_soc ?? ""}`;
+          const history = state?.attributes?.history;
+          const tail = Array.isArray(history) && history.length ? history[history.length - 1] : null;
+          return `${entityId}:${state?.state}:${state?.attributes?.last_window_at}:${active?.soc_delta ?? ""}:${active?.current_soc ?? ""}:${active?.accumulated_wh ?? ""}:${tail?.recorded_at ?? ""}:${tail?.usable_wh ?? ""}`;
         }))
       : [];
     const signature = JSON.stringify({ tab: this._tab, config: this._config, tokens });
@@ -912,7 +1148,7 @@ class MarstekCapacityOverviewCard extends HTMLElement {
 
 class MarstekCapacityCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { default_tab: "overview", compact: false, ...(config || {}) };
+    this._config = withDefaults(config);
     this._built = false;
     if (this.isConnected) this._build();
   }
@@ -941,8 +1177,11 @@ class MarstekCapacityCardEditor extends HTMLElement {
     const fields = [
       ["device_id", text.editorDevice, { device: { integration: "marstek" } }, this._config.device_id || ""],
       ["title", text.editorTitle, { text: {} }, this._config.title || ""],
+      ["show_realtime_flow", text.editorFlow, { boolean: {} }, enabled(this._config, "show_realtime_flow", true)],
+      ["show_active_window", text.editorWindow, { boolean: {} }, enabled(this._config, "show_active_window", true)],
+      ["show_tabs", text.editorTabs, { boolean: {} }, enabled(this._config, "show_tabs", true)],
       ["default_tab", text.editorTab, { select: { mode: "dropdown", options: TABS.map((tab) => ({ value: tab, label: text.tabs[tab] })) } }, normalizeTab(this._config.default_tab)],
-      ["compact", text.editorCompact, { boolean: {} }, Boolean(this._config.compact)],
+      ["compact_mode", text.editorCompact, { boolean: {} }, compactOf(this._config)],
       ["installation_date", text.editorInstalled, { date: {} }, this._config.installation_date || ""],
     ];
     for (const [key, label, selector, value] of fields) {
@@ -970,6 +1209,7 @@ class MarstekCapacityCardEditor extends HTMLElement {
       const pack = listPacks(this._hass).find((item) => item.deviceId === value);
       if (pack) next.entity = pack.entities.capacity;
     }
+    if (key === "compact_mode") delete next.compact;
     if (value === "" || value == null) delete next[key];
     this._config = next;
     this.dispatchEvent(new CustomEvent("config-changed", {
@@ -998,6 +1238,11 @@ class MarstekCapacityStrategy extends HTMLElement {
           type: `custom:${CARD_TYPE}`,
           device_id: pack.deviceId,
           entity: pack.entities.capacity,
+          show_realtime_flow: true,
+          show_active_window: true,
+          show_tabs: true,
+          default_tab: "overview",
+          compact_mode: false,
         }],
       })),
     ];

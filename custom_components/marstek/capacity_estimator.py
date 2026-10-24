@@ -36,6 +36,13 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from typing import Any
 
+from .helpers.capacity_history import (
+    empty_lifetime,
+    fold_weekly_history,
+    lifetime_totals,
+    restore_history,
+)
+
 # Reported battery power is the AC-side quantity the integration already
 # publishes (device ``bat_power`` when present, otherwise
 # ``pv_power - ongrid_power - offgrid_power``). Nameplate ``bat_cap`` is DC
@@ -406,19 +413,25 @@ class UsableCapacityEstimator:
         self._rated_wh: float | None = None
         self._dirty = False
         self._gap_limit = MAX_GAP_SECONDS
+        self._history: list[dict[str, Any]] = []
+        self._history_baseline: list[dict[str, Any]] = []
+        self._lifetime = empty_lifetime()
 
     @classmethod
     def from_dict(cls, raw: object) -> UsableCapacityEstimator:
-        """Restore accepted windows. Anything unreadable is ignored."""
+        """Restore accepted windows and weekly snapshots. Unreadable parts are ignored."""
         estimator = cls()
         if not isinstance(raw, dict):
             return estimator
         windows = raw.get("windows")
-        if not isinstance(windows, list):
-            return estimator
-        restored = [window for item in windows if (window := _window_from_dict(item)) is not None]
-        estimator._windows = restored
-        estimator._trim_windows()
+        if isinstance(windows, list):
+            restored = [
+                window for item in windows if (window := _window_from_dict(item)) is not None
+            ]
+            estimator._windows = restored
+            estimator._trim_windows()
+        estimator._history = restore_history(raw.get("history"))
+        estimator._history_baseline = [dict(point) for point in estimator._history]
         return estimator
 
     def set_poll_interval(self, poll_interval: float) -> None:
@@ -430,8 +443,11 @@ class UsableCapacityEstimator:
         self._gap_limit = gap_limit_seconds(poll_interval)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the persistent state."""
-        return {"windows": [window.to_dict() for window in self._windows]}
+        """Return windows and weekly snapshots for the Store file."""
+        return {
+            "windows": [window.to_dict() for window in self._windows],
+            "history": [dict(point) for point in self._history],
+        }
 
     def consume_dirty(self) -> bool:
         """Return whether accepted windows changed since the last call."""
@@ -501,32 +517,35 @@ class UsableCapacityEstimator:
         ``pv_w`` is then the DC PV charging power that must not take the
         inverter efficiency. Both default to the device-``bat_power`` path.
         """
-        self._remember_rated(rated_wh)
-        sample = self._make_sample(timestamp, soc, power_w, mode, pv_w, power_derived)
-        if sample is None:
-            # Drop the previous poll too, so the next good sample does not
-            # integrate across the hole.
-            self._abort()
-            self._previous = None
-            return
-        previous = self._previous
-        self._previous = sample
-        if previous is None:
-            return
-        elapsed = sample.timestamp - previous.timestamp
-        if elapsed <= 0.0:
-            return
-        if elapsed > self._gap_limit or _soc_jumped(previous, sample, self._rated_wh):
-            self._abort()
-            return
-        if self._conflicts(previous, sample):
-            self._close_open()
-            # A device bat_power and a derived balance are different measurements.
-            # The segment between them is not part of either window.
-            if previous.power_derived == sample.power_derived:
-                self._start(previous, sample)
-            return
-        self._extend(previous, sample)
+        try:
+            self._remember_rated(rated_wh)
+            sample = self._make_sample(timestamp, soc, power_w, mode, pv_w, power_derived)
+            if sample is None:
+                # Drop the previous poll too, so the next good sample does not
+                # integrate across the hole.
+                self._abort()
+                self._previous = None
+                return
+            previous = self._previous
+            self._previous = sample
+            if previous is None:
+                return
+            elapsed = sample.timestamp - previous.timestamp
+            if elapsed <= 0.0:
+                return
+            if elapsed > self._gap_limit or _soc_jumped(previous, sample, self._rated_wh):
+                self._abort()
+                return
+            if self._conflicts(previous, sample):
+                self._close_open()
+                # A device bat_power and a derived balance are different measurements.
+                # The segment between them is not part of either window.
+                if previous.power_derived == sample.power_derived:
+                    self._start(previous, sample)
+                return
+            self._extend(previous, sample)
+        finally:
+            self._record_history(timestamp)
 
     def attributes(self) -> dict[str, Any]:
         """Return extra state attributes for the capacity and health sensors."""
@@ -560,6 +579,7 @@ class UsableCapacityEstimator:
             attrs["last_window_wh"] = rounded
             attrs["last_window_soc_delta"] = round(latest.soc_delta, 1)
             attrs["last_window_at"] = closed
+        attrs["history"] = [dict(point) for point in self._history]
         return attrs
 
     def _window_telemetry(self) -> dict[str, Any]:
@@ -593,16 +613,55 @@ class UsableCapacityEstimator:
             return None
         start = self._open[0]
         current = self._open[-1]
-        energy = abs(_dc_energy_wh(self._open)) if len(self._open) >= 2 else 0.0
+        spanned = len(self._open) >= 2
+        energy = abs(_dc_energy_wh(self._open)) if spanned else 0.0
+        delta = abs(current.soc - start.soc)
+        average = _average_power_w(self._open) if spanned else 0.0
+        share = _pv_share(self._open) if spanned else 0.0
         return {
             "direction": "discharge" if self._open_direction > 0 else "charge",
             "start_soc": round(start.soc, 1),
             "current_soc": round(current.soc, 1),
-            "soc_delta": round(abs(current.soc - start.soc), 1),
+            "soc_delta": round(delta, 1),
             "accumulated_wh": round(energy, 1),
             "duration_s": round(max(0.0, current.timestamp - start.timestamp), 1),
+            "average_power_w": round(average, 1),
+            "pv_share": round(share, 3),
             "target_soc_delta": MIN_SOC_DELTA,
+            "progress": round(min(1.0, delta / MIN_SOC_DELTA), 3),
         }
+
+    def note_lifetime(self, timestamp: float, status: dict[str, Any]) -> None:
+        """Remember lifetime energy counters and refresh this week's snapshot."""
+        self._lifetime = lifetime_totals(status)
+        self._record_history(timestamp)
+
+    def _record_history(self, timestamp: float) -> None:
+        """Fold the current estimate into the ISO-week history."""
+        moment = _finite(timestamp)
+        if moment is None:
+            return
+        medians = self._median_attributes()
+        rated = self._rated_wh
+        exported = self._lifetime.get("total_grid_output_energy")
+        cycles = None
+        if rated is not None and rated > 0.0 and exported is not None:
+            cycles = exported / rated
+        changed = fold_weekly_history(
+            self._history,
+            self._history_baseline,
+            timestamp=moment,
+            usable_wh=self.estimate_wh,
+            discharge_median_wh=medians.get("discharge_median_wh"),
+            charge_median_wh=medians.get("charge_median_wh"),
+            implied_round_trip_efficiency=medians.get("implied_round_trip_efficiency"),
+            equivalent_cycles=cycles,
+            totals=self._lifetime,
+        )
+        if not changed:
+            return
+        self._dirty = True
+        self._history_baseline = [dict(point) for point in self._history]
 
     def _remember_rated(self, rated_wh: float | None) -> None:
         """Keep the latest positive nameplate. A missing poll does not clear it."""
@@ -865,6 +924,7 @@ def apply_capacity_estimate(
         pv_w=pv,
         power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
     )
+    estimator.note_lifetime(timestamp, status)
     status[CAPACITY_DATA_KEY] = estimator.estimate_wh
     status[SOH_DATA_KEY] = estimator.state_of_health
     status[CAPACITY_ATTR_KEY] = estimator.attributes()

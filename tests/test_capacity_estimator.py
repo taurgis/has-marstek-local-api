@@ -670,7 +670,8 @@ def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> Non
     assert restored.windows_accepted == MAX_WINDOWS + 3
     assert restored.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
     saved = restored.to_dict()
-    assert list(saved) == ["windows"]
+    assert list(saved) == ["windows", "history"]
+    assert saved["history"] == []
     assert saved["windows"][0]["direction"] == "charge"
     assert saved["windows"][-1]["closed_at"] == float(100 + MAX_WINDOWS + 3)
 
@@ -775,7 +776,11 @@ def test_attributes_expose_windows_and_the_open_window() -> None:
     assert active["start_soc"] > active["current_soc"]
     assert active["accumulated_wh"] > 0.0
     assert active["duration_s"] > 0.0
+    assert active["average_power_w"] == pytest.approx(_POWER_W)
+    assert active["pv_share"] == 0.0
+    assert 0.0 < active["progress"] < 1.0
     assert estimator.attributes()["windows"] == []
+    assert estimator.attributes()["history"] == []
 
     _feed(
         estimator,

@@ -203,15 +203,29 @@ The storage version is unchanged.
 The integration serves `marstek-capacity-card` itself. After upgrading, reload
 the frontend (or restart Home Assistant) and use **Add card → Marstek
 capacity**. No Lovelace resource is required. The card reads the usable
-capacity entity: state of health, the two medians, round-trip efficiency,
-stored windows, and the open window while state of charge is still moving
-toward 20 points.
+capacity entity and the live power sensors already on the device: state of
+health, the two medians, round-trip efficiency, stored windows, battery and
+grid power, PV channels when the device has them, and the open window
+(start and current state of charge, accumulated watt-hours, average watts,
+PV share, and progress toward 20 points).
 
-**Marstek capacity overview** compares every battery. Options → **Capacity
-dashboard** / **Capaciteitsdashboard** adds a sidebar dashboard
-(`marstek-capacity`, strategy `custom:marstek-capacity`) titled **Battery
-Capacity** or **Batterijcapaciteit**. It is off until you enable it. Turning
-it off hides the sidebar entry and leaves the dashboard in place.
+The visual editor can hide the live flow, the active window, or the tabs,
+pick the default tab, set a title, and switch to a compact layout. Existing
+cards that set `compact` keep that layout.
+
+Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
+`history`: one point per ISO week (156 weeks kept). Each point stores the
+week, month, usable watt-hours, both medians, implied round-trip efficiency,
+equivalent cycles, and the lifetime grid, PV, and load watt-hours known at
+that time. A store written before `history` existed still loads.
+
+**Marstek capacity overview** is the multi-battery header: combined battery
+power, average state of health, and each pack's live state of charge, power,
+and mode. Options → **Capacity dashboard** / **Capaciteitsdashboard** adds a
+sidebar dashboard (`marstek-capacity`, strategy `custom:marstek-capacity`)
+titled **Battery Capacity** or **Batterijcapaciteit**. The dashboard places
+that header above one full card per battery. It is off until you enable it.
+Turning it off hides the sidebar entry and leaves the dashboard in place.
 
 The mock can run a faded pack with `--capacity-wh` (physics) while `bat_cap`
 stays at the family nameplate. `--soc-cycle` holds Passive mode between 30%
