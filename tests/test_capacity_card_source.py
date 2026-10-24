@@ -27,6 +27,7 @@ def test_capacity_card_drops_the_semicircle_gauge() -> None:
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in source
     assert 'class="pills"' in source
     assert "grid-template-columns: 1fr" not in source
+    assert source.count("<colgroup>") == 2
 
 
 def test_capacity_card_waits_for_the_home_assistant_element() -> None:

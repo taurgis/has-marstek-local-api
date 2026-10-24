@@ -77,7 +77,7 @@ const COPY = {
     colPv: "PV",
     colClosed: "Closed",
     colWeek: "Week",
-    colMedians: "↓ / ↑",
+    colMedians: "↓ / ↑ kWh",
     colRte: "RTE",
     battery: "Battery",
     grid: "Grid",
@@ -172,11 +172,11 @@ const COPY = {
     explain: "Bruikbare capaciteit is het meetkundig gemiddelde van de twee medianen, zodra elke richting drie vensters van minstens 20 SoC-punten heeft.",
     colWindow: "Venster",
     colCap: "100% cap.",
-    colPower: "Vermogen · duur",
+    colPower: "W · duur",
     colPv: "PV",
     colClosed: "Gesloten",
     colWeek: "Week",
-    colMedians: "↓ / ↑",
+    colMedians: "↓ / ↑ kWh",
     colRte: "RTE",
     battery: "Batterij",
     grid: "Net",
@@ -285,7 +285,7 @@ const STYLES = `
   .swatch.warranty { border-top: 2px dashed var(--error-color, #d32f2f); }
   .table-wrap { overflow: hidden; }
   table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
-  th, td { padding: 4px 4px; border-bottom: 1px solid var(--divider-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th, td { padding: 4px 3px; border-bottom: 1px solid var(--divider-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   th { color: var(--secondary-text-color); font-weight: 600; text-align: left; }
   td.num, th.num { text-align: right; }
   .life-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
@@ -393,12 +393,7 @@ function formatAxisDate(hass, value) {
 function formatDurationCompact(seconds) {
   const value = finite(seconds);
   if (value == null) return "—";
-  const total = Math.max(0, Math.round(value));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.round((total % 3600) / 60);
-  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h`;
-  return `${minutes}m`;
+  return `${Math.max(0, Math.round(value / 60))}m`;
 }
 
 function joinParts(parts) {
@@ -822,6 +817,9 @@ function tableHtml(hass, model, text) {
   return `
     <div class="table-wrap">
       <table>
+        <colgroup>
+          <col style="width:20%" /><col style="width:18%" /><col style="width:28%" /><col style="width:10%" /><col style="width:24%" />
+        </colgroup>
         <thead><tr>
           <th>${esc(text.colWindow)}</th>
           <th class="num">${esc(text.colCap)}</th>
@@ -840,7 +838,11 @@ function historyHtml(hass, model, text) {
   const rows = [...points].reverse().slice(0, 12).map((item) => {
     const rte = rtePercent(item.implied_round_trip_efficiency);
     const cycles = finite(item.equivalent_cycles);
-    const medians = `${formatEnergy(hass, item.discharge_median_wh)} / ${formatEnergy(hass, item.charge_median_wh)}`;
+    const kwh = (wh) => {
+      const value = finite(wh);
+      return value == null ? "—" : formatNumber(hass, value / 1000, 2);
+    };
+    const medians = `${kwh(item.discharge_median_wh)} / ${kwh(item.charge_median_wh)}`;
     const rteText = joinParts([
       rte == null ? "" : formatPercent(hass, rte, 1),
       cycles == null ? "" : formatNumber(hass, cycles, 1),
@@ -857,6 +859,9 @@ function historyHtml(hass, model, text) {
       <p class="foot">${esc(text.historyTitle)}</p>
       <div class="table-wrap">
         <table>
+          <colgroup>
+            <col style="width:24%" /><col style="width:22%" /><col style="width:30%" /><col style="width:24%" />
+          </colgroup>
           <thead><tr>
             <th>${esc(text.colWeek)}</th>
             <th class="num">${esc(text.usable)}</th>
