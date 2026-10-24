@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+### Minor Changes
+
+- 75367b9: Add Marstek battery health and battery fleet Lovelace cards, plus an optional Battery health sidebar dashboard, that show each battery's usable capacity against its rating with plain-language insights.
+
 ## 1.5.0
 
 ### Minor Changes
