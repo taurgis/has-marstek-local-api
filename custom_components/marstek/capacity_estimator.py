@@ -541,6 +541,7 @@ class UsableCapacityEstimator:
             "efficiency_correction": correction,
         }
         attrs.update(self._median_attributes())
+        attrs.update(self._window_telemetry())
         contributing = self._contributing_capacities(correction)
         if value is not None and contributing:
             attrs["spread_wh"] = round(max(contributing) - min(contributing))
@@ -551,10 +552,57 @@ class UsableCapacityEstimator:
             attrs["state_of_health"] = health
         if self._windows:
             latest = self._windows[-1]
+            closed = _iso_timestamp(latest.closed_at)
+            rounded = round(latest.capacity_wh)
             attrs["last_window_direction"] = latest.direction
-            attrs["last_window_capacity_wh"] = round(latest.capacity_wh)
-            attrs["last_window_at"] = datetime.fromtimestamp(latest.closed_at, UTC).isoformat()
+            attrs["last_window_capacity_wh"] = rounded
+            # ``last_window_wh`` is the name Lovelace and older consumers use.
+            attrs["last_window_wh"] = rounded
+            attrs["last_window_soc_delta"] = round(latest.soc_delta, 1)
+            attrs["last_window_at"] = closed
         return attrs
+
+    def _window_telemetry(self) -> dict[str, Any]:
+        """Return per-direction counts, stored windows, and the open window.
+
+        Counts and the window list are always present so a card can render an
+        empty state. Timestamps appear only after that direction has closed a
+        window. The open window is ``None`` while the estimator is idle.
+        """
+        payload: dict[str, Any] = {
+            "discharge_windows_accepted": len(self._capacities("discharge")),
+            "charge_windows_accepted": len(self._capacities("charge")),
+            "windows": [window.to_dict() for window in self._windows],
+            "active_window": self._active_window(),
+        }
+        latest_discharge = _latest_window(self._windows, "discharge")
+        latest_charge = _latest_window(self._windows, "charge")
+        if latest_discharge is not None:
+            payload["last_discharge_at"] = _iso_timestamp(latest_discharge.closed_at)
+        if latest_charge is not None:
+            payload["last_charge_at"] = _iso_timestamp(latest_charge.closed_at)
+        return payload
+
+    def _active_window(self) -> dict[str, Any] | None:
+        """Return the in-progress charge or discharge, before it is accepted.
+
+        A window is accepted at ``MIN_SOC_DELTA``. Until then the card draws
+        how far state of charge has moved toward that threshold.
+        """
+        if not self._open or self._open_direction == 0:
+            return None
+        start = self._open[0]
+        current = self._open[-1]
+        energy = abs(_dc_energy_wh(self._open)) if len(self._open) >= 2 else 0.0
+        return {
+            "direction": "discharge" if self._open_direction > 0 else "charge",
+            "start_soc": round(start.soc, 1),
+            "current_soc": round(current.soc, 1),
+            "soc_delta": round(abs(current.soc - start.soc), 1),
+            "accumulated_wh": round(energy, 1),
+            "duration_s": round(max(0.0, current.timestamp - start.timestamp), 1),
+            "target_soc_delta": MIN_SOC_DELTA,
+        }
 
     def _remember_rated(self, rated_wh: float | None) -> None:
         """Keep the latest positive nameplate. A missing poll does not clear it."""
@@ -759,6 +807,19 @@ class UsableCapacityEstimator:
         if count < 12:
             return "medium"
         return "high"
+
+
+def _iso_timestamp(moment: float) -> str:
+    """Return a UTC ISO-8601 timestamp for a stored unix time."""
+    return datetime.fromtimestamp(moment, UTC).isoformat()
+
+
+def _latest_window(windows: list[_Window], direction: str) -> _Window | None:
+    """Return the newest accepted window for one direction."""
+    for window in reversed(windows):
+        if window.direction == direction:
+            return window
+    return None
 
 
 def _mode_changed(start: str | None, current: str | None) -> bool:

@@ -198,6 +198,21 @@ The storage version is unchanged.
   them; the arithmetic still runs on data the coordinator already fetched,
   which is a few numbers per poll and no UDP.
 
+## Lovelace card
+
+The integration serves `marstek-capacity-card` itself. After upgrading, reload
+the frontend (or restart Home Assistant) and use **Add card → Marstek
+capacity**. No Lovelace resource is required. The card reads the usable
+capacity entity: state of health, the two medians, round-trip efficiency,
+stored windows, and the open window while state of charge is still moving
+toward 20 points.
+
+**Marstek capacity overview** compares every battery. Options → **Capacity
+dashboard** / **Capaciteitsdashboard** adds a sidebar dashboard
+(`marstek-capacity`, strategy `custom:marstek-capacity`) titled **Battery
+Capacity** or **Batterijcapaciteit**. It is off until you enable it. Turning
+it off hides the sidebar entry and leaves the dashboard in place.
+
 The mock can run a faded pack with `--capacity-wh` (physics) while `bat_cap`
 stays at the family nameplate. `--soc-cycle` holds Passive mode between 30%
 and 92%. `--time-scale` speeds the physics and the reported inverter watts by

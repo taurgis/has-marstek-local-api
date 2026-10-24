@@ -4,6 +4,7 @@
   "codeowners": ["@taurgis"],
   "config_flow": true,
   "dependencies": ["network"],
+  "after_dependencies": ["frontend", "http", "lovelace"],
   "dhcp": [
     {
       "hostname": "marstek*"

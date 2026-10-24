@@ -14,6 +14,7 @@ A **custom Home Assistant integration** for monitoring and controlling Marstek e
 - **Battery State of Charge (SoC)** - Current battery level percentage
 - **Usable capacity** - Estimated degraded pack size in Wh, for long-term statistics. Unknown until the battery has completed a few long charge or discharge stretches. See [Usable capacity](docs/usable-capacity.md).
 - **Battery state of health** - That estimate as a percentage of the nameplate, when the device reports one
+- **Capacity card** - Built-in Lovelace card `Marstek capacity` (Add card). It shows state of health, separate charge and discharge medians, round-trip efficiency, and live progress toward a 20% SoC window. Options → Capacity dashboard adds an optional **Battery Capacity** / **Batterijcapaciteit** sidebar page for every battery.
 - **Battery Power** - Real-time charge/discharge power (W)
 - **Battery Temperature** - Battery pack temperature (disabled by default, see below)
 - **Battery Status** - Current operational status

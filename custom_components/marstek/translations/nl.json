@@ -125,6 +125,16 @@
               "socket_limit": "Beperk ontladen tot 800 W voor veilig gebruik via een stopcontact",
               "clamp_negative_offgrid_power": "Indien ingeschakeld toont de Off-grid-vermogenssensor 0 W in plaats van kleine negatieve metingen die sommige firmware tijdens het laden rapporteert. Batterijvermogen blijft de echte meting gebruiken. Standaard uit."
             }
+          },
+          "dashboard_settings": {
+            "name": "Capaciteitsdashboard",
+            "description": "Optionele zijbalkpagina voor de staat van gezondheid. De kaart blijft beschikbaar via Kaart toevoegen, ook als dit uit staat.",
+            "data": {
+              "show_capacity_dashboard": "Toon Batterijcapaciteit in de zijbalk"
+            },
+            "data_description": {
+              "show_capacity_dashboard": "Voegt een dashboard Batterijcapaciteit toe dat elke Marstek-batterij vergelijkt. Standaard uit. Zet het weer uit om het zijbalkitem te verbergen zonder het dashboard te verwijderen."
+            }
           }
         }
       }

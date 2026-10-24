@@ -189,6 +189,7 @@ CONF_ACTION_CHARGE_POWER: Final = "action_charge_power"
 CONF_ACTION_DISCHARGE_POWER: Final = "action_discharge_power"
 CONF_SOCKET_LIMIT: Final = "socket_limit"
 CONF_CLAMP_NEGATIVE_OFFGRID_POWER: Final = "clamp_negative_offgrid_power"
+CONF_SHOW_CAPACITY_DASHBOARD: Final = "show_capacity_dashboard"
 
 # Default polling intervals
 # Real-time power data (ES.GetMode, ES.GetStatus, EM.GetStatus)
@@ -203,6 +204,8 @@ DEFAULT_ACTION_CHARGE_POWER: Final = -1300  # W (negative for charging)
 DEFAULT_ACTION_DISCHARGE_POWER: Final = 800  # W (positive for discharging)
 DEFAULT_SOCKET_LIMIT: Final = False
 DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER: Final = False
+# Off until a user asks for the sidebar. Existing dashboards stay untouched.
+DEFAULT_SHOW_CAPACITY_DASHBOARD: Final = False
 
 INITIAL_SETUP_REQUEST_DELAY: Final = 2.0  # Faster delay during first data fetch
 

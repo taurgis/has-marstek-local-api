@@ -23,6 +23,7 @@ from ..const import (
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
+    CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
 )
 
@@ -193,6 +194,18 @@ def build_power_schema(
             vol.Required(
                 CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
                 default=current_clamp_negative_offgrid_power,
+            ): BooleanSelector(),
+        }
+    )
+
+
+def build_dashboard_schema(*, show_capacity_dashboard: bool) -> vol.Schema:
+    """Build the optional capacity-dashboard schema."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_SHOW_CAPACITY_DASHBOARD,
+                default=show_capacity_dashboard,
             ): BooleanSelector(),
         }
     )

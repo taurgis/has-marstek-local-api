@@ -19,6 +19,7 @@ from custom_components.marstek.const import (
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
+    CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
 )
 
@@ -84,6 +85,9 @@ class TestOptionsFlowSections:
             CONF_ACTION_DISCHARGE_POWER,
             CONF_SOCKET_LIMIT,
             CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
+        ],
+        "dashboard_settings": [
+            CONF_SHOW_CAPACITY_DASHBOARD,
         ],
     }
 
