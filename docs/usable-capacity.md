@@ -209,9 +209,15 @@ grid power, PV channels when the device has them, and the open window
 (start and current state of charge, accumulated watt-hours, average watts,
 PV share, and progress toward 20 points).
 
-The visual editor can hide the live flow, the active window, or the tabs,
-pick the default tab, set a title, and switch to a compact layout. Existing
-cards that set `compact` keep that layout.
+The card is a compact dossier: a one-line title and health pill, a status
+line, horizontal section pills, three tiles (nominal, usable, the two
+medians), and a horizontal state-of-health bar with a 75% warranty tick and
+the cycle-spec tick. Live power sits in a single row of chips. Trend,
+windows, and lifetime open from those pills. The visual editor can hide the
+live flow, the active window, or the pills, pick the default section, set a
+title, and switch to a compact layout. Existing cards that set `compact`
+keep that layout. The module registers its elements after `<home-assistant>`
+exists, so a cold open of the sidebar dashboard can see the strategy.
 
 Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
 `history`: one point per ISO week (156 weeks kept). Each point stores the

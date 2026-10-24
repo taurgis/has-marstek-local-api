@@ -5,10 +5,15 @@ in Home Assistant 2025.7:
 https://developers.home-assistant.io/blog/2024/06/18/async_register_static_paths/
 
 ``frontend.add_extra_js_url`` attaches the module to every frontend session,
-so the card picker works without a Lovelace resource. The sidebar entry is a
-storage dashboard with strategy ``custom:marstek-capacity``, the same shape
-Home Assistant uses when it creates the map dashboard. The strategy element
-is ``ll-strategy-dashboard-marstek-capacity``:
+so the card picker works without a Lovelace resource. The module defines its
+elements on ``window.customElements`` only after ``<home-assistant>`` exists,
+because Home Assistant swaps in a scoped registry when that element is
+defined. Defining the strategy element earlier leaves it on the previous
+registry, and the dashboard then times out waiting for
+``ll-strategy-dashboard-marstek-capacity``. The sidebar entry is a storage
+dashboard with strategy ``custom:marstek-capacity``, the same shape Home
+Assistant uses when it creates the map dashboard. The strategy element is
+``ll-strategy-dashboard-marstek-capacity``:
 https://developers.home-assistant.io/docs/frontend/custom-ui/custom-strategy/
 """
 
