@@ -30,6 +30,10 @@ from .firmware_profile import (
     is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
+from .helpers.capacity_frontend import (
+    async_register_capacity_frontend,
+    async_sync_capacity_dashboard,
+)
 from .helpers.capacity_store import CapacityEstimateStore
 from .helpers.device_lookup import (
     async_lookup_device_by_identifier,
@@ -449,6 +453,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Marstek component."""
     # Register services
     await async_setup_services(hass)
+    await async_register_capacity_frontend(hass)
 
     return True
 
@@ -574,6 +579,7 @@ async def _async_setup_entry_with_client(
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_remove_access_point_connections(hass, entry, device_info_dict)
+    await async_sync_capacity_dashboard(hass)
 
     return True
 
@@ -639,6 +645,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     _clear_meter_channel_issue(hass, entry)
 
     await _async_release_entry_resources(hass, entry)
+    # A reload, such as an options save, sets the entry up again at once, so
+    # only a disable hides the dashboard here. Removal is handled below.
+    if entry.disabled_by is not None:
+        await async_sync_capacity_dashboard(hass, ignore_entry_id=entry.entry_id)
 
     return True
 
@@ -647,6 +657,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     """Remove a config entry and clean up stale devices."""
     _clear_entry_reset_prone_flag(hass, entry)
     await CapacityEstimateStore(hass, entry.entry_id).async_remove()
+    await async_sync_capacity_dashboard(hass, ignore_entry_id=entry.entry_id)
 
     # Clear any remaining repair issues
     _clear_connection_issue(hass, entry)

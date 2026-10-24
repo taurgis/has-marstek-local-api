@@ -1384,6 +1384,9 @@ class Campaign:
                 "socket_limit": False,
                 "clamp_negative_offgrid_power": False,
             },
+            "dashboard_settings": {
+                "show_capacity_dashboard": False,
+            },
         }
 
     async def phase_edit_and_lifecycle(self) -> None:

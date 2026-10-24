@@ -139,6 +139,8 @@ class TestAutoModeBehavior:
     def test_discharges_to_cover_household(self) -> None:
         """Auto mode regulates the meter toward zero, covering the house."""
         sim = BatterySimulator(initial_soc=50)
+        # ±1.5% tracking jitter can leave the meter outside the deadband.
+        sim.power_fluctuation_pct = 0
         sim.set_house_pv(0)
         sim.set_house_load(500)
         sim.settle(60.0)
@@ -151,6 +153,8 @@ class TestAutoModeBehavior:
     def test_charges_on_rooftop_surplus(self) -> None:
         """A PV surplus pushes the meter negative, so Auto mode charges."""
         sim = BatterySimulator(initial_soc=50)
+        # ±1.5% tracking jitter can leave the meter outside the deadband.
+        sim.power_fluctuation_pct = 0
         sim.set_house_load(300)
         sim.set_house_pv(2000)
         sim.settle(60.0)

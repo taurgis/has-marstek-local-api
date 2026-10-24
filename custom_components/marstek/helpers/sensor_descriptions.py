@@ -24,7 +24,12 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import StateType
 
-from ..capacity_estimator import CAPACITY_ATTR_KEY, CAPACITY_DATA_KEY, SOH_DATA_KEY
+from ..capacity_estimator import (
+    CAPACITY_ATTR_KEY,
+    CAPACITY_DATA_KEY,
+    CARD_ATTRIBUTES,
+    SOH_DATA_KEY,
+)
 from ..const import (
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
@@ -141,6 +146,18 @@ def _capacity_attributes(
     if isinstance(raw, dict):
         return raw
     return None
+
+
+def _health_attributes(
+    coordinator: MarstekDataUpdateCoordinator,
+    info: dict[str, Any],
+    entry: ConfigEntry | None,
+) -> dict[str, Any] | None:
+    """Return the estimate's attributes without the card-only lists."""
+    raw = _capacity_attributes(coordinator, info, entry)
+    if raw is None:
+        return None
+    return {key: value for key, value in raw.items() if key not in CARD_ATTRIBUTES}
 
 
 def _exists_present_value(key: str, data: dict[str, Any]) -> bool:
@@ -281,7 +298,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         value_fn=lambda coordinator, _info, _entry: _value_from_data(
             SOH_DATA_KEY, coordinator.data or {}
         ),
-        attributes_fn=_capacity_attributes,
+        attributes_fn=_health_attributes,
         exists_fn=_nameplate_capacity_present,
     ),
     MarstekSensorEntityDescription(

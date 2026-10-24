@@ -1,4 +1,7 @@
 {
+  "common": {
+    "dashboard_title": "Battery health"
+  },
   "config": {
     "step": {
       "user": {
@@ -124,6 +127,16 @@
               "action_discharge_power": "Default power for discharge actions (positive value)",
               "socket_limit": "Limit discharge to 800 W for plug socket safety",
               "clamp_negative_offgrid_power": "When enabled, the Off-grid power sensor reports 0 W instead of small negative readings some firmware reports while charging. Battery power still uses the real measurement. Off by default."
+            }
+          },
+          "dashboard_settings": {
+            "name": "Battery health dashboard",
+            "description": "Optional sidebar page for state of health. The cards are always available from Add card, even when this is off.",
+            "data": {
+              "show_capacity_dashboard": "Show Battery health in the sidebar"
+            },
+            "data_description": {
+              "show_capacity_dashboard": "Adds a Battery health dashboard that compares every Marstek battery. Off by default. Turn it off again to hide the sidebar entry without deleting the dashboard."
             }
           }
         }

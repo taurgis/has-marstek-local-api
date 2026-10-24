@@ -36,6 +36,14 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from typing import Any
 
+from .helpers.capacity_history import (
+    card_history,
+    empty_lifetime,
+    fold_weekly_history,
+    lifetime_totals,
+    restore_history,
+)
+
 # Reported battery power is the AC-side quantity the integration already
 # publishes (device ``bat_power`` when present, otherwise
 # ``pv_power - ongrid_power - offgrid_power``). Nameplate ``bat_cap`` is DC
@@ -69,6 +77,9 @@ RATED_MAX_FRACTION = 1.35
 CAPACITY_DATA_KEY = "battery_usable_capacity"
 SOH_DATA_KEY = "battery_state_of_health"
 CAPACITY_ATTR_KEY = "battery_usable_capacity_attributes"
+# Lists only the Lovelace cards read. They stay off the state of health sensor
+# and out of the recorder.
+CARD_ATTRIBUTES = frozenset({"windows", "history", "active_window"})
 # Set by ``parse_es_status_response`` when battery power came from the AC
 # balance rather than a device ``bat_power``. ``merge_device_status`` copies it.
 BATTERY_POWER_DERIVED_KEY = "battery_power_derived"
@@ -406,19 +417,25 @@ class UsableCapacityEstimator:
         self._rated_wh: float | None = None
         self._dirty = False
         self._gap_limit = MAX_GAP_SECONDS
+        self._history: list[dict[str, Any]] = []
+        self._history_baseline: list[dict[str, Any]] = []
+        self._lifetime = empty_lifetime()
 
     @classmethod
     def from_dict(cls, raw: object) -> UsableCapacityEstimator:
-        """Restore accepted windows. Anything unreadable is ignored."""
+        """Restore accepted windows and weekly snapshots. Unreadable parts are ignored."""
         estimator = cls()
         if not isinstance(raw, dict):
             return estimator
         windows = raw.get("windows")
-        if not isinstance(windows, list):
-            return estimator
-        restored = [window for item in windows if (window := _window_from_dict(item)) is not None]
-        estimator._windows = restored
-        estimator._trim_windows()
+        if isinstance(windows, list):
+            restored = [
+                window for item in windows if (window := _window_from_dict(item)) is not None
+            ]
+            estimator._windows = restored
+            estimator._trim_windows()
+        estimator._history = restore_history(raw.get("history"))
+        estimator._history_baseline = [dict(point) for point in estimator._history]
         return estimator
 
     def set_poll_interval(self, poll_interval: float) -> None:
@@ -430,8 +447,11 @@ class UsableCapacityEstimator:
         self._gap_limit = gap_limit_seconds(poll_interval)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the persistent state."""
-        return {"windows": [window.to_dict() for window in self._windows]}
+        """Return windows and weekly snapshots for the Store file."""
+        return {
+            "windows": [window.to_dict() for window in self._windows],
+            "history": [dict(point) for point in self._history],
+        }
 
     def consume_dirty(self) -> bool:
         """Return whether accepted windows changed since the last call."""
@@ -501,32 +521,35 @@ class UsableCapacityEstimator:
         ``pv_w`` is then the DC PV charging power that must not take the
         inverter efficiency. Both default to the device-``bat_power`` path.
         """
-        self._remember_rated(rated_wh)
-        sample = self._make_sample(timestamp, soc, power_w, mode, pv_w, power_derived)
-        if sample is None:
-            # Drop the previous poll too, so the next good sample does not
-            # integrate across the hole.
-            self._abort()
-            self._previous = None
-            return
-        previous = self._previous
-        self._previous = sample
-        if previous is None:
-            return
-        elapsed = sample.timestamp - previous.timestamp
-        if elapsed <= 0.0:
-            return
-        if elapsed > self._gap_limit or _soc_jumped(previous, sample, self._rated_wh):
-            self._abort()
-            return
-        if self._conflicts(previous, sample):
-            self._close_open()
-            # A device bat_power and a derived balance are different measurements.
-            # The segment between them is not part of either window.
-            if previous.power_derived == sample.power_derived:
-                self._start(previous, sample)
-            return
-        self._extend(previous, sample)
+        try:
+            self._remember_rated(rated_wh)
+            sample = self._make_sample(timestamp, soc, power_w, mode, pv_w, power_derived)
+            if sample is None:
+                # Drop the previous poll too, so the next good sample does not
+                # integrate across the hole.
+                self._abort()
+                self._previous = None
+                return
+            previous = self._previous
+            self._previous = sample
+            if previous is None:
+                return
+            elapsed = sample.timestamp - previous.timestamp
+            if elapsed <= 0.0:
+                return
+            if elapsed > self._gap_limit or _soc_jumped(previous, sample, self._rated_wh):
+                self._abort()
+                return
+            if self._conflicts(previous, sample):
+                self._close_open()
+                # A device bat_power and a derived balance are different measurements.
+                # The segment between them is not part of either window.
+                if previous.power_derived == sample.power_derived:
+                    self._start(previous, sample)
+                return
+            self._extend(previous, sample)
+        finally:
+            self._record_history(timestamp)
 
     def attributes(self) -> dict[str, Any]:
         """Return extra state attributes for the capacity and health sensors."""
@@ -541,6 +564,8 @@ class UsableCapacityEstimator:
             "efficiency_correction": correction,
         }
         attrs.update(self._median_attributes())
+        attrs["windows"] = [window.to_dict() for window in self._windows]
+        attrs["active_window"] = self._active_window()
         contributing = self._contributing_capacities(correction)
         if value is not None and contributing:
             attrs["spread_wh"] = round(max(contributing) - min(contributing))
@@ -553,8 +578,65 @@ class UsableCapacityEstimator:
             latest = self._windows[-1]
             attrs["last_window_direction"] = latest.direction
             attrs["last_window_capacity_wh"] = round(latest.capacity_wh)
-            attrs["last_window_at"] = datetime.fromtimestamp(latest.closed_at, UTC).isoformat()
+            attrs["last_window_at"] = _iso_timestamp(latest.closed_at)
+        attrs["history"] = card_history(self._history)
         return attrs
+
+    def _active_window(self) -> dict[str, Any] | None:
+        """Return the in-progress charge or discharge, before it is accepted.
+
+        A window is accepted at ``MIN_SOC_DELTA``. Until then the card draws
+        how far state of charge has moved toward that threshold. Every field
+        follows state of charge only, so the attribute stays the same between
+        polls until the battery gains or loses a point.
+        """
+        if not self._open or self._open_direction == 0:
+            return None
+        start = self._open[0]
+        current = self._open[-1]
+        delta = abs(current.soc - start.soc)
+        return {
+            "direction": "discharge" if self._open_direction > 0 else "charge",
+            "started_at": _iso_timestamp(start.timestamp),
+            "start_soc": round(start.soc, 1),
+            "current_soc": round(current.soc, 1),
+            "soc_delta": round(delta, 1),
+            "target_soc_delta": MIN_SOC_DELTA,
+            "progress": round(min(1.0, delta / MIN_SOC_DELTA), 3),
+        }
+
+    def remember_lifetime(self, status: dict[str, Any]) -> None:
+        """Keep the lifetime energy counters for the next weekly snapshot."""
+        self._lifetime = lifetime_totals(status)
+
+    def _record_history(self, timestamp: float) -> None:
+        """Fold the current estimate into the ISO-week history."""
+        moment = _finite(timestamp)
+        if moment is None:
+            return
+        medians = self._median_attributes()
+        rated = self._rated_wh
+        exported = self._lifetime.get("total_grid_output_energy")
+        cycles = None
+        if rated is not None and rated > 0.0 and exported is not None:
+            cycles = exported / rated
+        changed = fold_weekly_history(
+            self._history,
+            self._history_baseline,
+            timestamp=moment,
+            measures={
+                "usable_wh": self.estimate_wh,
+                "discharge_median_wh": medians.get("discharge_median_wh"),
+                "charge_median_wh": medians.get("charge_median_wh"),
+                "implied_round_trip_efficiency": medians.get("implied_round_trip_efficiency"),
+                "equivalent_cycles": cycles,
+                **self._lifetime,
+            },
+        )
+        if not changed:
+            return
+        self._dirty = True
+        self._history_baseline = [dict(point) for point in self._history]
 
     def _remember_rated(self, rated_wh: float | None) -> None:
         """Keep the latest positive nameplate. A missing poll does not clear it."""
@@ -761,6 +843,11 @@ class UsableCapacityEstimator:
         return "high"
 
 
+def _iso_timestamp(moment: float) -> str:
+    """Return a UTC ISO-8601 timestamp for a stored unix time."""
+    return datetime.fromtimestamp(moment, UTC).isoformat()
+
+
 def _mode_changed(start: str | None, current: str | None) -> bool:
     """Return whether both polls named a mode and the names differ.
 
@@ -795,6 +882,8 @@ def apply_capacity_estimate(
     mode = status.get("device_mode")
     pv_raw = status.get("pv_power") if fresh else None
     pv = pv_raw if isinstance(pv_raw, (int, float)) and not isinstance(pv_raw, bool) else None
+    # Before ``observe``, which folds this poll's counters into the weekly point.
+    estimator.remember_lifetime(status)
     estimator.observe(
         timestamp=timestamp,
         soc=soc,

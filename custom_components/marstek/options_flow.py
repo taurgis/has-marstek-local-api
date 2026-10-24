@@ -24,6 +24,7 @@ from .const import (
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
+    CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
@@ -35,9 +36,11 @@ from .const import (
     DEFAULT_POLL_INTERVAL_SLOW,
     DEFAULT_REQUEST_DELAY,
     DEFAULT_REQUEST_TIMEOUT,
+    DEFAULT_SHOW_CAPACITY_DASHBOARD,
     device_default_socket_limit,
 )
 from .helpers.flow_schemas import (
+    build_dashboard_schema,
     build_network_schema,
     build_polling_schema,
     build_power_schema,
@@ -94,6 +97,10 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
             DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
         )
+        current_show_capacity_dashboard = self.config_entry.options.get(
+            CONF_SHOW_CAPACITY_DASHBOARD,
+            DEFAULT_SHOW_CAPACITY_DASHBOARD,
+        )
 
         # Build schema with collapsible sections for better UX
         polling_schema = build_polling_schema(
@@ -115,6 +122,9 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             current_socket_limit=current_socket_limit,
             current_clamp_negative_offgrid_power=current_clamp_negative_offgrid_power,
         )
+        dashboard_schema = build_dashboard_schema(
+            show_capacity_dashboard=bool(current_show_capacity_dashboard),
+        )
 
         return self.async_show_form(
             step_id="init",
@@ -130,6 +140,10 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
                     ),
                     vol.Required("power_settings"): section(
                         power_schema,
+                        {"collapsed": True},
+                    ),
+                    vol.Required("dashboard_settings"): section(
+                        dashboard_schema,
                         {"collapsed": True},
                     ),
                 }

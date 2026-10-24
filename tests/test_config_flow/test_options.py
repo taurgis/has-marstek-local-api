@@ -19,6 +19,7 @@ from custom_components.marstek.const import (
     CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     CONF_REQUEST_TIMEOUT,
+    CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
@@ -62,6 +63,9 @@ def _options_user_input(
             CONF_ACTION_DISCHARGE_POWER: DEFAULT_ACTION_DISCHARGE_POWER,
             CONF_SOCKET_LIMIT: socket_limit,
             CONF_CLAMP_NEGATIVE_OFFGRID_POWER: clamp_negative_offgrid_power,
+        },
+        "dashboard_settings": {
+            CONF_SHOW_CAPACITY_DASHBOARD: False,
         },
     }
 
@@ -194,3 +198,35 @@ async def test_options_flow_stores_clamp_negative_offgrid_power(
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_CLAMP_NEGATIVE_OFFGRID_POWER] is True
+
+
+async def test_options_flow_stores_capacity_dashboard(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """The sidebar dashboard stays off unless the option is enabled."""
+    mock_config_entry.add_to_hass(hass)
+
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    assert result["type"] == FlowResultType.FORM
+    schema = result["data_schema"].schema
+    dashboard_key = next(
+        key for key in schema if getattr(key, "schema", None) == "dashboard_settings"
+    )
+    dashboard_schema = schema[dashboard_key].schema.schema
+    show_key = next(
+        key
+        for key in dashboard_schema
+        if getattr(key, "schema", None) == CONF_SHOW_CAPACITY_DASHBOARD
+    )
+    assert show_key.default() is False
+
+    user_input = _options_user_input()
+    user_input["dashboard_settings"][CONF_SHOW_CAPACITY_DASHBOARD] = True
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_SHOW_CAPACITY_DASHBOARD] is True

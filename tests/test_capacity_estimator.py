@@ -670,7 +670,8 @@ def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> Non
     assert restored.windows_accepted == MAX_WINDOWS + 3
     assert restored.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
     saved = restored.to_dict()
-    assert list(saved) == ["windows"]
+    assert list(saved) == ["windows", "history"]
+    assert saved["history"] == []
     assert saved["windows"][0]["direction"] == "charge"
     assert saved["windows"][-1]["closed_at"] == float(100 + MAX_WINDOWS + 3)
 
@@ -744,3 +745,74 @@ def test_a_slow_poll_interval_can_form_a_window_and_a_missed_poll_cannot() -> No
         ),
     )
     assert missed.windows_accepted == 0
+
+
+def test_attributes_expose_windows_and_the_open_window() -> None:
+    """The card reads the stored windows and live progress."""
+    estimator = UsableCapacityEstimator()
+    idle = estimator.attributes()
+    assert idle["windows"] == []
+    assert idle["active_window"] is None
+
+    _feed(
+        estimator,
+        _Trace(
+            steps=12,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=_discharge_step_seconds(),
+            power_w=_POWER_W,
+        ),
+    )
+    active = estimator.attributes()["active_window"]
+    assert active is not None
+    assert active["direction"] == "discharge"
+    assert active["target_soc_delta"] == 20.0
+    assert 0.0 < active["soc_delta"] < 20.0
+    assert active["start_soc"] > active["current_soc"]
+    assert active["started_at"].startswith("2023-11-")
+    assert 0.0 < active["progress"] < 1.0
+    assert estimator.attributes()["windows"] == []
+    assert estimator.attributes()["history"] == []
+
+    _feed(
+        estimator,
+        _Trace(
+            steps=61,
+            soc_start=80.0,
+            soc_per_step=-1.0,
+            step_seconds=_discharge_step_seconds(),
+            power_w=_POWER_W,
+            start_timestamp=_T0 + 10_000.0,
+        ),
+    )
+    attrs = estimator.attributes()
+    assert attrs["active_window"] is None
+    assert len(attrs["windows"]) == MIN_WINDOWS
+    window = attrs["windows"][0]
+    assert window["direction"] == "discharge"
+    assert window["capacity_wh"] > 0
+    assert "soc_delta" in window
+    assert "closed_at" in window
+    assert "start_soc" in window
+    assert "end_soc" in window
+    assert "average_power_w" in window
+    assert "duration_s" in window
+    assert window["mode"] == "auto"
+    assert "pv_share" in window
+    assert attrs["last_window_direction"] == "discharge"
+
+    _feed(
+        estimator,
+        _Trace(
+            steps=61,
+            soc_start=20.0,
+            soc_per_step=1.0,
+            step_seconds=_charge_step_seconds(),
+            power_w=-_POWER_W,
+            start_timestamp=_T0 + 20_000.0,
+        ),
+    )
+    both = estimator.attributes()
+    assert len(both["windows"]) == 2 * MIN_WINDOWS
+    assert both["last_window_direction"] == "charge"
