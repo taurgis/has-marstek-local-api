@@ -25,6 +25,7 @@ const COPY = {
     band: { good: "Healthy", fading: "Fading", worn: "Worn", measuring: "Measuring" },
     flow: { charge: "Charging", discharge: "Discharging", idle: "Idle" },
     headline: (usable, pct, rated) => `Holds ${usable}, ${pct} of its ${rated} rating.`,
+    headlineFull: (usable, rated) => `Holds ${usable}, at least its full ${rated} rating.`,
     headlineNoRating: (usable) => `Holds ${usable} from 0 to 100%.`,
     headlineWait: "Still measuring. A first estimate needs three runs that each move the state of charge 20 points in one direction.",
     stored: (energy) => `${energy} stored now`,
@@ -94,6 +95,7 @@ const COPY = {
     band: { good: "Gezond", fading: "Slijtend", worn: "Versleten", measuring: "Meten" },
     flow: { charge: "Laden", discharge: "Ontladen", idle: "Rust" },
     headline: (usable, pct, rated) => `Houdt ${usable} vast, ${pct} van de opgegeven ${rated}.`,
+    headlineFull: (usable, rated) => `Houdt ${usable} vast, minstens de volle opgegeven ${rated}.`,
     headlineNoRating: (usable) => `Houdt ${usable} vast van 0 tot 100%.`,
     headlineWait: "Nog aan het meten. Een eerste schatting vraagt drie ritten die de laadtoestand elk 20 procentpunten in één richting verplaatsen.",
     stored: (energy) => `${energy} nu opgeslagen`,
@@ -159,7 +161,7 @@ const COPY = {
 
 const STYLES = `
   :host { display: block; }
-  ha-card { padding: 16px; display: flex; flex-direction: column; gap: 14px; color: var(--primary-text-color); }
+  ha-card { padding: 16px; display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color); }
   .num { font-variant-numeric: tabular-nums; }
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
   button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 6px; }
@@ -171,6 +173,8 @@ const STYLES = `
   .lead { margin: 0; font-size: 20px; line-height: 28px; font-weight: 400; }
   .lead strong { font-weight: 600; }
   .band { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; margin-right: 6px; vertical-align: 2px; }
+  .lead .band { display: flex; width: fit-content; margin: 0 0 6px; padding: 2px 10px 2px 8px; border-radius: 999px;
+    font-size: 12px; line-height: 18px; background: color-mix(in srgb, currentColor 12%, transparent); }
   .band ha-icon { --mdc-icon-size: 16px; }
   .band.good { color: var(--success-color, #43a047); }
   .band.fading { color: var(--warning-color, #ffa600); }
@@ -190,7 +194,7 @@ const STYLES = `
   .key.stored { background: var(--primary-color); }
   .key.room { background: color-mix(in srgb, var(--primary-color) 22%, transparent); }
   .key.faded { background: repeating-linear-gradient(135deg, var(--secondary-text-color) 0 1.5px, transparent 1.5px 4px); }
-  .insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   .insights li { display: grid; grid-template-columns: 20px 1fr; gap: 10px; font-size: 14px; line-height: 20px; }
   .insights ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
   .progress { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: var(--divider-color); overflow: hidden; }
@@ -202,12 +206,12 @@ const STYLES = `
   .muted { margin: 0; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
   .chart .grid { stroke: var(--divider-color); }
-  .chart .tick { fill: var(--secondary-text-color); font-size: 11px; }
+  .chart .tick { fill: var(--secondary-text-color); font-size: 12px; }
   .chart .rating { stroke: var(--secondary-text-color); stroke-dasharray: 4 4; }
   .chart .line { fill: none; stroke: var(--primary-color); stroke-width: 2.5; stroke-linejoin: round; }
   .chart .run { fill: color-mix(in srgb, var(--primary-color) 40%, transparent); }
   .chart .end { fill: var(--primary-color); }
-  .chart .tag { font-size: 11px; fill: var(--secondary-text-color); }
+  .chart .tag { font-size: 12px; fill: var(--secondary-text-color); }
   .chart .tag.strong { fill: var(--primary-text-color); font-weight: 600; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; padding: 0; margin: 4px 0 0; }
   .legend li { display: flex; align-items: center; gap: 6px; }
@@ -276,6 +280,14 @@ function finite(value) {
 }
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+// Two label heights moved apart around their midpoint until they are at least
+// `gap` apart and inside `range`. A missing second label leaves the first alone.
+function apart(first, second, gap, [top, bottom]) {
+  if (second == null || Math.abs(first - second) >= gap) return [first, second];
+  const middle = clamp((first + second) / 2, top + gap / 2, bottom - gap / 2);
+  const half = first <= second ? -gap / 2 : gap / 2;
+  return [middle + half, middle - half];
+}
 
 function fmt(hass, value, digits = 0) {
   if (value == null) return "—";
@@ -304,7 +316,7 @@ function duration(hass, hours) {
   if (minutes < 60) return `${minutes}\u00a0min`;
   if (minutes >= 48 * 60) return `${fmt(hass, minutes / 1440, 0)} ${copyFor(hass).daysWord}`;
   const rest = minutes % 60;
-  return rest ? `${Math.floor(minutes / 60)}\u00a0h ${rest}\u00a0min` : `${minutes / 60}\u00a0h`;
+  return rest ? `${Math.floor(minutes / 60)}\u00a0h\u00a0${rest}\u00a0min` : `${minutes / 60}\u00a0h`;
 }
 
 function toDate(value) {
@@ -474,9 +486,11 @@ function headlineHtml(hass, model, text) {
   const band = `<span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(text.band[model.band])}</span>`;
   if (model.usable == null) return `<p class="lead">${band}${esc(text.headlineWait)}</p>`;
   const usable = `<strong class="num">${esc(kwh(hass, model.usable))}</strong>`;
-  const sentence = model.rated == null || model.health == null
-    ? esc(text.headlineNoRating("§")).replace("§", usable)
-    : esc(text.headline("§", pct(hass, model.health), kwh(hass, model.rated))).replace("§", usable);
+  // A reading just over the rating is estimate noise, so it is not shown as 101%.
+  const words = model.rated == null || model.health == null ? text.headlineNoRating("§")
+    : Math.round(model.health) >= 100 ? text.headlineFull("§", kwh(hass, model.rated))
+      : text.headline("§", pct(hass, model.health), kwh(hass, model.rated));
+  const sentence = esc(words).replace("§", usable);
   return `<p class="lead">${band}${sentence}</p>`;
 }
 
@@ -552,7 +566,9 @@ function insightsHtml(hass, model, text) {
   return rows.length ? `<ul class="insights num">${rows.join("")}</ul>` : "";
 }
 
-function capacityChart(hass, model, text) {
+// Drawn at the card's own width in CSS pixels, so the labels keep their size on
+// a phone and on a wide screen instead of scaling with the card.
+function capacityChart(hass, model, text, width = 360) {
   const weeks = model.history
     .filter((point) => finite(point.usable_wh) != null && finite(point.week_start) != null)
     .map((point) => ({ t: point.week_start, wh: point.usable_wh }));
@@ -564,23 +580,26 @@ function capacityChart(hass, model, text) {
   const times = [...weeks, ...runs].map((item) => item.t);
   const t0 = Math.min(...times);
   const t1 = Math.max(...times);
-  const [W, H, L, R, T, B] = [360, 150, 40, 76, 10, 20];
+  const W = clamp(width - 32, 260, 760);
+  const [H, L, R, T, B] = [Math.round(clamp(W * 0.4, 150, 220)), 40, 76, 10, 22];
   const x = (t) => L + (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0)) * (W - L - R);
   const y = (wh) => T + ((high - wh) / (high - low || 1)) * (H - T - B);
-  // A full-width horizontal rule at a value, with a label beside it.
-  const rule = (cls, wh, label, labelX, anchor) => `<line class="${cls}" x1="${L}" x2="${W - R}" y1="${y(wh).toFixed(1)}" y2="${y(wh).toFixed(1)}"/>
-    <text class="${cls === "grid" ? "tick num" : "tag"}" x="${labelX}" y="${(y(wh) + 4).toFixed(1)}" text-anchor="${anchor}">${label}</text>`;
-  const ticks = [low, (low + high) / 2, high].map((wh) => rule("grid", wh, fmt(hass, wh / 1000, 2), L - 6, "end")).join("");
+  const ticks = [low, (low + high) / 2, high].map((wh) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(wh).toFixed(1)}" y2="${y(wh).toFixed(1)}"/>
+    <text class="tick num" x="${L - 6}" y="${(y(wh) + 4).toFixed(1)}" text-anchor="end">${fmt(hass, wh / 1000, 2)}</text>`).join("");
   const dates = [t0, t1].map((t, index) => `<text class="tick" x="${x(t).toFixed(1)}" y="${H - 4}" text-anchor="${index ? "end" : "start"}">${esc(day(hass, t))}</text>`).join("");
   const dots = runs.map((item) => `<circle class="run" cx="${x(item.t).toFixed(1)}" cy="${y(item.wh).toFixed(1)}" r="2.5"/>`).join("");
-  const path = weeks.map((item, index) => `${index ? "L" : "M"}${x(item.t).toFixed(1)} ${y(item.wh).toFixed(1)}`).join(" ");
   const last = weeks[weeks.length - 1];
-  const rating = model.rated == null ? "" : rule("rating", model.rated, esc(text.rating), W - R + 6, "start");
+  // The newest estimate holds until the next week's, so the line runs on to the
+  // newest run and ends beside its label, even when there is one week so far.
+  const path = [...weeks, { t: t1, wh: last.wh }].map((item, index) => `${index ? "L" : "M"}${x(item.t).toFixed(1)} ${y(item.wh).toFixed(1)}`).join(" ");
+  const [endY, ratingY] = apart(y(last.wh), model.rated == null ? null : y(model.rated), 14, [T + 4, H - B]);
+  const rating = model.rated == null ? "" : `<line class="rating" x1="${L}" x2="${W - R}" y1="${y(model.rated).toFixed(1)}" y2="${y(model.rated).toFixed(1)}"/>
+    <text class="tag" x="${W - R + 6}" y="${(ratingY + 4).toFixed(1)}">${esc(text.rating)}</text>`;
   const summary = text.capacityChart(kwh(hass, weeks[0].wh), kwh(hass, last.wh));
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(summary)}"><title>${esc(summary)}</title>
     ${ticks}${rating}${dots}<path class="line" d="${path}"/>
-    <circle class="end" cx="${x(last.t).toFixed(1)}" cy="${y(last.wh).toFixed(1)}" r="4"/>
-    <text class="tag strong num" x="${W - R + 6}" y="${(y(last.wh) + 4).toFixed(1)}">${esc(kwh(hass, last.wh))}</text>
+    <circle class="end" cx="${x(t1).toFixed(1)}" cy="${y(last.wh).toFixed(1)}" r="4"/>
+    <text class="tag strong num" x="${W - R + 6}" y="${(endY + 4).toFixed(1)}">${esc(kwh(hass, last.wh))}</text>
     ${dates}</svg>
     <ul class="legend muted" aria-hidden="true">
       <li><svg viewBox="0 0 16 8"><line class="swatch-line" x1="0" x2="16" y1="4" y2="4"/></svg>${esc(text.weekly)}</li>
@@ -620,20 +639,20 @@ function energyHtml(hass, model, text) {
   return `<div class="meters">${meters}</div>${line ? `<p class="muted">${esc(line)}</p>` : ""}`;
 }
 
-function tabsHtml(hass, model, text, selected, cardId) {
+function tabsHtml(hass, model, text, selected, cardId, width) {
   const tabs = TABS.map((name) => `<button type="button" role="tab" id="${cardId}-${name}" aria-controls="${cardId}-panel"
     aria-selected="${name === selected}" tabindex="${name === selected ? 0 : -1}" data-tab="${name}">${esc(text.tabs[name])}</button>`).join("");
-  const panel = selected === "runs" ? runsHtml(hass, model, text) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text);
+  const panel = selected === "runs" ? runsHtml(hass, model, text) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text, width);
   return `<div role="tablist" aria-label="${esc(text.tabList)}">${tabs}</div>
     <div role="tabpanel" id="${cardId}-panel" aria-labelledby="${cardId}-${selected}" tabindex="0">${panel}</div>`;
 }
 
-function healthCardHtml(hass, config, tab, cardId) {
+function healthCardHtml(hass, config, tab, cardId, width) {
   const text = copyFor(hass);
   const pack = hass ? findPack(hass, config) : null;
   if (!pack) return `<style>${STYLES}</style><ha-card><p class="muted">${esc(text.pickDevice)}</p></ha-card>`;
   const model = readModel(hass, pack);
-  const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId);
+  const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, width);
   return `<style>${STYLES}</style><ha-card>
     <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>
     ${headlineHtml(hass, model, text)}
@@ -784,9 +803,7 @@ class MarstekCard extends HTMLElement {
     this._render(true);
   }
 
-  getGridOptions() {
-    return { columns: "full", min_columns: 6, rows: "auto" };
-  }
+  getGridOptions() { return { columns: "full", min_columns: 6, rows: "auto" }; }
 
   _render(force, focusTarget) {
     if (!this._hass) return;
@@ -808,9 +825,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
     this.shadowRoot.addEventListener("keydown", (event) => this._onKey(event));
   }
 
-  static getConfigElement() {
-    return document.createElement(EDITOR);
-  }
+  static getConfigElement() { return document.createElement(EDITOR); }
 
   static getStubConfig(hass) {
     const pack = listPacks(hass)[0];
@@ -822,22 +837,27 @@ class MarstekBatteryHealthCard extends MarstekCard {
     super.setConfig(config);
   }
 
-  getCardSize() {
-    return this._config.show_tabs === false ? 5 : 8;
-  }
+  getCardSize() { return this._config.show_tabs === false ? 5 : 8; }
 
   _packs() {
     const pack = findPack(this._hass, this._config);
     return pack ? [pack] : [];
   }
 
-  _view() {
-    return [this._tab, this._config];
+  _view() { return [this._tab, this._config, this._width]; }
+
+  _html() { return healthCardHtml(this._hass, this._config, this._tab, this._id, this._width); }
+
+  // Redraw when the width moves to another 40 px step, so the chart fits it.
+  connectedCallback() {
+    this._resize ||= new ResizeObserver(([entry]) => {
+      this._width = Math.round(entry.contentRect.width / 40) * 40 || undefined;
+      this._render(false);
+    });
+    this._resize.observe(this);
   }
 
-  _html() {
-    return healthCardHtml(this._hass, this._config, this._tab, this._id);
-  }
+  disconnectedCallback() { this._resize?.disconnect(); }
 
   _select(tab) {
     this._tab = tab;
@@ -874,25 +894,15 @@ class MarstekBatteryFleetCard extends MarstekCard {
     });
   }
 
-  static getStubConfig() {
-    return {};
-  }
+  static getStubConfig() { return {}; }
 
-  getCardSize() {
-    return 4;
-  }
+  getCardSize() { return 4; }
 
-  _packs() {
-    return listPacks(this._hass);
-  }
+  _packs() { return listPacks(this._hass); }
 
-  _view() {
-    return "fleet";
-  }
+  _view() { return "fleet"; }
 
-  _html() {
-    return fleetCardHtml(this._hass);
-  }
+  _html() { return fleetCardHtml(this._hass); }
 }
 
 class MarstekBatteryHealthCardEditor extends HTMLElement {
