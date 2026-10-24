@@ -16,148 +16,9 @@ const WORN_HEALTH = 80;
 const MIN_TREND_DAYS = 28;
 const DAY_S = 86400;
 
-const COPY = {
-  en: {
-    dashboardTitle: "Battery health",
-    fleetTitle: "Your batteries",
-    fleetEmpty: "No Marstek battery with a usable-capacity sensor is set up yet.",
-    pickDevice: "Choose a Marstek battery in the card editor.",
-    band: { good: "Healthy", fading: "Fading", worn: "Worn", measuring: "Measuring" },
-    flow: { charge: "Charging", discharge: "Discharging", idle: "Idle" },
-    headline: (usable, pct, rated) => `Holds ${usable}, ${pct} of its ${rated} rating.`,
-    headlineFull: (usable, rated) => `Holds ${usable}, at least its full ${rated} rating.`,
-    headlineNoRating: (usable) => `Holds ${usable} from 0 to 100%.`,
-    headlineWait: "Still measuring. A first estimate needs three runs that each move the state of charge 20 points in one direction.",
-    stored: (energy) => `${energy} stored now`,
-    usableEmpty: (energy) => `${energy} room left`,
-    faded: (energy) => `${energy} faded`,
-    barLabel: (stored, usable, rated) => `${stored} stored of ${usable} usable; rated ${rated}`,
-    agree: (count, since, spread) =>
-      spread ? `Based on ${count} ${count === 1 ? "run" : "runs"} since ${since}. They agree within ±${spread}.` : `Based on ${count} ${count === 1 ? "run" : "runs"} since ${since}.`,
-    trend: (delta, points, rate) => `${delta} (${points}) since the first weekly estimate, about ${rate} a month.`,
-    steady: (span) => `Steady over the last ${span}: no change beyond the spread of the runs.`,
-    rte: (pct, back) => `Round trip ${pct}: of every 10 kWh charged, about ${back} comes back.`,
-    lasts: (power, stored, time) => `At ${power}, the ${stored} in the pack lasts about ${time}.`,
-    fills: (power, time) => `At ${power}, it reaches 100% in about ${time}.`,
-    measuring: (direction, done, target) => `Measuring a ${direction} run: ${done} of ${target} points so far.`,
-    runWord: { charge: "charge", discharge: "discharge" },
-    tabs: { capacity: "Capacity", runs: "Runs", energy: "Energy" },
-    tabList: "Battery details",
-    capacityChart: (first, last) => `Usable capacity by week, from ${first} to ${last}.`,
-    rating: "Rating",
-    weekly: "Weekly estimate",
-    runDots: "Single runs",
-    noWeeks: "Weekly estimates appear after the first published value.",
-    noRuns: "Runs appear after the state of charge moves 20 points in one direction.",
-    medians: (discharge, charge) => `Discharge runs ${discharge} · charge runs ${charge}`,
-    runRow: (direction, from, to) => `${direction === "charge" ? "Charge" : "Discharge"} ${from} to ${to}`,
-    vsMedian: "vs median",
-    solar: (pct) => `${pct} solar`,
-    charged: "Charged from AC",
-    dischargedAc: "Delivered to AC",
-    solarIn: "Solar",
-    homeLoad: "Home load",
-    cycles: (value) => `About ${value} full cycles on the AC side.`,
-    cyclesNone: "Less than one full cycle so far.",
-    notReported: "Not reported",
-    source: (confidence) => `Estimated from local readings · ${confidence} confidence`,
-    confidence: { collecting: "collecting", low: "low", medium: "medium", high: "high" },
-    device: "Device",
-    fleetUsable: "usable",
-    fleetStored: (pct) => `stored now (${pct})`,
-    fleetPower: "battery power",
-    fleetShare: (name, pct) => `${name} holds ${pct} of your usable capacity.`,
-    fleetWeakest: (name, pct) => `${name} has faded most, at ${pct} health.`,
-    fleetRte: (name, points) => `${name} returns ${points} less of each charge than your best battery.`,
-    fleetSoc: (points, low, high) => `State of charge differs by ${points}: ${low} is lowest, ${high} highest.`,
-    fleetScale: "Bars share one kWh scale, so longer means larger.",
-    health: (pct) => `${pct} health`,
-    rteShort: (pct) => `RTE ${pct}`,
-    editorDevice: "Marstek battery",
-    editorTitle: "Title",
-    editorTab: "Tab shown first",
-    editorTabs: "Show the detail tabs",
-    pointsWord: "points",
-    daysWord: "days",
-    invalidConfig: "Invalid configuration",
-    cardName: "Marstek battery health",
-    cardDescription: "Usable capacity against the rating, plain-language insights, and the measured runs behind them.",
-    fleetName: "Marstek battery fleet",
-    fleetDescription: "Every Marstek battery on one kWh scale, with what sets them apart.",
-    strategyName: "Marstek battery health",
-    strategyDescription: "A fleet summary and one health card per Marstek battery.",
-  },
-  nl: {
-    dashboardTitle: "Batterijgezondheid",
-    fleetTitle: "Je batterijen",
-    fleetEmpty: "Nog geen Marstek-batterij met een sensor voor bruikbare capaciteit.",
-    pickDevice: "Kies een Marstek-batterij in de kaarteditor.",
-    band: { good: "Gezond", fading: "Slijtend", worn: "Versleten", measuring: "Meten" },
-    flow: { charge: "Laden", discharge: "Ontladen", idle: "Rust" },
-    headline: (usable, pct, rated) => `Houdt ${usable} vast, ${pct} van de opgegeven ${rated}.`,
-    headlineFull: (usable, rated) => `Houdt ${usable} vast, minstens de volle opgegeven ${rated}.`,
-    headlineNoRating: (usable) => `Houdt ${usable} vast van 0 tot 100%.`,
-    headlineWait: "Nog aan het meten. Een eerste schatting vraagt drie ritten die de laadtoestand elk 20 procentpunten in één richting verplaatsen.",
-    stored: (energy) => `${energy} nu opgeslagen`,
-    usableEmpty: (energy) => `${energy} ruimte over`,
-    faded: (energy) => `${energy} verloren`,
-    barLabel: (stored, usable, rated) => `${stored} opgeslagen van ${usable} bruikbaar; opgegeven ${rated}`,
-    agree: (count, since, spread) =>
-      spread ? `Op basis van ${count} ${count === 1 ? "rit" : "ritten"} sinds ${since}. Ze liggen binnen ±${spread}.` : `Op basis van ${count} ${count === 1 ? "rit" : "ritten"} sinds ${since}.`,
-    trend: (delta, points, rate) => `${delta} (${points}) sinds de eerste weekschatting, ongeveer ${rate} per maand.`,
-    steady: (span) => `Stabiel over de laatste ${span}: geen verschil buiten de spreiding van de ritten.`,
-    rte: (pct, back) => `Rendement ${pct}: van elke 10 kWh laden komt ongeveer ${back} terug.`,
-    lasts: (power, stored, time) => `Bij ${power} gaat de ${stored} in de batterij nog ongeveer ${time} mee.`,
-    fills: (power, time) => `Bij ${power} is hij over ongeveer ${time} vol.`,
-    measuring: (direction, done, target) => `Meet een ${direction}rit: ${done} van ${target} punten tot nu toe.`,
-    runWord: { charge: "laad", discharge: "ontlaad" },
-    tabs: { capacity: "Capaciteit", runs: "Ritten", energy: "Energie" },
-    tabList: "Batterijdetails",
-    capacityChart: (first, last) => `Bruikbare capaciteit per week, van ${first} naar ${last}.`,
-    rating: "Opgegeven",
-    weekly: "Weekschatting",
-    runDots: "Losse ritten",
-    noWeeks: "Weekschattingen verschijnen na de eerste gepubliceerde waarde.",
-    noRuns: "Ritten verschijnen zodra de laadtoestand 20 punten in één richting beweegt.",
-    medians: (discharge, charge) => `Ontlaadritten ${discharge} · laadritten ${charge}`,
-    runRow: (direction, from, to) => `${direction === "charge" ? "Laden" : "Ontladen"} ${from} naar ${to}`,
-    vsMedian: "t.o.v. mediaan",
-    solar: (pct) => `${pct} zon`,
-    charged: "Geladen via AC",
-    dischargedAc: "Geleverd aan AC",
-    solarIn: "Zon",
-    homeLoad: "Huisverbruik",
-    cycles: (value) => `Ongeveer ${value} volle cycli aan de AC-kant.`,
-    cyclesNone: "Nog minder dan één volle cyclus.",
-    notReported: "Niet gemeld",
-    source: (confidence) => `Geschat uit lokale metingen · betrouwbaarheid ${confidence}`,
-    confidence: { collecting: "verzamelen", low: "laag", medium: "gemiddeld", high: "hoog" },
-    device: "Apparaat",
-    fleetUsable: "bruikbaar",
-    fleetStored: (pct) => `nu opgeslagen (${pct})`,
-    fleetPower: "batterijvermogen",
-    fleetShare: (name, pct) => `${name} levert ${pct} van je bruikbare capaciteit.`,
-    fleetWeakest: (name, pct) => `${name} is het meest gesleten, met ${pct} gezondheid.`,
-    fleetRte: (name, points) => `${name} geeft ${points} minder van elke lading terug dan je beste batterij.`,
-    fleetSoc: (points, low, high) => `De laadtoestand verschilt ${points}: ${low} is het laagst, ${high} het hoogst.`,
-    fleetScale: "De balken delen één kWh-schaal: langer is groter.",
-    health: (pct) => `${pct} gezondheid`,
-    rteShort: (pct) => `Rendement ${pct}`,
-    editorDevice: "Marstek-batterij",
-    editorTitle: "Titel",
-    editorTab: "Eerste tabblad",
-    editorTabs: "Detailtabbladen tonen",
-    pointsWord: "punten",
-    daysWord: "dagen",
-    invalidConfig: "Ongeldige configuratie",
-    cardName: "Marstek-batterijgezondheid",
-    cardDescription: "Bruikbare capaciteit tegenover de opgave, inzichten in gewone taal, en de gemeten ritten erachter.",
-    fleetName: "Marstek-batterijvloot",
-    fleetDescription: "Elke Marstek-batterij op één kWh-schaal, met wat ze onderscheidt.",
-    strategyName: "Marstek-batterijgezondheid",
-    strategyDescription: "Een vlootoverzicht en een gezondheidskaart per Marstek-batterij.",
-  },
-};
+// Same ?v= token as this module, so a cached copy of the text never
+// outlives an update. The backend hashes both files into that token.
+const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
 
 const STYLES = `
   :host { display: block; }
@@ -220,15 +81,21 @@ const STYLES = `
   .swatch-run { fill: color-mix(in srgb, var(--primary-color) 40%, transparent); }
   .swatch-rating { stroke: var(--secondary-text-color); stroke-dasharray: 4 4; }
   .runs { list-style: none; margin: 0; padding: 0; }
-  .runs li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 64px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: 13px; }
+  .runs li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 72px; gap: 12px; align-items: center; min-height: 44px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: 14px; line-height: 20px; }
   .runs li:last-child { border-bottom: 0; }
   .runs ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
   .runs .what { min-width: 0; }
-  .runs .what span { display: block; font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dev { position: relative; height: 16px; }
-  .dev::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--secondary-text-color); }
-  .dev i { position: absolute; top: 5px; height: 6px; border-radius: 3px; background: var(--primary-color); }
-  .dev b { position: absolute; inset: auto 0 -12px; font-size: 10px; font-weight: 400; text-align: center; color: var(--secondary-text-color); }
+  .runs .what span { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dev { display: flex; flex-direction: column; gap: 4px; }
+  .dev span { position: relative; height: 6px; border-radius: 3px; background: var(--divider-color); }
+  .dev span::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--secondary-text-color); }
+  .dev i { position: absolute; top: 0; height: 6px; border-radius: 3px; background: var(--primary-color); }
+  .dev b { font-size: 12px; line-height: 14px; font-weight: 400; text-align: center; color: var(--secondary-text-color); }
+  .seg, .pager { display: flex; align-items: center; gap: 8px; }
+  .seg button, .pager button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 12px; border-radius: 18px; font-size: 14px; border: 1px solid var(--divider-color); }
+  .seg button[aria-pressed="true"] { color: var(--primary-color); border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 12%, transparent); }
+  .pager { justify-content: space-between; } .pager [aria-disabled="true"] { opacity: 0.4; cursor: default; }
+  .pager ha-icon { --mdc-icon-size: 18px; }
   .meters { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 9fr) auto; gap: 10px; align-items: center; font-size: 13px; }
   .meter { display: contents; }
   .meter .num { text-align: end; }
@@ -608,24 +475,49 @@ function capacityChart(hass, model, text, width = 360) {
     </ul>`;
 }
 
-function runsHtml(hass, model, text) {
+const RUNS_PER_PAGE = 8;
+
+// Rounded first, so a run 0.04 % under the median reads 0,0 % and not −0,0 %.
+function signedPct(hass, value) {
+  const rounded = Math.round(value * 10) / 10 || 0;
+  return `${rounded > 0 ? "+" : rounded < 0 ? "\u2212" : ""}${fmt(hass, Math.abs(rounded), 1)}%`;
+}
+
+function runRowHtml(hass, item, base, text) {
+  const wh = finite(item.capacity_wh);
+  const off = base && wh != null ? ((wh - base) / base) * 100 : null;
+  const reach = off == null ? 0 : clamp(Math.abs(off) / 3, 0, 1) * 50;
+  const dev = off == null ? "<span></span>" : `<span class="dev" role="img" aria-label="${esc(`${signedPct(hass, off)} ${text.vsMedian}`)}"
+    ><span><i style="left:${off < 0 ? 50 - reach : 50}%;width:${reach.toFixed(1)}%"></i></span><b class="num" aria-hidden="true">${signedPct(hass, off)}</b></span>`;
+  // Runs saved by older versions keep only the size of the move, not its ends.
+  const [from, to] = [finite(item.start_soc), finite(item.end_soc)];
+  const what = from != null && to != null ? text.runRow(item.direction, pct(hass, from), pct(hass, to))
+    : text.runSpan(item.direction, `${fmt(hass, finite(item.soc_delta) ?? 0)} ${text.pointsWord}`);
+  const solar = finite(item.pv_share);
+  const detail = [day(hass, item.closed_at, true), solar ? text.solar(pct(hass, solar * 100)) : ""].filter(Boolean).join(" · ");
+  return `<li><ha-icon icon="${item.direction === "charge" ? "mdi:arrow-up" : "mdi:arrow-down"}"></ha-icon>
+    <span class="what">${esc(what)}<span class="num">${esc(detail)}</span></span>
+    <strong class="num">${esc(kwh(hass, wh))}</strong>${dev}</li>`;
+}
+
+// Newest first, by direction, a page at a time. data-action lets a redraw
+// put focus back on the button that was pressed.
+function runsHtml(hass, model, text, { filter, page }) {
   if (!model.windows.length) return `<p class="muted">${esc(text.noRuns)}</p>`;
   const median = (direction) => finite(model.attrs[`${direction}_median_wh`]);
-  const rows = [...model.windows].reverse().slice(0, 12).map((item) => {
-    const base = median(item.direction);
-    const wh = finite(item.capacity_wh);
-    const off = base && wh != null ? ((wh - base) / base) * 100 : null;
-    const reach = off == null ? 0 : clamp(Math.abs(off) / 3, 0, 1) * 50;
-    const shown = `${off > 0 ? "+" : ""}${fmt(hass, off, 1)}%`;
-    const dev = off == null ? "" : `<span class="dev" role="img" aria-label="${esc(`${fmt(hass, off, 1)}% ${text.vsMedian}`)}"
-      ><i style="left:${off < 0 ? 50 - reach : 50}%;width:${reach.toFixed(1)}%"></i><b class="num">${shown}</b></span>`;
-    const solar = finite(item.pv_share);
-    const detail = [day(hass, item.closed_at, true), solar ? text.solar(pct(hass, solar * 100)) : ""].filter(Boolean).join(" · ");
-    return `<li><ha-icon icon="${item.direction === "charge" ? "mdi:arrow-up" : "mdi:arrow-down"}"></ha-icon>
-      <span class="what">${esc(text.runRow(item.direction, pct(hass, finite(item.start_soc)), pct(hass, finite(item.end_soc))))}<span class="num">${esc(detail)}</span></span>
-      <strong class="num">${esc(kwh(hass, wh))}</strong>${dev}</li>`;
-  });
-  return `<p class="muted num">${esc(text.medians(kwh(hass, median("discharge")), kwh(hass, median("charge"))))}</p><ul class="runs">${rows.join("")}</ul>`;
+  const both = new Set(model.windows.map((item) => item.direction)).size > 1;
+  const runs = [...model.windows].reverse().filter((item) => !both || filter === "all" || item.direction === filter);
+  const pages = Math.ceil(runs.length / RUNS_PER_PAGE);
+  const first = clamp(page, 0, pages - 1) * RUNS_PER_PAGE;
+  const rows = runs.slice(first, first + RUNS_PER_PAGE).map((item) => runRowHtml(hass, item, median(item.direction), text));
+  const seg = !both ? "" : `<div class="seg" role="group" aria-label="${esc(text.tabs.runs)}">${Object.entries(text.runFilter).map(([name, label]) =>
+    `<button type="button" data-action="runs-${name}" aria-pressed="${name === filter}">${esc(label)}</button>`).join("")}</div>`;
+  // The redraw focuses a new button, so readers announce its name and the range.
+  const step = (action, icon, label, off) => `<button type="button" data-action="${action}" aria-disabled="${off}"
+    aria-describedby="runs-range"><ha-icon icon="${icon}"></ha-icon>${esc(label)}</button>`;
+  const pager = pages < 2 ? "" : `<nav class="pager" aria-label="${esc(text.runPages.label)}" data-page="${first / RUNS_PER_PAGE}">${step("page-prev", "mdi:chevron-left", text.runPages.prev, first === 0)}
+    <span class="muted num" id="runs-range">${esc(text.range(first + 1, first + rows.length, runs.length))}</span>${step("page-next", "mdi:chevron-right", text.runPages.next, first + RUNS_PER_PAGE >= runs.length)}</nav>`;
+  return `<p class="muted num">${esc(text.medians(kwh(hass, median("discharge")), kwh(hass, median("charge"))))}</p>${seg}<ul class="runs">${rows.join("")}</ul>${pager}`;
 }
 
 function energyHtml(hass, model, text) {
@@ -639,20 +531,20 @@ function energyHtml(hass, model, text) {
   return `<div class="meters">${meters}</div>${line ? `<p class="muted">${esc(line)}</p>` : ""}`;
 }
 
-function tabsHtml(hass, model, text, selected, cardId, width) {
+function tabsHtml(hass, model, text, selected, cardId, width, runs) {
   const tabs = TABS.map((name) => `<button type="button" role="tab" id="${cardId}-${name}" aria-controls="${cardId}-panel"
     aria-selected="${name === selected}" tabindex="${name === selected ? 0 : -1}" data-tab="${name}">${esc(text.tabs[name])}</button>`).join("");
-  const panel = selected === "runs" ? runsHtml(hass, model, text) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text, width);
+  const panel = selected === "runs" ? runsHtml(hass, model, text, runs) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text, width);
   return `<div role="tablist" aria-label="${esc(text.tabList)}">${tabs}</div>
     <div role="tabpanel" id="${cardId}-panel" aria-labelledby="${cardId}-${selected}" tabindex="0">${panel}</div>`;
 }
 
-function healthCardHtml(hass, config, tab, cardId, width) {
+function healthCardHtml(hass, config, tab, cardId, width, runs) {
   const text = copyFor(hass);
   const pack = hass ? findPack(hass, config) : null;
   if (!pack) return `<style>${STYLES}</style><ha-card><p class="muted">${esc(text.pickDevice)}</p></ha-card>`;
   const model = readModel(hass, pack);
-  const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, width);
+  const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, width, runs);
   return `<style>${STYLES}</style><ha-card>
     <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>
     ${headlineHtml(hass, model, text)}
@@ -820,6 +712,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
   constructor() {
     super();
     this._tab = TABS[0];
+    this._runs = { filter: "all", page: 0 };
     this._id = `mbh${(cardCount += 1)}`;
     this.shadowRoot.addEventListener("click", (event) => this._onClick(event));
     this.shadowRoot.addEventListener("keydown", (event) => this._onKey(event));
@@ -844,9 +737,9 @@ class MarstekBatteryHealthCard extends MarstekCard {
     return pack ? [pack] : [];
   }
 
-  _view() { return [this._tab, this._config, this._width]; }
+  _view() { return [this._tab, this._config, this._width, this._runs]; }
 
-  _html() { return healthCardHtml(this._hass, this._config, this._tab, this._id, this._width); }
+  _html() { return healthCardHtml(this._hass, this._config, this._tab, this._id, this._width, this._runs); }
 
   // Redraw when the width moves to another 40 px step, so the chart fits it.
   connectedCallback() {
@@ -870,9 +763,15 @@ class MarstekBatteryHealthCard extends MarstekCard {
       this._select(tab.dataset.tab);
       return;
     }
-    if (event.target.closest("[data-action='device']")) {
-      openDevice(this, findPack(this._hass, this._config)?.deviceId);
-    }
+    const action = event.target.closest("[data-action]");
+    if (action?.getAttribute("aria-disabled") === "true") return;
+    const name = action?.dataset.action;
+    if (name === "device") openDevice(this, findPack(this._hass, this._config)?.deviceId);
+    if (!/^(runs|page)-/.test(name)) return;
+    // Step from the page on screen; the stored one can be past the end once runs drop out.
+    const page = name.startsWith("runs-") ? 0 : Number(action.closest("[data-page]").dataset.page) + (name === "page-next" ? 1 : -1);
+    this._runs = { filter: name.startsWith("runs-") ? name.slice(5) : this._runs.filter, page };
+    this._render(true, `[data-action="${name}"]`);
   }
 
   _onKey(event) {

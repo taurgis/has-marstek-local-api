@@ -68,6 +68,15 @@ def _version_token(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()[:12]
 
 
+def _read_modules(module: Path) -> bytes:
+    """Return every module in the folder, so the token covers their imports too.
+
+    The card module passes its own token on to the modules it imports, and
+    the static route caches them, so a change to any of them must change it.
+    """
+    return b"".join(path.read_bytes() for path in sorted(module.parent.glob("*.js")))
+
+
 async def async_register_capacity_frontend(hass: HomeAssistant) -> None:
     """Serve the card module and load it in the frontend, once per process."""
     if hass.data.get(_FRONTEND_URL):
@@ -85,7 +94,7 @@ async def async_register_capacity_frontend(hass: HomeAssistant) -> None:
     if not module.is_file():
         _LOGGER.warning("Marstek battery health module is missing at %s", module)
         return
-    payload = await hass.async_add_executor_job(module.read_bytes)
+    payload = await hass.async_add_executor_job(_read_modules, module)
     directory = str(module.parent)
     await http.async_register_static_paths([StaticPathConfig(_STATIC_PREFIX, directory, True)])
     url = f"{_STATIC_PREFIX}/{_MODULE_NAME}?v={_version_token(payload)}"
