@@ -198,26 +198,48 @@ The storage version is unchanged.
   them; the arithmetic still runs on data the coordinator already fetched,
   which is a few numbers per poll and no UDP.
 
-## Lovelace card
+## Lovelace cards
 
-The integration serves `marstek-capacity-card` itself. After upgrading, reload
-the frontend (or restart Home Assistant) and use **Add card → Marstek
-capacity**. No Lovelace resource is required. The card reads the usable
-capacity entity and the live power sensors already on the device: state of
-health, the two medians, round-trip efficiency, stored windows, battery and
-grid power, PV channels when the device has them, and the open window
-(start and current state of charge, accumulated watt-hours, average watts,
-PV share, and progress toward 20 points).
+The integration serves its own frontend module, `marstek-battery-health.js`,
+so no Lovelace resource is needed. After upgrading, reload the browser (or
+restart Home Assistant), then pick a card under **Add card**. The cards call
+an accepted window a *run*: one stretch of charging or discharging that moved
+the state of charge far enough to count. The *rating* is the nameplate the
+device reports (`bat_cap`).
 
-The card is a compact dossier: a one-line title and health pill, a status
-line, horizontal section pills, three tiles (nominal, usable, the two
-medians), and a horizontal state-of-health bar with a 75% warranty tick and
-the cycle-spec tick. Live power sits in a single row of chips. Trend,
-windows, and lifetime open from those pills. The visual editor can hide the
-live flow, the active window, or the pills, pick the default section, set a
-title, and switch to a compact layout. Existing cards that set `compact`
-keep that layout. The module registers its elements after `<home-assistant>`
-exists, so a cold open of the sidebar dashboard can see the strategy.
+- **Marstek battery health** (`custom:marstek-battery-health-card`) shows one
+  battery. A sentence states what the pack holds against its rating, with a
+  band: Healthy (90% or more), Fading (80% to 90%), Worn (below 80%), or
+  Measuring while there is no estimate or no state of health yet. The band
+  uses the same rounded percentage the card shows. The bands describe fade only; the
+  Open API reports no warranty terms. A battery-shaped bar splits the rating
+  into energy stored now, room left, and the faded part. Below it, short
+  insights say how many runs back the number and how closely they agree,
+  whether capacity moved more than that spread since the first weekly
+  estimate (once 28 days of estimates exist), what the round trip means per
+  10 kWh charged, how long the stored energy lasts (or how long until full)
+  at the current power when it is 50 W or more, and how far an open run has
+  got. Three tabs hold the detail: **Capacity** (weekly estimates
+  with each run as a dot and the rating as a dashed line), **Runs** (the 12
+  most recent runs, each with its deviation from the median for its
+  direction), and **Energy**
+  (lifetime AC in and out, solar, home load, and equivalent full cycles).
+- **Marstek battery fleet** (`custom:marstek-battery-fleet-card`) compares
+  every battery. It totals usable capacity, stored energy, and battery
+  power, and draws each pack on one kWh scale, so a longer bar is a larger
+  battery. It points out the battery with the largest share, the most
+  faded one once it has left the Healthy band, a round-trip gap between packs, and a state-of-charge gap
+  of 10 points or more. Selecting a row opens that battery's more-info
+  dialog.
+
+The health card's visual editor sets the device, a title, whether the tabs
+show, and which tab opens first. The card picker lists both cards by their
+English names in every language; the card text follows your language.
+
+The cards read the `windows`, `history`, and `active_window` attributes of
+the usable capacity sensor. The recorder skips those three attributes: they
+change with every run, together they can approach the recorder's 16 KB
+attribute limit, and the cards only need their current value.
 
 Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
 `history`: one point per ISO week (156 weeks kept). Each point stores the
@@ -225,12 +247,11 @@ week, month, usable watt-hours, both medians, implied round-trip efficiency,
 equivalent cycles, and the lifetime grid, PV, and load watt-hours known at
 that time. A store written before `history` existed still loads.
 
-**Marstek capacity overview** is the multi-battery header: combined battery
-power, average state of health, and each pack's live state of charge, power,
-and mode. Options → **Capacity dashboard** / **Capaciteitsdashboard** adds a
-sidebar dashboard (`marstek-capacity`, strategy `custom:marstek-capacity`)
-titled **Battery Capacity** or **Batterijcapaciteit**. The dashboard places
-that header above one full card per battery. It is off until you enable it.
+Options → **Battery health dashboard** / **Dashboard batterijgezondheid**
+adds a sidebar dashboard (`marstek-battery-health`, strategy
+`custom:marstek-battery-health`) titled **Battery health** or
+**Batterijgezondheid**. It places the fleet card across the full width and
+one health card per battery below it. It is off until you enable it.
 Turning it off hides the sidebar entry and leaves the dashboard in place.
 
 The mock can run a faded pack with `--capacity-wh` (physics) while `bat_cap`

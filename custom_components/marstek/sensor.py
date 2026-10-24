@@ -61,6 +61,10 @@ class MarstekSensor(MarstekEntity, RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
     entity_description: MarstekSensorEntityDescription
+    # The usable-capacity sensor exposes lists for the Lovelace card. They
+    # change every run and can near the recorder's 16 KB attribute limit, so
+    # keep them out of history; the card reads the live state.
+    _unrecorded_attributes = frozenset({"windows", "history", "active_window"})
 
     def __init__(
         self,

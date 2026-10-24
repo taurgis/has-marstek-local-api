@@ -127,13 +127,13 @@
             }
           },
           "dashboard_settings": {
-            "name": "Capacity dashboard",
-            "description": "Optional sidebar page for state of health. The card is always available from Add card, even when this is off.",
+            "name": "Battery health dashboard",
+            "description": "Optional sidebar page for state of health. The cards are always available from Add card, even when this is off.",
             "data": {
-              "show_capacity_dashboard": "Show Battery Capacity in the sidebar"
+              "show_capacity_dashboard": "Show Battery health in the sidebar"
             },
             "data_description": {
-              "show_capacity_dashboard": "Adds a Battery Capacity dashboard that compares every Marstek battery. Off by default. Turn it off again to hide the sidebar entry without deleting the dashboard."
+              "show_capacity_dashboard": "Adds a Battery health dashboard that compares every Marstek battery. Off by default. Turn it off again to hide the sidebar entry without deleting the dashboard."
             }
           }
         }

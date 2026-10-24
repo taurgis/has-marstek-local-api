@@ -1,4 +1,4 @@
-"""Capacity card registration and the optional sidebar dashboard."""
+"""Battery health module registration and the sidebar dashboard."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ class _Collection:
         """Create a dashboard and attach the store, as Lovelace's listener does."""
         if self.fail:
             raise RuntimeError("lovelace unavailable")
-        item = {"id": "marstek-capacity", **data}
+        item = {"id": "marstek-battery-health", **data}
         self.items[item["id"]] = item
         self.hass.data[LOVELACE_DATA].dashboards[data["url_path"]] = self.store
         return item
@@ -130,7 +130,7 @@ async def test_register_loads_the_module_once(hass: HomeAssistant) -> None:
     urls = hass.data[DATA_EXTRA_MODULE_URL].urls
     assert len(urls) == 1
     url = next(iter(urls))
-    assert url.startswith("/marstek/capacity/marstek-capacity-card.js?v=")
+    assert url.startswith("/marstek/capacity/marstek-battery-health.js?v=")
     assert len(url.rsplit("v=", 1)[1]) == 12
 
 
@@ -161,11 +161,11 @@ async def test_dashboard_is_created_for_a_dutch_install(hass: HomeAssistant) -> 
     await async_sync_capacity_dashboard(hass)
 
     item = collection.async_items()[0]
-    assert item["url_path"] == "marstek-capacity"
-    assert item["title"] == "Batterijcapaciteit"
+    assert item["url_path"] == "marstek-battery-health"
+    assert item["title"] == "Batterijgezondheid"
     assert item["show_in_sidebar"] is True
     assert item["icon"] == "mdi:battery-heart-variant"
-    assert store.saved == {"strategy": {"type": "custom:marstek-capacity"}}
+    assert store.saved == {"strategy": {"type": "custom:marstek-battery-health"}}
 
     store.saved = None
     await async_sync_capacity_dashboard(hass)
@@ -177,30 +177,30 @@ async def test_dashboard_hides_without_deleting_a_custom_strategy(hass: HomeAssi
     """Turning the option off keeps the dashboard and only removes the sidebar."""
     hass.config.language = "en"
     entry = _entry(hass, show=False)
-    store = _Store({"strategy": {"type": "custom:marstek-capacity"}, "views": []})
+    store = _Store({"strategy": {"type": "custom:marstek-battery-health"}, "views": []})
     collection = _Collection(hass, store)
-    collection.items["marstek-capacity"] = {
-        "id": "marstek-capacity",
-        "url_path": "marstek-capacity",
-        "title": "Battery Capacity",
+    collection.items["marstek-battery-health"] = {
+        "id": "marstek-battery-health",
+        "url_path": "marstek-battery-health",
+        "title": "Battery health",
         "show_in_sidebar": True,
     }
     _install_lovelace(hass, collection)
-    hass.data[LOVELACE_DATA].dashboards["marstek-capacity"] = store
+    hass.data[LOVELACE_DATA].dashboards["marstek-battery-health"] = store
 
     await async_sync_capacity_dashboard(hass)
 
-    assert collection.items["marstek-capacity"]["show_in_sidebar"] is False
+    assert collection.items["marstek-battery-health"]["show_in_sidebar"] is False
     assert store.saved is None
 
     hass.config_entries.async_update_entry(entry, options={"show_capacity_dashboard": True})
     await async_sync_capacity_dashboard(hass)
-    assert collection.items["marstek-capacity"]["show_in_sidebar"] is True
+    assert collection.items["marstek-battery-health"]["show_in_sidebar"] is True
 
     collection.items.clear()
     hass.config.language = "en"
     await async_sync_capacity_dashboard(hass)
-    assert collection.async_items()[0]["title"] == "Battery Capacity"
+    assert collection.async_items()[0]["title"] == "Battery health"
 
 
 async def test_dashboard_ignores_a_missing_collection_and_a_create_failure(

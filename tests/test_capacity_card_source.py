@@ -1,45 +1,60 @@
-"""The capacity card source keeps the reference layout and the HA registry."""
+"""The battery-health module source keeps the HA registry and naming contracts."""
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
-_CARD = (
+from custom_components.marstek.helpers import capacity_frontend
+
+_MODULE = (
     Path(__file__).resolve().parents[1]
     / "custom_components"
     / "marstek"
     / "frontend"
-    / "marstek-capacity-card.js"
+    / "marstek-battery-health.js"
 )
 
 
 def _source() -> str:
-    return _CARD.read_text(encoding="utf-8")
+    return _MODULE.read_text(encoding="utf-8")
 
 
-def test_capacity_card_drops_the_semicircle_gauge() -> None:
-    """The hero is tiles and a horizontal bar, not an SVG arc."""
-    source = _source()
-    assert "function gaugeSvg" not in source
-    assert "function arcPath" not in source
-    assert "function point(" not in source
-    assert "overflow: visible" not in source
-    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in source
-    assert 'class="pills"' in source
-    assert "grid-template-columns: 1fr" not in source
-    assert source.count("<colgroup>") == 2
+def test_module_is_the_one_the_backend_serves() -> None:
+    """The Python side registers this file and its strategy name."""
+    assert _MODULE.name == capacity_frontend._MODULE_NAME
+    strategy = capacity_frontend._STRATEGY.removeprefix("custom:")
+    assert f'const STRATEGY = "{strategy}"' in _source()
 
 
-def test_capacity_card_waits_for_the_home_assistant_element() -> None:
+def test_module_waits_for_the_home_assistant_element() -> None:
     """A cold dashboard must not define the strategy on the pre-polyfill registry."""
     source = _source()
     assert 'whenDefined("home-assistant")' in source
-    assert "setTimeout(defineAll, 2000)" in source
     assert "window.customElements" in source
+    assert "setTimeout(" not in source
 
 
-def test_capacity_card_editor_uses_one_label() -> None:
-    """Optional fields do not get a second caption or a required asterisk."""
+def test_tabs_follow_the_aria_tabs_pattern() -> None:
+    """Tabs expose roles, the selected state and arrow-key navigation."""
     source = _source()
-    assert "control.required = false" in source
-    assert "control.label" not in source
+    for marker in (
+        'role="tablist"',
+        'role="tab"',
+        'role="tabpanel"',
+        "aria-selected",
+        "ArrowRight",
+    ):
+        assert marker in source
+
+
+def test_entity_kinds_are_real_translation_keys() -> None:
+    """The frontend registry matches sensors by translation key only."""
+    match = re.search(r"const KINDS = \{(.*?)\};", _source(), re.S)
+    assert match is not None
+    keys = re.findall(r'"(\w+)"', match.group(1))
+    strings = json.loads((_MODULE.parents[1] / "strings.json").read_text(encoding="utf-8"))
+    known = set(strings["entity"]["sensor"])
+    assert keys
+    assert set(keys) <= known

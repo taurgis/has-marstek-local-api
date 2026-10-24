@@ -2,4 +2,4 @@
 "ha-marstek-release-tools": minor
 ---
 
-Add a built-in Lovelace capacity card and an optional Battery Capacity sidebar dashboard with live power flow, charge and discharge medians, weekly capacity history, and window progress. The card uses a horizontal state-of-health bar, three tiles, and compact section pills.
+Add Marstek battery health and battery fleet Lovelace cards, plus an optional Battery health sidebar dashboard, that show each battery's usable capacity against its rating with plain-language insights.

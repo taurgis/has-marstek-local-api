@@ -1,4 +1,4 @@
-"""Register the capacity card and the optional sidebar dashboard.
+"""Register the battery health cards and the optional sidebar dashboard.
 
 Static files use ``StaticPathConfig``. ``register_static_path`` was removed
 in Home Assistant 2025.7:
@@ -10,10 +10,10 @@ elements on ``window.customElements`` only after ``<home-assistant>`` exists,
 because Home Assistant swaps in a scoped registry when that element is
 defined. Defining the strategy element earlier leaves it on the previous
 registry, and the dashboard then times out waiting for
-``ll-strategy-dashboard-marstek-capacity``. The sidebar entry is a storage
-dashboard with strategy ``custom:marstek-capacity``, the same shape Home
+``ll-strategy-dashboard-marstek-battery-health``. The sidebar entry is a storage
+dashboard with strategy ``custom:marstek-battery-health``, the same shape Home
 Assistant uses when it creates the map dashboard. The strategy element is
-``ll-strategy-dashboard-marstek-capacity``:
+``ll-strategy-dashboard-marstek-battery-health``:
 https://developers.home-assistant.io/docs/frontend/custom-ui/custom-strategy/
 """
 
@@ -41,9 +41,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _FRONTEND_URL: HassKey[str] = HassKey(f"{DOMAIN}_capacity_frontend_url")
 _STATIC_PREFIX = "/marstek/capacity"
-_MODULE_NAME = "marstek-capacity-card.js"
-_DASHBOARD_URL = "marstek-capacity"
-_STRATEGY = "custom:marstek-capacity"
+_MODULE_NAME = "marstek-battery-health.js"
+_DASHBOARD_URL = "marstek-battery-health"
+_STRATEGY = "custom:marstek-battery-health"
 _DASHBOARD_ICON = "mdi:battery-heart-variant"
 
 _ACTIVE_STATES = frozenset(
@@ -76,11 +76,11 @@ async def async_register_capacity_frontend(hass: HomeAssistant) -> None:
     # without a module URL would leave the card unloaded, and a second call
     # would add the static route twice.
     if hass.data.get(DATA_EXTRA_MODULE_URL) is None:
-        _LOGGER.debug("Frontend is not loaded; skipping the capacity card")
+        _LOGGER.debug("Frontend is not loaded; skipping the battery health cards")
         return
     module = _module_path()
     if not module.is_file():
-        _LOGGER.warning("Marstek capacity card is missing at %s", module)
+        _LOGGER.warning("Marstek battery health module is missing at %s", module)
         return
     payload = await hass.async_add_executor_job(module.read_bytes)
     directory = str(module.parent)
@@ -88,7 +88,7 @@ async def async_register_capacity_frontend(hass: HomeAssistant) -> None:
     url = f"{_STATIC_PREFIX}/{_MODULE_NAME}?v={_version_token(payload)}"
     add_extra_js_url(hass, url)
     hass.data[_FRONTEND_URL] = url
-    _LOGGER.debug("Registered Marstek capacity card at %s", url)
+    _LOGGER.debug("Registered Marstek battery health module at %s", url)
 
 
 def _dashboard_wanted(hass: HomeAssistant, *, ignore_entry_id: str | None) -> bool:
@@ -110,8 +110,8 @@ def _dashboard_title(hass: HomeAssistant) -> str:
     """Return the sidebar title for the configured language."""
     language = (hass.config.language or "en").lower()
     if language.startswith("nl"):
-        return "Batterijcapaciteit"
-    return "Battery Capacity"
+        return "Batterijgezondheid"
+    return "Battery health"
 
 
 def _dashboards_collection(hass: HomeAssistant) -> Any | None:
@@ -130,7 +130,7 @@ def _dashboards_collection(hass: HomeAssistant) -> Any | None:
 
 
 def _find_dashboard(items: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return the capacity dashboard item, if this integration created it."""
+    """Return the battery health dashboard item, if this integration created it."""
     for item in items:
         if item.get("url_path") == _DASHBOARD_URL:
             return item
@@ -194,4 +194,4 @@ async def async_sync_capacity_dashboard(
         if wanted:
             await _ensure_strategy(hass)
     except Exception:
-        _LOGGER.warning("Could not update the Marstek capacity dashboard", exc_info=True)
+        _LOGGER.warning("Could not update the Marstek battery health dashboard", exc_info=True)

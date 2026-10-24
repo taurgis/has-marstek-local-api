@@ -18,6 +18,7 @@ from custom_components.marstek.helpers.capacity_store import (
     CapacityEstimateStore,
     usable_capacity_storage_key,
 )
+from custom_components.marstek.sensor import MarstekSensor
 from tests.conftest import create_mock_client, patch_marstek_integration
 
 # Seconds for one state-of-charge point of a 4600 Wh pack at 2000 W and 93%.
@@ -197,3 +198,9 @@ async def test_unreadable_capacity_history_is_ignored(
     with patch.object(store._store, "async_load", AsyncMock(side_effect=HomeAssistantError("bad"))):
         assert await store.async_load() is None
     store.delay_save({"windows": []})
+
+
+def test_card_lists_stay_out_of_the_recorder() -> None:
+    """The card's lists change every run, so the recorder must skip them."""
+    unrecorded = MarstekSensor._Entity__combined_unrecorded_attributes  # type: ignore[attr-defined]
+    assert {"windows", "history", "active_window"} <= unrecorded
