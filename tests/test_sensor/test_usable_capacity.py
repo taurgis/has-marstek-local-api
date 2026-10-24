@@ -84,6 +84,8 @@ async def test_usable_capacity_is_unknown_until_windows_exist(
     assert health.state == "unknown"
     assert health.attributes["state_class"] == SensorStateClass.MEASUREMENT
     assert health.attributes["unit_of_measurement"] == PERCENTAGE
+    assert "windows" in state.attributes
+    assert not {"windows", "history", "active_window"} & set(health.attributes)
 
 
 async def test_restored_windows_publish_median_and_state_of_health(

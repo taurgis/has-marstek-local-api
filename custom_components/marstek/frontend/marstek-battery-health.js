@@ -485,11 +485,11 @@ function capacityHtml(hass, model, text) {
 }
 
 function trendInsight(hass, model, text) {
-  const weeks = model.history.filter((point) => finite(point.usable_wh) != null && finite(point.recorded_at) != null);
+  const weeks = model.history.filter((point) => finite(point.usable_wh) != null && finite(point.week_start) != null);
   if (weeks.length < 2 || model.rated == null) return null;
   const first = weeks[0];
   const last = weeks[weeks.length - 1];
-  const days = (last.recorded_at - first.recorded_at) / DAY_S;
+  const days = (last.week_start - first.week_start) / DAY_S;
   if (days < MIN_TREND_DAYS) return null;
   const delta = last.usable_wh - first.usable_wh;
   const spread = finite(model.attrs.spread_wh) ?? 0;
@@ -546,8 +546,8 @@ function insightsHtml(hass, model, text) {
 
 function capacityChart(hass, model, text) {
   const weeks = model.history
-    .filter((point) => finite(point.usable_wh) != null && finite(point.recorded_at) != null)
-    .map((point) => ({ t: point.recorded_at, wh: point.usable_wh }));
+    .filter((point) => finite(point.usable_wh) != null && finite(point.week_start) != null)
+    .map((point) => ({ t: point.week_start, wh: point.usable_wh }));
   if (!weeks.length) return `<p class="muted">${esc(text.noWeeks)}</p>`;
   const runs = model.windows.map((item) => ({ t: finite(item.closed_at), wh: finite(item.capacity_wh) })).filter((item) => item.t != null && item.wh != null);
   const values = [...weeks, ...runs].map((item) => item.wh).concat(model.rated ?? []);

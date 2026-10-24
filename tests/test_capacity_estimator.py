@@ -774,10 +774,7 @@ def test_attributes_expose_windows_and_the_open_window() -> None:
     assert active["target_soc_delta"] == 20.0
     assert 0.0 < active["soc_delta"] < 20.0
     assert active["start_soc"] > active["current_soc"]
-    assert active["accumulated_wh"] > 0.0
-    assert active["duration_s"] > 0.0
-    assert active["average_power_w"] == pytest.approx(_POWER_W)
-    assert active["pv_share"] == 0.0
+    assert active["started_at"].startswith("2023-11-")
     assert 0.0 < active["progress"] < 1.0
     assert estimator.attributes()["windows"] == []
     assert estimator.attributes()["history"] == []

@@ -37,6 +37,7 @@ from itertools import pairwise
 from typing import Any
 
 from .helpers.capacity_history import (
+    card_history,
     empty_lifetime,
     fold_weekly_history,
     lifetime_totals,
@@ -579,7 +580,7 @@ class UsableCapacityEstimator:
             attrs["last_window_wh"] = rounded
             attrs["last_window_soc_delta"] = round(latest.soc_delta, 1)
             attrs["last_window_at"] = closed
-        attrs["history"] = [dict(point) for point in self._history]
+        attrs["history"] = card_history(self._history)
         return attrs
 
     def _window_telemetry(self) -> dict[str, Any]:
@@ -607,26 +608,21 @@ class UsableCapacityEstimator:
         """Return the in-progress charge or discharge, before it is accepted.
 
         A window is accepted at ``MIN_SOC_DELTA``. Until then the card draws
-        how far state of charge has moved toward that threshold.
+        how far state of charge has moved toward that threshold. Every field
+        follows state of charge only, so the attribute stays the same between
+        polls until the battery gains or loses a point.
         """
         if not self._open or self._open_direction == 0:
             return None
         start = self._open[0]
         current = self._open[-1]
-        spanned = len(self._open) >= 2
-        energy = abs(_dc_energy_wh(self._open)) if spanned else 0.0
         delta = abs(current.soc - start.soc)
-        average = _average_power_w(self._open) if spanned else 0.0
-        share = _pv_share(self._open) if spanned else 0.0
         return {
             "direction": "discharge" if self._open_direction > 0 else "charge",
+            "started_at": _iso_timestamp(start.timestamp),
             "start_soc": round(start.soc, 1),
             "current_soc": round(current.soc, 1),
             "soc_delta": round(delta, 1),
-            "accumulated_wh": round(energy, 1),
-            "duration_s": round(max(0.0, current.timestamp - start.timestamp), 1),
-            "average_power_w": round(average, 1),
-            "pv_share": round(share, 3),
             "target_soc_delta": MIN_SOC_DELTA,
             "progress": round(min(1.0, delta / MIN_SOC_DELTA), 3),
         }

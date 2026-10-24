@@ -143,6 +143,23 @@ def _capacity_attributes(
     return None
 
 
+# The cards read these from the usable capacity sensor only. Copying them onto
+# the health sensor would send the same lists twice to every open frontend.
+_CARD_ONLY_ATTRIBUTES = frozenset({"windows", "history", "active_window"})
+
+
+def _health_attributes(
+    coordinator: MarstekDataUpdateCoordinator,
+    info: dict[str, Any],
+    entry: ConfigEntry | None,
+) -> dict[str, Any] | None:
+    """Return the estimate's attributes without the card-only lists."""
+    raw = _capacity_attributes(coordinator, info, entry)
+    if raw is None:
+        return None
+    return {key: value for key, value in raw.items() if key not in _CARD_ONLY_ATTRIBUTES}
+
+
 def _exists_present_value(key: str, data: dict[str, Any]) -> bool:
     """Return True when the coordinator value is present, including zero."""
     return data.get(key) is not None
@@ -281,7 +298,7 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         value_fn=lambda coordinator, _info, _entry: _value_from_data(
             SOH_DATA_KEY, coordinator.data or {}
         ),
-        attributes_fn=_capacity_attributes,
+        attributes_fn=_health_attributes,
         exists_fn=_nameplate_capacity_present,
     ),
     MarstekSensorEntityDescription(

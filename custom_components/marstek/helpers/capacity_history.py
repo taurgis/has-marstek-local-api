@@ -52,6 +52,34 @@ def restore_history(raw: object) -> list[dict[str, Any]]:
     return points[-MAX_HISTORY_POINTS:]
 
 
+def card_history(points: list[dict[str, Any]]) -> list[dict[str, float | int]]:
+    """Return the weekly usable watt-hours the cards draw, keyed by week start.
+
+    The stored points also carry lifetime counters and a ``recorded_at`` that
+    move every few minutes. Leaving them out keeps the sensor attribute small
+    and unchanged until the estimate itself changes or a new week begins.
+    """
+    weeks: list[dict[str, float | int]] = []
+    for point in points:
+        usable = point.get("usable_wh")
+        start = _week_start(point.get("period"))
+        if isinstance(usable, int) and start is not None:
+            weeks.append({"week_start": start, "usable_wh": usable})
+    return weeks
+
+
+def _week_start(period: object) -> float | None:
+    """Return the unix time of Monday 00:00 UTC for ``YYYY-Www``."""
+    if not isinstance(period, str):
+        return None
+    year, _, week = period.partition("-W")
+    try:
+        monday = datetime.fromisocalendar(int(year), int(week), 1)
+    except ValueError:
+        return None
+    return monday.replace(tzinfo=UTC).timestamp()
+
+
 def empty_lifetime() -> dict[str, float | None]:
     """Return lifetime counters with nothing observed yet."""
     totals: dict[str, float | None] = dict.fromkeys(ENERGY_FIELDS)

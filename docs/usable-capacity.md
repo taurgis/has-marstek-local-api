@@ -237,9 +237,14 @@ show, and which tab opens first. The card picker lists both cards by their
 English names in every language; the card text follows your language.
 
 The cards read the `windows`, `history`, and `active_window` attributes of
-the usable capacity sensor. The recorder skips those three attributes: they
-change with every run, together they can approach the recorder's 16 KB
-attribute limit, and the cards only need their current value.
+the usable capacity sensor; the state of health sensor leaves them out. They
+change only when a run is accepted, the estimate moves, a new week starts, or
+state of charge moves during a run, so a poll that changes nothing writes no
+new state. `history` holds `week_start` (a unix time) and `usable_wh` for each
+week; the full weekly points stay in the Store file below. `active_window` holds
+the direction, `started_at`, the start and current state of charge, and the
+progress toward the 20-point threshold. The recorder skips all three
+attributes, because the cards only need their current value.
 
 Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
 `history`: one point per ISO week (156 weeks kept). Each point stores the
