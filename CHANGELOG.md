@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.0
+
+### Minor Changes
+
+- 8f33c2c: Add pages and a charge/discharge filter to the battery health card's Runs tab, show older runs by their size instead of "— to —", and stop showing "−0.0%" next to runs that match the median.
+
+### Patch Changes
+
+- c0c7285: Fix crowded text on the battery health card: the chart's value and Rating labels no longer overlap, chart text stays readable on phones, the health status sits above the headline, and a battery measured at or above its rating no longer reads as "101% of its rating".
+
 ## 1.6.0
 
 ### Minor Changes
