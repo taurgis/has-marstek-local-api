@@ -24,7 +24,12 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import StateType
 
-from ..capacity_estimator import CAPACITY_ATTR_KEY, CAPACITY_DATA_KEY, SOH_DATA_KEY
+from ..capacity_estimator import (
+    CAPACITY_ATTR_KEY,
+    CAPACITY_DATA_KEY,
+    CARD_ATTRIBUTES,
+    SOH_DATA_KEY,
+)
 from ..const import (
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
@@ -143,11 +148,6 @@ def _capacity_attributes(
     return None
 
 
-# The cards read these from the usable capacity sensor only. Copying them onto
-# the health sensor would send the same lists twice to every open frontend.
-_CARD_ONLY_ATTRIBUTES = frozenset({"windows", "history", "active_window"})
-
-
 def _health_attributes(
     coordinator: MarstekDataUpdateCoordinator,
     info: dict[str, Any],
@@ -157,7 +157,7 @@ def _health_attributes(
     raw = _capacity_attributes(coordinator, info, entry)
     if raw is None:
         return None
-    return {key: value for key, value in raw.items() if key not in _CARD_ONLY_ATTRIBUTES}
+    return {key: value for key, value in raw.items() if key not in CARD_ATTRIBUTES}
 
 
 def _exists_present_value(key: str, data: dict[str, Any]) -> bool:

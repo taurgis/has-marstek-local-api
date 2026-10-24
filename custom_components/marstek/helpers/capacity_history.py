@@ -20,12 +20,8 @@ ENERGY_FIELDS: tuple[str, ...] = (
     "total_load_energy",
 )
 
-_CAPACITY_FIELDS: tuple[str, ...] = (
-    "usable_wh",
-    "discharge_median_wh",
-    "charge_median_wh",
-    "implied_round_trip_efficiency",
-)
+_WH_FIELDS: tuple[str, ...] = ("usable_wh", "discharge_median_wh", "charge_median_wh")
+_CAPACITY_FIELDS: tuple[str, ...] = (*_WH_FIELDS, "implied_round_trip_efficiency")
 
 
 def iso_week_period(timestamp: float) -> str | None:
@@ -103,32 +99,21 @@ def fold_weekly_history(
     baseline: list[dict[str, Any]],
     *,
     timestamp: float,
-    usable_wh: int | None,
-    discharge_median_wh: int | None,
-    charge_median_wh: int | None,
-    implied_round_trip_efficiency: float | None,
-    equivalent_cycles: float | None,
-    totals: dict[str, float | None],
+    measures: dict[str, float | None],
 ) -> bool:
     """Update this ISO week's point. Return whether the Store should catch up.
 
-    The in-memory point always takes the latest numbers. Disk is asked to
-    follow when the week is new, when a capacity field changes, or when a
-    lifetime counter has moved by at least 50 Wh since the last write.
+    ``measures`` maps point fields (usable and median watt-hours, implied
+    round-trip efficiency, equivalent cycles, lifetime counters) to their
+    current values; unknown values are None. The in-memory point always takes
+    the latest numbers. Disk is asked to follow when the week is new, when a
+    capacity field changes, or when a lifetime counter has moved by at least
+    50 Wh since the last write.
     """
     period = iso_week_period(timestamp)
     if period is None:
         return False
-    point = _fresh_point(
-        period=period,
-        timestamp=timestamp,
-        usable_wh=usable_wh,
-        discharge_median_wh=discharge_median_wh,
-        charge_median_wh=charge_median_wh,
-        implied_round_trip_efficiency=implied_round_trip_efficiency,
-        equivalent_cycles=equivalent_cycles,
-        totals=totals,
-    )
+    point = _point(period, timestamp, month_key(timestamp), measures)
     if point is None:
         return False
     for index, existing in enumerate(history):
@@ -145,48 +130,6 @@ def fold_weekly_history(
     return True
 
 
-def _fresh_point(
-    *,
-    period: str,
-    timestamp: float,
-    usable_wh: int | None,
-    discharge_median_wh: int | None,
-    charge_median_wh: int | None,
-    implied_round_trip_efficiency: float | None,
-    equivalent_cycles: float | None,
-    totals: dict[str, float | None],
-) -> dict[str, Any] | None:
-    """Return one weekly point, or None when every field is still unknown."""
-    point: dict[str, Any] = {
-        "period": period,
-        "recorded_at": timestamp,
-        "month": month_key(timestamp),
-    }
-    meaningful = False
-    for key, value in (
-        ("usable_wh", usable_wh),
-        ("discharge_median_wh", discharge_median_wh),
-        ("charge_median_wh", charge_median_wh),
-    ):
-        if isinstance(value, int):
-            point[key] = value
-            meaningful = True
-    if implied_round_trip_efficiency is not None:
-        point["implied_round_trip_efficiency"] = round(float(implied_round_trip_efficiency), 3)
-        meaningful = True
-    if equivalent_cycles is not None and equivalent_cycles >= 0.0:
-        point["equivalent_cycles"] = round(float(equivalent_cycles), 3)
-        meaningful = True
-    for key in ENERGY_FIELDS:
-        energy = totals.get(key)
-        if energy is not None and energy >= 0.0:
-            point[key] = round(energy, 1)
-            meaningful = True
-    if not meaningful:
-        return None
-    return point
-
-
 def _point_from_dict(raw: object) -> dict[str, Any] | None:
     """Return a stored point, dropping fields that are not finite numbers."""
     if not isinstance(raw, dict):
@@ -195,28 +138,37 @@ def _point_from_dict(raw: object) -> dict[str, Any] | None:
     recorded = _optional_number(raw.get("recorded_at"))
     if not isinstance(period, str) or not period or recorded is None or recorded < 0.0:
         return None
-    point: dict[str, Any] = {
-        "period": period,
-        "recorded_at": recorded,
-        "month": raw["month"] if isinstance(raw.get("month"), str) else month_key(recorded),
-    }
-    for key in ("usable_wh", "discharge_median_wh", "charge_median_wh"):
-        value = _optional_number(raw.get(key))
+    month = raw["month"] if isinstance(raw.get("month"), str) else month_key(recorded)
+    return _point(period, recorded, month, raw)
+
+
+def _point(
+    period: str, recorded_at: float, month: str, fields: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Return one weekly point, or None when no measured field is usable.
+
+    New and restored points go through the same rounding: watt-hour fields to
+    whole numbers, efficiency and cycles to three decimals, lifetime counters
+    to one. Negative cycles and counters are dropped.
+    """
+    measured: dict[str, Any] = {}
+    for key in _WH_FIELDS:
+        value = _optional_number(fields.get(key))
         if value is not None:
-            point[key] = round(value)
-    rte = _optional_number(raw.get("implied_round_trip_efficiency"))
+            measured[key] = round(value)
+    rte = _optional_number(fields.get("implied_round_trip_efficiency"))
     if rte is not None:
-        point["implied_round_trip_efficiency"] = round(rte, 3)
-    cycles = _optional_number(raw.get("equivalent_cycles"))
+        measured["implied_round_trip_efficiency"] = round(rte, 3)
+    cycles = _optional_number(fields.get("equivalent_cycles"))
     if cycles is not None and cycles >= 0.0:
-        point["equivalent_cycles"] = round(cycles, 3)
+        measured["equivalent_cycles"] = round(cycles, 3)
     for key in ENERGY_FIELDS:
-        value = _optional_number(raw.get(key))
-        if value is not None and value >= 0.0:
-            point[key] = round(value, 1)
-    if not any(key in point for key in (*_CAPACITY_FIELDS, *ENERGY_FIELDS, "equivalent_cycles")):
+        energy = _optional_number(fields.get(key))
+        if energy is not None and energy >= 0.0:
+            measured[key] = round(energy, 1)
+    if not measured:
         return None
-    return point
+    return {"period": period, "recorded_at": recorded_at, "month": month, **measured}
 
 
 def _optional_number(value: object) -> float | None:
@@ -231,23 +183,17 @@ def _optional_number(value: object) -> float | None:
 
 def _materially_different(previous: dict[str, Any], current: dict[str, Any]) -> bool:
     """Return whether this week moved enough to be worth another Store write."""
-    for key in _CAPACITY_FIELDS:
-        if previous.get(key) != current.get(key):
-            return True
-    previous_cycles = previous.get("equivalent_cycles")
-    current_cycles = current.get("equivalent_cycles")
-    if previous_cycles is None or current_cycles is None:
-        if previous_cycles != current_cycles:
-            return True
-    elif abs(float(previous_cycles) - float(current_cycles)) >= 0.01:
+    if any(previous.get(key) != current.get(key) for key in _CAPACITY_FIELDS):
         return True
-    for key in ENERGY_FIELDS:
-        before = previous.get(key)
-        after = current.get(key)
-        if before is None or after is None:
-            if before != after:
-                return True
-            continue
-        if abs(float(before) - float(after)) >= _ENERGY_STEP_WH:
-            return True
-    return False
+    if _moved(previous.get("equivalent_cycles"), current.get("equivalent_cycles"), 0.01):
+        return True
+    return any(
+        _moved(previous.get(key), current.get(key), _ENERGY_STEP_WH) for key in ENERGY_FIELDS
+    )
+
+
+def _moved(before: float | None, after: float | None, step: float) -> bool:
+    """Return whether a value appeared, vanished, or changed by at least ``step``."""
+    if before is None or after is None:
+        return before != after
+    return abs(float(before) - float(after)) >= step

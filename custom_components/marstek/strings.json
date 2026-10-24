@@ -1,4 +1,7 @@
 {
+  "common": {
+    "dashboard_title": "Battery health"
+  },
   "config": {
     "abort": {
       "already_configured": "Device is already configured",

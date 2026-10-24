@@ -1,4 +1,7 @@
 {
+  "common": {
+    "dashboard_title": "Batterijgezondheid"
+  },
   "config": {
     "step": {
       "user": {

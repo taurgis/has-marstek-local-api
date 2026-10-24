@@ -24,11 +24,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
 from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.components.lovelace.const import LOVELACE_DATA, ConfigNotFound
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util.hass_dict import HassKey
 
 from ..const import (
@@ -106,16 +109,23 @@ def _dashboard_wanted(hass: HomeAssistant, *, ignore_entry_id: str | None) -> bo
     )
 
 
-def _dashboard_title(hass: HomeAssistant) -> str:
-    """Return the sidebar title for the configured language."""
-    language = (hass.config.language or "en").lower()
-    if language.startswith("nl"):
-        return "Batterijgezondheid"
-    return "Battery health"
+async def _dashboard_title(hass: HomeAssistant) -> str:
+    """Return the sidebar title in the configured language, English as fallback."""
+    translations = await async_get_translations(
+        hass, hass.config.language or "en", "common", {DOMAIN}
+    )
+    return translations.get(f"component.{DOMAIN}.common.dashboard_title", "Marstek")
 
 
 def _dashboards_collection(hass: HomeAssistant) -> Any | None:
-    """Return the live Lovelace dashboard collection, when Lovelace is up."""
+    """Return the live Lovelace dashboard collection, when Lovelace is up.
+
+    Lovelace exposes no public handle for its dashboards collection. The
+    websocket list command is a bound method of the collection's websocket
+    wrapper, so its ``__self__`` leads to the same collection the UI edits.
+    Every step is checked, so a Home Assistant change makes this return None
+    and the integration skips the sidebar entry instead of failing setup.
+    """
     websocket = hass.data.get("websocket_api")
     if not isinstance(websocket, dict):
         return None
@@ -130,29 +140,43 @@ def _dashboards_collection(hass: HomeAssistant) -> Any | None:
 
 
 def _find_dashboard(items: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return the battery health dashboard item, if this integration created it."""
+    """Return the dashboard item at this integration's URL path, if any."""
     for item in items:
         if item.get("url_path") == _DASHBOARD_URL:
             return item
     return None
 
 
-async def _ensure_strategy(hass: HomeAssistant) -> None:
-    """Save the strategy config the first time the dashboard has none."""
+def _dashboard_store(hass: HomeAssistant) -> Any | None:
+    """Return the Lovelace config store behind the dashboard, when it exists."""
     lovelace = hass.data.get(LOVELACE_DATA)
     dashboards = getattr(lovelace, "dashboards", None)
     if not isinstance(dashboards, dict):
-        return
+        return None
     store = dashboards.get(_DASHBOARD_URL)
     if store is None or not hasattr(store, "async_save"):
-        return
+        return None
+    return store
+
+
+async def _saved_config(store: Any) -> Any:
+    """Return the dashboard's saved config, or None before anything is saved."""
     try:
-        current = await store.async_load(False)
+        return await store.async_load(False)
     except ConfigNotFound:
-        current = None
-    if isinstance(current, dict) and (current.get("strategy") or current.get("views")):
-        return
-    await store.async_save({"strategy": {"type": _STRATEGY}})
+        return None
+
+
+def _is_ours(config: Any) -> bool:
+    """Return whether a saved config is empty or uses this integration's strategy.
+
+    A dashboard someone else saved at the same URL path keeps its views and
+    its sidebar setting.
+    """
+    if config is None:
+        return True
+    strategy = config.get("strategy") if isinstance(config, dict) else None
+    return isinstance(strategy, dict) and strategy.get("type") == _STRATEGY
 
 
 async def async_sync_capacity_dashboard(
@@ -170,28 +194,34 @@ async def async_sync_capacity_dashboard(
         return
     wanted = _dashboard_wanted(hass, ignore_entry_id=ignore_entry_id)
     try:
-        existing = _find_dashboard(list(collection.async_items()))
-        if existing is None:
-            if not wanted:
-                return
-            await collection.async_create_item(
-                {
-                    "url_path": _DASHBOARD_URL,
-                    "title": _dashboard_title(hass),
-                    "icon": _DASHBOARD_ICON,
-                    "show_in_sidebar": True,
-                    "require_admin": False,
-                }
-            )
-            await _ensure_strategy(hass)
-            return
-        visible = bool(existing.get("show_in_sidebar", True))
-        if visible != wanted:
-            await collection.async_update_item(
-                existing["id"],
-                {"show_in_sidebar": wanted},
-            )
-        if wanted:
-            await _ensure_strategy(hass)
-    except Exception:
+        await _sync_dashboard(hass, collection, wanted=wanted)
+    except (HomeAssistantError, vol.Invalid):
         _LOGGER.warning("Could not update the Marstek battery health dashboard", exc_info=True)
+
+
+async def _sync_dashboard(hass: HomeAssistant, collection: Any, *, wanted: bool) -> None:
+    """Create the dashboard, or set its sidebar entry, when it is this integration's."""
+    existing = _find_dashboard(list(collection.async_items()))
+    if existing is None:
+        if not wanted:
+            return
+        await collection.async_create_item(
+            {
+                "url_path": _DASHBOARD_URL,
+                "title": await _dashboard_title(hass),
+                "icon": _DASHBOARD_ICON,
+                "show_in_sidebar": True,
+                "require_admin": False,
+            }
+        )
+    store = _dashboard_store(hass)
+    if store is None:
+        return
+    config = await _saved_config(store)
+    if not _is_ours(config):
+        _LOGGER.debug("Dashboard /%s holds another config; leaving it alone", _DASHBOARD_URL)
+        return
+    if existing is not None and bool(existing.get("show_in_sidebar", True)) != wanted:
+        await collection.async_update_item(existing["id"], {"show_in_sidebar": wanted})
+    if wanted and config is None:
+        await store.async_save({"strategy": {"type": _STRATEGY}})

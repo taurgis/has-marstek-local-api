@@ -62,6 +62,14 @@ def _feed(estimator: UsableCapacityEstimator, trace: _Trace) -> None:
         moment += trace.step_seconds
 
 
+def _poll_counters(
+    estimator: UsableCapacityEstimator, timestamp: float, totals: dict[str, float]
+) -> None:
+    """Feed one poll that carries only lifetime counters."""
+    estimator.remember_lifetime(totals)
+    estimator.observe(timestamp=timestamp, soc=None, power_w=None, mode=None, rated_wh=_RATED_WH)
+
+
 def test_open_window_follows_state_of_charge_only() -> None:
     """The open window reports progress toward the 20-point threshold."""
     estimator = UsableCapacityEstimator()
@@ -109,17 +117,17 @@ def test_attributes_stay_the_same_until_something_material_changes() -> None:
     _feed(estimator, trace)
     moment = _T0 + (trace.steps + 1) * trace.step_seconds
     totals = {"total_grid_output_energy": 40.0}
+    estimator.remember_lifetime(totals)
     estimator.observe(timestamp=moment, soc=18.0, power_w=_POWER_W, mode="auto", rated_wh=_RATED_WH)
-    estimator.note_lifetime(moment, totals)
     before = estimator.attributes()
     assert before["active_window"] is not None
     assert before["history"]
 
     totals["total_grid_output_energy"] = 70.0
+    estimator.remember_lifetime(totals)
     estimator.observe(
         timestamp=moment + 10.0, soc=18.0, power_w=1500.0, mode="auto", rated_wh=_RATED_WH
     )
-    estimator.note_lifetime(moment + 10.0, totals)
 
     assert estimator.attributes() == before
 
@@ -154,14 +162,14 @@ def test_weekly_history_records_capacity_energy_and_restores() -> None:
         "total_pv_energy": 5.0,
         "total_load_energy": 8.0,
     }
-    estimator.note_lifetime(_T0 + 100.0, totals)
+    _poll_counters(estimator, _T0 + 100.0, totals)
     assert estimator.consume_dirty() is True
     recorded = estimator.to_dict()["history"][0]
     assert recorded["total_grid_output_energy"] == 40.0
     assert recorded["equivalent_cycles"] == pytest.approx(40.0 / _RATED_WH, abs=0.001)
 
     totals["total_grid_output_energy"] = 70.0
-    estimator.note_lifetime(_T0 + 200.0, totals)
+    _poll_counters(estimator, _T0 + 200.0, totals)
     assert estimator.consume_dirty() is False
     assert len(estimator.to_dict()["history"]) == 1
 

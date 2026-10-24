@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
 from . import MarstekConfigEntry
+from .capacity_estimator import CARD_ATTRIBUTES
 from .const import BAT_STATUS_KEYS, EM_STATUS_KEYS
 from .coordinator import MarstekDataUpdateCoordinator
 from .entity import MarstekEntity
@@ -61,10 +62,9 @@ class MarstekSensor(MarstekEntity, RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
     entity_description: MarstekSensorEntityDescription
-    # The usable-capacity sensor exposes lists for the Lovelace card. They
-    # change every run and can near the recorder's 16 KB attribute limit, so
-    # keep them out of history; the card reads the live state.
-    _unrecorded_attributes = frozenset({"windows", "history", "active_window"})
+    # The usable-capacity sensor exposes lists for the Lovelace cards. The
+    # cards read the live state, so the recorder does not need them.
+    _unrecorded_attributes = CARD_ATTRIBUTES
 
     def __init__(
         self,

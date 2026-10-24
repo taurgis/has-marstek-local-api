@@ -76,6 +76,9 @@ const COPY = {
     editorTitle: "Title",
     editorTab: "Tab shown first",
     editorTabs: "Show the detail tabs",
+    pointsWord: "points",
+    daysWord: "days",
+    invalidConfig: "Invalid configuration",
     cardName: "Marstek battery health",
     cardDescription: "Usable capacity against the rating, plain-language insights, and the measured runs behind them.",
     fleetName: "Marstek battery fleet",
@@ -142,6 +145,9 @@ const COPY = {
     editorTitle: "Titel",
     editorTab: "Eerste tabblad",
     editorTabs: "Detailtabbladen tonen",
+    pointsWord: "punten",
+    daysWord: "dagen",
+    invalidConfig: "Ongeldige configuratie",
     cardName: "Marstek-batterijgezondheid",
     cardDescription: "Bruikbare capaciteit tegenover de opgave, inzichten in gewone taal, en de gemeten ritten erachter.",
     fleetName: "Marstek-batterijvloot",
@@ -250,8 +256,10 @@ const STYLES = `
   }
 `;
 
+// Without hass (the card picker, a bad config) the page language set by Home
+// Assistant on <html lang> stands in.
 function languageOf(hass) {
-  const code = hass?.locale?.language || hass?.language || "en";
+  const code = hass?.locale?.language || hass?.language || document.documentElement.lang || "en";
   return String(code).toLowerCase().startsWith("nl") ? "nl" : "en";
 }
 
@@ -284,7 +292,7 @@ function energy(hass, wh) {
 }
 
 const pct = (hass, value, digits = 0) => (value == null ? "—" : `${fmt(hass, value, digits)}%`);
-const points = (hass, value) => `${fmt(hass, Math.abs(value), 1)} ${languageOf(hass) === "nl" ? "punten" : "points"}`;
+const points = (hass, value) => `${fmt(hass, Math.abs(value), 1)} ${copyFor(hass).pointsWord}`;
 
 function bigEnergy(hass, wh) {
   if (wh == null) return null;
@@ -294,7 +302,7 @@ function bigEnergy(hass, wh) {
 function duration(hass, hours) {
   const minutes = Math.round(hours * 60);
   if (minutes < 60) return `${minutes}\u00a0min`;
-  if (minutes >= 48 * 60) return `${fmt(hass, minutes / 1440, 0)} ${languageOf(hass) === "nl" ? "dagen" : "days"}`;
+  if (minutes >= 48 * 60) return `${fmt(hass, minutes / 1440, 0)} ${copyFor(hass).daysWord}`;
   const rest = minutes % 60;
   return rest ? `${Math.floor(minutes / 60)}\u00a0h ${rest}\u00a0min` : `${minutes / 60}\u00a0h`;
 }
@@ -768,6 +776,14 @@ class MarstekCard extends HTMLElement {
     this._render(false);
   }
 
+  setConfig(config) {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      throw new Error(copyFor(this._hass).invalidConfig);
+    }
+    this._config = { ...config };
+    this._render(true);
+  }
+
   getGridOptions() {
     return { columns: "full", min_columns: 6, rows: "auto" };
   }
@@ -802,10 +818,8 @@ class MarstekBatteryHealthCard extends MarstekCard {
   }
 
   setConfig(config) {
-    if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("Invalid configuration");
-    this._config = { ...config };
-    this._tab = TABS.includes(config.default_tab) ? config.default_tab : TABS[0];
-    this._render(true);
+    this._tab = TABS.includes(config?.default_tab) ? config.default_tab : TABS[0];
+    super.setConfig(config);
   }
 
   getCardSize() {
@@ -862,10 +876,6 @@ class MarstekBatteryFleetCard extends MarstekCard {
 
   static getStubConfig() {
     return {};
-  }
-
-  setConfig(config) {
-    this._config = config || {};
   }
 
   getCardSize() {
@@ -943,7 +953,7 @@ class MarstekBatteryHealthStrategy extends HTMLElement {
 }
 
 function announce() {
-  const text = COPY.en;
+  const text = copyFor(null);
   window.customCards = window.customCards || [];
   for (const card of [
     { type: HEALTH_CARD, name: text.cardName, description: text.cardDescription },

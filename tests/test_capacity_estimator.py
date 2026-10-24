@@ -748,15 +748,11 @@ def test_a_slow_poll_interval_can_form_a_window_and_a_missed_poll_cannot() -> No
 
 
 def test_attributes_expose_windows_and_the_open_window() -> None:
-    """The card reads per-direction counts, stored windows, and live progress."""
+    """The card reads the stored windows and live progress."""
     estimator = UsableCapacityEstimator()
     idle = estimator.attributes()
-    assert idle["discharge_windows_accepted"] == 0
-    assert idle["charge_windows_accepted"] == 0
     assert idle["windows"] == []
     assert idle["active_window"] is None
-    assert "last_discharge_at" not in idle
-    assert "last_charge_at" not in idle
 
     _feed(
         estimator,
@@ -791,8 +787,6 @@ def test_attributes_expose_windows_and_the_open_window() -> None:
         ),
     )
     attrs = estimator.attributes()
-    assert attrs["discharge_windows_accepted"] == MIN_WINDOWS
-    assert attrs["charge_windows_accepted"] == 0
     assert attrs["active_window"] is None
     assert len(attrs["windows"]) == MIN_WINDOWS
     window = attrs["windows"][0]
@@ -806,10 +800,7 @@ def test_attributes_expose_windows_and_the_open_window() -> None:
     assert "duration_s" in window
     assert window["mode"] == "auto"
     assert "pv_share" in window
-    assert attrs["last_window_wh"] == attrs["last_window_capacity_wh"]
-    assert attrs["last_window_soc_delta"] == pytest.approx(window["soc_delta"])
-    assert attrs["last_discharge_at"] == attrs["last_window_at"]
-    assert "last_charge_at" not in attrs
+    assert attrs["last_window_direction"] == "discharge"
 
     _feed(
         estimator,
@@ -823,7 +814,5 @@ def test_attributes_expose_windows_and_the_open_window() -> None:
         ),
     )
     both = estimator.attributes()
-    assert both["charge_windows_accepted"] == MIN_WINDOWS
-    assert both["last_charge_at"] == both["last_window_at"]
+    assert len(both["windows"]) == 2 * MIN_WINDOWS
     assert both["last_window_direction"] == "charge"
-    assert both["last_discharge_at"] != both["last_charge_at"]

@@ -12,6 +12,7 @@ from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.components.lovelace.const import LOVELACE_DATA, ConfigNotFound
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.const import DOMAIN
@@ -57,7 +58,7 @@ class _Collection:
     async def async_create_item(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a dashboard and attach the store, as Lovelace's listener does."""
         if self.fail:
-            raise RuntimeError("lovelace unavailable")
+            raise HomeAssistantError("lovelace unavailable")
         item = {"id": "marstek-battery-health", **data}
         self.items[item["id"]] = item
         self.hass.data[LOVELACE_DATA].dashboards[data["url_path"]] = self.store
@@ -225,3 +226,25 @@ async def test_dashboard_ignores_a_missing_collection_and_a_create_failure(
 def _entry_id(hass: HomeAssistant) -> str:
     """Return the only Marstek entry id."""
     return hass.config_entries.async_entries(DOMAIN)[0].entry_id
+
+
+async def test_dashboard_leaves_a_users_own_dashboard_at_the_same_path(
+    hass: HomeAssistant,
+) -> None:
+    """A dashboard with someone else's config keeps its views and sidebar entry."""
+    _entry(hass, show=False)
+    store = _Store({"views": [{"title": "Mine"}]})
+    collection = _Collection(hass, store)
+    collection.items["mine"] = {
+        "id": "mine",
+        "url_path": "marstek-battery-health",
+        "title": "Mine",
+        "show_in_sidebar": True,
+    }
+    _install_lovelace(hass, collection)
+    hass.data[LOVELACE_DATA].dashboards["marstek-battery-health"] = store
+
+    await async_sync_capacity_dashboard(hass)
+
+    assert collection.items["mine"]["show_in_sidebar"] is True
+    assert store.saved is None

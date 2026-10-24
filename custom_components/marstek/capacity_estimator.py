@@ -77,6 +77,9 @@ RATED_MAX_FRACTION = 1.35
 CAPACITY_DATA_KEY = "battery_usable_capacity"
 SOH_DATA_KEY = "battery_state_of_health"
 CAPACITY_ATTR_KEY = "battery_usable_capacity_attributes"
+# Lists only the Lovelace cards read. They stay off the state of health sensor
+# and out of the recorder.
+CARD_ATTRIBUTES = frozenset({"windows", "history", "active_window"})
 # Set by ``parse_es_status_response`` when battery power came from the AC
 # balance rather than a device ``bat_power``. ``merge_device_status`` copies it.
 BATTERY_POWER_DERIVED_KEY = "battery_power_derived"
@@ -561,7 +564,8 @@ class UsableCapacityEstimator:
             "efficiency_correction": correction,
         }
         attrs.update(self._median_attributes())
-        attrs.update(self._window_telemetry())
+        attrs["windows"] = [window.to_dict() for window in self._windows]
+        attrs["active_window"] = self._active_window()
         contributing = self._contributing_capacities(correction)
         if value is not None and contributing:
             attrs["spread_wh"] = round(max(contributing) - min(contributing))
@@ -572,37 +576,11 @@ class UsableCapacityEstimator:
             attrs["state_of_health"] = health
         if self._windows:
             latest = self._windows[-1]
-            closed = _iso_timestamp(latest.closed_at)
-            rounded = round(latest.capacity_wh)
             attrs["last_window_direction"] = latest.direction
-            attrs["last_window_capacity_wh"] = rounded
-            # ``last_window_wh`` is the name Lovelace and older consumers use.
-            attrs["last_window_wh"] = rounded
-            attrs["last_window_soc_delta"] = round(latest.soc_delta, 1)
-            attrs["last_window_at"] = closed
+            attrs["last_window_capacity_wh"] = round(latest.capacity_wh)
+            attrs["last_window_at"] = _iso_timestamp(latest.closed_at)
         attrs["history"] = card_history(self._history)
         return attrs
-
-    def _window_telemetry(self) -> dict[str, Any]:
-        """Return per-direction counts, stored windows, and the open window.
-
-        Counts and the window list are always present so a card can render an
-        empty state. Timestamps appear only after that direction has closed a
-        window. The open window is ``None`` while the estimator is idle.
-        """
-        payload: dict[str, Any] = {
-            "discharge_windows_accepted": len(self._capacities("discharge")),
-            "charge_windows_accepted": len(self._capacities("charge")),
-            "windows": [window.to_dict() for window in self._windows],
-            "active_window": self._active_window(),
-        }
-        latest_discharge = _latest_window(self._windows, "discharge")
-        latest_charge = _latest_window(self._windows, "charge")
-        if latest_discharge is not None:
-            payload["last_discharge_at"] = _iso_timestamp(latest_discharge.closed_at)
-        if latest_charge is not None:
-            payload["last_charge_at"] = _iso_timestamp(latest_charge.closed_at)
-        return payload
 
     def _active_window(self) -> dict[str, Any] | None:
         """Return the in-progress charge or discharge, before it is accepted.
@@ -627,10 +605,9 @@ class UsableCapacityEstimator:
             "progress": round(min(1.0, delta / MIN_SOC_DELTA), 3),
         }
 
-    def note_lifetime(self, timestamp: float, status: dict[str, Any]) -> None:
-        """Remember lifetime energy counters and refresh this week's snapshot."""
+    def remember_lifetime(self, status: dict[str, Any]) -> None:
+        """Keep the lifetime energy counters for the next weekly snapshot."""
         self._lifetime = lifetime_totals(status)
-        self._record_history(timestamp)
 
     def _record_history(self, timestamp: float) -> None:
         """Fold the current estimate into the ISO-week history."""
@@ -647,12 +624,14 @@ class UsableCapacityEstimator:
             self._history,
             self._history_baseline,
             timestamp=moment,
-            usable_wh=self.estimate_wh,
-            discharge_median_wh=medians.get("discharge_median_wh"),
-            charge_median_wh=medians.get("charge_median_wh"),
-            implied_round_trip_efficiency=medians.get("implied_round_trip_efficiency"),
-            equivalent_cycles=cycles,
-            totals=self._lifetime,
+            measures={
+                "usable_wh": self.estimate_wh,
+                "discharge_median_wh": medians.get("discharge_median_wh"),
+                "charge_median_wh": medians.get("charge_median_wh"),
+                "implied_round_trip_efficiency": medians.get("implied_round_trip_efficiency"),
+                "equivalent_cycles": cycles,
+                **self._lifetime,
+            },
         )
         if not changed:
             return
@@ -869,14 +848,6 @@ def _iso_timestamp(moment: float) -> str:
     return datetime.fromtimestamp(moment, UTC).isoformat()
 
 
-def _latest_window(windows: list[_Window], direction: str) -> _Window | None:
-    """Return the newest accepted window for one direction."""
-    for window in reversed(windows):
-        if window.direction == direction:
-            return window
-    return None
-
-
 def _mode_changed(start: str | None, current: str | None) -> bool:
     """Return whether both polls named a mode and the names differ.
 
@@ -911,6 +882,8 @@ def apply_capacity_estimate(
     mode = status.get("device_mode")
     pv_raw = status.get("pv_power") if fresh else None
     pv = pv_raw if isinstance(pv_raw, (int, float)) and not isinstance(pv_raw, bool) else None
+    # Before ``observe``, which folds this poll's counters into the weekly point.
+    estimator.remember_lifetime(status)
     estimator.observe(
         timestamp=timestamp,
         soc=soc,
@@ -920,7 +893,6 @@ def apply_capacity_estimate(
         pv_w=pv,
         power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
     )
-    estimator.note_lifetime(timestamp, status)
     status[CAPACITY_DATA_KEY] = estimator.estimate_wh
     status[SOH_DATA_KEY] = estimator.state_of_health
     status[CAPACITY_ATTR_KEY] = estimator.attributes()

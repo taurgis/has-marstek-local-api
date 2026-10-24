@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -385,3 +385,31 @@ async def test_reload_entry(hass: HomeAssistant, mock_config_entry: MockConfigEn
         assert mock_config_entry.state == ConfigEntryState.LOADED
         assert hass.states.get("sensor.venus_battery_level") is not None
         assert hass.services.has_service(DOMAIN, "set_passive_mode")
+
+
+async def test_dashboard_stays_through_a_reload_and_hides_on_disable_or_remove(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Only a disable or a removal asks the sidebar dashboard to drop this entry."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client(status={"device_mode": "auto", "battery_soc": 75})
+    entry_id = mock_config_entry.entry_id
+
+    with (
+        patch_marstek_integration(client=client),
+        patch("custom_components.marstek.async_sync_capacity_dashboard", new=AsyncMock()) as sync,
+    ):
+        await hass.config_entries.async_setup(entry_id)
+        await hass.async_block_till_done()
+        await hass.config_entries.async_reload(entry_id)
+        await hass.async_block_till_done()
+        assert all(call.kwargs == {} for call in sync.await_args_list)
+
+        await hass.config_entries.async_set_disabled_by(entry_id, ConfigEntryDisabler.USER)
+        await hass.async_block_till_done()
+        assert sync.await_args.kwargs == {"ignore_entry_id": entry_id}
+
+        sync.reset_mock()
+        await hass.config_entries.async_remove(entry_id)
+        await hass.async_block_till_done()
+        sync.assert_awaited_once_with(hass, ignore_entry_id=entry_id)
