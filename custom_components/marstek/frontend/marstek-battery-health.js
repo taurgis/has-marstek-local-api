@@ -232,7 +232,8 @@ const STYLES = `
   .stats dt { order: 2; font-size: 12px; color: var(--secondary-text-color); }
   .stats dd { margin: 0; font-size: 24px; line-height: 32px; font-weight: 500; }
   .fleet { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .fleet button { width: 100%; display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(0, 4fr) minmax(88px, auto); gap: 12px; align-items: center; text-align: left; padding: 8px; margin: 0 -8px; border-radius: 10px; }
+  .fleet button { width: 100%; display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(0, 4fr) minmax(88px, auto);
+    gap: 12px; align-items: center; text-align: left; padding: 8px; margin: 0 -8px; border-radius: 10px; }
   .fleet button:hover { background: color-mix(in srgb, var(--primary-text-color) 5%, transparent); }
   .fleet .who { min-width: 0; }
   .fleet .who strong, .fleet .who span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -351,7 +352,21 @@ function deviceName(hass, deviceId) {
   return device?.name_by_user || device?.name || "Marstek";
 }
 
+// hass.entities and hass.devices are replaced, not mutated, when the
+// registries change, so the scan only reruns after a registry update.
+const packCache = new WeakMap();
+
 function listPacks(hass) {
+  const entities = hass?.entities;
+  if (!entities) return [];
+  const cached = packCache.get(entities);
+  if (cached && cached.devices === hass.devices) return cached.packs;
+  const packs = scanPacks(hass);
+  packCache.set(entities, { devices: hass.devices, packs });
+  return packs;
+}
+
+function scanPacks(hass) {
   const packs = new Map();
   for (const entity of Object.values(hass?.entities || {})) {
     if (entity.platform !== "marstek" || !entity.device_id || entity.disabled_by) continue;
@@ -521,7 +536,8 @@ function insightsHtml(hass, model, text) {
     const target = finite(active.target_soc_delta) || 20;
     const done = clamp(finite(active.soc_delta), 0, target);
     const label = text.measuring(text.runWord[active.direction] || "", fmt(hass, done, 0), fmt(hass, target));
-    const bar = `<span class="progress" role="progressbar" aria-label="${esc(label)}" aria-valuemin="0" aria-valuemax="${target}" aria-valuenow="${done}"><i style="width:${((done / target) * 100).toFixed(1)}%"></i></span>`;
+    const bar = `<span class="progress" role="progressbar" aria-label="${esc(label)}"
+      aria-valuemin="0" aria-valuemax="${target}" aria-valuenow="${done}"><i style="width:${((done / target) * 100).toFixed(1)}%"></i></span>`;
     items.push({ icon: "mdi:progress-clock", text: label, extra: bar });
   }
   const rows = items.filter(Boolean).map((item) => `<li><ha-icon icon="${item.icon}"></ha-icon><span>${esc(item.text)}${item.extra || ""}</span></li>`);
@@ -543,12 +559,15 @@ function capacityChart(hass, model, text) {
   const [W, H, L, R, T, B] = [360, 150, 40, 76, 10, 20];
   const x = (t) => L + (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0)) * (W - L - R);
   const y = (wh) => T + ((high - wh) / (high - low || 1)) * (H - T - B);
-  const ticks = [low, (low + high) / 2, high].map((wh) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(wh).toFixed(1)}" y2="${y(wh).toFixed(1)}"/><text class="tick num" x="${L - 6}" y="${(y(wh) + 4).toFixed(1)}" text-anchor="end">${fmt(hass, wh / 1000, 2)}</text>`).join("");
+  // A full-width horizontal rule at a value, with a label beside it.
+  const rule = (cls, wh, label, labelX, anchor) => `<line class="${cls}" x1="${L}" x2="${W - R}" y1="${y(wh).toFixed(1)}" y2="${y(wh).toFixed(1)}"/>
+    <text class="${cls === "grid" ? "tick num" : "tag"}" x="${labelX}" y="${(y(wh) + 4).toFixed(1)}" text-anchor="${anchor}">${label}</text>`;
+  const ticks = [low, (low + high) / 2, high].map((wh) => rule("grid", wh, fmt(hass, wh / 1000, 2), L - 6, "end")).join("");
   const dates = [t0, t1].map((t, index) => `<text class="tick" x="${x(t).toFixed(1)}" y="${H - 4}" text-anchor="${index ? "end" : "start"}">${esc(day(hass, t))}</text>`).join("");
   const dots = runs.map((item) => `<circle class="run" cx="${x(item.t).toFixed(1)}" cy="${y(item.wh).toFixed(1)}" r="2.5"/>`).join("");
   const path = weeks.map((item, index) => `${index ? "L" : "M"}${x(item.t).toFixed(1)} ${y(item.wh).toFixed(1)}`).join(" ");
   const last = weeks[weeks.length - 1];
-  const rating = model.rated == null ? "" : `<line class="rating" x1="${L}" x2="${W - R}" y1="${y(model.rated).toFixed(1)}" y2="${y(model.rated).toFixed(1)}"/><text class="tag" x="${W - R + 6}" y="${(y(model.rated) + 4).toFixed(1)}">${esc(text.rating)}</text>`;
+  const rating = model.rated == null ? "" : rule("rating", model.rated, esc(text.rating), W - R + 6, "start");
   const summary = text.capacityChart(kwh(hass, weeks[0].wh), kwh(hass, last.wh));
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(summary)}"><title>${esc(summary)}</title>
     ${ticks}${rating}${dots}<path class="line" d="${path}"/>
@@ -570,7 +589,9 @@ function runsHtml(hass, model, text) {
     const wh = finite(item.capacity_wh);
     const off = base && wh != null ? ((wh - base) / base) * 100 : null;
     const reach = off == null ? 0 : clamp(Math.abs(off) / 3, 0, 1) * 50;
-    const dev = off == null ? "" : `<span class="dev" role="img" aria-label="${esc(`${fmt(hass, off, 1)}% ${text.vsMedian}`)}"><i style="left:${off < 0 ? 50 - reach : 50}%;width:${reach.toFixed(1)}%"></i><b class="num">${off > 0 ? "+" : ""}${fmt(hass, off, 1)}%</b></span>`;
+    const shown = `${off > 0 ? "+" : ""}${fmt(hass, off, 1)}%`;
+    const dev = off == null ? "" : `<span class="dev" role="img" aria-label="${esc(`${fmt(hass, off, 1)}% ${text.vsMedian}`)}"
+      ><i style="left:${off < 0 ? 50 - reach : 50}%;width:${reach.toFixed(1)}%"></i><b class="num">${shown}</b></span>`;
     const solar = finite(item.pv_share);
     const detail = [day(hass, item.closed_at, true), solar ? text.solar(pct(hass, solar * 100)) : ""].filter(Boolean).join(" · ");
     return `<li><ha-icon icon="${item.direction === "charge" ? "mdi:arrow-up" : "mdi:arrow-down"}"></ha-icon>
@@ -583,14 +604,17 @@ function runsHtml(hass, model, text) {
 function energyHtml(hass, model, text) {
   const rows = [[text.charged, model.gridIn], [text.dischargedAc, model.gridOut], [text.solarIn, model.solar], [text.homeLoad, model.load]];
   const top = Math.max(1, ...rows.map(([, wh]) => wh ?? 0));
-  const meters = rows.map(([label, wh]) => `<div class="meter"><span>${esc(label)}</span><span class="rail"><i style="width:${(((wh ?? 0) / top) * 100).toFixed(1)}%"></i></span><span class="num">${esc(bigEnergy(hass, wh) ?? text.notReported)}</span></div>`).join("");
+  const meters = rows.map(([label, wh]) => `<div class="meter"><span>${esc(label)}</span>
+    <span class="rail"><i style="width:${(((wh ?? 0) / top) * 100).toFixed(1)}%"></i></span>
+    <span class="num">${esc(bigEnergy(hass, wh) ?? text.notReported)}</span></div>`).join("");
   const cycles = model.gridOut != null && model.rated ? model.gridOut / model.rated : null;
   const line = cycles == null ? "" : cycles < 1 ? text.cyclesNone : text.cycles(fmt(hass, cycles, cycles < 10 ? 1 : 0));
   return `<div class="meters">${meters}</div>${line ? `<p class="muted">${esc(line)}</p>` : ""}`;
 }
 
 function tabsHtml(hass, model, text, selected, cardId) {
-  const tabs = TABS.map((name) => `<button type="button" role="tab" id="${cardId}-${name}" aria-controls="${cardId}-panel" aria-selected="${name === selected}" tabindex="${name === selected ? 0 : -1}" data-tab="${name}">${esc(text.tabs[name])}</button>`).join("");
+  const tabs = TABS.map((name) => `<button type="button" role="tab" id="${cardId}-${name}" aria-controls="${cardId}-panel"
+    aria-selected="${name === selected}" tabindex="${name === selected ? 0 : -1}" data-tab="${name}">${esc(text.tabs[name])}</button>`).join("");
   const panel = selected === "runs" ? runsHtml(hass, model, text) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text);
   return `<div role="tablist" aria-label="${esc(text.tabList)}">${tabs}</div>
     <div role="tabpanel" id="${cardId}-panel" aria-labelledby="${cardId}-${selected}" tabindex="0">${panel}</div>`;
@@ -652,11 +676,13 @@ function fleetInsights(hass, models, text) {
 function fleetRow(hass, model, text, scale) {
   const health = model.health == null ? text.band.measuring : text.health(pct(hass, model.health));
   const label = `${model.name}: ${text.barLabel(energy(hass, model.stored), kwh(hass, model.usable), kwh(hass, model.rated))}`;
-  const status = [text.flow[model.flow], model.power == null || model.flow === "idle" ? "" : `${fmt(hass, Math.abs(model.power))} W`, model.soc == null ? "" : pct(hass, model.soc)].filter(Boolean).join(" · ");
+  const watts = model.power == null || model.flow === "idle" ? "" : `${fmt(hass, Math.abs(model.power))} W`;
+  const status = [text.flow[model.flow], watts, model.soc == null ? "" : pct(hass, model.soc)].filter(Boolean).join(" · ");
   return `<li><button type="button" data-entity="${esc(model.pack.entities.capacity)}">
     <span class="who"><strong>${esc(model.name)}</strong><span class="num">${esc(status)}</span></span>
     <span class="bar"><span class="cell" role="img" aria-label="${esc(label)}">${capacityCell(model, scale)}</span></span>
-    <span class="tail num"><span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(health)}</span><span>${esc(model.rte == null ? kwh(hass, model.usable) : `${kwh(hass, model.usable)} · ${text.rteShort(pct(hass, model.rte))}`)}</span></span>
+    <span class="tail num"><span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(health)}</span
+      ><span>${esc(model.rte == null ? kwh(hass, model.usable) : `${kwh(hass, model.usable)} · ${text.rteShort(pct(hass, model.rte))}`)}</span></span>
   </button></li>`;
 }
 
@@ -700,22 +726,66 @@ function openDevice(host, deviceId) {
   fire(host, "location-changed", { replace: false });
 }
 
-// Only the states these cards read decide whether they redraw.
-function signatureOf(hass, extra) {
-  const ids = listPacks(hass).flatMap((pack) => Object.values(pack.entities));
-  return JSON.stringify([extra, languageOf(hass), ids.map((id) => {
-    const state = hass.states[id];
-    return [state?.state, state?.attributes?.last_window_at, state?.attributes?.active_window?.soc_delta, state?.attributes?.history?.length];
-  })]);
+// Only the packs a card shows decide whether it redraws. last_updated moves
+// on any state or attribute change, so a new rating or spread redraws too.
+function signatureOf(hass, packs, extra) {
+  return JSON.stringify([extra, languageOf(hass), packs.map((pack) => [
+    deviceName(hass, pack.deviceId),
+    Object.values(pack.entities).map((id) => hass.states[id]?.last_updated),
+  ])]);
 }
 
-let cardCount = 0;
+// Selector for the focused control, so a redraw can put focus back on the
+// same tab, button, row or panel.
+function focusKey(root) {
+  const active = root.activeElement;
+  if (!active) return null;
+  for (const name of ["tab", "action", "entity"]) {
+    const value = active.dataset?.[name];
+    if (value) return `[data-${name}="${CSS.escape(value)}"]`;
+  }
+  return active.getAttribute("role") === "tabpanel" ? '[role="tabpanel"]' : null;
+}
 
-class MarstekBatteryHealthCard extends HTMLElement {
+// Home Assistant's scoped-registry polyfill wraps innerHTML, and the new
+// nodes cannot take focus until a microtask later.
+function redraw(root, html, key = focusKey(root)) {
+  root.innerHTML = html;
+  if (key) queueMicrotask(() => root.querySelector(key)?.focus());
+}
+
+// Shared by both cards: a shadow root, full-width sizing, and a redraw that
+// runs only when what the card shows has changed.
+class MarstekCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render(false);
+  }
+
+  getGridOptions() {
+    return { columns: "full", min_columns: 6, rows: "auto" };
+  }
+
+  _render(force, focusTarget) {
+    if (!this._hass) return;
+    const signature = signatureOf(this._hass, this._packs(), this._view());
+    if (!force && signature === this._signature) return;
+    this._signature = signature;
+    redraw(this.shadowRoot, this._html(), focusTarget);
+  }
+}
+
+let cardCount = 0;
+
+class MarstekBatteryHealthCard extends MarstekCard {
+  constructor() {
+    super();
     this._tab = TABS[0];
     this._id = `mbh${(cardCount += 1)}`;
     this.shadowRoot.addEventListener("click", (event) => this._onClick(event));
@@ -738,29 +808,32 @@ class MarstekBatteryHealthCard extends HTMLElement {
     this._render(true);
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    this._render(false);
-  }
-
   getCardSize() {
     return this._config.show_tabs === false ? 5 : 8;
   }
 
-  getGridOptions() {
-    return { columns: "full", min_columns: 6, rows: "auto" };
+  _packs() {
+    const pack = findPack(this._hass, this._config);
+    return pack ? [pack] : [];
   }
 
-  _select(tab, focus) {
+  _view() {
+    return [this._tab, this._config];
+  }
+
+  _html() {
+    return healthCardHtml(this._hass, this._config, this._tab, this._id);
+  }
+
+  _select(tab) {
     this._tab = tab;
-    this._render(true);
-    if (focus) this.shadowRoot.getElementById(`${this._id}-${tab}`)?.focus();
+    this._render(true, `[data-tab="${tab}"]`);
   }
 
   _onClick(event) {
     const tab = event.target.closest("[data-tab]");
     if (tab) {
-      this._select(tab.dataset.tab, true);
+      this._select(tab.dataset.tab);
       return;
     }
     if (event.target.closest("[data-action='device']")) {
@@ -775,24 +848,13 @@ class MarstekBatteryHealthCard extends HTMLElement {
     const next = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 }[event.key];
     if (next == null) return;
     event.preventDefault();
-    this._select(TABS[(next + TABS.length) % TABS.length], true);
-  }
-
-  _render(force) {
-    if (!this._hass) return;
-    const signature = signatureOf(this._hass, [this._tab, this._config]);
-    if (!force && signature === this._signature) return;
-    this._signature = signature;
-    const focused = this.shadowRoot.activeElement?.dataset?.tab;
-    this.shadowRoot.innerHTML = healthCardHtml(this._hass, this._config, this._tab, this._id);
-    if (focused) this.shadowRoot.getElementById(`${this._id}-${this._tab}`)?.focus();
+    this._select(TABS[(next + TABS.length) % TABS.length]);
   }
 }
 
-class MarstekBatteryFleetCard extends HTMLElement {
+class MarstekBatteryFleetCard extends MarstekCard {
   constructor() {
     super();
-    this.attachShadow({ mode: "open" });
     this.shadowRoot.addEventListener("click", (event) => {
       openMoreInfo(this, event.target.closest("[data-entity]")?.dataset.entity);
     });
@@ -806,20 +868,20 @@ class MarstekBatteryFleetCard extends HTMLElement {
     this._config = config || {};
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    const signature = signatureOf(hass, "fleet");
-    if (signature === this._signature) return;
-    this._signature = signature;
-    this.shadowRoot.innerHTML = fleetCardHtml(hass);
-  }
-
   getCardSize() {
     return 4;
   }
 
-  getGridOptions() {
-    return { columns: "full", min_columns: 6, rows: "auto" };
+  _packs() {
+    return listPacks(this._hass);
+  }
+
+  _view() {
+    return "fleet";
+  }
+
+  _html() {
+    return fleetCardHtml(this._hass);
   }
 }
 
