@@ -58,3 +58,18 @@ def test_entity_kinds_are_real_translation_keys() -> None:
     known = set(strings["entity"]["sensor"])
     assert keys
     assert set(keys) <= known
+
+
+def test_text_module_loads_with_the_card_token() -> None:
+    """The text module is imported with this module's own ?v= token."""
+    token = "${new URL(import.meta.url).search}"
+    assert f"import(`./marstek-battery-health-copy.js{token}`)" in _source()
+
+
+def test_every_language_has_the_same_text_keys() -> None:
+    """A key missing in one language would render as undefined."""
+    copy = (_MODULE.parent / "marstek-battery-health-copy.js").read_text(encoding="utf-8")
+    en, nl = re.split(r"^  nl: \{$", copy, flags=re.M)
+    keys = [re.findall(r"^    (\w+):", part, re.M) for part in (en, nl)]
+    assert keys[0]
+    assert keys[0] == keys[1]

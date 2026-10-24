@@ -17,6 +17,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.const import DOMAIN
 from custom_components.marstek.helpers.capacity_frontend import (
+    _FRONTEND_URL,
     async_register_capacity_frontend,
     async_sync_capacity_dashboard,
 )
@@ -248,3 +249,22 @@ async def test_dashboard_leaves_a_users_own_dashboard_at_the_same_path(
 
     assert collection.items["mine"]["show_in_sidebar"] is True
     assert store.saved is None
+
+
+async def test_register_token_follows_every_module(hass: HomeAssistant, tmp_path: Path) -> None:
+    """Editing only the imported text module still changes the cache token."""
+    module = tmp_path / "marstek-battery-health.js"
+    module.write_text("card")
+    copy = tmp_path / "marstek-battery-health-copy.js"
+    tokens = []
+    for text in ("one", "two"):
+        copy.write_text(text)
+        hass.data.pop(_FRONTEND_URL, None)
+        _enable_frontend(hass)
+        with patch(
+            "custom_components.marstek.helpers.capacity_frontend._module_path",
+            return_value=module,
+        ):
+            await async_register_capacity_frontend(hass)
+        tokens.append(hass.data[_FRONTEND_URL].rsplit("v=", 1)[1])
+    assert tokens[0] != tokens[1]
