@@ -22,6 +22,8 @@ After setup you’ll see a device page with sensors/entities grouped under the d
 
 <img src="screenshots/device-details.png" alt="Device details" width="560" />
 
+The [visual tour](screenshots.md) continues from here: the Battery health sidebar, the Lovelace cards, and linking a smart plug. Diagnostic sensors such as battery temperature start disabled; how to enable them is in that tour and in [Entities](entities.md).
+
 ## IP changes
 
 If your device IP changes (DHCP), the background scanner updates the config entry to the address the device answered from. A `Marstek.GetDevice` payload can keep naming the previous address after a lease change; that value is not written over a host that is still answering. A DHCP lease from Home Assistant still updates the host.

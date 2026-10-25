@@ -70,16 +70,30 @@ Charging is always validated against the same per-family maximum (as a negative 
 
 <img src="screenshots/device-settings-power.png" alt="Power settings" width="560" />
 
+## Battery health dashboard
+
+**Show Battery health in the sidebar** adds a **Battery health** page (Dutch: **Batterijgezondheid**) that compares every Marstek battery. The cards are available from **Add card** whether this is on or off. The option starts off. Turning it off again hides the sidebar entry and leaves the dashboard in place. Reload the browser if the sidebar entry does not appear after you submit.
+
+<img src="screenshots/options-battery-health-dashboard.png" alt="Battery health dashboard option with Show Battery health in the sidebar turned on." width="720" />
+
+What the page shows, and how to add the same cards to a dashboard you already have, is the [visual tour](screenshots.md#2-battery-health-sidebar-dashboard).
+
 ## Energy meter (optional)
 
 Link a smart plug or meter that sits only between this battery and the mains
 (a HomeWizard Energy Socket, a Shelly plug, or any meter with total energy
-sensors):
+sensors). The plug then measures the round trip and the standby draw, and the
+cards show the plug's live power. Leave both fields empty to use only the
+battery's own readings.
 
-- Energy into the battery: a total energy sensor that counts what the plug delivers to the battery. On a HomeWizard socket, **Energy import**.
-- Energy out of the battery: a total energy sensor that counts what the battery sends back. On a HomeWizard socket, **Energy export**, which Home Assistant creates disabled until you enable it on the socket's device page.
+- **Energy into the battery**: a total energy sensor that counts what the plug delivers to the battery. On a HomeWizard socket, **Energy import**.
+- **Energy out of the battery**: a total energy sensor that counts what the battery sends back. On a HomeWizard socket, **Energy export**. Home Assistant creates that sensor disabled until you enable it on the socket's device page.
 
-Fill both or neither, and pick two different sensors. With a meter linked, the battery health cards show the round trip and standby draw measured at the plug, and the plug's live power. See [Usable capacity](usable-capacity.md#energy-meter-optional).
+Fill both or neither, and pick two different sensors. The screenshot uses a lab meter named Mock energy plug. On your system the entities are named after your plug.
+
+<img src="screenshots/options-energy-meter.png" alt="Energy meter option with Energy into the battery and Energy out of the battery set to two different total-energy sensors." width="720" />
+
+How to link the plug, step by step, is [Link a smart plug](usable-capacity.md#link-a-smart-plug). How the numbers are calculated is [Energy meter (optional)](usable-capacity.md#energy-meter-optional) in the under-the-hood half of that page.
 
 ## Reconfigure
 

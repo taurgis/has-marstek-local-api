@@ -1,6 +1,6 @@
 # Repairs
 
-Home Assistant may surface **Repairs** when the integration detects fixable issues.
+Home Assistant lists these under **Settings → System → Repairs** when the integration detects something you can fix, or a firmware warning you should know about. Screenshots of the connection repair are in the [visual tour](screenshots.md#6-energy-dashboard-and-repairs).
 
 ## Cannot connect
 
