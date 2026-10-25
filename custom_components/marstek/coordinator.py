@@ -40,6 +40,12 @@ from .const import (
 from .firmware_profile import FirmwareProfile, resolve_firmware_profile
 from .helpers.capacity_store import CapacityEstimateStore
 from .helpers.coordinator_helpers import raise_if_invalid_status
+from .helpers.plug_round_trip import (
+    PLUG_STORE_KEY,
+    PlugRoundTrip,
+    apply_plug_round_trip,
+    plug_from_options,
+)
 from .pymarstek import MarstekUDPClient
 from .scanner import MarstekScanner
 
@@ -103,6 +109,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._capacity = UsableCapacityEstimator()
         self._capacity_store = CapacityEstimateStore(hass, config_entry.entry_id)
         self._capacity_loaded = False
+        # Round trip and standby from a linked energy meter, when one is set.
+        self._plug: PlugRoundTrip | None = None
 
         # Get configured fast polling interval
         fast_interval = config_entry.options.get(
@@ -457,25 +465,38 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             stored = await self._capacity_store.async_load()
             self._capacity = UsableCapacityEstimator.from_dict(stored)
             self._capacity.set_poll_interval(self._capacity_poll_interval)
+            self._plug = plug_from_options(self._entry.options, stored)
             self._capacity_loaded = True
-        apply_capacity_estimate(self._capacity, device_status, time.time())
-        if not self._capacity.consume_dirty():
+        now = time.time()
+        apply_capacity_estimate(self._capacity, device_status, now)
+        if self._plug is not None:
+            apply_plug_round_trip(self._plug, self.hass, device_status, now)
+        plug_dirty = self._plug is not None and self._plug.consume_dirty()
+        capacity_dirty = self._capacity.consume_dirty()
+        if not (capacity_dirty or plug_dirty):
             return
         estimate = device_status.get("battery_usable_capacity")
-        if estimate is not None:
+        if capacity_dirty and estimate is not None:
             _LOGGER.info(
                 "Device %s usable capacity is %s Wh after %d window(s)",
                 self.device_ip,
                 estimate,
                 self._capacity.windows_accepted,
             )
-        self._capacity_store.delay_save(self._capacity.to_dict())
+        self._capacity_store.delay_save(self._store_payload())
+
+    def _store_payload(self) -> dict[str, Any]:
+        """Return the capacity windows and, with a linked meter, its readings."""
+        payload = self._capacity.to_dict()
+        if self._plug is not None:
+            payload[PLUG_STORE_KEY] = self._plug.to_dict()
+        return payload
 
     async def async_save_capacity_estimate(self) -> None:
         """Flush accepted windows. A reload before the first poll must not wipe them."""
         if not self._capacity_loaded:
             return
-        await self._capacity_store.async_save(self._capacity.to_dict())
+        await self._capacity_store.async_save(self._store_payload())
 
     def clear_openapi_reset_mark(self) -> None:
         """Drop this device's reset-prone UDP flag, including stale IPs."""

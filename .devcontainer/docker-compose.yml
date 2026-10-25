@@ -51,6 +51,10 @@ services:
       - ..:/workspaces/ha_marstek:cached
       - ha_config:/config
       - ../custom_components:/config/custom_components:cached
+      # Dev-only third-party plug (tools/mock_plug_integration) for the
+      # energy-meter option. Docker creates an empty, git-ignored mount point
+      # at custom_components/mock_energy_plug on the host.
+      - ../tools/mock_plug_integration/mock_energy_plug:/config/custom_components/mock_energy_plug:ro
     ports:
       - "8123:8123"
     networks:
@@ -68,6 +72,10 @@ services:
 
   # Mock device 1 - Venus E 3.0, default UDP port 30000
   # Legacy firmware 145: no SYS/UPS; energy fields in Wh
+  # Plugged into a smart plug on HTTP port 80 (8 W standby): add it with the
+  # core HomeWizard integration (host 172.28.0.20, polled every 5 s) and/or
+  # the dev-only "Mock energy plug" integration (Wh counters, every 10 s),
+  # then link its energy sensors under the Marstek options' Energy meter.
   mock-marstek:
     <<: *default-logging
     build:
@@ -79,7 +87,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.20
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.20", "--ver", "145", "--soc", "50"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.20", "--ver", "145", "--soc", "50", "--standby-w", "8", "--plug-http-port", "80"]
 
   # Mock device 2 - Venus E 3.0, default UDP port 30000
   # Firmware 150 Rev 3.1: SYS + UPS + EM energy; GetMode CT keys are zeros

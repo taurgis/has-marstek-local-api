@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from custom_components.marstek.helpers import capacity_frontend
 
 _MODULE = (
@@ -61,10 +63,14 @@ def test_entity_kinds_are_real_translation_keys() -> None:
     assert set(keys) <= known
 
 
-def test_text_module_loads_with_the_card_token() -> None:
-    """The text module is imported with this module's own ?v= token."""
+@pytest.mark.parametrize(
+    "name", ["marstek-battery-health-copy.js", "marstek-battery-health-plug.js"]
+)
+def test_imported_modules_load_with_the_card_token(name: str) -> None:
+    """Each imported module uses this module's own ?v= token, so an update reaches the browser."""
     token = "${new URL(import.meta.url).search}"
-    assert f"import(`./marstek-battery-health-copy.js{token}`)" in _source()
+    assert (_MODULE.parent / name).is_file()
+    assert f"import(`./{name}{token}`)" in _source()
 
 
 def test_every_language_has_the_same_text_keys() -> None:

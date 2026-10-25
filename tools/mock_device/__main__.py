@@ -79,6 +79,21 @@ def _add_experiment_arguments(parser: argparse.ArgumentParser) -> None:
         help="Setpoint tracking error in percent (default: the simulator's 1.5)",
     )
     parser.add_argument(
+        "--standby-w",
+        type=int,
+        default=None,
+        help="Watts the unit draws from the mains for itself (default: the family's)",
+    )
+    parser.add_argument(
+        "--plug-http-port",
+        type=int,
+        default=None,
+        help=(
+            "Serve a smart plug on the battery's AC cord over HTTP on this port: "
+            "a HomeWizard Energy Socket (API v1) and a Shelly-style /rpc endpoint"
+        ),
+    )
+    parser.add_argument(
         "--fixed-pv",
         action="store_true",
         help="Hold --pv-channels at the given watts instead of following the sun",
@@ -116,6 +131,14 @@ def _experiment_config(args: argparse.Namespace) -> dict[str, object]:
         config["power_fluctuation_pct"] = args.power_fluctuation
     if args.fixed_pv:
         config["fixed_pv"] = True
+    if args.standby_w is not None:
+        if args.standby_w < 0:
+            raise SystemExit("--standby-w must be non-negative")
+        config["standby_w"] = args.standby_w
+    if args.plug_http_port is not None:
+        if not 0 < args.plug_http_port < 65536:
+            raise SystemExit("--plug-http-port must be a TCP port")
+        config["plug_http_port"] = args.plug_http_port
     return config
 
 

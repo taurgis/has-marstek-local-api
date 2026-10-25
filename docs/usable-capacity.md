@@ -198,6 +198,62 @@ The storage version is unchanged.
   them; the arithmetic still runs on data the coordinator already fetched,
   which is a few numbers per poll and no UDP.
 
+## Energy meter (optional)
+
+The battery reports its own AC power, but not the power it draws to stay
+awake. Marstek specifies above 93.5% efficiency per direction, while tests of
+the Venus E 3.0 measured a round trip of about 83% to 85% and an idle draw of
+5 W to 8 W. A smart plug between the battery and the mains (a HomeWizard
+Energy Socket, a Shelly plug, or any meter with total energy sensors) sees
+both.
+
+Options → **Energy meter (optional)** links two total energy sensors: energy
+into the battery and energy out of it. On a HomeWizard socket these are
+**Energy import** and **Energy export**. Home Assistant creates the export
+sensor disabled while the socket has never exported, so enable it on the
+socket's device page first. HomeWizard also shows a counter that is exactly
+zero as unknown; that only delays the first measurement. Leave both fields
+empty to use only the battery's readings; then nothing below runs.
+
+With a meter linked, the usable capacity sensor gains these attributes:
+
+| Attribute | Meaning |
+|---|---|
+| `plug_energy_entities` | The two linked sensors, so the cards can find the plug's power sensor |
+| `plug_round_trip_efficiency` | Energy out divided by energy in, between two moments at the same state of charge |
+| `plug_round_trip_since`, `plug_round_trip_at` | Start and end of that measurement |
+| `plug_round_trip_energy_in_wh`, `plug_round_trip_energy_out_wh` | The two counters' differences |
+| `plug_standby_w` | Energy in divided by hours over an idle stretch of at least three hours |
+| `plug_standby_at` | When that standby figure was taken |
+
+How it is measured:
+
+- At the same state of charge the pack holds the same energy, so the quotient
+  needs no efficiency assumption. Standby draw and self-discharge in between
+  are included, which is why it is lower than
+  `implied_round_trip_efficiency`.
+- The integration remembers the first meter reading at each whole state of
+  charge for 30 days. When the pack is back at a remembered level after at
+  least one full capacity went in, it publishes the quotient, at most once a
+  day, and only between 50% and 100%.
+- Solar or off-grid power above 20 W reaches the pack without crossing the
+  plug, so such a poll starts the measurement again. So does a counter that
+  went down or a different pair of sensors.
+- Idle means 5 W or less of reported battery power and no energy out. The
+  standby figure is published when the stretch ends, and once a day while it
+  lasts; anything above 100 W is dropped.
+- Load: the two sensor states are read from memory on the poll the
+  integration already makes. There is no extra polling, no state listener,
+  and the Store is written only when a published number changes.
+
+The cards prefer the measured round trip to the implied one and say so ("at
+the plug"). The health card adds the standby draw in watts and kWh a day.
+When the plug has a power sensor on the same device, the cards also show its
+live watts: in the health card's header next to the battery's own power, and
+as a fourth figure on the fleet card. The plug's figure is sampled on its own
+schedule (every 5 s for HomeWizard), so it can differ from the battery's
+30-second reading by more than the conversion loss.
+
 ## Lovelace cards
 
 The integration serves its own frontend module, `marstek-battery-health.js`,
@@ -241,7 +297,8 @@ device reports (`bat_cap`).
   every battery. It totals usable capacity, stored energy, and battery
   power, and draws each pack on one kWh scale, so a longer bar is a larger
   battery. It points out the battery with the largest share, the most
-  faded one once it has left the Healthy band, a round-trip gap between packs, and a state-of-charge gap
+  faded one once it has left the Healthy band, a round-trip gap between packs
+  (measured at the plug or implied, never one against the other), and a state-of-charge gap
   of 10 points or more. Selecting a row opens that battery's more-info
   dialog.
 
