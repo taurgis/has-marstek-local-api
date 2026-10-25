@@ -248,10 +248,12 @@ def test_custom_port_emulators_probe_their_own_port() -> None:
     assert "profiles" not in _compose_services()["fw-venus-a-150"]
 
 
-def test_readme_test_matrix_names_every_emulator_and_default_mock() -> None:
-    """The README matrix is how owners see their coverage, so it must not drift."""
+def test_development_guide_test_matrix_names_every_emulator_and_default_mock() -> None:
+    """The development guide holds the coverage matrix, and the README links to it."""
+    guide = (_REPO_ROOT / "docs" / "development.md").read_text(encoding="utf-8")
+    matrix = guide.split("## Test matrix", 1)[1].split("\n## ", 1)[0]
     readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    matrix = readme.split("## Test matrix", 1)[1].split("\n## ", 1)[0]
+    assert "docs/development.md#test-matrix" in readme
     services = _compose_services()
     expected = {
         name
@@ -260,7 +262,7 @@ def test_readme_test_matrix_names_every_emulator_and_default_mock() -> None:
         or (name.startswith("mock-marstek") and "profiles" not in service)
     }
     missing = {name for name in expected if f"`{name}`" not in matrix}
-    assert not missing, f"README test matrix lacks {sorted(missing)}"
+    assert not missing, f"development guide test matrix lacks {sorted(missing)}"
     template = "firmware_coverage.yml"
     assert f"issues/new?template={template}" in matrix
     assert (_REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / template).is_file()
