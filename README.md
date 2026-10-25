@@ -4,37 +4,26 @@
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.10%2B-blue.svg)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-Monitor and control Marstek batteries from Home Assistant, on your own network. See what each pack still holds, compare every battery on one screen, and charge or discharge them from automations.
+Monitor and control Marstek batteries from Home Assistant over local UDP. Read live state of charge and power, send solar and grid energy to the Energy dashboard, set the operating mode, and drive passive power or manual schedules from automations. Usable capacity and battery health are optional once a pack has been measured. See [Battery health](docs/usable-capacity.md).
 
 This is an independent community project. It is not affiliated with or endorsed by Marstek.
 
 ## See it
 
-**Battery health** in the sidebar. **Your batteries** totals usable energy, energy stored now, battery power, and power at a linked plug. Each battery has its own card: Venus E already has an estimate, Venus A is still measuring.
+The device page shows state of charge, power, operating mode, and the controls. An automation can charge, discharge, or stop the battery with a device action.
 
-<img src="docs/screenshots/battery-health-dashboard-desktop.png" alt="Battery health dashboard. Your batteries compares Venus A and Venus E on one kWh scale. Venus E is Healthy at 4.86 kWh, 95 percent of its 5.12 kWh rating, with a weekly capacity chart." width="840" />
+<img src="docs/screenshots/device-details.png" alt="Marstek device page in Home Assistant with battery sensors and controls." width="560" />
+<img src="docs/screenshots/automation-action.png" alt="Automation editor with a Marstek device action to charge, discharge, or stop the battery." width="520" />
 
-The same cards drop onto any dashboard. **Capacity** is the weekly chart, **Runs** is every 20-point charge or discharge (with a CSV download), and **Energy** is lifetime AC energy plus solar and the backup socket where the battery reports them.
-
-<img src="docs/screenshots/battery-health-runs-desktop.png" alt="Runs tab listing charge and discharge runs, each compared with the median, and a Download runs CSV link." width="840" />
-
-<img src="docs/screenshots/battery-health-energy-desktop.png" alt="Energy tab. Venus E shows lifetime energy charged from AC and delivered to AC. Venus A also shows solar and backup-socket energy." width="840" />
-
-<img src="docs/screenshots/battery-health-mobile.png" alt="The same Battery health dashboard on a phone, with Your batteries in two columns and the cards stacked." width="280" />
-
-The device page is where sensors, operating mode, and the disabled-by-default diagnostics live. Automations can charge, discharge, or stop the battery with a device action.
-
-<img src="docs/screenshots/device-details.png" alt="Marstek device page in Home Assistant with battery sensors and controls." width="420" />
-<img src="docs/screenshots/automation-action.png" alt="Automation editor with a Marstek device action to charge, discharge, or stop the battery." width="420" />
-
-The full walkthrough, including the card picker, the visual editor, and the smart-plug options, is the [visual tour](docs/screenshots.md).
+Setup, options, and the Energy dashboard are in the [visual tour](docs/screenshots.md). The Runs tab, the Energy tab, the phone layout, and the card picker are in [Battery health](docs/usable-capacity.md) and that tour.
 
 ## Quick start
 
 1. In the Marstek app, enable **Open API** on the battery. Home Assistant has to be on the same network. The usual port is **30000**.
 2. Install the integration with [HACS](#installation) (or copy it in by hand) and restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration**, search for **Marstek**, and pick the discovered battery. If nothing is found, enter the IP address and port.
-4. Optional: open the device, choose **Configure → Battery health dashboard**, and turn on **Show Battery health in the sidebar**. To measure the real round trip, also open **Energy meter (optional)** and link a smart plug. Both are in the [visual tour](docs/screenshots.md).
+
+Polling intervals, power limits, and the optional Battery health sidebar are under **Configure** on the device. See [Options](#options).
 
 ## Installation
 
@@ -74,15 +63,12 @@ More detail: [Installation](docs/installation.md).
 
 ## What you can do
 
-- **Battery level, power, and status**, plus operating mode (Auto, AI, Manual, Passive, and UPS on firmware that allows it).
-- **Usable capacity** and **battery state of health**, once the battery has completed three long charge or discharge runs. Unknown until then. See [Battery health](docs/usable-capacity.md).
-- **Battery health cards.** **Marstek battery health** shows one pack against its rating, with plain-language insights and its runs (downloadable as CSV). **Marstek battery fleet** compares every battery on one kWh scale. Add them from **Add card**. The integration registers the cards, so there is no Lovelace resource to add by hand.
-- **Battery health dashboard.** **Configure → Battery health dashboard** adds an optional **Battery health** sidebar page (Dutch: **Batterijgezondheid**). It starts off.
-- **A linked smart plug.** **Configure → Energy meter (optional)** accepts a HomeWizard, Shelly, or any other meter and then shows live plug watts, round-trip efficiency at the plug (standby included), and standby draw.
-- **Solar** on Venus A and Venus D, **on-grid and off-grid power**, per-phase meter power, and lifetime energy for the Energy dashboard.
-- **Charge, discharge, and stop** from the automation editor, plus `marstek.set_passive_mode` and manual schedules.
-- **Depth of discharge, Bluetooth advertising, and the panel LED** on firmware that accepts those writes.
-- **Diagnostics and Repairs** for connection loss and firmware warnings.
+- **Live battery state.** State of charge, charge and discharge power, status, and operating mode (Auto, AI, Manual, Passive, and UPS on firmware that supports it).
+- **Control from automations.** Charge, discharge, and stop device actions, plus `marstek.set_passive_mode` and manual schedules (`0–9` on Venus A, C, D, and E, `0–5` on Venus E mini).
+- **Energy dashboard.** Grid and off-grid power, per-phase meter power, solar PV on Venus A and Venus D, and lifetime energy totals.
+- **Device controls on supported firmware.** Depth of discharge, Bluetooth advertising, and the panel LED.
+- **Finding and diagnosing the battery.** Wi-Fi RSSI, CT connection status, automatic IP discovery, diagnostics, and Repairs.
+- **Battery health, optional.** Usable capacity, state of health, the built-in Lovelace cards, the sidebar dashboard, and a linked smart-plug meter. See [Battery health](docs/usable-capacity.md).
 
 **Battery temperature** and the other battery-detail sensors start disabled, because the request behind them has been suspected of resetting some batteries ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)). Enable them from the device page when you want them. See [Entities](docs/entities.md).
 
@@ -112,22 +98,19 @@ Copy-paste YAML is in [Automations and services](docs/services.md).
 
 ## Options
 
-Open the device and choose **Configure**. Five sections are there: **Polling Intervals**, **Network Settings**, **Power Settings**, **Battery health dashboard**, and **Energy meter (optional)**. Only **Polling Intervals** starts expanded.
+Open the device and choose **Configure**.
 
-Day to day, the two you are most likely to open are:
+- **Polling Intervals.** Fast (default 30 seconds) reads mode, battery status, and meter power. Medium (default 60 seconds) reads solar on Venus A and Venus D. Slow (default 300 seconds) reads Wi-Fi and battery diagnostics, and only while a sensor that needs them is enabled.
+- **Network Settings.** Delay between requests (default 5 seconds), request timeout (default 10 seconds), and failures before entities go unavailable (default 3). Parallel API requests stay off.
+- **Power Settings.** Default charge power is -1300 W and default discharge power is 800 W. A Charge or Discharge action uses those when the field is left empty. **Enforce 800 W discharge limit** is on by default for Venus C, D, E, and Venus E mini, and off for Venus A. While it is on, validated discharge stays at or below 800 W.
+- **Battery health dashboard.** Off by default. **Show Battery health in the sidebar** adds the optional page. The cards stay available from **Add card** either way. See [Battery health](docs/usable-capacity.md).
+- **Energy meter (optional).** Link a smart plug's total-energy sensors to measure the round trip and standby draw. Leave both fields empty to use the battery's own readings.
 
-- **Show Battery health in the sidebar**, under **Battery health dashboard**. Off by default. Turning it off hides the sidebar entry and leaves the dashboard in place.
-- **Energy into the battery** and **Energy out of the battery**, under **Energy meter (optional)**. On a HomeWizard socket those are **Energy import** and **Energy export**. Enable **Energy export** on the socket's device page first. Fill both or leave both empty.
-
-<img src="docs/screenshots/options-battery-health-dashboard.png" alt="Configure dialog with Show Battery health in the sidebar turned on." width="640" />
-
-<img src="docs/screenshots/options-energy-meter.png" alt="Configure dialog with Energy into the battery and Energy out of the battery set to total-energy sensors." width="640" />
-
-Polling intervals, parallel requests, charge and discharge defaults, and the socket limit are documented in [Options](docs/options.md).
+Ranges, firmware gates, and screenshots are in [Options](docs/options.md).
 
 ## Documentation
 
-- [Documentation index](docs/README.md) — every page, grouped by what you are trying to do.
+- [Documentation index](docs/README.md). Every page, grouped by what you are trying to do.
 - [Visual tour](docs/screenshots.md)
 - [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Options](docs/options.md)
 - [Battery health](docs/usable-capacity.md) · [Energy dashboard](docs/energy_dashboard.md) · [Automations and services](docs/services.md)
@@ -175,6 +158,14 @@ Every service targets a device with `device_id`, except `marstek.request_data_sy
 | `marstek.request_data_sync` | Refresh now. |
 
 **Charge**, **Discharge**, and **Stop** are also device actions in the automation editor. Parameters, YAML examples, and the screenshots are in [Automations and services](docs/services.md).
+
+## Battery health (optional)
+
+After a few long charge or discharge runs, the integration estimates usable capacity and state of health. The same cards can go on a dashboard you already have. The sidebar page and a smart-plug meter stay off until you turn them on.
+
+<img src="docs/screenshots/battery-health-dashboard-desktop.png" alt="Battery health dashboard. Your batteries compares two packs on one kWh scale, with a weekly capacity chart on the battery that already has an estimate." width="640" />
+
+The Runs tab, the Energy tab, the phone layout, and the card picker are in [Battery health](docs/usable-capacity.md) and the [visual tour](docs/screenshots.md).
 
 ## Known limitations
 
