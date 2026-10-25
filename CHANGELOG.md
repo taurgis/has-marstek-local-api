@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0
+
+### Minor Changes
+
+- ccea124: Add CSV downloads of the weekly estimates and the runs to the battery health card, and stop its discharge time at the depth-of-discharge floor.
+- f465697: Add an optional energy meter link (a HomeWizard Energy Socket, a Shelly plug or any meter with total energy sensors) that measures a battery's real round-trip efficiency and standby draw, and show the plug's live power on the battery health cards.
+
 ## 1.7.0
 
 ### Minor Changes
