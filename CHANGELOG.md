@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.1
+
+### Patch Changes
+
+- 8f096b5: Line the battery health power subtitle up with the device name.
+- 4c36768: Move the battery health status to the top right and put live power under the device name.
+- 16af792: Fix meter energy sensors sticking at 0 Wh when ES.GetMode reports placeholder zeros before the real EM.GetStatus totals.
+- 4a4824a: Line up the battery fleet figures in two columns on a phone.
+- 3241faf: Keep an in-progress battery health run across a missed status poll, a two-point state-of-charge tick, and a brief same-sign power dip.
+
 ## 1.8.0
 
 ### Minor Changes
