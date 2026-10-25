@@ -1,9 +1,18 @@
 # Energy Dashboard
 
+## Add Marstek to the Energy dashboard
+
+1. Open **Settings → Dashboards → Energy**. The official walkthrough is [Home Assistant Energy](https://www.home-assistant.io/docs/energy/).
+2. For solar on Venus A or Venus D, add **Total solar energy** as solar production.
+3. Add **Total grid input energy** as grid consumption and **Total grid output energy** as return to the grid.
+4. Leave **Total load energy** off this dashboard. Its meaning depends on the device, so this integration does not recommend it as home consumption.
+
+Screenshots of the battery's own **Energy** tab, which is a different view, are in the [visual tour](screenshots.md#6-energy-dashboard-and-repairs).
+
 ## Overview
 This page maps Marstek entities to Home Assistant energy dashboard inputs and provides copy-paste examples. Eligibility note: energy sensors must report `device_class: energy`, use `state_class: total` or `state_class: total_increasing`, and report energy units Wh or kWh to be accepted by the energy dashboard.
 
-Note: Battery energy totals are not provided by this integration.
+Note: there is no separate battery charge/discharge sensor for the Energy dashboard's battery row. Use the grid and solar totals above. The health card's **Energy** tab is a different view of the same lifetime counters.
 
 ## Why Wh instead of kWh
 

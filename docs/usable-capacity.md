@@ -1,4 +1,138 @@
-# Usable capacity
+# Battery health
+
+The integration estimates how much energy your battery can still store, and shows that estimate on an optional sidebar dashboard and on two Lovelace cards. The math uses readings Home Assistant already collects, so it adds no extra traffic to the battery and needs no cloud account.
+
+**Usable capacity** is that estimate in watt-hours: the energy the pack can store across a full 0–100% of the reported state of charge. **Battery state of health** is the same estimate as a percentage of the capacity printed on the battery (the nameplate). Both stay unknown until the battery has finished a few long charge or discharge runs. Until then the card says **Still measuring**. [Why that happens](#why-does-my-card-say-still-measuring) is a few paragraphs below.
+
+The screenshots on this page are from a Home Assistant setup with a Venus E (3.0) that already has an estimate and a Venus A that is still collecting runs. Your device names, wattages, and dates will differ. A phone-width view of the same dashboard is in the [visual tour](screenshots.md).
+
+## What the dashboard shows
+
+<img src="screenshots/battery-health-dashboard-desktop.png" alt="Battery health sidebar dashboard. The Your batteries card totals usable energy, energy stored now, battery power, and power at the plug. Venus A is still measuring. Venus E shows a Healthy estimate, a capacity bar, insights, and a weekly chart." width="840" />
+
+**Your batteries** adds up every Marstek battery on this Home Assistant:
+
+- **usable** is the sum of the estimates.
+- **stored now** is the energy in the packs right now, with the fleet state of charge in parentheses.
+- **battery power** is the combined charge or discharge power.
+- **at the plug** appears once a smart plug is linked. The label names the battery whose plug reported that power.
+
+The bars share one kWh scale, so a longer bar is a larger battery. A line under the bars points out a wide state-of-charge gap, the battery that holds the biggest share, and a battery that has faded past the Healthy band.
+
+Each battery card shows:
+
+- The name, whether it is charging, discharging, or idle, and the live watts. With a plug linked, the plug's watts sit on the same line.
+- A band on the right: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), or **Measuring** while there is no estimate yet.
+- One sentence that says what the pack holds against its rating. On the screenshot, Venus E holds **4.86 kWh**, **95%** of its **5.12 kWh** rating.
+- A bar split into energy stored now, room left, and the part that has faded.
+- Short insights: how many runs the number is based on and how closely they agree, how much the weekly estimate has moved, what the round trip means per 10 kWh charged, standby draw when a plug is linked, and how long the pack can keep going at the current power.
+
+While the battery is discharging at 50 W or more, that time runs down to the floor set by **Depth of discharge**. An 88% depth of discharge stops the pack at 12%, and the sentence names that floor. The Open API cannot read the setting back, so the card uses the last value written from Home Assistant, which starts at 88%.
+
+### Capacity
+
+The **Capacity** tab is the weekly chart: a line for the weekly estimate, a dot for each run, and a dashed line for the rating. **Download weekly estimates (CSV)** saves `week_start`, `usable_wh`, and `rated_wh`. The chart appears after the first published estimate. Venus A, still measuring, shows that empty state on the screenshot.
+
+### Runs
+
+<img src="screenshots/battery-health-runs-desktop.png" alt="Runs tab on Venus E. Charge and discharge runs of about 20 state-of-charge points, each with a date, a capacity, and a comparison to the median. A link downloads the runs as CSV." width="840" />
+
+**Runs** lists every kept run, newest first, eight to a page. Filter with **All**, **Charge**, or **Discharge**. Each row is one stretch that moved the state of charge by about 20 points, with its capacity and how far it sits from the median for that direction. The line above the list gives the median of the discharge runs and the median of the charge runs. **Download runs (CSV)** saves every kept run, including ones hidden by the filter.
+
+### Energy
+
+<img src="screenshots/battery-health-energy-desktop.png" alt="Energy tab on both batteries. Venus E shows a large lifetime of energy charged from AC and delivered to AC, about 216 full cycles, and a tiny backup-socket total. Venus A shows solar and backup-socket energy and less than one full cycle." width="840" />
+
+**Energy** is lifetime energy the battery has already counted:
+
+- **Charged from AC** and **Delivered to AC** are the grid-side totals.
+- **Solar** appears on models that report PV energy, such as Venus A and Venus D.
+- **Backup socket** appears once the off-grid output has delivered some energy. On the screenshot Venus E's backup socket has barely been used, next to a long AC history. Venus A shows both **Solar** and **Backup socket**.
+- Full cycles are the energy delivered to AC divided by the nameplate. Below one nameplate of delivered energy, the card says less than one full cycle.
+
+## Turn on the sidebar dashboard
+
+The sidebar page is off until you enable it. The cards themselves stay available from **Add card** either way.
+
+1. Go to **Settings → Devices & services → Marstek**.
+2. Open the device and choose **Configure**.
+3. Open **Battery health dashboard**.
+4. Turn on **Show Battery health in the sidebar** and submit.
+
+<img src="screenshots/options-battery-health-dashboard.png" alt="Configure dialog with Battery health dashboard expanded and Show Battery health in the sidebar turned on." width="720" />
+
+Home Assistant adds a **Battery health** entry to the sidebar (in Dutch, **Batterijgezondheid**). It places **Your batteries** across the top and one card per battery below it. Reload the browser if the sidebar entry does not show up after you submit. Turning the option off again hides the sidebar entry and leaves the dashboard in place.
+
+## Add the cards to a dashboard you already have
+
+This integration registers the card module itself, so the cards show up in the picker after a browser reload. You pick them like any other card.
+
+1. Install or upgrade the integration, then reload the browser.
+2. Open your dashboard, choose **Edit dashboard**, then **Add card**.
+3. Open the **By card** tab.
+4. Type `Marstek` in **Search cards**, or scroll down to **Custom cards**.
+5. Pick **Marstek battery health** for one battery, or **Marstek battery fleet** for the comparison.
+
+<img src="screenshots/battery-health-card-picker.png" alt="Add card dialog on the By card tab, with Marstek typed in Search cards. Marstek battery fleet and Marstek battery health are the results." width="840" />
+
+The visual editor sets the battery, an optional title, whether the detail tabs show, and which tab opens first.
+
+<img src="screenshots/battery-health-card-editor.png" alt="Marstek battery health card configuration. Venus E is selected, the detail tabs are shown, Capacity opens first, and a live preview of the Healthy card sits beside the form." width="840" />
+
+The card types, if you are editing YAML, are `custom:marstek-battery-health-card` and `custom:marstek-battery-fleet-card`. The picker lists those English names in every language. The words on the card follow your Home Assistant language. English and Dutch are included.
+
+Clicking a row on the fleet card opens that battery's more-info dialog. To be notified when a battery leaves the Healthy band, use a numeric state trigger on **Battery state of health**. The sensor changes only when the estimate changes:
+
+```yaml
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.venus_e_3_0_battery_state_of_health
+    below: 90
+actions:
+  - action: notify.notify
+    data:
+      message: >-
+        {{ state_attr(trigger.entity_id, 'friendly_name') }} is at
+        {{ trigger.to_state.state }}% of its rating.
+```
+
+Use `below: 80` for the Worn band. The card rounds to a whole percent, so the automation can fire a few tenths before the card changes band.
+
+## Link a smart plug
+
+A plug or meter that sits only between this battery and the mains sees energy the battery's own readings miss, including the power it draws to stay awake. HomeWizard Energy Socket and Shelly plugs both work, and so does any meter with two total-energy sensors.
+
+1. On the plug's device page, enable the sensor that counts energy leaving the battery. On a HomeWizard socket that sensor is **Energy export**, and Home Assistant creates it disabled until the socket has exported or you enable it yourself. **Energy import** is the energy going into the battery.
+2. Go to **Settings → Devices & services → Marstek → (device) → Configure**.
+3. Open **Energy meter (optional)**.
+4. Set **Energy into the battery** and **Energy out of the battery**. Fill both, or leave both empty. They have to be two different sensors.
+5. Submit.
+
+<img src="screenshots/options-energy-meter.png" alt="Energy meter section. Energy into the battery and Energy out of the battery are each set to a total-energy sensor. The helper text names HomeWizard Energy import and Energy export." width="720" />
+
+The screenshot uses a lab meter named Mock energy plug. On a HomeWizard socket you pick **Energy import** and **Energy export**.
+
+With a meter linked, the cards add:
+
+- The plug's live watts, on the health card under the battery name and as **at the plug** on **Your batteries**. The plug updates on its own schedule, so its watts can differ from the battery's 30-second reading.
+- Round-trip efficiency measured at the plug, standby included. The sentence says "measured at the plug" and spells out what comes back from every 10 kWh charged.
+- Standby draw in watts and in kWh a day.
+
+Leave both fields empty to keep using only the battery's own readings. The round trip then says it was estimated from those readings, and standby is omitted.
+
+## Why does my card say Still measuring?
+
+A first estimate needs **three runs in one direction**. A run is one stretch of charging, or one stretch of discharging, that moves the state of charge by 20 points without a long pause, a mode change, or the power dropping to a trickle.
+
+A discharge from 70% to 50% is one run. Three discharges like that publish a number. So do three charges. Two charges and one discharge do not: the two directions are kept separate until each has three runs. After that, the published number blends both.
+
+Until then the card stays on **Measuring** and, while a run is open, shows how far it has got, for example "3 of 20 points so far." A battery that only trickles, or that changes direction often, can take days. Weekly estimates appear after the first published value.
+
+The bands describe fade only. The Open API reports no warranty terms.
+
+## How it works under the hood
+
+You can stop at the sections above if you only want to use the dashboard and the cards. The rest of this page is the calculation, the stored history, and the limits.
 
 The **Usable capacity** sensor estimates how much energy the pack can store
 per 100 points of reported state of charge, in watt-hours. It is not the
@@ -200,6 +334,8 @@ The storage version is unchanged.
 
 ## Energy meter (optional)
 
+The steps to link a meter are in [Link a smart plug](#link-a-smart-plug). This section is how those numbers are calculated.
+
 The battery reports its own AC power, but not the power it draws to stay
 awake. Marstek specifies above 93.5% efficiency per direction, while tests of
 the Venus E 3.0 measured a round trip of about 83% to 85% and an idle draw of
@@ -255,6 +391,8 @@ schedule (every 5 s for HomeWizard), so it can differ from the battery's
 30-second reading by more than the conversion loss.
 
 ## Lovelace cards
+
+How to add the cards is in [Add the cards to a dashboard you already have](#add-the-cards-to-a-dashboard-you-already-have). This section is what they read and where the history is stored.
 
 The integration serves its own frontend module, `marstek-battery-health.js`,
 so no Lovelace resource is needed. After upgrading, reload the browser (or

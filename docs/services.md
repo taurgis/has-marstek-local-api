@@ -241,7 +241,7 @@ Immediately stops any active charge or discharge operation. No parameters requir
 
 ### Power validation
 
-All device actions respect the **Socket limit** setting configured in [Options](options.md). If socket limit is enabled (the default for Venus C, Venus D, Venus E and Venus E mini), discharge power above 800 W is rejected. With it disabled, the cap is the per-family maximum listed in [Options](options.md#power--behavior).
+All device actions respect the **Socket limit** setting configured in [Options](options.md). If socket limit is enabled (the default for Venus C, Venus D, Venus E and Venus E mini), discharge power above 800 W is rejected. With it disabled, the cap is the per-family maximum listed in [Options](options.md#power-settings).
 
 ### Technical details
 

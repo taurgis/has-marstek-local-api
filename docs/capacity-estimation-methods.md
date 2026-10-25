@@ -2,8 +2,10 @@
 
 This note is the evidence behind the usable-capacity sensor. It records what
 the published methods need, what other products actually do, and what the
-Marstek Open API can support. The sensor itself is described in
-[Usable capacity](usable-capacity.md).
+Marstek Open API can support. How to turn the dashboard and the cards on is
+[Battery health](usable-capacity.md). The calculation, the store, and the
+limits are [under the hood](usable-capacity.md#how-it-works-under-the-hood)
+on that same page.
 
 Home Assistant's sensor classes are cited there from Core 2026.9.3. There is
 no Marstek document online for the local API; the field list is

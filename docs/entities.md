@@ -21,7 +21,7 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 | Battery level | `battery_soc` | % | — | Enabled |
 | Battery power | `battery_power` | W | — | Enabled |
 | On-grid power | `ongrid_power` | W | — | Enabled (if supported) |
-| Off-grid power | `offgrid_power` | W | — | Enabled (if supported). Optional clamp to 0 W for negative readings: see [Options](options.md#power--behavior). |
+| Off-grid power | `offgrid_power` | W | — | Enabled (if supported). Optional clamp to 0 W for negative readings: see [Options](options.md#power-settings). |
 | PV power | `pv_power` | W | — | Enabled (if supported) |
 | Device mode | `device_mode` | — | — | Enabled |
 | Battery status | `battery_status` | — | — | Enabled |

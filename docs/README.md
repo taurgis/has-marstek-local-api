@@ -1,39 +1,33 @@
-# Marstek (Local Open API) – Home Assistant
+# Marstek documentation
 
-This custom integration lets Home Assistant monitor and control **Marstek energy storage devices** over the **local network** using the Marstek **Open API Rev 3.1 via UDP** (no cloud dependency).
+This integration connects Marstek batteries (Venus A, C, D, E 3.0, and Venus E mini) to Home Assistant over your local network. Start with the install, then the pictures.
 
-Device family plus discovery firmware `ver` select a **firmware profile**. That profile decides energy/power decoding, which setup-time entities exist (PV, UPS, SYS), and how many manual schedule slots the device accepts. EM lifetime energy sensors appear when the meter payload reports those fields (scaled on Rev 3.1 firmware). Older firmware keeps the legacy entity set. Capable firmware adds UPS, SYS settings, and correctly scaled solar/meter totals.
+These pages follow a simple order: do a task, look up a fact, then read why it works that way. Install steps stay short. The calculation and the firmware notes live further down the list.
 
-## Highlights
+## Getting started
 
-- Local UDP polling (single coordinator per device)
-- Automatic discovery + IP change handling, including reload when firmware capabilities change
-- Stable entity IDs (survive IP changes)
-- Control: operating mode (Auto/AI, plus UPS when allowed), passive mode and manual schedules via services, firmware-gated SYS settings (depth of discharge, Bluetooth advertising, panel LED)
+- [Installation](installation.md) — HACS or a manual copy, and what has to be true before setup.
+- [Configuration](configuration.md) — discovery, a manual IP and port, and the device page.
+- [Visual tour](screenshots.md) — screenshots of setup, the Battery health dashboard, the cards, a linked smart plug, automations, the Energy dashboard, and Repairs.
 
-## Compatibility
+## Using the features
 
-- Requires **Home Assistant Core 2025.10+**
-- Device must support **Open API** and have it **enabled** in the Marstek app
-- Default UDP port: **30000** (must be reachable on your LAN)
-- Not every model exposes the same modes, schedule count, or energy encoding — see [Entities](entities.md) and the [Open API reference](marstek_device_openapi.MD)
+- [Battery health dashboard and cards](usable-capacity.md) — turn on the sidebar page, add the cards, link a smart plug, and read **Still measuring**.
+- [Energy dashboard](energy_dashboard.md) — which sensors belong on Home Assistant's Energy dashboard.
+- [Automations and services](services.md) — operating mode, Charge / Discharge / Stop, passive mode, and manual schedules.
+- [Options](options.md) — polling, network, power, the Battery health dashboard, and the energy meter.
 
-> Warning: **Venus E2.0 is not compatible** with this integration.
+## Reference and troubleshooting
 
-## Pages
+- [Entities](entities.md) — every sensor, switch, number, and select, including diagnostics that start disabled.
+- [Repairs](repairs.md) — connection repair and the firmware warnings.
+- [Troubleshooting](troubleshooting.md) — discovery, Venus C in Auto mode, missing controls, and entities that stay unavailable.
 
-- [Installation](installation.md)
-- [Configuration](configuration.md)
-- [Options](options.md)
-- [Entities](entities.md)
-- [Energy Dashboard](energy_dashboard.md)
-- [Services & automations](services.md)
-- [Repairs](repairs.md)
-- [Troubleshooting](troubleshooting.md)
-- [Development](development.md)
-- [Open API Rev 3.1 reference](marstek_device_openapi.MD)
-- [Control firmware research (issue #15)](../tools/firmware/README.md)
+## Under the hood
 
-## Screenshots
+- [How capacity estimation works](capacity-estimation-methods.md) — why the estimate is built the way it is.
+- [Battery health, the calculation](usable-capacity.md#how-it-works-under-the-hood) — formula, plug measurement, stored history, and limits.
+- [Development](development.md) — tests, the firmware test matrix, and releases.
+- [Open API Rev 3.1](marstek_device_openapi.MD) — the local UDP protocol.
 
-Screenshots referenced in these docs live in `docs/screenshots/`.
+Venus E 2.0 is not supported. Details are on the [installation](installation.md) page.

@@ -19,3 +19,7 @@
 - **Open API enabled** in the Marstek app
 - UDP **port 30000** reachable
 - Venus **E2.0 is not supported** (may disconnect the device from CT003)
+
+## Next
+
+Add the battery in [Configuration](configuration.md), then follow the [visual tour](screenshots.md) for the Battery health dashboard, the cards, and a linked smart plug.
