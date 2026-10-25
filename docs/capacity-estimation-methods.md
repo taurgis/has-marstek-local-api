@@ -313,12 +313,18 @@ API does not have.
 
 1. Start a window on the first poll after the whole-percent state of charge
    changes. Keep it only while direction, mode, and the sample gap stay clean,
-   power stays at or above 150 W, and state of charge moves at least 20
-   points across at least four samples. End it when state of charge jumps
-   further than that poll's watts can move the nameplate, with a floor of
-   two points and one point of slack. The gap limit is 180 seconds, or the
-   configured fast interval plus 150 seconds when that is longer. A poll
-   that did not get `ES.GetStatus` is a hole, not a sample.
+   and state of charge moves at least 20 points across at least four samples.
+   Power has to stay at or above 150 W. A same-sign dip below that, for at
+   most two polls, stays in the window; a third dip, or any opposite-sign
+   reading, ends it. A window whose average is still under 150 W is not
+   published, because the fixed 0.93 factor does not describe the inverter
+   there. End the window when state of charge jumps further than that poll's
+   watts can move the nameplate, with a floor of two points and one point of
+   slack. A step equal to that limit stays. The gap limit is 180 seconds, or
+   the configured fast interval plus 150 seconds when that is longer. A poll
+   that did not get `ES.GetStatus` is a hole, not a sample, and it does not
+   discard the open window. The next fresh sample is still subject to the
+   gap limit.
 2. Convert the AC port with one-way efficiency 0.93 (discharge divides,
    charge multiplies). On a derived reading, subtract PV watts after that
    conversion so PV energy is not derated. Capacity is that DC energy divided
