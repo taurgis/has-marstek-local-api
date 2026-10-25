@@ -562,7 +562,16 @@ function runsHtml(hass, model, text, { filter, page }) {
 }
 
 function energyHtml(hass, model, text) {
-  const rows = [[text.charged, model.gridIn], [text.dischargedAc, model.gridOut], [text.solarIn, model.solar], [text.homeLoad, model.load]];
+  // AC in and out exist on every pack. Solar is the MPPT lifetime total, so a
+  // battery with no solar entity (Venus C/E, supports_pv false) skips that row.
+  // The Energy dashboard hides a solar card the same way when no solar source
+  // is configured: https://www.home-assistant.io/docs/energy/
+  const rows = [[text.charged, model.gridIn], [text.dischargedAc, model.gridOut]];
+  if (model.pack?.entities?.solar || model.solar != null) rows.push([text.solarIn, model.solar]);
+  // total_load_energy is the backup/off-grid socket, not the home's grid meter
+  // (a P1 port reads that meter: https://www.home-assistant.io/docs/energy/electricity-grid/).
+  // An unused socket stays at 0 Wh; a numeric condition above 0 hides that row.
+  if (model.load != null && model.load > 0) rows.push([text.backupSocket, model.load]);
   const top = Math.max(1, ...rows.map(([, wh]) => wh ?? 0));
   const meters = rows.map(([label, wh]) => `<div class="meter"><span>${esc(label)}</span>
     <span class="rail"><i style="width:${(((wh ?? 0) / top) * 100).toFixed(1)}%"></i></span>

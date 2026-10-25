@@ -114,3 +114,5 @@ def test_every_language_has_the_same_text_keys() -> None:
     keys = [re.findall(r"^    (\w+):", part, re.M) for part in (en, nl)]
     assert keys[0]
     assert keys[0] == keys[1]
+    assert "homeLoad" not in keys[0]
+    assert "backupSocket" in keys[0]
