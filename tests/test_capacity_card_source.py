@@ -74,11 +74,19 @@ def test_imported_modules_load_with_the_card_token(name: str) -> None:
 
 
 def test_health_header_uses_the_tile_layout() -> None:
-    """Name and flow stack on the left; the band is the header's trailing pill."""
+    """Name and flow stack on the left; the band is the header's trailing pill.
+
+    The subtitle is the flow text itself. A leading icon, or the fleet row's
+    ``who`` class, shifts that line off the name's left edge.
+    """
     source = _source()
     header = source[source.index("function healthCardHtml") : source.index("function sum(")]
-    assert 'class="title-wrap who"' in header
+    assert 'class="title-wrap"' in header
+    assert "title-wrap who" not in header
     assert "bandHtml(model, text)" in header
+    flow = source[source.index("function flowHtml") : source.index("function bandHtml")]
+    assert "<ha-icon" not in flow
+    assert "flex-direction: column" in source
     headline = source[source.index("function headlineHtml") : source.index("function capacityHtml")]
     assert "band" not in headline
     assert "margin-left: auto" not in source

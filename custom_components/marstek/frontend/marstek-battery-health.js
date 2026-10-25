@@ -29,11 +29,12 @@ const STYLES = `
   button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 6px; }
   .top { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 10px; min-width: 0; }
   .top > ha-icon { color: var(--state-icon-color, var(--secondary-text-color)); flex: none; margin-top: 1px; }
-  .title-wrap { display: flex; flex-direction: column; align-items: stretch; flex: 1 1 auto; min-width: 0; }
+  /* Column only. Do not add the fleet's `.who` here: that row is a different grid. */
+  .title-wrap { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
   .top > .name { flex: 1 1 auto; }
-  .name { margin: 0; font-size: 16px; font-weight: 500; line-height: 22px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .flow { display: block; margin: 0; min-width: 0; font-size: 13px; line-height: 18px; color: var(--secondary-text-color); }
-  .flow ha-icon { --mdc-icon-size: 16px; vertical-align: -3px; margin-right: 4px; }
+  .name { margin: 0; padding: 0; font-size: 16px; font-weight: 500; line-height: 22px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
+  /* Text starts on the name's left edge. A leading icon would shift this line right. */
+  .flow { display: block; margin: 0; padding: 0; min-width: 0; max-width: 100%; font-size: 13px; line-height: 18px; color: var(--secondary-text-color); text-align: start; }
   .lead { margin: 0; font-size: 20px; line-height: 28px; font-weight: 400; }
   .lead strong { font-weight: 600; }
   .band { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; margin-right: 6px; vertical-align: 2px; }
@@ -307,7 +308,6 @@ function bandOf(health, confidence) {
 }
 
 const BAND_ICON = { good: "mdi:heart-pulse", fading: "mdi:trending-down", worn: "mdi:alert-outline", measuring: "mdi:progress-clock" };
-const FLOW_ICON = { charge: "mdi:battery-arrow-up", discharge: "mdi:battery-arrow-down", idle: "mdi:battery-outline" };
 
 function flowOf(model) {
   if (model.status === "charging" || (model.power != null && model.power < -20)) return "charge";
@@ -370,7 +370,7 @@ function capacityCell(model, scaleWh) {
 function flowHtml(hass, model, text) {
   const watts = model.power == null || model.flow === "idle" ? "" : ` <span class="num">${fmt(hass, Math.abs(model.power))} W</span>`;
   const plug = model.plugPower == null ? "" : ` · <span class="num">${esc(text.atPlug(`${fmt(hass, Math.abs(model.plugPower))} W`))}</span>`;
-  return `<span class="flow"><ha-icon icon="${FLOW_ICON[model.flow]}"></ha-icon>${esc(text.flow[model.flow])}${watts}${plug}</span>`;
+  return `<span class="flow">${esc(text.flow[model.flow])}${watts}${plug}</span>`;
 }
 
 // --- health card ---------------------------------------------------------
@@ -585,7 +585,7 @@ function healthCardHtml(hass, config, tab, cardId, width, runs) {
   const model = readModel(hass, pack);
   const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, width, runs);
   return `<style>${STYLES}</style><ha-card>
-    <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><div class="title-wrap who"><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>${bandHtml(model, text)}</div>
+    <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><div class="title-wrap"><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>${bandHtml(model, text)}</div>
     ${headlineHtml(hass, model, text)}
     ${capacityHtml(hass, model, text)}
     ${insightsHtml(hass, model, text)}
