@@ -235,8 +235,8 @@ device reports (`bat_cap`).
   every kept run, whatever the filter shows (`closed_at`, `direction`,
   `start_soc`, `end_soc`, `soc_delta`, `capacity_wh`, `duration_s`,
   `average_power_w`, `pv_share`). Times are UTC in ISO 8601 and cells are
-  comma-separated. A run recorded before its start and end state of charge
-  were kept leaves those two cells empty.
+  comma-separated. A value a run did not record (an older run, or no solar
+  share) leaves its cell empty.
 - **Marstek battery fleet** (`custom:marstek-battery-fleet-card`) compares
   every battery. It totals usable capacity, stored energy, and battery
   power, and draws each pack on one kWh scale, so a longer bar is a larger
