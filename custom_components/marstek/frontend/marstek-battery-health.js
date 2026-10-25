@@ -645,7 +645,7 @@ function fleetRow(hass, model, text, scale) {
 function rteTail(hass, model, text) {
   if (model.rte == null) return "";
   const hint = model.rteMetered ? text.rteHint.metered : text.rteHint.implied;
-  return ` · ${esc(text.rteShort(pct(hass, model.rte)))}<ha-icon class="info" icon="mdi:information-outline" title="${esc(hint)}"></ha-icon><span class="sr">, ${esc(hint)}</span>`;
+  return ` · ${esc(text.rteShort(pct(hass, model.rte)))}<ha-icon class="info" aria-hidden="true" icon="mdi:information-outline" title="${esc(hint)}"></ha-icon><span class="sr">, ${esc(hint)}</span>`;
 }
 
 // Shown only when at least one pack has a linked meter with a power sensor.

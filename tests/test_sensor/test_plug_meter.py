@@ -91,8 +91,9 @@ async def test_changing_then_clearing_the_meter_in_options_resets_it(
         {PLUG_STORE_KEY: {"meter": _METER, "anchors": {"55": anchor}}}
     )
     other = ["sensor.other_import", "sensor.other_export"]
-    hass.states.async_set(other[0], "1.0", {"unit_of_measurement": "kWh"})
-    hass.states.async_set(other[1], "0.5", {"unit_of_measurement": "kWh"})
+    # Past one capacity from the old anchor, so kept anchors would publish 0.85 again.
+    hass.states.async_set(other[0], "6.0", {"unit_of_measurement": "kWh"})
+    hass.states.async_set(other[1], "5.1", {"unit_of_measurement": "kWh"})
     client = create_mock_client(status=_STATUS)
     with patch_marstek_integration(client=client):
         await _setup_with_meter(hass, mock_config_entry)
