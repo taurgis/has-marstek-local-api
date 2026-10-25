@@ -119,9 +119,19 @@ const STYLES = `
   .fleet .who strong { font-weight: 500; font-size: 14px; }
   .fleet .who span, .fleet .tail span { font-size: 12px; color: var(--secondary-text-color); }
   .fleet .tail { text-align: right; font-size: 14px; }
-  .fleet .tail span { display: block; }
+  .fleet .tail > span { display: block; }
+  .fleet .tail .band { margin-right: 0; }
+  .fleet .tail .rte { display: flex; justify-content: flex-end; align-items: center; gap: 3px; }
+  .fleet .info { --mdc-icon-size: 14px; display: flex; color: var(--secondary-text-color); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .fleet .cell { height: 16px; border-radius: 4px; }
   .fleet .cell::after { display: none; }
+  @media (min-width: 481px) {
+    @supports (grid-template-columns: subgrid) {
+      .fleet { display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(0, 4fr) minmax(88px, auto); column-gap: 12px; }
+      .fleet li, .fleet button { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
+    }
+  }
   @media (max-width: 480px) {
     .lead { font-size: 18px; line-height: 26px; }
     .fleet button { grid-template-columns: minmax(0, 1fr) auto; }
@@ -627,8 +637,15 @@ function fleetRow(hass, model, text, scale) {
     <span class="who"><strong>${esc(model.name)}</strong><span class="num">${esc(status)}</span></span>
     <span class="bar"><span class="cell" role="img" aria-label="${esc(label)}">${capacityCell(model, scale)}</span></span>
     <span class="tail num"><span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(health)}</span
-      ><span>${esc(model.rte == null ? kwh(hass, model.usable) : `${kwh(hass, model.usable)} · ${(model.rteMetered ? text.rteShortMetered : text.rteShort)(pct(hass, model.rte))}`)}</span></span>
+      ><span class="rte">${esc(kwh(hass, model.usable))}${rteTail(hass, model, text)}</span></span>
   </button></li>`;
+}
+
+// How the round trip was found sits behind an info icon: hover shows it, a screen reader reads it.
+function rteTail(hass, model, text) {
+  if (model.rte == null) return "";
+  const hint = model.rteMetered ? text.rteHint.metered : text.rteHint.implied;
+  return ` · ${esc(text.rteShort(pct(hass, model.rte)))}<ha-icon class="info" icon="mdi:information-outline" title="${esc(hint)}"></ha-icon><span class="sr">, ${esc(hint)}</span>`;
 }
 
 // Shown only when at least one pack has a linked meter with a power sensor.

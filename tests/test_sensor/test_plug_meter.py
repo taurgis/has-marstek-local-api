@@ -79,3 +79,46 @@ async def test_without_a_meter_nothing_is_added(
     saved = await _store(hass, mock_config_entry).async_load()
     assert saved is not None
     assert PLUG_STORE_KEY not in saved
+
+
+async def test_changing_then_clearing_the_meter_in_options_resets_it(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Another meter starts from nothing; no meter drops the attributes and the stored state."""
+    mock_config_entry.add_to_hass(hass)
+    anchor = {"at": time.time() - 86_400, "energy_in_wh": 0.0, "energy_out_wh": 0.0}
+    await _store(hass, mock_config_entry).async_save(
+        {PLUG_STORE_KEY: {"meter": _METER, "anchors": {"55": anchor}}}
+    )
+    other = ["sensor.other_import", "sensor.other_export"]
+    hass.states.async_set(other[0], "1.0", {"unit_of_measurement": "kWh"})
+    hass.states.async_set(other[1], "0.5", {"unit_of_measurement": "kWh"})
+    client = create_mock_client(status=_STATUS)
+    with patch_marstek_integration(client=client):
+        await _setup_with_meter(hass, mock_config_entry)
+        state = hass.states.get("sensor.venus_usable_capacity")
+        assert state is not None
+        assert state.attributes["plug_round_trip_efficiency"] == 0.85
+
+        hass.config_entries.async_update_entry(
+            mock_config_entry,
+            options={CONF_PLUG_ENERGY_IN: other[0], CONF_PLUG_ENERGY_OUT: other[1]},
+        )
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_usable_capacity")
+        assert state is not None
+        assert state.attributes["plug_energy_entities"] == other
+        assert "plug_round_trip_efficiency" not in state.attributes
+
+        hass.config_entries.async_update_entry(mock_config_entry, options={})
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_usable_capacity")
+        assert state is not None
+        assert not [key for key in state.attributes if key.startswith("plug_")]
+
+    await hass.config_entries.async_unload(mock_config_entry.entry_id)
+    saved = await _store(hass, mock_config_entry).async_load()
+    assert saved is not None
+    assert PLUG_STORE_KEY not in saved

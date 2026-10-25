@@ -71,7 +71,10 @@ export const COPY = {
     fleetScale: "Bars share one kWh scale, so longer means larger.",
     health: (pct) => `${pct} health`,
     rteShort: (pct) => `RTE ${pct}`,
-    rteShortMetered: (pct) => `RTE ${pct} at the plug`,
+    rteHint: {
+      implied: "Round trip estimated from the battery's own power readings, standby not included",
+      metered: "Round trip measured at the plug, standby included",
+    },
     editorDevice: "Marstek battery",
     editorTitle: "Title",
     editorTab: "Tab shown first",
@@ -154,7 +157,10 @@ export const COPY = {
     fleetScale: "De balken delen één kWh-schaal: langer is groter.",
     health: (pct) => `${pct} gezondheid`,
     rteShort: (pct) => `Rendement ${pct}`,
-    rteShortMetered: (pct) => `Rendement ${pct} aan de stekker`,
+    rteHint: {
+      implied: "Rendement geschat uit de eigen vermogensmetingen van de batterij, zonder stand-by",
+      metered: "Rendement gemeten aan de stekker, stand-by inbegrepen",
+    },
     editorDevice: "Marstek-batterij",
     editorTitle: "Titel",
     editorTab: "Eerste tabblad",

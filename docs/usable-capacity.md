@@ -299,8 +299,10 @@ device reports (`bat_cap`).
   battery. It points out the battery with the largest share, the most
   faded one once it has left the Healthy band, a round-trip gap between packs
   (measured at the plug or implied, never one against the other), and a state-of-charge gap
-  of 10 points or more. Selecting a row opens that battery's more-info
-  dialog.
+  of 10 points or more. Each row's round trip has an info icon whose
+  tooltip says whether it was measured at the plug (standby included) or
+  estimated from the battery's own readings. Selecting a row opens that
+  battery's more-info dialog.
 
 The health card's visual editor sets the device, a title, whether the tabs
 show, and which tab opens first. The card picker lists both cards by their
