@@ -217,13 +217,26 @@ device reports (`bat_cap`).
   insights say how many runs back the number and how closely they agree,
   whether capacity moved more than that spread since the first weekly
   estimate (once 28 days of estimates exist), what the round trip means per
-  10 kWh charged, how long the stored energy lasts (or how long until full)
-  at the current power when it is 50 W or more, and how far an open run has
-  got. Three tabs hold the detail: **Capacity** (weekly estimates
-  with each run as a dot and the rating as a dashed line), **Runs** (the 12
-  most recent runs, each with its deviation from the median for its
-  direction), and **Energy**
-  (lifetime AC in and out, solar, home load, and equivalent full cycles).
+  10 kWh charged, how long the pack can keep discharging (or how long until
+  full) at the current power when it is 50 W or more, and how far an open run
+  has got. While discharging, that time runs to the floor set by the **Depth
+  of discharge** number (an 88% depth of discharge stops the pack at 12%) and
+  the sentence names the floor. The Open API cannot read that setting back,
+  so the number is the last value written from Home Assistant (88% until
+  then). Without that entity, the time runs to 0%. Three tabs hold the
+  detail: **Capacity** (weekly estimates with each run as a dot and the
+  rating as a dashed line), **Runs** (every kept run, newest first, eight to
+  a page, filterable by direction, each with its deviation from the median
+  for its direction), and **Energy** (lifetime AC in and out, solar, home
+  load, and equivalent full cycles).
+
+  The Capacity tab can download the weekly estimates as a CSV file
+  (`week_start`, `usable_wh`, `rated_wh`), and the Runs tab can download
+  every kept run, whatever the filter shows (`closed_at`, `direction`,
+  `start_soc`, `end_soc`, `soc_delta`, `capacity_wh`, `duration_s`,
+  `average_power_w`, `pv_share`). Times are UTC in ISO 8601 and cells are
+  comma-separated. A run recorded before its start and end state of charge
+  were kept leaves those two cells empty.
 - **Marstek battery fleet** (`custom:marstek-battery-fleet-card`) compares
   every battery. It totals usable capacity, stored energy, and battery
   power, and draws each pack on one kWh scale, so a longer bar is a larger
@@ -251,6 +264,26 @@ Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
 week, month, usable watt-hours, both medians, implied round-trip efficiency,
 equivalent cycles, and the lifetime grid, PV, and load watt-hours known at
 that time. A store written before `history` existed still loads.
+
+To be told when a battery leaves the Healthy band, use a numeric state
+trigger on the **Battery state of health** sensor. The sensor moves only
+when the capacity estimate moves, so the automation fires rarely:
+
+```yaml
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.venus_e_3_0_battery_state_of_health
+    below: 90
+actions:
+  - action: notify.notify
+    data:
+      message: >-
+        {{ state_attr(trigger.entity_id, 'friendly_name') }} is at
+        {{ trigger.to_state.state }}% of its rating.
+```
+
+Use `below: 80` for the Worn band. The card's band rounds to whole percent,
+so the automation can fire a few tenths before the card changes band.
 
 Options → **Battery health dashboard** / **Dashboard batterijgezondheid**
 adds a sidebar dashboard (`marstek-battery-health`, strategy

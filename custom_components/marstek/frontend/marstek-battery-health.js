@@ -104,6 +104,7 @@ const STYLES = `
   .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .link { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 8px; margin-right: -8px; border-radius: 8px; font-size: 13px; color: var(--primary-color); }
   .link ha-icon { --mdc-icon-size: 18px; }
+  .export { display: flex; justify-content: flex-end; }
   .stats { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0; }
   .stats div { display: flex; flex-direction: column; }
   .stats dt { order: 2; font-size: 12px; color: var(--secondary-text-color); }
@@ -227,6 +228,7 @@ const KINDS = {
   gridOut: "total_grid_output_energy",
   solar: "total_pv_energy",
   load: "total_load_energy",
+  dod: "depth_of_discharge",
 };
 
 function kindOf(entity) {
@@ -312,6 +314,7 @@ function readModel(hass, pack) {
     health: numberOf(hass, pack.entities.soh) ?? finite(attrs.state_of_health),
     soc,
     power: numberOf(hass, pack.entities.power),
+    dod: numberOf(hass, pack.entities.dod),
     status: stateOf(hass, pack.entities.status)?.state || null,
     stored: usable != null && soc != null ? (usable * soc) / 100 : null,
     rte: rteOf(attrs.implied_round_trip_efficiency),
@@ -396,6 +399,13 @@ function runtimeInsight(hass, model, text) {
   const watts = model.power == null ? 0 : Math.abs(model.power);
   if (watts < 50 || model.usable == null || model.soc == null) return null;
   const power = `${fmt(hass, watts)} W`;
+  // The pack stops at 100 minus the depth of discharge. The Open API cannot
+  // read that setting back, so the number is the last write and is named.
+  if (model.flow === "discharge" && model.dod != null) {
+    const floor = 100 - model.dod;
+    const left = (model.usable * (model.soc - floor)) / 100;
+    return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / watts)) } : null;
+  }
   if (model.flow === "discharge" && model.stored) {
     return { icon: "mdi:timer-sand", text: text.lasts(power, energy(hass, model.stored), duration(hass, model.stored / watts)) };
   }
@@ -536,7 +546,7 @@ function tabsHtml(hass, model, text, selected, cardId, width, runs) {
     aria-selected="${name === selected}" tabindex="${name === selected ? 0 : -1}" data-tab="${name}">${esc(text.tabs[name])}</button>`).join("");
   const panel = selected === "runs" ? runsHtml(hass, model, text, runs) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text, width);
   return `<div role="tablist" aria-label="${esc(text.tabList)}">${tabs}</div>
-    <div role="tabpanel" id="${cardId}-panel" aria-labelledby="${cardId}-${selected}" tabindex="0">${panel}</div>`;
+    <div role="tabpanel" id="${cardId}-panel" aria-labelledby="${cardId}-${selected}" tabindex="0">${panel}${exportHtml(model, selected, text)}</div>`;
 }
 
 function healthCardHtml(hass, config, tab, cardId, width, runs) {
@@ -637,6 +647,47 @@ function fire(host, type, detail) {
 
 function openMoreInfo(host, entityId) {
   if (entityId) fire(host, "hass-more-info", { entityId });
+}
+
+// --- CSV export ----------------------------------------------------------
+
+// Columns keep the attribute names. Every cell is a number, a UTC time or a
+// fixed word, so no cell can start a spreadsheet formula and none needs quotes.
+// Keyed by the tab that offers the download.
+const CSV_COLUMNS = {
+  capacity: ["week_start", "usable_wh", "rated_wh"],
+  runs: ["closed_at", "direction", "start_soc", "end_soc", "soc_delta", "capacity_wh", "duration_s", "average_power_w", "pv_share"],
+};
+
+function csvCell(row, column) {
+  if (column === "closed_at" || column === "week_start") return toDate(row[column])?.toISOString() ?? "";
+  if (column === "direction") return row.direction === "charge" ? "charge" : "discharge";
+  return finite(row[column]) ?? "";
+}
+
+const csvRows = (model, tab) => (tab === "runs" ? model.windows : model.history.map((point) => ({ ...point, rated_wh: model.rated })));
+
+function csvOf(model, tab) {
+  const columns = CSV_COLUMNS[tab];
+  return [columns, ...csvRows(model, tab).map((row) => columns.map((column) => csvCell(row, column)))].map((cells) => `${cells.join(",")}\r\n`).join("");
+}
+
+function exportHtml(model, tab, text) {
+  if (!CSV_COLUMNS[tab] || !csvRows(model, tab).length) return "";
+  return `<div class="export"><button class="link" type="button" data-action="csv-${tab}">
+    <ha-icon icon="mdi:download"></ha-icon>${esc(text.csv[tab])}</button></div>`;
+}
+
+// The same steps as Home Assistant's own history download. The Android app
+// reads the blob after the click, so it is revoked ten seconds later.
+function saveCsv(model, tab) {
+  const url = URL.createObjectURL(new Blob([csvOf(model, tab)], { type: "text/csv" }));
+  const slug = model.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "marstek";
+  const link = Object.assign(document.createElement("a"), { href: url, download: `${slug}-${tab === "runs" ? "runs" : "weekly"}.csv`, target: "_blank" });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 function openDevice(host, deviceId) {
@@ -764,14 +815,20 @@ class MarstekBatteryHealthCard extends MarstekCard {
       return;
     }
     const action = event.target.closest("[data-action]");
-    if (action?.getAttribute("aria-disabled") === "true") return;
-    const name = action?.dataset.action;
-    if (name === "device") openDevice(this, findPack(this._hass, this._config)?.deviceId);
-    if (!/^(runs|page)-/.test(name)) return;
-    // Step from the page on screen; the stored one can be past the end once runs drop out.
-    const page = name.startsWith("runs-") ? 0 : Number(action.closest("[data-page]").dataset.page) + (name === "page-next" ? 1 : -1);
-    this._runs = { filter: name.startsWith("runs-") ? name.slice(5) : this._runs.filter, page };
-    this._render(true, `[data-action="${name}"]`);
+    if (!action || action.getAttribute("aria-disabled") === "true") return;
+    const [verb, arg] = action.dataset.action.split("-");
+    const pack = findPack(this._hass, this._config);
+    if (verb === "device") openDevice(this, pack?.deviceId);
+    else if (verb === "csv" && pack) saveCsv(readModel(this._hass, pack), arg);
+    else if (verb === "runs" || verb === "page") this._showRuns(verb, arg, action);
+  }
+
+  // A filter starts again on page one. A page step counts from the page on
+  // screen, because the stored one can be past the end once runs drop out.
+  _showRuns(verb, arg, button) {
+    const shown = Number(button.closest("[data-page]")?.dataset.page ?? 0);
+    this._runs = verb === "runs" ? { filter: arg, page: 0 } : { ...this._runs, page: shown + (arg === "next" ? 1 : -1) };
+    this._render(true, `[data-action="${verb}-${arg}"]`);
   }
 
   _onKey(event) {

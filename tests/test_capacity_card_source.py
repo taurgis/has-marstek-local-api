@@ -33,7 +33,8 @@ def test_module_waits_for_the_home_assistant_element() -> None:
     source = _source()
     assert 'whenDefined("home-assistant")' in source
     assert "window.customElements" in source
-    assert "setTimeout(" not in source
+    registration = source[source.index("function register()") :]
+    assert "setTimeout(" not in registration
 
 
 def test_tabs_follow_the_aria_tabs_pattern() -> None:
@@ -50,12 +51,12 @@ def test_tabs_follow_the_aria_tabs_pattern() -> None:
 
 
 def test_entity_kinds_are_real_translation_keys() -> None:
-    """The frontend registry matches sensors by translation key only."""
+    """The frontend registry matches entities by translation key only."""
     match = re.search(r"const KINDS = \{(.*?)\};", _source(), re.S)
     assert match is not None
     keys = re.findall(r'"(\w+)"', match.group(1))
     strings = json.loads((_MODULE.parents[1] / "strings.json").read_text(encoding="utf-8"))
-    known = set(strings["entity"]["sensor"])
+    known = {key for platform in strings["entity"].values() for key in platform}
     assert keys
     assert set(keys) <= known
 
