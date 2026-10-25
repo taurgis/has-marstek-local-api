@@ -79,6 +79,25 @@ def _add_scaled_meter_energy(
         parsed["em_output_energy"] = _scale_numeric(result.get("output_energy"), scale)
 
 
+def _drop_getmode_placeholder_meter_energy(parsed: dict[str, Any]) -> None:
+    """Drop ``ES.GetMode`` meter totals that are placeholders, not a meter.
+
+    Venus A and Venus E firmware 150 answer ``ES.GetMode`` with ``ct_state``
+    0 and ``input_energy`` / ``output_energy`` 0 while ``EM.GetStatus`` holds
+    the live cumulative totals. Seeding those zeros makes the energy guard
+    treat 0 Wh as a baseline and reject the real reading on every later poll
+    (issue #128). A 0/0 pair is the same placeholder when ``ct_state`` is
+    missing or 1: a genuine zero total is whatever ``EM.GetStatus`` reports.
+    Non-zero GetMode energy still fills a gap when that read did not answer.
+    """
+    present = [key for key in ("em_input_energy", "em_output_energy") if key in parsed]
+    if not present or not all(_is_zero(parsed[key]) for key in present):
+        return
+    if parsed.get("ct_state") == 0 or len(present) == 2:
+        for key in present:
+            del parsed[key]
+
+
 def parse_es_mode_response(
     response: dict[str, Any],
     profile: FirmwareProfile | None = None,
@@ -134,6 +153,7 @@ def parse_es_mode_response(
             parsed[dest_key] = result.get(source_key)
 
     _add_scaled_meter_energy(parsed, result, active_profile.em_energy_scale)
+    _drop_getmode_placeholder_meter_energy(parsed)
     return parsed
 
 
@@ -770,9 +790,10 @@ def merge_device_status(
     if pv_status_data:
         _apply_updates(pv_status_data)
 
-    # Mode CT/power/energy fills gaps only. Venus E 3.0 firmware 150 returns
-    # those GetMode fields as zeros even while EM.GetStatus has a live CT, and
-    # Wi-Fi polls often time out — never clobber last-known or current EM data.
+    # Mode CT/power/energy fills gaps only. Placeholder 0/0 meter energy is
+    # already removed in parse_es_mode_response (issue #128). Non-zero GetMode
+    # energy may fill a key EM.GetStatus did not answer; it must not clobber
+    # a last-known or current EM value.
     if es_mode_data:
         mode_core = {
             key: value

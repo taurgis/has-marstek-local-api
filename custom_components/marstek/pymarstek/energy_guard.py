@@ -70,6 +70,18 @@ def without_implausible_energy_totals(
     return cleaned
 
 
+def _is_zero_energy(value: Any) -> bool:
+    """Return whether a total is numeric zero.
+
+    Zero is a plausible watt-hour reading and also the placeholder
+    ``ES.GetMode`` reports before ``EM.GetStatus`` has been seen (issue #128).
+    Home Assistant treats the first numeric state as the statistics zero
+    point, so a later plausible lifetime total must replace 0 rather than be
+    discarded as a spike. ``bool`` is excluded: ``False == 0`` is true.
+    """
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and float(value) == 0.0
+
+
 def apply_energy_total_guard(
     status: dict[str, Any],
     previous_status: Mapping[str, Any] | None,
@@ -83,8 +95,13 @@ def apply_energy_total_guard(
         previous_total = previous.get(key)
         previous_ok = energy_total_is_plausible(previous_total)
         if energy_total_is_plausible(current):
+            # A stored 0 is not an established baseline. Rejecting the first
+            # real cumulative total (a household P1 meter at tens of MWh, or
+            # any lifetime reading up to ``MAX_PLAUSIBLE_ENERGY_WH``) would
+            # pin the sensor at 0 forever.
             if (
                 previous_ok
+                and not _is_zero_energy(previous_total)
                 and isinstance(previous_total, (int, float))
                 and isinstance(current, (int, float))
                 and current > previous_total

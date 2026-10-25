@@ -395,7 +395,7 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 
 Some published Open API samples and some devices disagree on whether `mode` is a string or an integer, and whether `params.id` is `0` or `1`. **This integration prefers its own contract:** `ES.SetMode` sends string names, `ES.GetMode` is requested with `id=0` first, and battery power comes from `ES.GetStatus` (`bat_power`, never `abs(ongrid_power)`). Integer `mode` values and `id=1` are accepted on **read/fallback** only.
 
-Venus E 3.0 firmware **150** answers both `id=0` and `id=1` with the string mode name (`"Auto"`, not `0`). It also includes the Rev 3.1 CT/power/energy keys, but those values can be zeros / `ct_state=0` while `EM.GetStatus` reports a live CT. This integration uses GetMode CT/energy only to fill empty coordinator keys; current and last-known `EM.GetStatus` values always win. Phase-power sensors are not duplicated.
+Venus E 3.0 firmware **150** answers both `id=0` and `id=1` with the string mode name (`"Auto"`, not `0`). It also includes the Rev 3.1 CT/power/energy keys, but those values can be zeros / `ct_state=0` while `EM.GetStatus` reports a live CT. This integration uses GetMode CT and phase power only to fill empty coordinator keys. Meter energy of 0 Wh on both directions, and any zero meter energy while `ct_state` is 0, is not copied: firmware 150 reports those zeros while `EM.GetStatus` holds the real cumulative totals ([#128](https://github.com/taurgis/has-marstek-local-api/issues/128)). Non-zero GetMode energy can still fill a gap. Current and last-known `EM.GetStatus` values always win. Phase-power sensors are not duplicated.
 
 ---
 
