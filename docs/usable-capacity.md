@@ -70,9 +70,10 @@ This integration registers the card module itself, so the cards show up in the p
 1. Install or upgrade the integration, then reload the browser.
 2. Open your dashboard, choose **Edit dashboard**, then **Add card**.
 3. Open the **By card** tab.
-4. Pick **Marstek battery health** for one battery, or **Marstek battery fleet** for the comparison.
+4. Type `Marstek` in **Search cards**, or scroll down to **Custom cards**.
+5. Pick **Marstek battery health** for one battery, or **Marstek battery fleet** for the comparison.
 
-<img src="screenshots/battery-health-card-picker.png" alt="Add card dialog on the By card tab, with Marstek battery health and Marstek battery fleet at the top of the card list." width="840" />
+<img src="screenshots/battery-health-card-picker.png" alt="Add card dialog on the By card tab, with Marstek typed in Search cards. Marstek battery fleet and Marstek battery health are the results." width="840" />
 
 The visual editor sets the battery, an optional title, whether the detail tabs show, and which tab opens first.
 

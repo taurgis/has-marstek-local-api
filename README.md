@@ -112,7 +112,7 @@ Copy-paste YAML is in [Automations and services](docs/services.md).
 
 ## Options
 
-Open the device and choose **Configure**. Five sections are there: **Polling**, **Network & requests**, **Power / behavior**, **Battery health dashboard**, and **Energy meter (optional)**. Only Polling starts expanded.
+Open the device and choose **Configure**. Five sections are there: **Polling Intervals**, **Network Settings**, **Power Settings**, **Battery health dashboard**, and **Energy meter (optional)**. Only **Polling Intervals** starts expanded.
 
 Day to day, the two you are most likely to open are:
 

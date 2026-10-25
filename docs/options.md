@@ -2,7 +2,7 @@
 
 Open **Settings → Devices & services → Marstek → (device) → Configure**.
 
-## Polling
+## Polling Intervals
 
 The integration uses tiered polling to reduce device load:
 
@@ -10,9 +10,9 @@ The integration uses tiered polling to reduce device load:
 - **Medium** (default 60s, range 30s–24h): PV status (Venus A/D)
 - **Slow** (default 300s, range 60s–24h): WiFi + battery diagnostics
 
-<img src="screenshots/device-settings-polling.png" alt="Polling settings" width="560" />
+<img src="screenshots/device-settings-polling.png" alt="Polling Intervals" width="560" />
 
-## Network & requests
+## Network Settings
 
 Options also expose request timing knobs to avoid UDP bursts:
 
@@ -46,9 +46,9 @@ The failures threshold controls when entities are marked unavailable. Until the
 threshold is reached, the integration keeps the last known values to avoid
 flapping on an unstable device API.
 
-<img src="screenshots/device-settings-network.png" alt="Network settings" width="560" />
+<img src="screenshots/device-settings-network.png" alt="Network Settings" width="560" />
 
-## Power / behavior
+## Power Settings
 
 These settings affect automations, command validation, and how off-grid power is shown:
 
@@ -68,7 +68,7 @@ Socket limit defaults to **on** for Venus C, Venus D, Venus E and Venus E mini, 
 
 Charging is always validated against the same per-family maximum (as a negative value); the socket limit only caps discharge.
 
-<img src="screenshots/device-settings-power.png" alt="Power settings" width="560" />
+<img src="screenshots/device-settings-power.png" alt="Power Settings" width="560" />
 
 ## Battery health dashboard
 

@@ -61,9 +61,10 @@ The same two cards can go on a dashboard you already have. This integration regi
 
 1. Open the dashboard and choose **Edit dashboard**, then **Add card**.
 2. Open **By card**.
-3. Choose **Marstek battery health** (`custom:marstek-battery-health-card`) for one battery, or **Marstek battery fleet** (`custom:marstek-battery-fleet-card`) for the comparison.
+3. Type `Marstek` in **Search cards**, or scroll down to **Custom cards**.
+4. Choose **Marstek battery health** (`custom:marstek-battery-health-card`) for one battery, or **Marstek battery fleet** (`custom:marstek-battery-fleet-card`) for the comparison.
 
-<img src="screenshots/battery-health-card-picker.png" alt="Add card dialog, By card tab, with Marstek battery health and Marstek battery fleet at the top of the list." width="840" />
+<img src="screenshots/battery-health-card-picker.png" alt="Add card dialog on the By card tab, with Marstek typed in Search cards. Marstek battery fleet and Marstek battery health are the results." width="840" />
 
 The visual editor asks for the battery, an optional title, whether the detail tabs show, and which tab opens first.
 
@@ -113,7 +114,7 @@ Details and the rules (both sensors, or neither) are in [Options](options.md#ene
 
 **Auto**, **AI**, and, on firmware that allows it, **UPS** are on the operating-mode select on the device page. **Manual** and **Passive** need a power, a duration, or time slots, so they are services rather than a dropdown choice.
 
-In an automation, choose the action type **Device**, pick the battery, and use **Charge battery**, **Discharge battery**, or **Stop charging/discharging**. Empty power fields use the defaults from [Options](options.md#power--behavior).
+In an automation, choose the action type **Device**, pick the battery, and use **Charge battery**, **Discharge battery**, or **Stop charging/discharging**. Empty power fields use the defaults from [Options](options.md#power-settings).
 
 <img src="screenshots/automation-action.png" alt="Automation editor with a Marstek device action for charging or discharging the battery." width="520" />
 

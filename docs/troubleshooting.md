@@ -199,7 +199,7 @@ do:
 1. A **warning** appears in Settings → Repairs for every HMG-50 entry.
 2. Parallel API requests and Wi-Fi retransmits stay off on these builds, so
    the integration never puts a second datagram on the meter's channel.
-3. Raise the polling intervals (Configure → Polling). Less traffic means
+3. Raise the polling intervals (Configure → **Polling Intervals**). Less traffic means
    fewer lost meter samples; it does not remove the contention.
 4. If Auto mode keeps stalling, read grid power from the meter directly — a
    HomeWizard P1 or Shelly integration rather than through the battery — and
