@@ -4,7 +4,7 @@ This page walks through the integration the way you meet it in Home Assistant: f
 
 The pictures use two lab batteries, **Venus E (3.0)** and **Venus A**, plus a stand-in energy meter. Your device names and numbers will differ. Venus E in these shots already has a capacity estimate. Venus A is still collecting its first runs, so you can see both states.
 
-A shorter path, with the same pictures, is the [README](../README.md). The calculation behind the estimate is [Battery health](usable-capacity.md#how-it-works-under-the-hood).
+The overview is the [README](../README.md). The calculation behind the estimate is [Battery health](usable-capacity.md#how-it-works-under-the-hood).
 
 ## 1. Discovery and setup
 
@@ -14,7 +14,7 @@ Turn on **Open API** in the Marstek app first, and keep Home Assistant on the sa
 2. Choose **Add integration** and search for **Marstek**.
 3. Pick the battery from the discovered list.
 
-<img src="screenshots/device-discovery.png" alt="Marstek discovery dialog listing a device found on the local network." width="340" />
+<img src="screenshots/device-discovery.png" alt="A Marstek battery discovered on the local network, with the brand icon." width="340" />
 <img src="screenshots/device-list.png" alt="Discovered Marstek devices ready to add." width="340" />
 
 When discovery finds nothing, or every discovered battery is already added, Home Assistant asks for the **IP address** and the **port**. The port in the Marstek app is **30000** unless you changed it. The full steps, including what happens when the IP changes later, are in [Configuration](configuration.md).
