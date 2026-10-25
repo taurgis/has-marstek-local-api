@@ -93,6 +93,20 @@ def test_health_header_uses_the_tile_layout() -> None:
     assert ".top .band" in source
 
 
+def test_fleet_stats_share_two_columns_on_a_phone() -> None:
+    """A wrapping flex row lines the second column up with the widest first cell.
+
+    On a phone the four fleet figures are a two-column grid. Wider screens keep
+    the single flex row.
+    """
+    source = _source()
+    assert ".stats { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0; }" in source
+    mobile = source[source.index("@media (max-width: 480px)") :]
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in mobile
+    assert ".stats div { max-width: none; }" in mobile
+    assert "max-width: 10rem" not in source
+
+
 def test_every_language_has_the_same_text_keys() -> None:
     """A key missing in one language would render as undefined."""
     copy = (_MODULE.parent / "marstek-battery-health-copy.js").read_text(encoding="utf-8")

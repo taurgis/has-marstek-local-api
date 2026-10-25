@@ -140,7 +140,9 @@ const STYLES = `
     .lead { font-size: 18px; line-height: 26px; }
     .fleet button { grid-template-columns: minmax(0, 1fr) auto; }
     .fleet .bar { grid-column: 1 / -1; grid-row: 2; }
-    .stats div { max-width: 10rem; }
+    /* Equal columns, so the second figure on each row shares one left edge. */
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+    .stats div { max-width: none; }
   }
 `;
 
