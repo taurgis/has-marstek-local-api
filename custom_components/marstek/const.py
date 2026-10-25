@@ -190,6 +190,8 @@ CONF_ACTION_DISCHARGE_POWER: Final = "action_discharge_power"
 CONF_SOCKET_LIMIT: Final = "socket_limit"
 CONF_CLAMP_NEGATIVE_OFFGRID_POWER: Final = "clamp_negative_offgrid_power"
 CONF_SHOW_CAPACITY_DASHBOARD: Final = "show_capacity_dashboard"
+CONF_PLUG_ENERGY_IN: Final = "plug_energy_in"
+CONF_PLUG_ENERGY_OUT: Final = "plug_energy_out"
 
 # Default polling intervals
 # Real-time power data (ES.GetMode, ES.GetStatus, EM.GetStatus)

@@ -63,6 +63,7 @@ from ..const import (
     device_spec,
 )
 from .household import HouseholdSimulator
+from .plug import PlugMeter, PlugReading
 from .solar import PVChannelSimulator, SolarSimulator
 from .wifi import WiFiSimulator
 
@@ -210,6 +211,7 @@ class BatterySimulator:
         self.total_load_energy = 0.0  # Total household consumption
         self.em_input_energy = 0.0  # CT-side lifetime import
         self.em_output_energy = 0.0  # CT-side lifetime export
+        self.plug = PlugMeter()  # Smart plug on the battery's own AC cord
 
         # PV state. ``pv_power`` is the device's own DC input (Venus A/D).
         self.pv_power = 0
@@ -641,6 +643,7 @@ class BatterySimulator:
             self.em_output_energy += abs(self.grid_power) * hours
 
         self.total_load_energy += self.gross_household_consumption * hours
+        self.plug.accumulate(self.standby_power - self.ongrid_power, hours)
 
         if self.pv_channels.configured:
             self.pv_channels.accumulate(self.pv_power, elapsed_seconds)
@@ -688,6 +691,7 @@ class BatterySimulator:
             self.em_output_energy = float(
                 state.get("em_output_energy", self.total_grid_output_energy)
             )
+            self.plug.apply_state(state)
 
     def _get_persistent_state_locked(self) -> dict[str, Any]:
         return {
@@ -698,7 +702,13 @@ class BatterySimulator:
             "total_load_energy": float(self.total_load_energy),
             "em_input_energy": float(self.em_input_energy),
             "em_output_energy": float(self.em_output_energy),
+            **self.plug.to_state(),
         }
+
+    def get_plug_reading(self) -> PlugReading:
+        """Return the plug's counters and watts, scaled like the inverter port."""
+        with self._lock:
+            return self.plug.reading(self._reported_watts(self.standby_power - self.ongrid_power))
 
     def get_persistent_state(self) -> dict[str, Any]:
         """Return current state suitable for persistence."""

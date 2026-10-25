@@ -62,6 +62,7 @@ from .handlers import (
     handle_wifi_get_status,
     handle_wifi_set_config,
 )
+from .plug_server import PlugServer
 from .simulators import BatterySimulator
 from .utils import (
     LIMITED_BROADCAST,
@@ -156,6 +157,20 @@ class MockMarstekDevice:
             phases=phases,
         )
         self._apply_capacity_experiment()
+        standby_w = self.config.pop("standby_w", None)
+        if isinstance(standby_w, int) and not isinstance(standby_w, bool):
+            self.simulator.standby_power = standby_w
+        plug_port = self.config.pop("plug_http_port", None)
+        self.plug_server = (
+            PlugServer(
+                plug_port,
+                self.config["wifi_mac"],
+                self.simulator.get_plug_reading,
+                self.simulator.wifi.get_rssi,
+            )
+            if isinstance(plug_port, int)
+            else None
+        )
         self.simulate = simulate
 
         # BLE connection state (for mock purposes always disconnected)
@@ -249,6 +264,8 @@ class MockMarstekDevice:
         self.sock.bind(("0.0.0.0", self.port))
 
         self._print_banner()
+        if self.plug_server is not None:
+            self.plug_server.start()
 
         if self.simulate:
             self.simulator.start()
@@ -265,6 +282,8 @@ class MockMarstekDevice:
             # A burst can end inside the rate-limit window, so print the tail
             # counts rather than losing them on the way out.
             self._flush_dropped()
+            if self.plug_server is not None:
+                self.plug_server.stop()
             if self.simulate:
                 self.simulator.stop()
             self._persist_state()
@@ -294,6 +313,11 @@ class MockMarstekDevice:
         )
         if self.simulator.time_scale != 1.0:
             print(f"Time scale: {self.simulator.time_scale:g}x (reported inverter watts scale too)")
+        if self.plug_server is not None:
+            print(
+                f"Plug: HomeWizard Energy Socket and /rpc on HTTP port {self.plug_server.port}, "
+                f"standby {self.simulator.standby_power:g} W"
+            )
         if self.simulator.soc_cycle:
             print(
                 "SOC cycle: Passive "

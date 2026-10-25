@@ -198,6 +198,62 @@ The storage version is unchanged.
   them; the arithmetic still runs on data the coordinator already fetched,
   which is a few numbers per poll and no UDP.
 
+## Energy meter (optional)
+
+The battery reports its own AC power, but not the power it draws to stay
+awake. Marstek specifies above 93.5% efficiency per direction, while tests of
+the Venus E 3.0 measured a round trip of about 83% to 85% and an idle draw of
+5 W to 8 W. A smart plug between the battery and the mains (a HomeWizard
+Energy Socket, a Shelly plug, or any meter with total energy sensors) sees
+both.
+
+Options → **Energy meter (optional)** links two total energy sensors: energy
+into the battery and energy out of it. On a HomeWizard socket these are
+**Energy import** and **Energy export**. Home Assistant creates the export
+sensor disabled while the socket has never exported, so enable it on the
+socket's device page first. HomeWizard also shows a counter that is exactly
+zero as unknown; that only delays the first measurement. Leave both fields
+empty to use only the battery's readings; then nothing below runs.
+
+With a meter linked, the usable capacity sensor gains these attributes:
+
+| Attribute | Meaning |
+|---|---|
+| `plug_energy_entities` | The two linked sensors, so the cards can find the plug's power sensor |
+| `plug_round_trip_efficiency` | Energy out divided by energy in, between two moments at the same state of charge |
+| `plug_round_trip_since`, `plug_round_trip_at` | Start and end of that measurement |
+| `plug_round_trip_energy_in_wh`, `plug_round_trip_energy_out_wh` | The two counters' differences |
+| `plug_standby_w` | Energy in divided by hours over an idle stretch of at least three hours |
+| `plug_standby_at` | When that standby figure was taken |
+
+How it is measured:
+
+- At the same state of charge the pack holds the same energy, so the quotient
+  needs no efficiency assumption. Standby draw and self-discharge in between
+  are included, which is why it is lower than
+  `implied_round_trip_efficiency`.
+- The integration remembers the first meter reading at each whole state of
+  charge for 30 days. When the pack is back at a remembered level after at
+  least one full capacity went in, it publishes the quotient, at most once a
+  day, and only between 50% and 100%.
+- Solar or off-grid power above 20 W reaches the pack without crossing the
+  plug, so such a poll starts the measurement again. So does a counter that
+  went down or a different pair of sensors.
+- Idle means 5 W or less of reported battery power and no energy out. The
+  standby figure is published when the stretch ends, and once a day while it
+  lasts; anything above 100 W is dropped.
+- Load: the two sensor states are read from memory on the poll the
+  integration already makes. There is no extra polling, no state listener,
+  and the Store is written only when a published number changes.
+
+The cards prefer the measured round trip to the implied one and say so ("at
+the plug"). The health card adds the standby draw in watts and kWh a day.
+When the plug has a power sensor on the same device, the cards also show its
+live watts: in the health card's header next to the battery's own power, and
+as a fourth figure on the fleet card. The plug's figure is sampled on its own
+schedule (every 5 s for HomeWizard), so it can differ from the battery's
+30-second reading by more than the conversion loss.
+
 ## Lovelace cards
 
 The integration serves its own frontend module, `marstek-battery-health.js`,
@@ -217,20 +273,38 @@ device reports (`bat_cap`).
   insights say how many runs back the number and how closely they agree,
   whether capacity moved more than that spread since the first weekly
   estimate (once 28 days of estimates exist), what the round trip means per
-  10 kWh charged, how long the stored energy lasts (or how long until full)
-  at the current power when it is 50 W or more, and how far an open run has
-  got. Three tabs hold the detail: **Capacity** (weekly estimates
-  with each run as a dot and the rating as a dashed line), **Runs** (the 12
-  most recent runs, each with its deviation from the median for its
-  direction), and **Energy**
-  (lifetime AC in and out, solar, home load, and equivalent full cycles).
+  10 kWh charged, how long the pack can keep discharging (or how long until
+  full) at the current power when it is 50 W or more, and how far an open run
+  has got. While discharging, that time runs to the floor set by the **Depth
+  of discharge** number (an 88% depth of discharge stops the pack at 12%) and
+  the sentence names the floor. The Open API cannot read that setting back,
+  so the number is the last value written from Home Assistant (88% until
+  then). Without that entity (older firmware), the card assumes the
+  firmware's default of 88%, so the time still runs to 12% and never to 0%.
+  Three tabs hold the
+  detail: **Capacity** (weekly estimates with each run as a dot and the
+  rating as a dashed line), **Runs** (every kept run, newest first, eight to
+  a page, filterable by direction, each with its deviation from the median
+  for its direction), and **Energy** (lifetime AC in and out, solar, home
+  load, and equivalent full cycles).
+
+  The Capacity tab can download the weekly estimates as a CSV file
+  (`week_start`, `usable_wh`, `rated_wh`), and the Runs tab can download
+  every kept run, whatever the filter shows (`closed_at`, `direction`,
+  `start_soc`, `end_soc`, `soc_delta`, `capacity_wh`, `duration_s`,
+  `average_power_w`, `pv_share`). Times are UTC in ISO 8601 and cells are
+  comma-separated. A value a run did not record (an older run, or no solar
+  share) leaves its cell empty.
 - **Marstek battery fleet** (`custom:marstek-battery-fleet-card`) compares
   every battery. It totals usable capacity, stored energy, and battery
   power, and draws each pack on one kWh scale, so a longer bar is a larger
   battery. It points out the battery with the largest share, the most
-  faded one once it has left the Healthy band, a round-trip gap between packs, and a state-of-charge gap
-  of 10 points or more. Selecting a row opens that battery's more-info
-  dialog.
+  faded one once it has left the Healthy band, a round-trip gap between packs
+  (measured at the plug or implied, never one against the other), and a state-of-charge gap
+  of 10 points or more. Each row's round trip has an info icon whose
+  tooltip says whether it was measured at the plug (standby included) or
+  estimated from the battery's own readings. Selecting a row opens that
+  battery's more-info dialog.
 
 The health card's visual editor sets the device, a title, whether the tabs
 show, and which tab opens first. The card picker lists both cards by their
@@ -251,6 +325,26 @@ Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
 week, month, usable watt-hours, both medians, implied round-trip efficiency,
 equivalent cycles, and the lifetime grid, PV, and load watt-hours known at
 that time. A store written before `history` existed still loads.
+
+To be told when a battery leaves the Healthy band, use a numeric state
+trigger on the **Battery state of health** sensor. The sensor moves only
+when the capacity estimate moves, so the automation fires rarely:
+
+```yaml
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.venus_e_3_0_battery_state_of_health
+    below: 90
+actions:
+  - action: notify.notify
+    data:
+      message: >-
+        {{ state_attr(trigger.entity_id, 'friendly_name') }} is at
+        {{ trigger.to_state.state }}% of its rating.
+```
+
+Use `below: 80` for the Worn band. The card's band rounds to whole percent,
+so the automation can fire a few tenths before the card changes band.
 
 Options → **Battery health dashboard** / **Dashboard batterijgezondheid**
 adds a sidebar dashboard (`marstek-battery-health`, strategy

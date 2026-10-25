@@ -138,9 +138,25 @@
             "data_description": {
               "show_capacity_dashboard": "Adds a Battery health dashboard that compares every Marstek battery. Off by default. Turn it off again to hide the sidebar entry without deleting the dashboard."
             }
+          },
+          "plug_meter_settings": {
+            "name": "Energy meter (optional)",
+            "description": "Link a smart plug or meter that sits between this battery and the mains, such as a HomeWizard Energy Socket or a Shelly plug. Its counters measure the battery's real round-trip efficiency and its standby draw, and the cards show the plug's live power. Leave both fields empty to use only the battery's own readings.",
+            "data": {
+              "plug_energy_in": "Energy into the battery",
+              "plug_energy_out": "Energy out of the battery"
+            },
+            "data_description": {
+              "plug_energy_in": "Total energy sensor that counts what the plug delivers to the battery while it charges or idles. On a HomeWizard socket this is Energy import.",
+              "plug_energy_out": "Total energy sensor that counts what the battery sends back through the plug. On a HomeWizard socket this is Energy export, which stays disabled until you enable it on the socket's device page."
+            }
           }
         }
       }
+    },
+    "error": {
+      "plug_meter_incomplete": "Choose both meter sensors, or clear both to unlink the meter.",
+      "plug_meter_same_entity": "Choose two different sensors: one for energy into the battery, one for energy out."
     }
   },
   "entity": {

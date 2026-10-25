@@ -138,9 +138,25 @@
             "data_description": {
               "show_capacity_dashboard": "Voegt een dashboard Batterijgezondheid toe dat elke Marstek-batterij vergelijkt. Standaard uit. Zet het weer uit om het zijbalkitem te verbergen zonder het dashboard te verwijderen."
             }
+          },
+          "plug_meter_settings": {
+            "name": "Energiemeter (optioneel)",
+            "description": "Koppel een slimme stekker of meter tussen deze batterij en het net, zoals een HomeWizard Energy Socket of een Shelly-stekker. De tellers meten het echte rendement heen en terug en het stand-byverbruik van de batterij, en de kaarten tonen het actuele vermogen aan de stekker. Laat beide velden leeg om alleen de metingen van de batterij zelf te gebruiken.",
+            "data": {
+              "plug_energy_in": "Energie naar de batterij",
+              "plug_energy_out": "Energie uit de batterij"
+            },
+            "data_description": {
+              "plug_energy_in": "Totale-energiesensor die telt wat de stekker aan de batterij levert tijdens laden of stand-by. Op een HomeWizard-socket is dit Energie-import.",
+              "plug_energy_out": "Totale-energiesensor die telt wat de batterij via de stekker teruglevert. Op een HomeWizard-socket is dit Energie-export; die staat uit tot je hem inschakelt op de apparaatpagina van de socket."
+            }
           }
         }
       }
+    },
+    "error": {
+      "plug_meter_incomplete": "Kies beide metersensoren, of maak beide leeg om de meter te ontkoppelen.",
+      "plug_meter_same_entity": "Kies twee verschillende sensoren: een voor energie naar de batterij en een voor energie eruit."
     }
   },
   "entity": {
