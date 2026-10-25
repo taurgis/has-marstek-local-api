@@ -121,7 +121,7 @@ const STYLES = `
   .fleet .tail { text-align: right; font-size: 14px; }
   .fleet .tail > span { display: block; }
   .fleet .tail .band { margin-right: 0; }
-  .fleet .tail .rte { display: flex; justify-content: flex-end; align-items: center; gap: 3px; }
+  .fleet .tail .rte { white-space: nowrap; display: flex; justify-content: flex-end; align-items: center; gap: 3px; }
   .fleet .info { --mdc-icon-size: 14px; display: flex; color: var(--secondary-text-color); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .fleet .cell { height: 16px; border-radius: 4px; }
@@ -242,6 +242,8 @@ const KINDS = {
   load: "total_load_energy",
   dod: "depth_of_discharge",
 };
+// DOD_DEFAULT_VALUE in pymarstek/const.py: the depth of discharge until one is written.
+const DEFAULT_DOD = 88;
 
 function kindOf(entity) {
   const key = entity?.translation_key;
@@ -417,15 +419,13 @@ function runtimeInsight(hass, model, text) {
   const watts = model.power == null ? 0 : Math.abs(model.power);
   if (watts < 50 || model.usable == null || model.soc == null) return null;
   const power = `${fmt(hass, watts)} W`;
-  // The pack stops at 100 minus the depth of discharge. The Open API cannot
-  // read that setting back, so the number is the last write and is named.
-  if (model.flow === "discharge" && model.dod != null) {
-    const floor = 100 - model.dod;
+  // The pack stops at 100 minus the depth of discharge, never at 0%. The Open
+  // API cannot read that setting back, so the number is the last write, or the
+  // firmware default without the entity, and the sentence names the floor.
+  if (model.flow === "discharge") {
+    const floor = 100 - (model.dod ?? DEFAULT_DOD);
     const left = (model.usable * (model.soc - floor)) / 100;
     return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / watts)) } : null;
-  }
-  if (model.flow === "discharge" && model.stored) {
-    return { icon: "mdi:timer-sand", text: text.lasts(power, energy(hass, model.stored), duration(hass, model.stored / watts)) };
   }
   if (model.flow === "charge" && model.soc < 100) {
     const room = model.usable - (model.stored ?? 0);

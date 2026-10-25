@@ -279,7 +279,9 @@ device reports (`bat_cap`).
   of discharge** number (an 88% depth of discharge stops the pack at 12%) and
   the sentence names the floor. The Open API cannot read that setting back,
   so the number is the last value written from Home Assistant (88% until
-  then). Without that entity, the time runs to 0%. Three tabs hold the
+  then). Without that entity (older firmware), the card assumes the
+  firmware's default of 88%, so the time still runs to 12% and never to 0%.
+  Three tabs hold the
   detail: **Capacity** (weekly estimates with each run as a dot and the
   rating as a dashed line), **Runs** (every kept run, newest first, eight to
   a page, filterable by direction, each with its deviation from the median
