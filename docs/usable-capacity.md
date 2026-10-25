@@ -286,8 +286,9 @@ device reports (`bat_cap`).
   detail: **Capacity** (weekly estimates with each run as a dot and the
   rating as a dashed line), **Runs** (every kept run, newest first, eight to
   a page, filterable by direction, each with its deviation from the median
-  for its direction), and **Energy** (lifetime AC in and out, solar, home
-  load, and equivalent full cycles).
+  for its direction), and **Energy** (lifetime AC in and out, solar when the
+  battery has a solar counter, the backup socket when it has delivered energy,
+  and equivalent full cycles).
 
   The Capacity tab can download the weekly estimates as a CSV file
   (`week_start`, `usable_wh`, `rated_wh`), and the Runs tab can download
