@@ -73,6 +73,40 @@ def test_imported_modules_load_with_the_card_token(name: str) -> None:
     assert f"import(`./{name}{token}`)" in _source()
 
 
+def test_health_header_uses_the_tile_layout() -> None:
+    """Name and flow stack on the left; the band is the header's trailing pill.
+
+    The subtitle is the flow text itself. A leading icon, or the fleet row's
+    ``who`` class, shifts that line off the name's left edge.
+    """
+    source = _source()
+    header = source[source.index("function healthCardHtml") : source.index("function sum(")]
+    assert 'class="title-wrap"' in header
+    assert "title-wrap who" not in header
+    assert "bandHtml(model, text)" in header
+    flow = source[source.index("function flowHtml") : source.index("function bandHtml")]
+    assert "<ha-icon" not in flow
+    assert "flex-direction: column" in source
+    headline = source[source.index("function headlineHtml") : source.index("function capacityHtml")]
+    assert "band" not in headline
+    assert "margin-left: auto" not in source
+    assert ".top .band" in source
+
+
+def test_fleet_stats_share_two_columns_on_a_phone() -> None:
+    """A wrapping flex row lines the second column up with the widest first cell.
+
+    On a phone the four fleet figures are a two-column grid. Wider screens keep
+    the single flex row.
+    """
+    source = _source()
+    assert ".stats { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0; }" in source
+    mobile = source[source.index("@media (max-width: 480px)") :]
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in mobile
+    assert ".stats div { max-width: none; }" in mobile
+    assert "max-width: 10rem" not in source
+
+
 def test_every_language_has_the_same_text_keys() -> None:
     """A key missing in one language would render as undefined."""
     copy = (_MODULE.parent / "marstek-battery-health-copy.js").read_text(encoding="utf-8")

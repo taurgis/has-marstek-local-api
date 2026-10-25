@@ -27,16 +27,20 @@ const STYLES = `
   .num { font-variant-numeric: tabular-nums; }
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
   button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 6px; }
-  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0; }
-  .top ha-icon { color: var(--state-icon-color, var(--secondary-text-color)); flex: none; }
-  .name { margin: 0; font-size: 16px; font-weight: 500; line-height: 24px; flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .flow { display: inline-flex; margin-left: auto; align-items: center; gap: 4px; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
-  .flow ha-icon { --mdc-icon-size: 18px; }
+  .top { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 10px; min-width: 0; }
+  .top > ha-icon { color: var(--state-icon-color, var(--secondary-text-color)); flex: none; margin-top: 1px; }
+  /* Column only. The fleet row class who is a different grid and stays off this header. */
+  .title-wrap { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
+  .top > .name { flex: 1 1 auto; }
+  .name { margin: 0; padding: 0; font-size: 16px; font-weight: 500; line-height: 22px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
+  /* Text starts on the name's left edge. A leading icon would shift this line right. */
+  .flow { display: block; margin: 0; padding: 0; min-width: 0; max-width: 100%; font-size: 13px; line-height: 18px; color: var(--secondary-text-color); text-align: start; }
   .lead { margin: 0; font-size: 20px; line-height: 28px; font-weight: 400; }
   .lead strong { font-weight: 600; }
   .band { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; margin-right: 6px; vertical-align: 2px; }
-  .lead .band { display: flex; width: fit-content; margin: 0 0 6px; padding: 2px 10px 2px 8px; border-radius: 999px;
-    font-size: 12px; line-height: 18px; background: color-mix(in srgb, currentColor 12%, transparent); }
+  .top .band { display: inline-flex; flex: none; align-self: flex-start; width: fit-content; margin: 1px 0 0; vertical-align: 0;
+    padding: 2px 10px 2px 8px; border-radius: 999px; font-size: 12px; line-height: 18px;
+    background: color-mix(in srgb, currentColor 12%, transparent); }
   .band ha-icon { --mdc-icon-size: 16px; }
   .band.good { color: var(--success-color, #43a047); }
   .band.fading { color: var(--warning-color, #ffa600); }
@@ -136,7 +140,9 @@ const STYLES = `
     .lead { font-size: 18px; line-height: 26px; }
     .fleet button { grid-template-columns: minmax(0, 1fr) auto; }
     .fleet .bar { grid-column: 1 / -1; grid-row: 2; }
-    .stats div { max-width: 10rem; }
+    /* Equal columns, so the second figure on each row shares one left edge. */
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+    .stats div { max-width: none; }
   }
 `;
 
@@ -304,7 +310,6 @@ function bandOf(health, confidence) {
 }
 
 const BAND_ICON = { good: "mdi:heart-pulse", fading: "mdi:trending-down", worn: "mdi:alert-outline", measuring: "mdi:progress-clock" };
-const FLOW_ICON = { charge: "mdi:battery-arrow-up", discharge: "mdi:battery-arrow-down", idle: "mdi:battery-outline" };
 
 function flowOf(model) {
   if (model.status === "charging" || (model.power != null && model.power < -20)) return "charge";
@@ -367,21 +372,24 @@ function capacityCell(model, scaleWh) {
 function flowHtml(hass, model, text) {
   const watts = model.power == null || model.flow === "idle" ? "" : ` <span class="num">${fmt(hass, Math.abs(model.power))} W</span>`;
   const plug = model.plugPower == null ? "" : ` · <span class="num">${esc(text.atPlug(`${fmt(hass, Math.abs(model.plugPower))} W`))}</span>`;
-  return `<span class="flow"><ha-icon icon="${FLOW_ICON[model.flow]}"></ha-icon>${esc(text.flow[model.flow])}${watts}${plug}</span>`;
+  return `<span class="flow">${esc(text.flow[model.flow])}${watts}${plug}</span>`;
 }
 
 // --- health card ---------------------------------------------------------
 
+function bandHtml(model, text) {
+  return `<span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(text.band[model.band])}</span>`;
+}
+
 function headlineHtml(hass, model, text) {
-  const band = `<span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(text.band[model.band])}</span>`;
-  if (model.usable == null) return `<p class="lead">${band}${esc(text.headlineWait)}</p>`;
+  if (model.usable == null) return `<p class="lead">${esc(text.headlineWait)}</p>`;
   const usable = `<strong class="num">${esc(kwh(hass, model.usable))}</strong>`;
   // A reading just over the rating is estimate noise, so it is not shown as 101%.
   const words = model.rated == null || model.health == null ? text.headlineNoRating("§")
     : Math.round(model.health) >= 100 ? text.headlineFull("§", kwh(hass, model.rated))
       : text.headline("§", pct(hass, model.health), kwh(hass, model.rated));
   const sentence = esc(words).replace("§", usable);
-  return `<p class="lead">${band}${sentence}</p>`;
+  return `<p class="lead">${sentence}</p>`;
 }
 
 function capacityHtml(hass, model, text) {
@@ -579,7 +587,7 @@ function healthCardHtml(hass, config, tab, cardId, width, runs) {
   const model = readModel(hass, pack);
   const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, width, runs);
   return `<style>${STYLES}</style><ha-card>
-    <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>
+    <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><div class="title-wrap"><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>${bandHtml(model, text)}</div>
     ${headlineHtml(hass, model, text)}
     ${capacityHtml(hass, model, text)}
     ${insightsHtml(hass, model, text)}

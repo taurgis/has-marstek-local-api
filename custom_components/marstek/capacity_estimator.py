@@ -58,6 +58,13 @@ DISCHARGE_EFFICIENCY = 0.93
 MIN_SOC_DELTA = 20.0
 MIN_SAMPLES = 4
 MIN_POWER_W = 150.0
+# Same-sign segments below ``MIN_POWER_W`` are pauses, not a new direction.
+# Two of them (about a minute at the default poll) stay inside the open
+# window. A third ends it, so a long trickle cannot ride the fixed 0.93
+# one-way factor into the median. The 150 W floor itself does not move:
+# inverter efficiency collapses below it, and a window whose average is
+# still under 150 W is rejected.
+_MAX_LOW_POWER_SEGMENTS = 2
 MAX_ABS_POWER_W = 30_000.0
 MAX_GAP_SECONDS = 180.0
 # ES.GetMode plus up to five more serial reads, at the options-flow maximum
@@ -358,8 +365,8 @@ def _soc_step_limit(earlier: _Sample, later: _Sample, rated_wh: float | None) ->
     derived reading, divided by the nameplate. One extra point covers the
     whole-percent step. Without a nameplate the smallest pack the estimator
     will accept is used, so only a jump that pack could not physically make
-    is rejected. Two points is the floor: a single reported step is never a
-    recalibration.
+    is rejected. Two points is the floor: a step of exactly two reported
+    points is still integer quantization, not a recalibration.
     """
     hours = max(later.timestamp - earlier.timestamp, 0.0) / 3600.0
     power = max(abs(earlier.power_w), abs(later.power_w))
@@ -379,8 +386,36 @@ def _jump_capacity_wh(rated_wh: float | None) -> float:
 
 
 def _soc_jumped(earlier: _Sample, later: _Sample, rated_wh: float | None) -> bool:
-    """Return whether state of charge moved further than this poll can explain."""
-    return abs(later.soc - earlier.soc) >= _soc_step_limit(earlier, later, rated_wh)
+    """Return whether state of charge moved further than this poll can explain.
+
+    A step equal to the limit is the largest one the watts, the one-point
+    slack, and the two-point floor justify. Only a larger step is a BMS jump.
+    ``>=`` treated that equal step as a jump, so a two-point integer tick
+    aborted a window the floor was written to keep.
+    """
+    return abs(later.soc - earlier.soc) > _soc_step_limit(earlier, later, rated_wh)
+
+
+def _power_sign(power_w: float) -> int:
+    """Return +1, -1, or 0 from the sign of a watt reading."""
+    if power_w > 0.0:
+        return 1
+    if power_w < 0.0:
+        return -1
+    return 0
+
+
+def _low_power_pause(segment_w: float, later_w: float, open_direction: int) -> bool:
+    """Return whether a segment is a same-sign dip under the power floor.
+
+    The trapezoidal average decides the magnitude. The later sample's sign
+    decides a reversal: opposite watts are not a pause, even below 150 W.
+    Exact zero has no direction and counts as a pause.
+    """
+    if abs(segment_w) >= MIN_POWER_W:
+        return False
+    sign = _power_sign(later_w)
+    return sign == 0 or sign == open_direction
 
 
 def _sample_pv(pv_w: float | None, power_derived: bool) -> float | None:
@@ -411,6 +446,9 @@ class UsableCapacityEstimator:
         self._windows: list[_Window] = []
         self._open: list[_Sample] = []
         self._open_direction = 0
+        # Consecutive same-sign segments below ``MIN_POWER_W`` inside the
+        # open window. Not persisted: the open window itself is not.
+        self._low_power_segments = 0
         # False until the open window starts on a state-of-charge step.
         self._aligned = False
         self._previous: _Sample | None = None
@@ -712,10 +750,19 @@ class UsableCapacityEstimator:
             return True
         if _mode_changed(self._open[0].mode, sample.mode):
             return True
-        direction = _direction(_segment_power(previous, sample))
+        segment = _segment_power(previous, sample)
+        direction = _direction(segment)
         if self._open_direction == 0:
+            self._low_power_segments = 0
             return direction == 0
-        return direction != self._open_direction
+        if direction == self._open_direction:
+            self._low_power_segments = 0
+            return False
+        if _low_power_pause(segment, sample.power_w, self._open_direction):
+            self._low_power_segments += 1
+            return self._low_power_segments > _MAX_LOW_POWER_SEGMENTS
+        self._low_power_segments = 0
+        return True
 
     def _start(self, previous: _Sample, sample: _Sample) -> None:
         """Open a window on a segment that is clearly charging or discharging.
@@ -788,6 +835,7 @@ class UsableCapacityEstimator:
         """Drop the open window. Accepted windows stay."""
         self._open = []
         self._open_direction = 0
+        self._low_power_segments = 0
         self._aligned = False
 
     def _trim_windows(self) -> None:
@@ -809,6 +857,11 @@ class UsableCapacityEstimator:
         moved = -soc_delta if direction > 0 else soc_delta
         if moved < MIN_SOC_DELTA:
             return None
+        # Brief dips are bridged above. A window that is still under 150 W
+        # on average spent its energy where 0.93 does not describe the
+        # inverter, so it is not a capacity observation.
+        if abs(_average_power_w(samples)) < MIN_POWER_W:
+            return _REJECT
         energy = _dc_energy_wh(samples)
         # Discharge must remove state of charge; charge must add it.
         if direction > 0 and (soc_delta >= 0.0 or energy <= 0.0):
@@ -874,25 +927,32 @@ def apply_capacity_estimate(
     """
     # Missing means the caller already passed a fresh sample (unit traces).
     # An explicit False is a poll whose ES.GetStatus did not answer: the
-    # watts may be carried forward while state of charge is new.
+    # watts may be carried forward while state of charge is new. Passing
+    # that pair in would invent energy. Passing None aborts the open window,
+    # which a total poll failure does not do: the coordinator simply skips
+    # this call and the gap limit bridges the hole. Skip the sample and leave
+    # the previous fresh one in place. The next ES.GetStatus integrates
+    # across the gap when it is still inside the limit, and aborts when it
+    # is not, or when state of charge jumped.
     fresh = status.get(ES_STATUS_FRESH_KEY, True) is not False
-    soc = _finite(status.get("battery_soc")) if fresh else None
-    power = _finite(status.get("battery_power")) if fresh else None
-    rated = _finite(status.get("bat_cap"))
-    mode = status.get("device_mode")
-    pv_raw = status.get("pv_power") if fresh else None
-    pv = pv_raw if isinstance(pv_raw, (int, float)) and not isinstance(pv_raw, bool) else None
     # Before ``observe``, which folds this poll's counters into the weekly point.
     estimator.remember_lifetime(status)
-    estimator.observe(
-        timestamp=timestamp,
-        soc=soc,
-        power_w=power,
-        mode=mode if isinstance(mode, str) else None,
-        rated_wh=rated,
-        pv_w=pv,
-        power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
-    )
+    if fresh:
+        soc = _finite(status.get("battery_soc"))
+        power = _finite(status.get("battery_power"))
+        rated = _finite(status.get("bat_cap"))
+        mode = status.get("device_mode")
+        pv_raw = status.get("pv_power")
+        pv = pv_raw if isinstance(pv_raw, (int, float)) and not isinstance(pv_raw, bool) else None
+        estimator.observe(
+            timestamp=timestamp,
+            soc=soc,
+            power_w=power,
+            mode=mode if isinstance(mode, str) else None,
+            rated_wh=rated,
+            pv_w=pv,
+            power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
+        )
     status[CAPACITY_DATA_KEY] = estimator.estimate_wh
     status[SOH_DATA_KEY] = estimator.state_of_health
     status[CAPACITY_ATTR_KEY] = estimator.attributes()

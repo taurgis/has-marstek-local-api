@@ -448,7 +448,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._clear_connection_issue()
             # es_status_fresh is false when ES.GetStatus did not answer and
             # battery_power was carried forward. The recorder still runs so
-            # the sensors keep their last estimate, and that poll is a hole.
+            # the sensors keep their last estimate. The capacity estimator
+            # treats that poll as a hole and leaves the open window alone.
             await self._async_record_capacity(device_status)
 
             return device_status

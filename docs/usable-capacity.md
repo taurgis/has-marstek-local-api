@@ -249,8 +249,8 @@ How it is measured:
 The cards prefer the measured round trip to the implied one and say so ("at
 the plug"). The health card adds the standby draw in watts and kWh a day.
 When the plug has a power sensor on the same device, the cards also show its
-live watts: in the health card's header next to the battery's own power, and
-as a fourth figure on the fleet card. The plug's figure is sampled on its own
+live watts: on the health card, in the line under the battery name, and as a
+fourth figure on the fleet card. The plug's figure is sampled on its own
 schedule (every 5 s for HomeWizard), so it can differ from the battery's
 30-second reading by more than the conversion loss.
 
@@ -264,11 +264,12 @@ the state of charge far enough to count. The *rating* is the nameplate the
 device reports (`bat_cap`).
 
 - **Marstek battery health** (`custom:marstek-battery-health-card`) shows one
-  battery. A sentence states what the pack holds against its rating, with a
-  band: Healthy (90% or more), Fading (80% to 90%), Worn (below 80%), or
-  Measuring while there is no estimate or no state of health yet. The band
-  uses the same rounded percentage the card shows. The bands describe fade only; the
-  Open API reports no warranty terms. A battery-shaped bar splits the rating
+  battery. The header puts the name and the live power flow on the left, and
+  the band on the top right: Healthy (90% or more), Fading (80% to 90%), Worn
+  (below 80%), or Measuring while there is no estimate or no state of health
+  yet. A sentence under that states what the pack holds against its rating.
+  The band uses the same rounded percentage the card shows. The bands describe
+  fade only; the Open API reports no warranty terms. A battery-shaped bar splits the rating
   into energy stored now, room left, and the faded part. Below it, short
   insights say how many runs back the number and how closely they agree,
   whether capacity moved more than that spread since the first weekly

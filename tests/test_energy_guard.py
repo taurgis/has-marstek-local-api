@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from custom_components.marstek.pymarstek.data_parser import merge_device_status
 from custom_components.marstek.pymarstek.energy_guard import (
     ENERGY_TOTAL_KEYS,
@@ -84,6 +86,50 @@ def test_guard_rejects_jump_above_single_update_cap() -> None:
 
     assert status["total_load_energy"] == previous
     assert current <= MAX_PLAUSIBLE_ENERGY_WH
+
+
+def test_guard_accepts_lifetime_total_that_replaces_zero(caplog: pytest.LogCaptureFixture) -> None:
+    """Issue #128: 0 Wh is not a baseline that can freeze a P1 meter."""
+    status = {
+        "em_input_energy": 19_316_004.0,
+        "em_output_energy": 17_883_019.0,
+        "total_pv_energy": MAX_PLAUSIBLE_ENERGY_WH,
+    }
+
+    with caplog.at_level("WARNING"):
+        apply_energy_total_guard(
+            status,
+            {
+                "em_input_energy": 0.0,
+                "em_output_energy": 0,
+                "total_pv_energy": 0.0,
+            },
+        )
+
+    assert status["em_input_energy"] == 19_316_004.0
+    assert status["em_output_energy"] == 17_883_019.0
+    assert status["total_pv_energy"] == MAX_PLAUSIBLE_ENERGY_WH
+    assert "Ignoring" not in caplog.text
+
+
+def test_guard_keeps_zero_when_the_replacement_is_not_plausible() -> None:
+    """A uint32-scale reading must not replace a zero baseline either."""
+    status = {"em_input_energy": MAX_PLAUSIBLE_ENERGY_WH + 1.0}
+
+    apply_energy_total_guard(status, {"em_input_energy": 0.0})
+
+    assert status["em_input_energy"] == 0.0
+
+
+def test_guard_still_rejects_a_jump_from_a_positive_baseline() -> None:
+    """One watt-hour of real history is enough to enforce the jump cap."""
+    previous = 1.0
+    current = previous + MAX_PLAUSIBLE_ENERGY_JUMP_WH + 1
+    status = {"total_grid_input_energy": current}
+
+    apply_energy_total_guard(status, {"total_grid_input_energy": previous})
+
+    assert status["total_grid_input_energy"] == previous
 
 
 def test_merge_ignores_grid_spike_and_keeps_frozen_counter_fallback() -> None:
