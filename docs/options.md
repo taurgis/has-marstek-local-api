@@ -70,6 +70,17 @@ Charging is always validated against the same per-family maximum (as a negative 
 
 <img src="screenshots/device-settings-power.png" alt="Power settings" width="560" />
 
+## Energy meter (optional)
+
+Link a smart plug or meter that sits only between this battery and the mains
+(a HomeWizard Energy Socket, a Shelly plug, or any meter with total energy
+sensors):
+
+- Energy into the battery: a total energy sensor that counts what the plug delivers to the battery. On a HomeWizard socket, **Energy import**.
+- Energy out of the battery: a total energy sensor that counts what the battery sends back. On a HomeWizard socket, **Energy export**, which Home Assistant creates disabled until you enable it on the socket's device page.
+
+Fill both or neither, and pick two different sensors. With a meter linked, the battery health cards show the round trip and standby draw measured at the plug, and the plug's live power. See [Usable capacity](usable-capacity.md#energy-meter-optional).
+
 ## Reconfigure
 
 If you need to reconfigure the entry (e.g., after changes), use the device’s configure/reconfigure flow.

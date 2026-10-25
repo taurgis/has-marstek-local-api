@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import voluptuous as vol
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -18,6 +21,8 @@ from ..const import (
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
+    CONF_PLUG_ENERGY_IN,
+    CONF_PLUG_ENERGY_OUT,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -207,5 +212,21 @@ def build_dashboard_schema(*, show_capacity_dashboard: bool) -> vol.Schema:
                 CONF_SHOW_CAPACITY_DASHBOARD,
                 default=show_capacity_dashboard,
             ): BooleanSelector(),
+        }
+    )
+
+
+def build_plug_meter_schema(*, energy_in: str | None, energy_out: str | None) -> vol.Schema:
+    """Build the optional external-meter schema.
+
+    Suggested values, not defaults, so emptying a field unlinks the meter.
+    """
+    energy = EntitySelector(
+        EntitySelectorConfig(domain="sensor", device_class=SensorDeviceClass.ENERGY)
+    )
+    return vol.Schema(
+        {
+            vol.Optional(CONF_PLUG_ENERGY_IN, description={"suggested_value": energy_in}): energy,
+            vol.Optional(CONF_PLUG_ENERGY_OUT, description={"suggested_value": energy_out}): energy,
         }
     )

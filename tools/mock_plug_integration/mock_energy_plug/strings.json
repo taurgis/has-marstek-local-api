@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mock energy plug",
+        "description": "Address of the mock battery's plug server, for example 172.28.0.20 or 172.28.0.20:8080.",
+        "data": { "host": "Host" }
+      }
+    },
+    "error": { "cannot_connect": "The plug did not answer at that address." },
+    "abort": { "already_configured": "This plug is already added." }
+  }
+}

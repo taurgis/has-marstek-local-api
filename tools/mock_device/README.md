@@ -13,12 +13,14 @@ mock_device/
 ├── const.py              # Constants and defaults
 ├── device.py             # UDP server (MockMarstekDevice)
 ├── handlers.py           # API method handlers
+├── plug_server.py        # HTTP smart plug (HomeWizard v1 + Shelly-style RPC)
 ├── utils.py              # Utility functions
 ├── mock_marstek.py       # Backwards compatibility shim
 └── simulators/
     ├── __init__.py
     ├── battery.py        # BatterySimulator
     ├── household.py      # HouseholdSimulator
+    ├── plug.py           # PlugMeter (import/export counters)
     └── wifi.py           # WiFiSimulator
 ```
 
@@ -127,6 +129,8 @@ python3 tools/mock_device/mock_marstek.py [OPTIONS]
 - `--no-simulate` - Disable dynamic simulation (static values only)
 - `--quiet` - Do not log a line per handled request (dropped datagrams are still summarised)
 - `--status-interval SECONDS` - Seconds between status lines (default: 30; `0` disables them)
+- `--standby-w WATTS` - Whole watts the unit draws from the mains to stay awake. The Open API never reports it; only the plug below sees it.
+- `--plug-http-port PORT` - Serve a smart plug on this TCP port: the battery's AC port plus its standby draw, with lifetime import and export counters that persist with the rest of the state. It answers the HomeWizard Energy Socket local API v1 (`/api`, `/api/v1/data`, `/api/v1/state`, `/api/v1/system`; product `HWE-SKT`, switch locked) for Home Assistant's core **HomeWizard** integration, and `/rpc/Shelly.GetDeviceInfo` / `/rpc/Switch.GetStatus` (watt-hours) for the dev-only [`mock_energy_plug`](../mock_plug_integration/README.md) integration.
 
 ### Examples
 
@@ -165,7 +169,7 @@ and `.49` / `.72` Venus A 1491 and 151.
 
 | Service | IP | Port | Model | `ver` | Profile | PV encoding | Expected capabilities |
 |---------|-----|------|-------|-------|---------|-------------|------------------------|
-| mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh. Stands in for Venus E **144/147/148** issue logs. |
+| mock-marstek | 172.28.0.20 | 30000 | VenusE 3.0 | 145 | Legacy | n/a (no PV) | No SYS, no UPS; solar/grid Wh. Stands in for Venus E **144/147/148** issue logs. 8 W standby and a smart plug on HTTP port 80 (see below). |
 | mock-marstek-2 | 172.28.0.25 | 30000 | VenusE 3.0 | 150 | Rev 3.1 | n/a (no PV) | SYS + UPS + EM energy; GetMode CT keys are zeros (LAN capture) |
 | mock-marstek-3 | 172.28.0.22 | 30001 | VenusA | 148 | 148 or older | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS. Stands in for Venus A **147** (#11) and **148.3** ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)); GetMode CT keys are zeros |
 | mock-marstek-4 | 172.28.0.23 | 30002 | VenusD | 145 | Legacy | Channel 1 **deciwatt**, others watts; solar Wh | PV yes; no SYS, no UPS |
@@ -209,6 +213,12 @@ To add devices in Home Assistant:
     - `172.28.0.28:30000`
     - `172.28.0.29:30000` (Venus E 2.0 / HMG-50; expect unsupported, do not add)
     - `172.28.0.30`–`172.28.0.49` and `172.28.0.72` archived Control variants (see table above)
+
+To test the optional energy meter, add the plug of `172.28.0.20`:
+
+1. Add Integration → **HomeWizard Energy**, IP address `172.28.0.20`. It polls every 5 seconds. Its **Energy import** counter shows as unknown while it is exactly zero.
+2. Or add Integration → **Mock energy plug (dev only)**, host `172.28.0.20` (the devcontainer mounts it from `tools/mock_plug_integration/`). It polls every 10 seconds and reports watt-hours.
+3. Marstek → Configure → **Energy meter (optional)**: pick the plug's import (or Energy) sensor as energy into the battery and its export (or Returned energy) sensor as energy out.
 
 All but `.20`, `.23` and `.28` need `--profile mocks-all` or their service name. The real-firmware
 custom-port devices are `172.28.0.51:30004` (default) and `172.28.0.58:30001` / `172.28.0.60:30003`

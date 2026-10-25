@@ -19,6 +19,7 @@ const DAY_S = 86400;
 // Same ?v= token as this module, so a cached copy of the text never
 // outlives an update. The backend hashes both files into that token.
 const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
+const { plugPowerId, plugFlow } = await import(`./marstek-battery-health-plug.js${new URL(import.meta.url).search}`);
 
 const STYLES = `
   :host { display: block; }
@@ -26,10 +27,10 @@ const STYLES = `
   .num { font-variant-numeric: tabular-nums; }
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
   button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 6px; }
-  .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0; }
   .top ha-icon { color: var(--state-icon-color, var(--secondary-text-color)); flex: none; }
-  .name { margin: 0; font-size: 16px; font-weight: 500; line-height: 24px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .flow { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
+  .name { margin: 0; font-size: 16px; font-weight: 500; line-height: 24px; flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flow { display: inline-flex; margin-left: auto; align-items: center; gap: 4px; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
   .flow ha-icon { --mdc-icon-size: 18px; }
   .lead { margin: 0; font-size: 20px; line-height: 28px; font-weight: 400; }
   .lead strong { font-weight: 600; }
@@ -118,13 +119,24 @@ const STYLES = `
   .fleet .who strong { font-weight: 500; font-size: 14px; }
   .fleet .who span, .fleet .tail span { font-size: 12px; color: var(--secondary-text-color); }
   .fleet .tail { text-align: right; font-size: 14px; }
-  .fleet .tail span { display: block; }
+  .fleet .tail > span { display: block; }
+  .fleet .tail .band { margin-right: 0; }
+  .fleet .tail .rte { white-space: nowrap; display: flex; justify-content: flex-end; align-items: center; gap: 3px; }
+  .fleet .info { --mdc-icon-size: 14px; display: flex; color: var(--secondary-text-color); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .fleet .cell { height: 16px; border-radius: 4px; }
   .fleet .cell::after { display: none; }
+  @media (min-width: 481px) {
+    @supports (grid-template-columns: subgrid) {
+      .fleet { display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(0, 4fr) minmax(88px, auto); column-gap: 12px; }
+      .fleet li, .fleet button { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
+    }
+  }
   @media (max-width: 480px) {
     .lead { font-size: 18px; line-height: 26px; }
     .fleet button { grid-template-columns: minmax(0, 1fr) auto; }
     .fleet .bar { grid-column: 1 / -1; grid-row: 2; }
+    .stats div { max-width: 10rem; }
   }
 `;
 
@@ -230,6 +242,8 @@ const KINDS = {
   load: "total_load_energy",
   dod: "depth_of_discharge",
 };
+// DOD_DEFAULT_VALUE in pymarstek/const.py: the depth of discharge until one is written.
+const DEFAULT_DOD = 88;
 
 function kindOf(entity) {
   const key = entity?.translation_key;
@@ -305,6 +319,8 @@ function readModel(hass, pack) {
   const rated = finite(attrs.rated_capacity_wh);
   const reported = numberOf(hass, pack.entities.soc);
   const soc = reported == null ? null : clamp(reported, 0, 100);
+  // A linked energy meter measures the round trip; the battery's own figure is implied.
+  const metered = rteOf(attrs.plug_round_trip_efficiency);
   const model = {
     pack,
     name: deviceName(hass, pack.deviceId),
@@ -314,10 +330,13 @@ function readModel(hass, pack) {
     health: numberOf(hass, pack.entities.soh) ?? finite(attrs.state_of_health),
     soc,
     power: numberOf(hass, pack.entities.power),
+    plugPower: numberOf(hass, plugPowerId(hass, attrs)),
     dod: numberOf(hass, pack.entities.dod),
     status: stateOf(hass, pack.entities.status)?.state || null,
     stored: usable != null && soc != null ? (usable * soc) / 100 : null,
-    rte: rteOf(attrs.implied_round_trip_efficiency),
+    rte: metered ?? rteOf(attrs.implied_round_trip_efficiency),
+    rteMetered: metered != null,
+    standby: finite(attrs.plug_standby_w),
     windows: Array.isArray(attrs.windows) ? attrs.windows : [],
     history: Array.isArray(attrs.history) ? attrs.history : [],
     active: attrs.active_window && typeof attrs.active_window === "object" ? attrs.active_window : null,
@@ -347,7 +366,8 @@ function capacityCell(model, scaleWh) {
 
 function flowHtml(hass, model, text) {
   const watts = model.power == null || model.flow === "idle" ? "" : ` <span class="num">${fmt(hass, Math.abs(model.power))} W</span>`;
-  return `<span class="flow"><ha-icon icon="${FLOW_ICON[model.flow]}"></ha-icon>${esc(text.flow[model.flow])}${watts}</span>`;
+  const plug = model.plugPower == null ? "" : ` · <span class="num">${esc(text.atPlug(`${fmt(hass, Math.abs(model.plugPower))} W`))}</span>`;
+  return `<span class="flow"><ha-icon icon="${FLOW_ICON[model.flow]}"></ha-icon>${esc(text.flow[model.flow])}${watts}${plug}</span>`;
 }
 
 // --- health card ---------------------------------------------------------
@@ -399,15 +419,13 @@ function runtimeInsight(hass, model, text) {
   const watts = model.power == null ? 0 : Math.abs(model.power);
   if (watts < 50 || model.usable == null || model.soc == null) return null;
   const power = `${fmt(hass, watts)} W`;
-  // The pack stops at 100 minus the depth of discharge. The Open API cannot
-  // read that setting back, so the number is the last write and is named.
-  if (model.flow === "discharge" && model.dod != null) {
-    const floor = 100 - model.dod;
+  // The pack stops at 100 minus the depth of discharge, never at 0%. The Open
+  // API cannot read that setting back, so the number is the last write, or the
+  // firmware default without the entity, and the sentence names the floor.
+  if (model.flow === "discharge") {
+    const floor = 100 - (model.dod ?? DEFAULT_DOD);
     const left = (model.usable * (model.soc - floor)) / 100;
     return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / watts)) } : null;
-  }
-  if (model.flow === "discharge" && model.stored) {
-    return { icon: "mdi:timer-sand", text: text.lasts(power, energy(hass, model.stored), duration(hass, model.stored / watts)) };
   }
   if (model.flow === "charge" && model.soc < 100) {
     const room = model.usable - (model.stored ?? 0);
@@ -427,7 +445,12 @@ function insightsHtml(hass, model, text) {
   }
   items.push(trendInsight(hass, model, text));
   if (model.rte != null) {
-    items.push({ icon: "mdi:swap-vertical", text: text.rte(pct(hass, model.rte, 1), `${fmt(hass, model.rte / 10, 1)} kWh`) });
+    const args = [pct(hass, model.rte, 1), `${fmt(hass, model.rte / 10, 1)} kWh`];
+    const rte = model.rteMetered ? text.rteMetered(...args, day(hass, model.attrs.plug_round_trip_since)) : text.rte(...args);
+    items.push({ icon: "mdi:swap-vertical", text: rte });
+  }
+  if (model.standby != null) {
+    items.push({ icon: "mdi:power-sleep", text: text.standby(`${fmt(hass, model.standby, 1)} W`, kwh(hass, model.standby * 24)) });
   }
   items.push(runtimeInsight(hass, model, text));
   const active = model.active;
@@ -587,7 +610,10 @@ function fleetInsights(hass, models, text) {
   if (weakest && weakest.band !== "good") {
     out.push({ icon: BAND_ICON[weakest.band], text: text.fleetWeakest(weakest.name, pct(hass, weakest.health, 1)) });
   }
-  const efficient = models.filter((model) => model.rte != null);
+  // Compare like with like: metered round trips include standby, implied ones do not.
+  const rated = models.filter((model) => model.rte != null);
+  const metered = rated.filter((model) => model.rteMetered);
+  const efficient = metered.length > 1 ? metered : rated.filter((model) => !model.rteMetered);
   if (efficient.length > 1) {
     const best = Math.max(...efficient.map((model) => model.rte));
     const worst = efficient.reduce((a, b) => (b.rte < a.rte ? b : a));
@@ -611,8 +637,26 @@ function fleetRow(hass, model, text, scale) {
     <span class="who"><strong>${esc(model.name)}</strong><span class="num">${esc(status)}</span></span>
     <span class="bar"><span class="cell" role="img" aria-label="${esc(label)}">${capacityCell(model, scale)}</span></span>
     <span class="tail num"><span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(health)}</span
-      ><span>${esc(model.rte == null ? kwh(hass, model.usable) : `${kwh(hass, model.usable)} · ${text.rteShort(pct(hass, model.rte))}`)}</span></span>
+      ><span class="rte">${esc(kwh(hass, model.usable))}${rteTail(hass, model, text)}</span></span>
   </button></li>`;
+}
+
+// How the round trip was found sits behind an info icon: hover shows it, a screen reader reads it.
+function rteTail(hass, model, text) {
+  if (model.rte == null) return "";
+  const hint = model.rteMetered ? text.rteHint.metered : text.rteHint.implied;
+  return ` · ${esc(text.rteShort(pct(hass, model.rte)))}<ha-icon class="info" aria-hidden="true" icon="mdi:information-outline" title="${esc(hint)}"></ha-icon><span class="sr">, ${esc(hint)}</span>`;
+}
+
+// Shown only when at least one pack has a linked meter with a power sensor.
+function plugStat(hass, models, text) {
+  const metered = models.filter((model) => model.plugPower != null);
+  if (!metered.length) return null;
+  const watts = sum(metered.map((model) => model.plugPower));
+  // A partial sum sits beside the whole fleet's battery power, so say whose plug it is.
+  const partial = metered.length === 1 ? metered[0].name : text.ofTotal(metered.length, models.length);
+  const label = text.fleetPlug(metered.length < models.length ? partial : "");
+  return [`${fmt(hass, Math.abs(watts))} W`, `${label} · ${text.plugFlow[plugFlow(watts)]}`];
 }
 
 function fleetCardHtml(hass) {
@@ -628,7 +672,8 @@ function fleetCardHtml(hass) {
     [kwh(hass, usable), text.fleetUsable],
     [kwh(hass, stored), text.fleetStored(usable && stored != null ? pct(hass, (stored / usable) * 100) : "—")],
     [power == null ? "—" : `${fmt(hass, Math.abs(power))} W`, `${text.fleetPower} · ${text.flow[flow].toLowerCase()}`],
-  ].map(([value, label]) => `<div><dt>${esc(label)}</dt><dd class="num">${esc(value)}</dd></div>`).join("");
+    plugStat(hass, models, text),
+  ].filter(Boolean).map(([value, label]) => `<div><dt>${esc(label)}</dt><dd class="num">${esc(value)}</dd></div>`).join("");
   const insights = fleetInsights(hass, models, text).map((item) => `<li><ha-icon icon="${item.icon}"></ha-icon><span>${esc(item.text)}</span></li>`).join("");
   return `<style>${STYLES}</style><ha-card>
     <div class="top"><ha-icon icon="mdi:home-battery-outline"></ha-icon><h2 class="name">${esc(text.fleetTitle)}</h2></div>
@@ -702,6 +747,7 @@ function signatureOf(hass, packs, extra) {
   return JSON.stringify([extra, languageOf(hass), packs.map((pack) => [
     deviceName(hass, pack.deviceId),
     Object.values(pack.entities).map((id) => hass.states[id]?.last_updated),
+    hass.states[plugPowerId(hass, hass.states[pack.entities.capacity]?.attributes)]?.last_updated,
   ])]);
 }
 

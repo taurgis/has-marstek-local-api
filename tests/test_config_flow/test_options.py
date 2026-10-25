@@ -14,6 +14,8 @@ from custom_components.marstek.const import (
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
+    CONF_PLUG_ENERGY_IN,
+    CONF_PLUG_ENERGY_OUT,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -67,6 +69,7 @@ def _options_user_input(
         "dashboard_settings": {
             CONF_SHOW_CAPACITY_DASHBOARD: False,
         },
+        "plug_meter_settings": {},
     }
 
 
@@ -230,3 +233,88 @@ async def test_options_flow_stores_capacity_dashboard(
     result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_SHOW_CAPACITY_DASHBOARD] is True
+
+
+def _suggested(result: Any, section_name: str, field: str) -> Any:
+    """Return the suggested value a form field shows."""
+    schema = result["data_schema"].schema
+    section_key = next(key for key in schema if getattr(key, "schema", None) == section_name)
+    fields = schema[section_key].schema.schema
+    key = next(key for key in fields if getattr(key, "schema", None) == field)
+    return (key.description or {}).get("suggested_value")
+
+
+async def test_options_flow_links_and_unlinks_an_energy_meter(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Both meter fields are stored, shown again, and emptied to unlink."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+        assert _suggested(result, "plug_meter_settings", CONF_PLUG_ENERGY_IN) is None
+        user_input = _options_user_input()
+        user_input["plug_meter_settings"] = {
+            CONF_PLUG_ENERGY_IN: "sensor.plug_energy_import",
+            CONF_PLUG_ENERGY_OUT: "sensor.plug_energy_export",
+        }
+        result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_PLUG_ENERGY_IN] == "sensor.plug_energy_import"
+        assert result["data"][CONF_PLUG_ENERGY_OUT] == "sensor.plug_energy_export"
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+        assert (
+            _suggested(result, "plug_meter_settings", CONF_PLUG_ENERGY_OUT)
+            == "sensor.plug_energy_export"
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], _options_user_input()
+        )
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert CONF_PLUG_ENERGY_IN not in result["data"]
+        await hass.async_block_till_done()
+
+
+async def test_options_flow_rejects_an_incomplete_or_doubled_meter(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """One field alone, or the same entity twice, keeps the form open with the input."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    mock_config_entry_options = {
+        **mock_config_entry.options,
+        CONF_PLUG_ENERGY_IN: "sensor.old_import",
+        CONF_PLUG_ENERGY_OUT: "sensor.old_export",
+    }
+    hass.config_entries.async_update_entry(mock_config_entry, options=mock_config_entry_options)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    user_input = _options_user_input()
+    user_input["plug_meter_settings"] = {CONF_PLUG_ENERGY_IN: "sensor.plug_energy_import"}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "plug_meter_incomplete"}
+    assert (
+        _suggested(result, "plug_meter_settings", CONF_PLUG_ENERGY_IN)
+        == "sensor.plug_energy_import"
+    )
+    # The emptied field stays empty instead of showing the stored entity again.
+    assert _suggested(result, "plug_meter_settings", CONF_PLUG_ENERGY_OUT) is None
+
+    user_input["plug_meter_settings"] = {
+        CONF_PLUG_ENERGY_IN: "sensor.plug_energy_import",
+        CONF_PLUG_ENERGY_OUT: "sensor.plug_energy_import",
+    }
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "plug_meter_same_entity"}

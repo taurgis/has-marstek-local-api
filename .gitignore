@@ -51,3 +51,6 @@ htmlcov/
 # Home Assistant
 config/
 .HA_VERSION
+
+# Docker mount point for the dev-only plug integration (.devcontainer/docker-compose.yml)
+custom_components/mock_energy_plug/
