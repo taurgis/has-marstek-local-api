@@ -29,7 +29,7 @@ const STYLES = `
   button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 6px; }
   .top { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 10px; min-width: 0; }
   .top > ha-icon { color: var(--state-icon-color, var(--secondary-text-color)); flex: none; margin-top: 1px; }
-  /* Column only. Do not add the fleet's `.who` here: that row is a different grid. */
+  /* Column only. The fleet row class who is a different grid and stays off this header. */
   .title-wrap { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; flex: 1 1 auto; min-width: 0; }
   .top > .name { flex: 1 1 auto; }
   .name { margin: 0; padding: 0; font-size: 16px; font-weight: 500; line-height: 22px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
