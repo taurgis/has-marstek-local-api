@@ -73,6 +73,18 @@ def test_imported_modules_load_with_the_card_token(name: str) -> None:
     assert f"import(`./{name}{token}`)" in _source()
 
 
+def test_health_header_uses_the_tile_layout() -> None:
+    """Name and flow stack on the left; the band is the header's trailing pill."""
+    source = _source()
+    header = source[source.index("function healthCardHtml") : source.index("function sum(")]
+    assert 'class="title-wrap who"' in header
+    assert "bandHtml(model, text)" in header
+    headline = source[source.index("function headlineHtml") : source.index("function capacityHtml")]
+    assert "band" not in headline
+    assert "margin-left: auto" not in source
+    assert ".top .band" in source
+
+
 def test_every_language_has_the_same_text_keys() -> None:
     """A key missing in one language would render as undefined."""
     copy = (_MODULE.parent / "marstek-battery-health-copy.js").read_text(encoding="utf-8")
