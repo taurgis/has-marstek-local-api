@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.2
+
+### Patch Changes
+
+- 96c09a7: Hide the solar row on batteries without a solar counter, and show backup-socket energy only after that socket has delivered energy.
+
 ## 1.8.1
 
 ### Patch Changes
