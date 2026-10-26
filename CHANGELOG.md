@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.9.0
+
+### Minor Changes
+
+- 31246c6: Detect when the battery's BMS corrects its charge level near 100% (a jump, a creep or a hold at 99%), report it on the battery health card with the counting-drift bound it implies, lower the capacity confidence when that drift is large, and restart the smart-plug round trip after a correction.
+
+### Patch Changes
+
+- f44a635: Add a visual guide for the Battery health dashboard, Lovelace cards, and smart-plug options.
+- 7cc2879: Lead the README with monitoring and control, and show the Marstek logo in the device, automation, and repair screenshots.
+
 ## 1.8.2
 
 ### Patch Changes
