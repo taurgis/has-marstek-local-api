@@ -9,6 +9,7 @@ from custom_components.marstek.capacity_estimator import (
     CAPACITY_ATTR_KEY,
     CAPACITY_DATA_KEY,
     ES_STATUS_FRESH_KEY,
+    SOC_CORRECTED_KEY,
 )
 from custom_components.marstek.const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
 from custom_components.marstek.helpers.plug_round_trip import (
@@ -37,6 +38,7 @@ def _feed(
     power: float = 1_000.0,
     bypass: float = 0.0,
     capacity: float | None = _CAPACITY_WH,
+    corrected: bool = False,
 ) -> None:
     plug.observe(
         timestamp=_T0 + hours * _HOUR,
@@ -46,6 +48,7 @@ def _feed(
         capacity_wh=capacity,
         power_w=power,
         bypass_w=bypass,
+        soc_corrected=corrected,
     )
 
 
@@ -117,6 +120,24 @@ def test_a_counter_that_went_down_restarts_the_measurement() -> None:
     assert plug.to_dict()["anchors"] == {
         "50": {"at": _T0 + _HOUR, "energy_in_wh": 10, "energy_out_wh": 1_000}
     }
+
+
+def test_a_bms_correction_drops_the_level_readings_taken_before_it() -> None:
+    """50% before the BMS moved its reading by 8 points is not 50% after it."""
+    plug = PlugRoundTrip(_METER)
+    _feed(plug, 0, 50, 0, 0)
+    _feed(plug, 1, 100, 6_000, 0, corrected=True)
+    _feed(plug, 2, 50, 6_000, 3_000)
+    assert plug.attributes() == {}
+    assert list(plug.to_dict()["anchors"]) == ["100", "50"]
+
+
+def test_a_correction_keeps_the_standby_stretch() -> None:
+    plug = PlugRoundTrip(_METER)
+    _feed(plug, 0, 90, 100, 0, power=0.0)
+    _feed(plug, 2, 100, 110, 0, power=0.0, corrected=True)
+    _feed(plug, 4, 100, 120, 0, power=0.0)
+    assert plug.attributes()["plug_standby_w"] == 5.0
 
 
 def test_missing_values_are_skipped() -> None:
@@ -284,4 +305,8 @@ async def test_apply_restarts_on_solar_and_skips_stale_polls(hass: HomeAssistant
     assert plug.to_dict()["anchors"] == {}
     apply_plug_round_trip(plug, hass, {**status, ES_STATUS_FRESH_KEY: False}, _T0 + 120)
     assert plug.to_dict()["anchors"] == {}
+    apply_plug_round_trip(plug, hass, status, _T0 + 180)
+    apply_plug_round_trip(plug, hass, {**status, "battery_soc": 48}, _T0 + 240)
+    apply_plug_round_trip(plug, hass, {**status, SOC_CORRECTED_KEY: True}, _T0 + 300)
+    assert list(plug.to_dict()["anchors"]) == ["40"]
     assert status[CAPACITY_ATTR_KEY] == {"plug_energy_entities": list(_METER)}

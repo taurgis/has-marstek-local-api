@@ -112,16 +112,32 @@ FAMILIES: dict[str, tuple[int, str, bool]] = {
 class Battery:
     """Energy-counted SoC; ``packs`` modules reported as one aggregate BMS."""
 
-    def __init__(self, capacity_wh: int, soc: float, packs: int = 1) -> None:
+    def __init__(
+        self, capacity_wh: int, soc: float, packs: int = 1, counter: SocCounter | None = None
+    ) -> None:
         self.capacity_wh = capacity_wh
         self.packs = packs
         self.energy_wh = capacity_wh * soc / 100
         self.temp_c = 25.0
         self.dod = 88
+        self.counter = counter or SocCounter()
+        self.counter.reset(self.soc)
 
     @property
     def soc(self) -> float:
+        """True state of charge, from the energy in the pack."""
         return 100 * self.energy_wh / self.capacity_wh
+
+    @property
+    def reported_soc(self) -> float:
+        """The SoC the BMS puts on the bus: its coulomb counter, not the truth."""
+        return self.counter.soc
+
+    def move(self, dc_wh: float) -> None:
+        """Move ``dc_wh`` into (+) or out of the pack and count it."""
+        before = self.energy_wh
+        self.energy_wh = min(max(before + dc_wh, 0), self.capacity_wh)
+        self.counter.count((self.energy_wh - before) / self.capacity_wh * 100, self.soc >= 100)
 
     @property
     def permits(self) -> int:
@@ -156,7 +172,7 @@ class Battery:
                     round(self.volt * 100),
                     round(curr * 10),
                     round(self.temp_c * 10),
-                    round(self.soc * 10),
+                    round(self.reported_soc * 10),
                 ),
             ),
             bms(
@@ -170,6 +186,56 @@ class Battery:
         ]
 
 
+class SocCounter:
+    """The BMS's coulomb counter, with the drift and the full-charge resync of a real one.
+
+    LFP's flat voltage curve leaves a BMS nothing to read SoC from mid-range,
+    so it counts charge in and out and only learns the truth at full. A counter
+    that misses ``charge_error`` % of the charge (or over-counts discharge by
+    ``discharge_error`` %) drifts low and resyncs there, the way a real one is
+    seen jumping from 92-97 % straight to 100 %. ``resync`` picks how it lands:
+
+    * ``jump``: straight to 100 on the tick the cells are full
+    * ``creep``: ``creep_step`` points per minute up to 100
+    * ``hold``: a counter running ahead stops at 99 until the cells are full
+
+    ``none`` reports the counter as is. With both errors at 0 the counter is
+    the true SoC and nothing resyncs.
+    """
+
+    def __init__(
+        self,
+        charge_error: float = 0.0,
+        discharge_error: float = 0.0,
+        resync: str = "jump",
+        creep_step: float = 2.0,
+    ) -> None:
+        self.charge_gain = 1 + charge_error / 100
+        self.discharge_gain = 1 + discharge_error / 100
+        self.resync = resync
+        self.creep_per_tick = creep_step / 60 * TICK
+        self.soc = 0.0
+
+    def reset(self, soc: float) -> None:
+        self.soc = soc
+
+    def count(self, points: float, full: bool) -> None:
+        """Count ``points`` of true SoC moved (+ = charge); ``full``: cells at full."""
+        gain = self.charge_gain if points > 0 else self.discharge_gain
+        soc = self.soc + gain * points
+        if self.resync == "none":
+            self.soc = min(max(soc, 0.0), 100.0)
+            return
+        if not full:
+            # A BMS never shows 100 % before its cells say full.
+            self.soc = min(max(soc, 0.0), 99.0 if self.resync == "hold" else 99.9)
+            return
+        if self.resync == "creep":
+            self.soc = min(100.0, max(soc, self.soc + self.creep_per_tick))
+        else:
+            self.soc = 100.0
+
+
 class PylontechBattery(Battery):
     """HMG-50 pack: Pylontech-layout standard frames, 16s LFP."""
 
@@ -179,7 +245,7 @@ class PylontechBattery(Battery):
 
     def frames(self, dc_power: float) -> list[tuple[int, bytes]]:
         curr = dc_power / self.volt  # + = charge
-        soc = self.soc
+        soc = self.reported_soc
         return [
             (0x351, struct.pack("<HhhH", 568, 500, 500, 448)),
             (0x355, struct.pack("<HHHH", round(soc), 100, self.capacity_wh, 0)),
@@ -236,7 +302,7 @@ class Inverter:
         floor = battery.soc <= 100 - battery.dod
         self.offgrid_power = 0.0 if floor else self.offgrid_load
         dc += pv - self.offgrid_power / EFFICIENCY
-        battery.energy_wh = min(max(battery.energy_wh + dc * hours, 0), battery.capacity_wh)
+        battery.move(dc * hours)
         return dc
 
     def frames(self) -> list[tuple[int, bytes]]:
@@ -434,6 +500,27 @@ def main() -> int:
     parser.add_argument(
         "--offgrid-load", type=float, default=0.0, help="EPS socket load in W (Venus A)"
     )
+    parser.add_argument(
+        "--bms-charge-error",
+        type=float,
+        default=0.0,
+        help="Percent the BMS counter misses on charge (-6: counts 94 %%), drifting it low",
+    )
+    parser.add_argument(
+        "--bms-discharge-error",
+        type=float,
+        default=0.0,
+        help="Percent the BMS counter over-counts on discharge (6: counts 106 %%)",
+    )
+    parser.add_argument(
+        "--bms-resync",
+        choices=("jump", "creep", "hold", "none"),
+        default="jump",
+        help="How the drifted counter lands on 100 %% at full (see SocCounter)",
+    )
+    parser.add_argument(
+        "--bms-creep-step", type=float, default=2.0, help="Points per minute for --bms-resync creep"
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Log every changed MCU frame")
     args = parser.parse_args()
 
@@ -442,7 +529,10 @@ def main() -> int:
     if not 1 <= args.packs <= 8:
         parser.error("--packs takes 1-8 (the firmware caps the 0x1802 count at 8)")
     capacity = args.capacity or pack_wh * args.packs
-    battery = (PylontechBattery if pylontech else Battery)(capacity, args.soc, args.packs)
+    counter = SocCounter(
+        args.bms_charge_error, args.bms_discharge_error, args.bms_resync, args.bms_creep_step
+    )
+    battery = (PylontechBattery if pylontech else Battery)(capacity, args.soc, args.packs, counter)
     ac_limits = args.ac_limits or default_limits
     max_discharge, max_charge = (int(v) for v in ac_limits.split(","))
     inverter = Inverter(max_discharge, max_charge, args.offgrid_load, grid=grid)
@@ -500,7 +590,11 @@ def main() -> int:
             if mppt.on_frame(can_id, data):
                 print(f"MPPT switched {'on' if mppt.on else 'off'}", flush=True)
             if inverter.on_frame(can_id, data) and seen.get(can_id) != data:
-                print(f"setpoint {inverter.setpoint} W (SoC {battery.soc:.1f} %)", flush=True)
+                print(
+                    f"setpoint {inverter.setpoint} W "
+                    f"(SoC {battery.soc:.1f} %, BMS {battery.reported_soc:.1f} %)",
+                    flush=True,
+                )
             elif args.verbose and seen.get(can_id) != data:
                 print(f"mcu {can_id:08x} {data.hex()}", flush=True)
             seen[can_id] = data

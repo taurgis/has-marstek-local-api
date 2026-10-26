@@ -514,6 +514,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pv-energy", type=float, default=0.0, help="Initial MPPT yield in kWh")
     parser.add_argument("--offgrid-load", type=float, default=0.0, help="EPS socket W (Venus A)")
     parser.add_argument(
+        "--bms-charge-error", type=float, default=0.0, help="BMS counter charge error %% (-6)"
+    )
+    parser.add_argument(
+        "--bms-discharge-error", type=float, default=0.0, help="BMS counter discharge error %%"
+    )
+    parser.add_argument(
+        "--bms-resync",
+        choices=("jump", "creep", "hold", "none"),
+        default="jump",
+        help="How a drifted BMS counter lands on 100 %% (see can_peers.SocCounter)",
+    )
+    parser.add_argument(
         "--quantum",
         type=float,
         help="Renode global quantum in s (default 0.0001). The firmware never sleeps, so "
@@ -574,6 +586,11 @@ def main() -> int:
         peers_cmd += ["--ac-limits", args.ac_limits]
     if args.capacity:
         peers_cmd += ["--capacity", str(args.capacity)]
+    peers_cmd += [
+        "--bms-charge-error", str(args.bms_charge_error),
+        "--bms-discharge-error", str(args.bms_discharge_error),
+        "--bms-resync", args.bms_resync,
+    ]  # fmt: skip
     modem_log = args.work / "fc41d.log"
 
     renode = subprocess.Popen(

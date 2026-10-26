@@ -380,6 +380,28 @@ a DC meter. No real device was available for this change.
   move either. The sensor measures "watt-hours per reported state-of-charge
   point", which equals chemical capacity only when the reported percentage
   is an honest fraction of that capacity.
+- **Counting drift and the reset at full.** A BMS that counts 6% too little
+  charge resets with a jump of about six points at full. On simulated packs
+  (30 days, six seeds per case) that drift put the published capacity 3.0%
+  high; over-counting discharge by 6% put it 3.0% low. A creep or a hold at
+  99% added nothing beyond the drift itself, because the median ignores the
+  one window that contains the reset. The jump cannot correct the number:
+  both counters jump upward but bias it in opposite directions. It bounds
+  it. The pooled ratio of corrected points to points moved
+  (`soc_drift_bound_pct`) read 3.1 to 3.3% against that 3.0% error, and
+  0.0% on every honest pack. It is a guide, not a guarantee: a counter 4%
+  high that holds at 99% gave 1.0 to 1.4% against a 2.0% error, because
+  part of each hold falls outside the 15-point approach. A counter divided
+  by the nameplate instead of the faded capacity never jumps and was 11%
+  high with a bound of 0.0%; no reading of the percentage can see that.
+  The vendor Control 150 firmware, run in the emulator against a BMS
+  counter with these errors (`can_peers.py --bms-*`), passes the BMS
+  percentage straight to `ES.GetStatus`: a jump arrived as 93 to 100% in one
+  poll, and at a 99% hold the firmware kept charging until the BMS reported
+  100%. The integration's own parser and estimator, fed those polls,
+  recorded the jump at 7 points, the hold at -5.9 points and an honest full
+  charge as none. A creep went unrecorded there because no capacity was
+  published yet; replayed with one, it read 7.1 points.
 - **Temperature and rate.** Not corrected. Cold weather and very high power
   make a session read low. Peukert is not applied.
 - **Not a nameplate test.** A lab capacity is a full charge and discharge at

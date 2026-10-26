@@ -244,6 +244,50 @@ recalibration, often near 100%. Without a nameplate the check uses a 300 Wh
 pack, so only a jump that small pack could not make is dropped. Venus E mini
 has no nameplate in this field.
 
+### Charge-level corrections near 100%
+
+LFP cells hold an almost flat voltage between about 20% and 95%, so the BMS
+counts charge in and out to know its state of charge. Small counting errors
+add up until the cells reach full, where the BMS learns the truth and resets
+the percentage. That reset shows up in three ways:
+
+- **Jump.** The counter ran low: 92, 95 or 97% goes straight to 100%.
+- **Creep.** The same, spread over a few polls of one or two points.
+- **Hold.** The counter ran high: the percentage sits at 99% while the
+  battery keeps charging, then reaches 100%.
+
+The estimator records each arrival at 100%. With a published capacity it
+compares the points the percentage moved on the last 15 or more points
+before full with the points the measured watt-hours explain. A difference
+under three points is an ordinary full charge. Without a published capacity
+only a step the watts cannot explain counts. A hold also ends the open
+window, because the watt-hours charged at a frozen 99% belong to no
+percentage.
+
+A correction does not rescale or discard the runs before it. A charge
+counter that misses charge and a discharge counter that over-counts both end
+in an upward jump, yet they bias the two direction medians in opposite
+directions, so the jump does not say which way to correct. It does bound the
+error: the corrected points divided by the points the percentage moved since
+the previous full charge. `soc_drift_bound_pct` is that ratio pooled over the
+last eight full charges, published once at least 100 points have moved.
+At 2% or more it caps the confidence at `medium`, at 5% or more at `low`.
+
+Attributes: `soc_corrections` (the newest ten, card only, not recorded),
+`soc_corrections_30d`, `full_charges_30d`, `last_full_charge_at`, and
+`soc_drift_bound_pct`. The card names the latest correction and the bound,
+or, when the battery has not reached 100% in 14 days, says so: without a
+full charge the drift has no point to reset at.
+
+A linked smart plug compares charge in and charge out between two moments at
+the same percentage. After a correction the same percentage is no longer the
+same energy, so the plug round trip drops the levels it was holding and
+starts again from the next one.
+
+A BMS that divides its counter by the nameplate instead of the faded
+capacity never jumps. Its percentage is honest about nothing, and no
+correction will show it.
+
 The sensor publishes a number only when one direction has three windows. It
 keeps the newest 21 in each direction. A long run of discharge windows cannot
 evict the charge windows. Two charge windows plus two discharge windows stay

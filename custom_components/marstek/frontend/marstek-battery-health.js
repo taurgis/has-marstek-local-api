@@ -442,6 +442,26 @@ function runtimeInsight(hass, model, text) {
   return null;
 }
 
+// The BMS resets its state of charge at full. A big reset means the runs
+// measured before it carried that much counting drift; long without a full
+// charge, the drift has nowhere to reset.
+const STALE_FULL_DAYS = 14;
+
+function correctionInsight(hass, model, text) {
+  const latest = (model.attrs.soc_corrections || []).at(-1);
+  const count = finite(model.attrs.soc_corrections_30d) ?? 0;
+  const bound = finite(model.attrs.soc_drift_bound_pct);
+  if (latest && count > 0) {
+    const jump = text.correction(count, day(hass, latest.at), fmt(hass, finite(latest.from_soc), 0), points(hass, finite(latest.points) ?? 0));
+    return { icon: "mdi:battery-sync-outline", text: bound == null ? jump : `${jump} ${text.driftBound(pct(hass, bound, 1))}` };
+  }
+  const full = toDate(model.attrs.last_full_charge_at);
+  if (full && Date.now() - full.getTime() > STALE_FULL_DAYS * 86400e3) {
+    return { icon: "mdi:battery-clock-outline", text: text.notFull(day(hass, full)) };
+  }
+  return null;
+}
+
 function insightsHtml(hass, model, text) {
   const runs = model.windows.length;
   const items = [];
@@ -452,6 +472,7 @@ function insightsHtml(hass, model, text) {
     items.push({ icon: "mdi:counter", text: text.agree(runs, since, half) });
   }
   items.push(trendInsight(hass, model, text));
+  items.push(correctionInsight(hass, model, text));
   if (model.rte != null) {
     const args = [pct(hass, model.rte, 1), `${fmt(hass, model.rte / 10, 1)} kWh`];
     const rte = model.rteMetered ? text.rteMetered(...args, day(hass, model.attrs.plug_round_trip_since)) : text.rte(...args);

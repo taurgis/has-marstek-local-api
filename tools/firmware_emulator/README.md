@@ -25,8 +25,14 @@ while this emulator is the vendor's own implementation, including its quirks
 | BMS and inverter | energy-counted battery (`--packs`, `--capacity`), inverter that follows the MCU's setpoint within the family's AC limits | `can_peers.py --family` |
 | PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, day/month/year 0.01 kWh yield counters (persisted next to the EEPROM), MCU on/off | `can_peers.py --pv`, `--pv-energy`, `--pv-state` |
 | EPS socket (Venus A) | constant off-grid load served from the battery | `can_peers.py --offgrid-load` |
+| BMS charge counter | reported SoC from a coulomb counter that can miss charge or over-count discharge, and resets at full by a jump, a creep or a hold at 99% (`SocCounter`); honest by default | `can_peers.py --bms-charge-error`, `--bms-discharge-error`, `--bms-resync` (also on `run_firmware.py`) |
 | HMG-50 board (Venus C / E 2.0): STM32G474 map, USART/LPUART FIFO mode, RCC/PWR/FLASH/RTC/HRTIM/ADC/CORDIC stubs, FDCAN | Renode STM32 models + G4 stubs | `renode/hmg50.repl.in`, `STM32G4_USART.cs`, `g4*.py` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
+
+`tools/capacity_drive.py` cycles a device in Passive mode and feeds every poll to the
+integration's capacity estimator, so a drifting BMS shows up as the correction Home Assistant
+would record. `--out` saves the polls; `--replay FILE --seed-wh 1536` reruns them with a
+published capacity, which is the only way a creep is visible.
 
 Not modelled: RS485, inverter pages 2 and 7 (and 1 and 3 outside Venus D),
 the per-pack BMS PGNs (the firmware only forwards them to the cloud and the
@@ -450,7 +456,10 @@ What the firmware does with the writes, from its own code:
 - **Passive**: `power` must be within ±2500 W. `cd_time` counts the firmware's
   own seconds tick, which is Renode virtual time: under load it runs slower
   than the wall clock, so the countdown lasts longer. When it expires the setpoint
-  goes to 0 and `ES.GetMode` keeps reporting `Passive`.
+  goes to 0 and `ES.GetMode` keeps reporting `Passive`. It can also end far
+  sooner: in the Docker image (`--quantum 0.01`) on a lightly loaded host, a
+  `cd_time` of 7200 dropped the setpoint after about two minutes. A long
+  charge or discharge test re-sends `ES.SetMode` every minute.
 - **UPS**: `ES.SetMode` accepts `ups_cfg` from 147 on; `ES.GetMode` then reports
   `UPS` and the setpoint goes to full charge (about -2500 W). On 148 a later
   Manual `ES.SetMode` runs its slot but `ES.GetMode` still reports `UPS`; on
