@@ -670,7 +670,7 @@ def test_each_direction_keeps_its_newest_windows_including_a_long_store() -> Non
     assert restored.windows_accepted == MAX_WINDOWS + 3
     assert restored.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
     saved = restored.to_dict()
-    assert list(saved) == ["windows", "history"]
+    assert list(saved) == ["windows", "history", "soc_corrections"]
     assert saved["history"] == []
     assert saved["windows"][0]["direction"] == "charge"
     assert saved["windows"][-1]["closed_at"] == float(100 + MAX_WINDOWS + 3)

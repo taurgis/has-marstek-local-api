@@ -25,6 +25,10 @@ export const COPY = {
     rte: (pct, back) => `Round trip ${pct}: of every 10 kWh charged, about ${back} comes back.`,
     rteMetered: (pct, back, since) => `Round trip ${pct}, measured at the plug since ${since}, standby included: of every 10 kWh charged, about ${back} comes back.`,
     standby: (power, perDay) => `Standby draw ${power}, about ${perDay} a day.`,
+    correction: (count, when, from, size) =>
+      `The battery corrected its charge level ${count} ${count === 1 ? "time" : "times"} in 30 days, last on ${when} from ${from}% (${size}).`,
+    driftBound: (bound) => `Runs carry up to about ±${bound} counting drift.`,
+    notFull: (when) => `Not fully charged since ${when}. A full charge lets the battery recalibrate its charge level.`,
     fills: (power, time) => `At ${power}, it reaches 100% in about ${time}.`,
     empties: (power, floor, time) => `At ${power}, it reaches its ${floor} floor in about ${time}.`,
     measuring: (direction, done, target) => `Measuring a ${direction} run: ${done} of ${target} points so far.`,
@@ -110,6 +114,10 @@ export const COPY = {
     rte: (pct, back) => `Rendement ${pct}: van elke 10 kWh laden komt ongeveer ${back} terug.`,
     rteMetered: (pct, back, since) => `Rendement ${pct}, gemeten aan de stekker sinds ${since}, stand-by inbegrepen: van elke 10 kWh laden komt ongeveer ${back} terug.`,
     standby: (power, perDay) => `Stand-byverbruik ${power}, ongeveer ${perDay} per dag.`,
+    correction: (count, when, from, size) =>
+      `De batterij corrigeerde haar laadtoestand ${count} keer in 30 dagen, het laatst op ${when} vanaf ${from}% (${size}).`,
+    driftBound: (bound) => `Ritten bevatten tot ongeveer ±${bound} telafwijking.`,
+    notFull: (when) => `Niet volledig geladen sinds ${when}. Een volle lading laat de batterij haar laadtoestand herijken.`,
     fills: (power, time) => `Bij ${power} is hij over ongeveer ${time} vol.`,
     empties: (power, floor, time) => `Bij ${power} zit hij over ongeveer ${time} op zijn ondergrens van ${floor}.`,
     measuring: (direction, done, target) => `Meet een ${direction}rit: ${done} van ${target} punten tot nu toe.`,

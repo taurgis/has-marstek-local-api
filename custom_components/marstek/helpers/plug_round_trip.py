@@ -16,7 +16,9 @@ at most once a day.
 Energy that reaches the pack without crossing the plug (DC solar input, the
 off-grid socket) would push the quotient towards or over 100%, so such a
 poll starts the measurement again. So does a counter that went down or a
-different pair of meter entities.
+different pair of meter entities. A BMS that corrects its own percentage
+(the jump to 100 after a drifted charge) breaks "same percentage, same
+energy", so the level readings start again from that poll too.
 
 The same counters give the standby draw: over an idle stretch of at least
 three hours, with no battery power reported and no energy out, the energy in
@@ -42,7 +44,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.unit_conversion import EnergyConverter
 
-from ..capacity_estimator import CAPACITY_ATTR_KEY, CAPACITY_DATA_KEY, ES_STATUS_FRESH_KEY
+from ..capacity_estimator import (
+    CAPACITY_ATTR_KEY,
+    CAPACITY_DATA_KEY,
+    ES_STATUS_FRESH_KEY,
+    SOC_CORRECTED_KEY,
+)
 from ..const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
 
 PLUG_STORE_KEY = "plug_round_trip"
@@ -196,11 +203,18 @@ class PlugRoundTrip:
         capacity_wh: float | None,
         power_w: float | None,
         bypass_w: float,
+        soc_corrected: bool = False,
     ) -> None:
-        """Fold one poll in. Missing values are skipped; the counters catch up later."""
+        """Fold one poll in. Missing values are skipped; the counters catch up later.
+
+        ``soc_corrected`` drops the level readings taken before this poll. The
+        standby stretch does not depend on state of charge and continues.
+        """
         if bypass_w > BYPASS_W:
             self._restart()
             return
+        if soc_corrected:
+            self._anchors.clear()
         if soc is None or energy_in_wh is None or energy_out_wh is None:
             return
         reading = _Reading(timestamp, energy_in_wh, energy_out_wh)
@@ -293,6 +307,7 @@ def apply_plug_round_trip(
         capacity_wh=capacity if capacity is not None else _finite_or_none(status.get("bat_cap")),
         power_w=_finite_or_none(status.get("battery_power")) if fresh else None,
         bypass_w=max((abs(watts) for watts in bypass if watts is not None), default=0.0),
+        soc_corrected=status.get(SOC_CORRECTED_KEY) is True,
     )
     attributes = status.get(CAPACITY_ATTR_KEY)
     # The entity ids let the cards find the plug's live watts on the same device.

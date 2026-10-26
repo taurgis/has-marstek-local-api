@@ -36,12 +36,25 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from typing import Any
 
+from .helpers.capacity_fields import (
+    MAX_ABS_POWER_W,
+    finite,
+    optional_duration,
+    optional_power,
+    optional_share,
+    optional_soc,
+)
 from .helpers.capacity_history import (
     card_history,
     empty_lifetime,
     fold_weekly_history,
     lifetime_totals,
     restore_history,
+)
+from .helpers.soc_corrections import (
+    SocCorrectionTracker,
+    cap_confidence,
+    correction_attributes,
 )
 
 # Reported battery power is the AC-side quantity the integration already
@@ -65,7 +78,6 @@ MIN_POWER_W = 150.0
 # inverter efficiency collapses below it, and a window whose average is
 # still under 150 W is rejected.
 _MAX_LOW_POWER_SEGMENTS = 2
-MAX_ABS_POWER_W = 30_000.0
 MAX_GAP_SECONDS = 180.0
 # ES.GetMode plus up to five more serial reads, at the options-flow maximum
 # of 30 seconds between reads. Home Assistant starts the next wait after the
@@ -86,13 +98,16 @@ SOH_DATA_KEY = "battery_state_of_health"
 CAPACITY_ATTR_KEY = "battery_usable_capacity_attributes"
 # Lists only the Lovelace cards read. They stay off the state of health sensor
 # and out of the recorder.
-CARD_ATTRIBUTES = frozenset({"windows", "history", "active_window"})
+CARD_ATTRIBUTES = frozenset({"windows", "history", "active_window", "soc_corrections"})
 # Set by ``parse_es_status_response`` when battery power came from the AC
 # balance rather than a device ``bat_power``. ``merge_device_status`` copies it.
 BATTERY_POWER_DERIVED_KEY = "battery_power_derived"
 # Set by ``merge_device_status``. False means ES.GetStatus did not answer
 # and battery power may be the previous poll's watts.
 ES_STATUS_FRESH_KEY = "es_status_fresh"
+# True on the poll where the BMS was seen correcting its state of charge. The
+# same percentage before and after that poll is no longer the same energy.
+SOC_CORRECTED_KEY = "battery_soc_corrected"
 # One whole-percent step is quantization. A larger step that the watts of
 # that poll cannot explain, plus one point of slack, is a BMS jump.
 _SOC_JUMP_FLOOR = 2.0
@@ -108,7 +123,7 @@ def gap_limit_seconds(poll_interval: float | None) -> float:
     one poll can spend on its own requests. A missed poll is another full
     interval and still ends the window.
     """
-    interval = _finite(poll_interval)
+    interval = finite(poll_interval)
     if interval is None or interval <= 0.0:
         return MAX_GAP_SECONDS
     return max(MAX_GAP_SECONDS, interval + _POLL_OCCUPANCY_SECONDS)
@@ -122,16 +137,6 @@ class _RejectWindow:
 
 
 _REJECT = _RejectWindow()
-
-
-def _finite(value: object) -> float | None:
-    """Return a finite real number, rejecting booleans and non-numeric values."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    number = float(value)
-    if number != number or number in (float("inf"), float("-inf")):  # NaN
-        return None
-    return number
 
 
 def _plausible(capacity_wh: float, rated_wh: float | None) -> bool:
@@ -199,46 +204,6 @@ class _Window:
         return payload
 
 
-def _optional_soc(raw: dict[Any, Any], key: str) -> float | None:
-    """Return a stored state of charge, or None when the field is absent or junk."""
-    if key not in raw:
-        return None
-    value = _finite(raw.get(key))
-    if value is None or not 0.0 <= value <= 100.0:
-        return None
-    return value
-
-
-def _optional_power(raw: dict[Any, Any]) -> float | None:
-    """Return a stored average power, or None when it is absent or absurd."""
-    if "average_power_w" not in raw:
-        return None
-    value = _finite(raw.get("average_power_w"))
-    if value is None or abs(value) > MAX_ABS_POWER_W:
-        return None
-    return value
-
-
-def _optional_duration(raw: dict[Any, Any]) -> float | None:
-    """Return a stored duration in seconds, or None when it is absent or not positive."""
-    if "duration_s" not in raw:
-        return None
-    value = _finite(raw.get("duration_s"))
-    if value is None or value <= 0.0:
-        return None
-    return value
-
-
-def _optional_share(raw: dict[Any, Any]) -> float | None:
-    """Return a stored PV share in 0-1, or None when it is absent or outside that."""
-    if "pv_share" not in raw:
-        return None
-    value = _finite(raw.get("pv_share"))
-    if value is None or not 0.0 <= value <= 1.0:
-        return None
-    return value
-
-
 def _window_from_dict(raw: object) -> _Window | None:
     """Parse one persisted window, or return None when it is not usable.
 
@@ -247,9 +212,9 @@ def _window_from_dict(raw: object) -> _Window | None:
     """
     if not isinstance(raw, dict):
         return None
-    capacity = _finite(raw.get("capacity_wh"))
-    soc_delta = _finite(raw.get("soc_delta"))
-    closed_at = _finite(raw.get("closed_at"))
+    capacity = finite(raw.get("capacity_wh"))
+    soc_delta = finite(raw.get("soc_delta"))
+    closed_at = finite(raw.get("closed_at"))
     direction = raw.get("direction")
     if capacity is None or soc_delta is None or closed_at is None:
         return None
@@ -264,12 +229,12 @@ def _window_from_dict(raw: object) -> _Window | None:
         direction=direction,
         soc_delta=soc_delta,
         closed_at=closed_at,
-        start_soc=_optional_soc(raw, "start_soc"),
-        end_soc=_optional_soc(raw, "end_soc"),
-        average_power_w=_optional_power(raw),
-        duration_s=_optional_duration(raw),
+        start_soc=optional_soc(raw, "start_soc"),
+        end_soc=optional_soc(raw, "end_soc"),
+        average_power_w=optional_power(raw),
+        duration_s=optional_duration(raw),
         mode=_mode_text(raw.get("mode")) if "mode" in raw else None,
-        pv_share=_optional_share(raw),
+        pv_share=optional_share(raw),
     )
 
 
@@ -428,7 +393,7 @@ def _sample_pv(pv_w: float | None, power_derived: bool) -> float | None:
         return 0.0
     if pv_w is None:
         return 0.0
-    number = _finite(pv_w)
+    number = finite(pv_w)
     if number is None or number > MAX_ABS_POWER_W:
         return None
     return max(0.0, number)
@@ -458,6 +423,9 @@ class UsableCapacityEstimator:
         self._history: list[dict[str, Any]] = []
         self._history_baseline: list[dict[str, Any]] = []
         self._lifetime = empty_lifetime()
+        self._corrections = SocCorrectionTracker()
+        # A correction recorded since ``consume_correction`` last ran.
+        self._corrected = False
 
     @classmethod
     def from_dict(cls, raw: object) -> UsableCapacityEstimator:
@@ -474,6 +442,7 @@ class UsableCapacityEstimator:
             estimator._trim_windows()
         estimator._history = restore_history(raw.get("history"))
         estimator._history_baseline = [dict(point) for point in estimator._history]
+        estimator._corrections = SocCorrectionTracker.from_dict(raw.get("soc_corrections"))
         return estimator
 
     def set_poll_interval(self, poll_interval: float) -> None:
@@ -489,6 +458,7 @@ class UsableCapacityEstimator:
         return {
             "windows": [window.to_dict() for window in self._windows],
             "history": [dict(point) for point in self._history],
+            "soc_corrections": self._corrections.to_dict(),
         }
 
     def consume_dirty(self) -> bool:
@@ -496,6 +466,12 @@ class UsableCapacityEstimator:
         dirty = self._dirty
         self._dirty = False
         return dirty
+
+    def consume_correction(self) -> bool:
+        """Return whether the BMS corrected its percentage since the last call."""
+        corrected = self._corrected
+        self._corrected = False
+        return corrected
 
     @property
     def windows_accepted(self) -> int:
@@ -566,6 +542,7 @@ class UsableCapacityEstimator:
                 # Drop the previous poll too, so the next good sample does not
                 # integrate across the hole.
                 self._abort()
+                self._corrections.break_trace()
                 self._previous = None
                 return
             previous = self._previous
@@ -575,7 +552,14 @@ class UsableCapacityEstimator:
             elapsed = sample.timestamp - previous.timestamp
             if elapsed <= 0.0:
                 return
-            if elapsed > self._gap_limit or _soc_jumped(previous, sample, self._rated_wh):
+            if elapsed > self._gap_limit:
+                self._corrections.break_trace()
+                self._abort()
+                return
+            jumped = _soc_jumped(previous, sample, self._rated_wh)
+            # A hold ends on the step that reaches 100 percent. The open window
+            # then holds charge the reading never showed, so it is dropped.
+            if self._track_correction(previous, sample, jumped) or jumped:
                 self._abort()
                 return
             if self._conflicts(previous, sample):
@@ -618,7 +602,26 @@ class UsableCapacityEstimator:
             attrs["last_window_capacity_wh"] = round(latest.capacity_wh)
             attrs["last_window_at"] = _iso_timestamp(latest.closed_at)
         attrs["history"] = card_history(self._history)
+        now = self._previous.timestamp if self._previous is not None else None
+        attrs.update(correction_attributes(self._corrections, now, _iso_timestamp))
         return attrs
+
+    def _track_correction(self, previous: _Sample, sample: _Sample, jumped: bool) -> bool:
+        """Pass one segment to the correction tracker; True when it ended a hold."""
+        reference, _correction = self._published()
+        verdict = self._corrections.observe(
+            start=previous.timestamp,
+            end=sample.timestamp,
+            soc_before=previous.soc,
+            soc_after=sample.soc,
+            energy_in_wh=-_dc_energy_wh([previous, sample]),
+            jumped=jumped,
+            reference_wh=reference,
+        )
+        if verdict.correction is not None:
+            self._dirty = True
+            self._corrected = self._corrected or verdict.correction.corrected
+        return verdict.hold
 
     def _active_window(self) -> dict[str, Any] | None:
         """Return the in-progress charge or discharge, before it is accepted.
@@ -649,7 +652,7 @@ class UsableCapacityEstimator:
 
     def _record_history(self, timestamp: float) -> None:
         """Fold the current estimate into the ISO-week history."""
-        moment = _finite(timestamp)
+        moment = finite(timestamp)
         if moment is None:
             return
         medians = self._median_attributes()
@@ -678,7 +681,7 @@ class UsableCapacityEstimator:
 
     def _remember_rated(self, rated_wh: float | None) -> None:
         """Keep the latest positive nameplate. A missing poll does not clear it."""
-        rated = _finite(rated_wh)
+        rated = finite(rated_wh)
         if rated is not None and rated > 0.0:
             self._rated_wh = rated
 
@@ -724,9 +727,9 @@ class UsableCapacityEstimator:
         power_derived: bool,
     ) -> _Sample | None:
         """Return a sample, or None when this poll cannot be integrated."""
-        moment = _finite(timestamp)
-        level = _finite(soc)
-        power = _finite(power_w)
+        moment = finite(timestamp)
+        level = finite(soc)
+        power = finite(power_w)
         derived = power_derived is True
         pv = _sample_pv(pv_w, derived)
         if moment is None or level is None or power is None or pv is None:
@@ -889,11 +892,8 @@ class UsableCapacityEstimator:
         count = len(self._windows)
         if count < MIN_WINDOWS:
             return "collecting"
-        if count < 6:
-            return "low"
-        if count < 12:
-            return "medium"
-        return "high"
+        label = "low" if count < 6 else "medium" if count < 12 else "high"
+        return cap_confidence(label, self._corrections.bound_pct())
 
 
 def _iso_timestamp(moment: float) -> str:
@@ -938,9 +938,9 @@ def apply_capacity_estimate(
     # Before ``observe``, which folds this poll's counters into the weekly point.
     estimator.remember_lifetime(status)
     if fresh:
-        soc = _finite(status.get("battery_soc"))
-        power = _finite(status.get("battery_power"))
-        rated = _finite(status.get("bat_cap"))
+        soc = finite(status.get("battery_soc"))
+        power = finite(status.get("battery_power"))
+        rated = finite(status.get("bat_cap"))
         mode = status.get("device_mode")
         pv_raw = status.get("pv_power")
         pv = pv_raw if isinstance(pv_raw, (int, float)) and not isinstance(pv_raw, bool) else None
@@ -953,6 +953,7 @@ def apply_capacity_estimate(
             pv_w=pv,
             power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
         )
+    status[SOC_CORRECTED_KEY] = estimator.consume_correction()
     status[CAPACITY_DATA_KEY] = estimator.estimate_wh
     status[SOH_DATA_KEY] = estimator.state_of_health
     status[CAPACITY_ATTR_KEY] = estimator.attributes()
