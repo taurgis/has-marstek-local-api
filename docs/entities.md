@@ -46,8 +46,8 @@ Counts device restarts. The Open API has no uptime field, so a restart is
 read from what a boot leaves in the polls the integration already makes; no
 request is added. See [Restarts and dropouts](usable-capacity.md#restarts-and-dropouts)
 for how a restart is told apart from Wi-Fi that answers late or a network
-dropout. Attributes: `restarts_30d`, `dropouts_30d`, `last_restart_at`, and
-`outages` (every outage of the last 30 days, for the card's Restarts tab;
+dropout. Attributes: `restarts_30d`, `dropouts_30d`, `last_restart_at`,
+`tracked_since` (when the log started), and `outages` (every outage of the last 30 days, for the card's Restarts tab;
 kept out of the recorder).
 
 ### PV channel sensors (PV1–PV4)

@@ -21,7 +21,14 @@ import math
 from collections.abc import Callable
 
 from homeassistant.const import UnitOfPower
-from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
@@ -64,19 +71,24 @@ class BootPulseDetector:
     def feed(self, at: float, watts: float) -> float | None:
         """Take one reading and return the self-test's start time when it closes."""
         if watts >= BURST_W:
-            self._quiet_now = False
             self._on_burst(at, watts)
+            self._quiet_now = False
             return None
         if watts <= PRE_PULSE_W:
             self._export_at = at
         if self._burst_start is not None:
             start, self._burst_start = self._burst_start, None
-            if self._pre_pulse:
+            # A plug that reports on change sends one reading for a steady
+            # charge, so the length is only known once the burst ends.
+            if at - start > MAX_BURST_S:
+                self._ended = None
+            elif self._pre_pulse:
                 # Export, quiet, burst: nothing else looks like this.
                 self._skip = False
                 self._quiet_now, self._quiet_at = abs(watts) <= QUIET_W, at
                 return start
-            self._ended = (start, at, self._peak)
+            else:
+                self._ended = (start, at, self._peak)
         self._skip = False
         quiet = abs(watts) <= QUIET_W
         found = self._close(at) if quiet else None
@@ -136,10 +148,7 @@ def plug_power_entity(hass: HomeAssistant, energy_entity_id: str | None) -> str 
     return powers[0] if powers else None
 
 
-def _watts(event: Event[EventStateChangedData]) -> float | None:
-    state = event.data["new_state"]
-    if state is None:
-        return None
+def _watts(state: State) -> float | None:
     try:
         value = PowerConverter.convert(
             float(state.state),
@@ -160,7 +169,7 @@ def async_track_boot_pulses(
     @callback
     def _changed(event: Event[EventStateChangedData]) -> None:
         state = event.data["new_state"]
-        watts = _watts(event)
+        watts = None if state is None else _watts(state)
         if state is None or watts is None:
             return
         start = detector.feed(state.last_updated_timestamp, watts)

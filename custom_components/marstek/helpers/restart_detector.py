@@ -14,9 +14,11 @@ leaves behind in the polls this integration already makes:
   it boots (see ``boot_pulse.py``). That arrives between polls and is held
   until the next good poll closes the outage it belongs to.
 
-Wi-Fi that answers late is not an outage. The UDP client retransmits a read
-after 0.5, 2.5 and 5 s, so a reply lost to the modem waking up is recovered
-inside the same poll and only shows in the command statistics. A poll that
+Wi-Fi that answers late is not an outage. On firmware marked retransmit-safe
+(Control 150+, HMG-50 156+) the UDP client sends a read again after 0.5, 2.5
+and 5 s, so a reply lost to the modem waking up is recovered inside the same
+poll and only shows in the command statistics. Older firmware gets no
+retransmit, so one lost reply there is already a failed poll. A poll that
 still fails starts an outage. When the device answers again, the outage is a
 restart if a boot trace is present and a dropout otherwise.
 
@@ -28,7 +30,7 @@ while the device is online, a user or a flaky CT changes them on its own.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -53,8 +55,15 @@ BOOT_PULSE = "boot_pulse"
 _EVIDENCE = frozenset({ENERGY_ROLLBACK, CT_LOST, MODE_CHANGED, BOOT_PULSE})
 
 # A unit that restarts every few hours logs 150 a month; the card lists 30 days.
+# Dropouts go first when the log is full, so a flaky network (HMG-50, #82)
+# cannot push the restarts out.
 MAX_EVENTS = 200
 _RECENT_SECONDS = 30 * 86_400
+# Stored times past this are corrupt, and datetime cannot render them.
+_LATEST_AT = 4_102_444_800.0  # 2100-01-01
+# A self-test closes up to BRACKET_S after its burst, so it can reach the
+# detector a poll after the recovery that already counted its restart.
+_PULSE_JOIN_S = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +97,8 @@ class Outage:
             return None
         at, offline, failed = (finite(raw.get(key)) for key in ("at", "offline_s", "failed_polls"))
         if at is None or offline is None or failed is None or offline < 0 or failed < 0:
+            return None
+        if not 0 < at < _LATEST_AT:
             return None
         evidence = raw.get("evidence")
         traces = (
@@ -129,29 +140,52 @@ class RestartDetector:
         self._last_ok: float | None = None
         self._failed = 0
         self._pulse_at: float | None = None
+        # When this log started, so the card can say "since" while it is
+        # younger than the 30 days it reports on.
+        self._since: float | None = None
         self._dirty = False
 
     @classmethod
     def from_dict(cls, raw: object) -> RestartDetector:
         """Restore stored outages. The baseline poll starts again."""
         detector = cls()
+        detector.load(raw)
+        return detector
+
+    def load(self, raw: object) -> None:
+        """Take the stored log, keeping failures or a self-test already seen."""
         if not isinstance(raw, dict):
-            return detector
+            return
         events = raw.get("events")
         if isinstance(events, list):
             parsed = [event for item in events if (event := Outage.from_dict(item))]
-            detector._events = sorted(parsed, key=lambda event: event.at)[-MAX_EVENTS:]
+            self._events = sorted(parsed, key=lambda event: event.at)
+            self._trim()
         restarts = finite(raw.get("restarts"))
         if restarts is not None and restarts >= 0:
-            detector._restarts = int(restarts)
-        return detector
+            self._restarts = int(restarts)
+        since = finite(raw.get("since"))
+        if since is not None and 0 < since < _LATEST_AT:
+            self._since = since
 
     def to_dict(self) -> dict[str, Any]:
         """Return the stored outages and the restart count."""
         return {
             "events": [event.to_dict() for event in self._events],
             "restarts": self._restarts,
+            "since": self._since,
         }
+
+    @property
+    def since(self) -> float | None:
+        """Return when the first good poll started this log."""
+        return self._since
+
+    def _trim(self) -> None:
+        """Drop the oldest dropouts first, then the oldest restarts."""
+        while len(self._events) > MAX_EVENTS:
+            index = next((i for i, event in enumerate(self._events) if event.kind == DROPOUT), 0)
+            del self._events[index]
 
     @property
     def events(self) -> list[Outage]:
@@ -198,8 +232,13 @@ class RestartDetector:
         """
         last_ok, failed, pulse = self._last_ok, self._failed, self._pulse_at
         self._last_ok, self._failed, self._pulse_at = now, 0, None
+        if self._since is None:
+            self._since = now
+            self._dirty = True
         if last_ok is None or previous is None:
             return None
+        if pulse is not None and pulse <= last_ok and self._join_pulse(pulse):
+            pulse = None
         evidence = boot_traces(previous, current, outage=failed > 0)
         if pulse is not None:
             evidence = (*evidence, BOOT_PULSE)
@@ -208,11 +247,26 @@ class RestartDetector:
         kind = RESTART if evidence else DROPOUT
         event = Outage(now, kind, round(max(0.0, now - last_ok), 1), failed, evidence)
         self._events.append(event)
-        del self._events[:-MAX_EVENTS]
+        self._trim()
         if kind == RESTART:
             self._restarts += 1
         self._dirty = True
         return event
+
+    def _join_pulse(self, pulse: float) -> bool:
+        """Add a late self-test to the outage the recovery poll already logged.
+
+        A dropout it joins becomes the restart it was.
+        """
+        last = self._events[-1] if self._events else None
+        if last is None or abs(last.at - pulse) > _PULSE_JOIN_S:
+            return False
+        if BOOT_PULSE not in last.evidence:
+            if last.kind == DROPOUT:
+                self._restarts += 1
+            self._events[-1] = replace(last, kind=RESTART, evidence=(*last.evidence, BOOT_PULSE))
+            self._dirty = True
+        return True
 
 
 def _iso(moment: float) -> str:
@@ -232,4 +286,6 @@ def restart_attributes(detector: RestartDetector, now: float) -> dict[str, Any]:
     restarts = [event for event in events if event.kind == RESTART]
     if restarts:
         attrs["last_restart_at"] = _iso(restarts[-1].at)
+    if detector.since is not None:
+        attrs["tracked_since"] = _iso(detector.since)
     return attrs

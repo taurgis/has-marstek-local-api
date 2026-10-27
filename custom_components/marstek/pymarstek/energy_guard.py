@@ -163,7 +163,14 @@ def track_restored_totals(
     raw: dict[str, float] = {}
     for key in RESTORED_TOTAL_KEYS:
         value = (es_status or {}).get(key)
-        if isinstance(value, (int, float)) and energy_total_is_plausible(value):
+        if not isinstance(value, (int, float)) or not energy_total_is_plausible(value):
+            continue
+        before = previous.get(key)
+        # A spike apply_energy_total_guard rejects must not become the
+        # baseline, or the next sane reply would look like a fall.
+        if isinstance(before, (int, float)) and value - before > MAX_PLAUSIBLE_ENERGY_JUMP_WH:
+            raw[key] = float(before)
+        else:
             raw[key] = float(value)
     status[RAW_TOTALS_KEY] = raw or dict(previous)
     fell = False

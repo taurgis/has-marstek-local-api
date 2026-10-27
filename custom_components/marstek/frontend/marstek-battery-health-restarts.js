@@ -5,15 +5,34 @@
 // linked plug sees as the unit boots). Wi-Fi that answers a retry inside the
 // same poll never reaches the sensor at all.
 //
-// Newest first, grouped under a heading per day, as an event log reads best:
-// the day heading carries the date, each row its clock time in a <time>.
+// Newest first, grouped under a heading per day that counts both kinds, as an
+// event log reads best: the heading carries the date, each row its clock time
+// in a <time> and one line on how long it was offline and why it counts.
 // The kind is written out next to its icon, so colour never carries it alone
 // (https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html). An empty
 // tab says why it is empty (https://contributors.home-assistant.io/design/patterns/empty-states/).
 
 const TRACES = ["energy_rollback", "ct_lost", "mode_changed", "boot_pulse"];
 const KIND_ICON = { restart: "mdi:restart-alert", dropout: "mdi:wifi-off" };
+const MONTH_MS = 30 * 86400 * 1000;
 export const OUTAGES_STEP = 10;
+
+export const RESTART_STYLES = `
+  .log h3 { margin: 6px 0 0; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary-text-color); }
+  .outages { list-style: none; margin: 0; padding: 0; }
+  .outages li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: 14px; line-height: 20px; }
+  .outages li:last-child { border-bottom: 0; }
+  .outages ha-icon { --mdc-icon-size: 18px; margin-top: 1px; color: var(--secondary-text-color); }
+  .outages .restart ha-icon { color: var(--warning-color, #ffa600); }
+  .outages .head { display: flex; justify-content: space-between; gap: 8px; }
+  .outages .head strong { font-weight: 500; }
+  .outages .head time { flex: none; color: var(--secondary-text-color); }
+  .outages .why { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
+  .more { align-self: center; min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; color: var(--primary-color); border: 1px solid var(--divider-color); }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; text-align: center; }
+  .empty ha-icon { --mdc-icon-size: 40px; color: var(--secondary-text-color); }
+  .empty h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; }
+`;
 
 function esc(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -30,9 +49,6 @@ function offline(seconds) {
   return value < 120 ? `${Math.round(value)} s` : `${Math.round(value / 60)} min`;
 }
 
-// ISO 8601 duration for <time datetime>, in whole seconds.
-const isoDuration = (seconds) => `PT${Math.round(seconds)}S`;
-
 function localDay(date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
@@ -46,51 +62,58 @@ export function outagesOf(attrs) {
     .sort((a, b) => b.date - a.date);
 }
 
-function detailOf(item, text) {
-  const failed = count(item.failed_polls);
-  const parts = [];
-  const gone = offline(item.offline_s);
-  if (failed && gone) parts.push(`<time datetime="${isoDuration(item.offline_s)}">${esc(text.offlineFor(gone))}</time>`);
-  parts.push(esc(failed ? text.failedPolls(failed) : text.betweenPolls));
-  return parts.join(" · ");
+// One line: how long it was gone, then why it counts as a restart or not.
+function whyOf(item, text) {
+  const restart = item.kind === "restart";
+  const gone = count(item.failed_polls) ? offline(item.offline_s) : null;
+  const first = gone
+    ? `<time datetime="PT${Math.round(item.offline_s)}S">${esc(text.offline(gone))}</time>`
+    : restart ? esc(text.betweenPolls) : "";
+  const traces = (Array.isArray(item.evidence) ? item.evidence : []).filter((trace) => TRACES.includes(trace));
+  const second = restart ? traces.map((trace) => text.restartTrace[trace]).join(", ") : text.noTrace;
+  return [first, esc(second)].filter(Boolean).join(" · ");
 }
 
 function rowHtml(item, index, shown, text, clock) {
-  const traces = (Array.isArray(item.evidence) ? item.evidence : []).filter((trace) => TRACES.includes(trace));
-  const named = traces.map((trace) => text.restartTrace[trace]).join(", ");
-  // The trace words sit mid-sentence elsewhere; on their own line they start with a capital.
-  const why = item.kind === "restart" ? named.charAt(0).toLocaleUpperCase() + named.slice(1) : text.noTrace;
   // The first row a "Show more" press reveals takes focus, so it can be read on.
   const focus = index === shown - OUTAGES_STEP && index > 0 ? ` tabindex="-1" data-outage="${index}"` : "";
   return `<li class="${item.kind}"${focus}><ha-icon icon="${KIND_ICON[item.kind]}"></ha-icon>
-    <span class="what"><span class="head"><strong>${esc(text.outageKind[item.kind])}</strong>
+    <span><span class="head"><strong>${esc(text.outageKind[item.kind])}</strong>
       <time class="num" datetime="${esc(item.date.toISOString())}">${esc(clock(item.date))}</time></span>
-      <span class="num">${detailOf(item, text)}</span>${why ? `<span>${esc(why)}</span>` : ""}</span></li>`;
+      <span class="why num">${whyOf(item, text)}</span></span></li>`;
 }
 
-// ``fmt.day`` and ``fmt.clock`` format a Date in the viewer's locale; the card
-// passes its own. ``now`` is a Date, so Today and Yesterday can be tested.
+// The log started less than 30 days ago: say since when, not "30 days".
+function sinceOf(attrs, now, day) {
+  const since = new Date(attrs.tracked_since);
+  return Number.isNaN(since.getTime()) || now - since >= MONTH_MS ? null : day(since);
+}
+
+// ``day`` and ``clock`` format a Date in the viewer's locale; the card passes
+// its own. ``now`` is a Date, so Today and Yesterday can be tested.
 export function restartsHtml(attrs, text, { day, clock, now = new Date(), tracked = true, shown = OUTAGES_STEP }) {
   if (!attrs) return `<p class="muted">${esc(tracked ? text.outagesWaiting : text.outagesOff)}</p>`;
-  const restarts = count(attrs.restarts_30d);
-  const dropouts = count(attrs.dropouts_30d);
+  const since = sinceOf(attrs, now, day);
   const items = outagesOf(attrs);
   if (!items.length) {
     return `<div class="empty"><ha-icon icon="mdi:check-network-outline" aria-hidden="true"></ha-icon>
-      <h3>${esc(text.noOutages)}</h3><p class="muted">${esc(text.outagesHelp)}</p></div>`;
+      <h3>${esc(text.noOutages(since))}</h3><p class="muted">${esc(text.outagesHelp)}</p></div>`;
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   const names = { [localDay(now)]: text.today, [localDay(yesterday)]: text.yesterday };
-  const groups = [];
-  items.slice(0, shown).forEach((item, index) => {
+  const days = new Map();
+  items.forEach((item, index) => {
     const key = localDay(item.date);
-    if (groups.at(-1)?.key !== key) groups.push({ key, title: names[key] || day(item.date), rows: [] });
-    groups.at(-1).rows.push(rowHtml(item, index, shown, text, clock));
+    const group = days.get(key) || { title: names[key] || day(item.date), restart: 0, dropout: 0, rows: [] };
+    group[item.kind] += 1;
+    if (index < shown) group.rows.push(rowHtml(item, index, shown, text, clock));
+    days.set(key, group);
   });
-  const lists = groups.map((group, index) => `<h3 id="outage-day-${index}">${esc(group.title)}</h3>
+  const lists = [...days.values()].filter((group) => group.rows.length).map((group, index) => `<h3 id="outage-day-${index}">${esc(`${group.title} · ${text.dayCount(group.restart, group.dropout)}`)}</h3>
     <ul class="outages" aria-labelledby="outage-day-${index}">${group.rows.join("")}</ul>`).join("");
   const rest = items.length - shown;
   const more = rest > 0 ? `<button class="more" type="button" data-action="more-outages">${esc(text.moreOutages(Math.min(rest, OUTAGES_STEP)))}</button>` : "";
-  return `<p class="muted num">${esc(text.outageSummary(restarts, dropouts))}</p><div class="log">${lists}</div>${more}`;
+  const summary = text.outageSummary(count(attrs.restarts_30d), count(attrs.dropouts_30d), since);
+  return `<p class="muted num">${esc(summary)}</p><div class="log">${lists}</div>${more}`;
 }

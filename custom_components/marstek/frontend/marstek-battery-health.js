@@ -20,9 +20,9 @@ const DAY_S = 86400;
 // outlives an update. The backend hashes both files into that token.
 const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
 const { plugPowerId, plugFlow } = await import(`./marstek-battery-health-plug.js${new URL(import.meta.url).search}`);
-const { restartsHtml, outagesOf, OUTAGES_STEP } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
+const { restartsHtml, outagesOf, OUTAGES_STEP, RESTART_STYLES } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
 
-const STYLES = `
+const STYLES = RESTART_STYLES + `
   :host { display: block; }
   ha-card { padding: 16px; display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color); }
   .num { font-variant-numeric: tabular-nums; }
@@ -67,26 +67,13 @@ const STYLES = `
   .progress { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: var(--divider-color); overflow: hidden; }
   .progress i { display: block; height: 100%; background: var(--primary-color); }
   ha-card { container-type: inline-size; }
-  [role="tablist"] { display: flex; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--divider-color); margin: 2px -16px 0; padding: 0 8px; }
-  [role="tab"] { flex: none; white-space: nowrap; min-height: 40px; padding: 0 12px; font-size: 14px; font-weight: 500; color: var(--secondary-text-color); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  [role="tablist"] { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--divider-color); margin: 2px -16px 0; padding: 0 8px; }
+  [role="tab"] { white-space: nowrap; min-height: 40px; padding: 0 12px; font-size: 14px; font-weight: 500; color: var(--secondary-text-color); border-bottom: 2px solid transparent; margin-bottom: -1px; }
   [role="tab"][aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
   [role="tabpanel"] { display: flex; flex-direction: column; gap: 10px; }
-  /* Four labels fit a 320 px card: https://www.w3.org/WAI/WCAG22/Understanding/reflow.html */
+  /* Four labels fit a 320 px card; narrower (or zoomed) they wrap rather than clip:
+     https://www.w3.org/WAI/WCAG22/Understanding/reflow.html */
   @container (max-width: 400px) { [role="tablist"] { padding: 0 4px; } [role="tab"] { padding: 0 8px; font-size: 13px; } }
-  .log h3 { margin: 6px 0 0; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary-text-color); }
-  .outages { list-style: none; margin: 0; padding: 0; }
-  .outages li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: 14px; line-height: 20px; }
-  .outages li:last-child { border-bottom: 0; }
-  .outages ha-icon { --mdc-icon-size: 18px; margin-top: 1px; color: var(--secondary-text-color); }
-  .outages .restart ha-icon { color: var(--warning-color, #ffa600); }
-  .outages .head { display: flex; justify-content: space-between; gap: 8px; }
-  .outages .head strong { font-weight: 500; }
-  .outages .head time { flex: none; color: var(--secondary-text-color); }
-  .outages .what > span:not(.head) { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
-  .more { align-self: center; min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; color: var(--primary-color); border: 1px solid var(--divider-color); }
-  .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; text-align: center; }
-  .empty ha-icon { --mdc-icon-size: 40px; color: var(--secondary-text-color); }
-  .empty h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; }
   .muted { margin: 0; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
   .chart .grid { stroke: var(--divider-color); }
@@ -229,13 +216,22 @@ function toDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Building a formatter costs about 0.2 ms and the card redraws with every
+// plug reading, so each locale and option set is built once.
+const formatters = new Map();
+function formatter(locale, options) {
+  const key = `${locale} ${JSON.stringify(options)}`;
+  if (!formatters.has(key)) formatters.set(key, new Intl.DateTimeFormat(locale, options));
+  return formatters.get(key);
+}
+
 function day(hass, value, withTime = false) {
   const date = toDate(value);
   if (!date) return "—";
   const options = { day: "numeric", month: "short" };
   if (withTime) Object.assign(options, { hour: "2-digit", minute: "2-digit" });
   if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
-  return new Intl.DateTimeFormat(localeOf(hass), options).format(date);
+  return formatter(localeOf(hass), options).format(date);
 }
 
 function stateOf(hass, entityId) {
@@ -623,7 +619,7 @@ function energyHtml(hass, model, text) {
 }
 
 function outagesTab(hass, model, text, shown) {
-  const time = new Intl.DateTimeFormat(localeOf(hass), { hour: "2-digit", minute: "2-digit" });
+  const time = formatter(localeOf(hass), { hour: "2-digit", minute: "2-digit" });
   const tracked = Boolean(model.pack?.entities?.restarts);
   return restartsHtml(model.restarts, text, { day: (date) => day(hass, date), clock: (date) => time.format(date), tracked, shown });
 }
@@ -837,7 +833,7 @@ function signatureOf(hass, packs, extra) {
 function focusKey(root) {
   const active = root.activeElement;
   if (!active) return null;
-  for (const name of ["tab", "action", "entity"]) {
+  for (const name of ["tab", "action", "entity", "outage"]) {
     const value = active.dataset?.[name];
     if (value) return `[data-${name}="${CSS.escape(value)}"]`;
   }
@@ -935,6 +931,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
 
   _select(tab) {
     this._tab = tab;
+    this._shown = OUTAGES_STEP;
     this._render(true, `[data-tab="${tab}"]`);
   }
 

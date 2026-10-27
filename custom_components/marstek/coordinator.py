@@ -479,14 +479,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fold this poll into the usable-capacity estimate and attach it.
 
         No extra UDP. The result stays unknown until enough clean windows exist.
-        The restart check runs here too, since it shares the store.
+        The restart log is closed here too: it is kept in the same store, so
+        both load together and one delayed save writes both.
         """
         if not self._capacity_loaded:
             stored = await self._capacity_store.async_load()
             self._capacity = UsableCapacityEstimator.from_dict(stored)
             self._capacity.set_poll_interval(self._capacity_poll_interval)
             self._plug = plug_from_options(self._entry.options, stored)
-            self._restarts = RestartDetector.from_dict((stored or {}).get(RESTARTS_STORE_KEY))
+            self._restarts.load((stored or {}).get(RESTARTS_STORE_KEY))
             self._capacity_loaded = True
         now = time.time()
         self._record_restarts(device_status, previous_status, now)
@@ -548,6 +549,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _on_boot_pulse(self, at: float) -> None:
+        """Hold the plug's self-test for the next good poll."""
         _LOGGER.info("Device %s ran its boot self-test at the plug", self.device_ip)
         self._restarts.record_boot_pulse(at)
 

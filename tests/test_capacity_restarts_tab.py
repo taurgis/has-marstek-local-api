@@ -88,15 +88,15 @@ def test_outages_are_grouped_by_day_newest_first(tmp_path: Path) -> None:
         '<p class="muted num">2 restarts and 1 network dropout in the last 30 days.</p>'
     )
     headings = [part.split("</h3>", 1)[0].split(">", 1)[1] for part in html.split("<h3")[1:]]
-    assert headings == ["Today", "Yesterday", "day(20)"]
-    assert html.index("No failed poll: it restarted between two polls") < html.index(
-        "Unreachable for 66\u00a0s"
-    )
-    assert '<time datetime="PT66S">Unreachable for 66\u00a0s</time> · 1 failed poll' in html
-    assert "Energy totals restored, CT meter lost" in html
-    assert "Boot self-test at the plug" in html
-    assert "Unreachable for 10\u00a0min" in html and "12 failed polls" in html
-    assert "No boot trace" in html
+    assert headings == ["Today · 1 restart", "Yesterday · 1 restart", "day(20) · 1 dropout"]
+    # Two lines a row: kind and time, then how long it was gone and why.
+    assert "Restarted between two checks · start-up test seen at the plug" in html
+    assert (
+        '<time datetime="PT66S">Offline 66\u00a0s</time> · energy totals restored, '
+        "CT meter disconnected"
+    ) in html
+    assert "Offline 10\u00a0min</time> · no sign of a restart" in html
+    assert "failed poll" not in html
     # The kind is written out next to its icon; colour is never the only cue.
     assert html.count("<strong>Restart</strong>") == 2
     assert html.count("<strong>Network dropout</strong>") == 1
@@ -118,7 +118,7 @@ def test_long_logs_show_ten_rows_and_a_show_more_button(tmp_path: Path) -> None:
     second = _tab(tmp_path, attrs, "nl", shown=20)
     assert second.count("<li") == 20
     assert 'tabindex="-1" data-outage="10"' in second
-    assert ">Nog 5 tonen</button>" in second
+    assert ">Toon nog 5</button>" in second
     assert "25 herstarts en 0 netwerkonderbrekingen in de laatste 30 dagen." in second
 
     assert ">Show" not in _tab(tmp_path, attrs, shown=30)
@@ -150,6 +150,24 @@ def test_an_empty_tab_says_why(
     assert "<li" not in html
 
 
+def test_a_young_log_says_since_when(tmp_path: Path) -> None:
+    """Under 30 days of tracking, "in the last 30 days" would claim too much."""
+    young = {"restarts_30d": 0, "dropouts_30d": 0, "outages": []}
+    young["tracked_since"] = "2026-10-21T08:00:00+00:00"
+    assert "No restarts or network dropouts since day(21)" in _tab(tmp_path, young)
+    young.update(restarts_30d=1, outages=[_outage("2026-10-27T09:30:00+00:00")])
+    assert "1 restart and 0 network dropouts since day(21)." in _tab(tmp_path, young)
+    young["tracked_since"] = "2026-09-01T08:00:00+00:00"
+    assert "in the last 30 days." in _tab(tmp_path, young)
+
+
+def test_a_dropout_between_polls_claims_no_restart(tmp_path: Path) -> None:
+    """Only a restart can fall between two polls; a dropout row never says so."""
+    odd = _outage("2026-10-27T09:30:00+00:00", "dropout", failed_polls=0)
+    html = _tab(tmp_path, {"dropouts_30d": 1, "outages": [odd]})
+    assert '<span class="why num">no sign of a restart</span>' in html
+
+
 def test_dutch_rows(tmp_path: Path) -> None:
     """Every row's words come from the copy, so the Dutch card has no English left."""
     attrs = {
@@ -161,9 +179,9 @@ def test_dutch_rows(tmp_path: Path) -> None:
         ],
     }
     html = _tab(tmp_path, attrs, "nl")
-    assert '<h3 id="outage-day-0">Vandaag</h3>' in html
-    assert "66\u00a0s onbereikbaar</time> · 1 mislukte peiling" in html
-    assert "Energietellers teruggezet, CT-meter kwijt" in html
+    assert '<h3 id="outage-day-0">Vandaag · 1 herstart, 1 onderbreking</h3>' in html
+    assert "66\u00a0s offline</time> · energietellers teruggezet, verbinding met CT-meter" in html
+    assert "geen teken van een herstart" in html
     assert "<strong>Netwerkonderbreking</strong>" in html
 
 

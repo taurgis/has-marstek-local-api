@@ -54,6 +54,26 @@ def test_a_long_burst_from_quiet_is_a_charge() -> None:
     assert _replay([8, 0, *[2550] * 14, 0, 8]) == []
 
 
+def test_a_plug_that_reports_on_change_still_bounds_the_burst() -> None:
+    """One reading for a steady charge: its length shows only when it ends."""
+    detector = BootPulseDetector()
+    for at, watts in [(0.0, 8.0), (5.0, 0.0), (10.0, 2550.0), (300.0, 0.0), (305.0, 8.0)]:
+        assert detector.feed(at, watts) is None
+    exported = BootPulseDetector()
+    for at, watts in [(0.0, -1200.0), (5.0, 1.0), (10.0, 2500.0), (130.0, 1400.0)]:
+        assert exported.feed(at, watts) is None
+
+
+def test_a_quiet_plug_that_sends_nothing_stays_quiet() -> None:
+    """A plug at 0 W sends no new state; the burst after a long quiet still counts."""
+    detector = BootPulseDetector()
+    found = [
+        detector.feed(at, watts)
+        for at, watts in [(0.0, 8.0), (5.0, 0.0), (95.0, 2550.0), (115.0, 1.0)]
+    ]
+    assert found == [None, None, None, 95.0]
+
+
 def test_bursts_that_do_not_close_are_dropped() -> None:
     """No quiet reading after the burst, a burst too weak, or quiet that comes too late."""
     assert _replay([8, 0, 2550, 2200, 900, 900, 900, 900, 900, 900, 900, 900]) == []

@@ -46,6 +46,8 @@ def _baseline() -> tuple[RestartDetector, dict[str, Any]]:
 def test_polls_that_answer_record_nothing() -> None:
     """A late reply recovered by a retransmit never reaches the detector as a failure."""
     detector, status = _baseline()
+    # Only the first good poll, which starts the log, is a change.
+    assert detector.consume_dirty() is True
     for poll in range(1, 10):
         assert detector.record_success(_T0 + poll * _POLL, status, _status()) is None
     assert detector.events == []
@@ -220,3 +222,88 @@ def test_a_self_test_joins_the_outage_it_belongs_to() -> None:
     assert outage is not None
     assert outage.evidence == (ENERGY_ROLLBACK, CT_LOST, BOOT_PULSE)
     assert detector.restarts == 1
+
+
+def test_a_rejected_spike_does_not_become_the_baseline() -> None:
+    """The jump guard drops a glitched total; the next sane reply is not a fall."""
+    first: dict[str, Any] = {}
+    track_restored_totals(first, {"total_grid_input_energy": 1_000_000}, None)
+    spike: dict[str, Any] = {}
+    track_restored_totals(spike, {"total_grid_input_energy": 400_000_000}, first)
+    after: dict[str, Any] = {}
+    track_restored_totals(after, {"total_grid_input_energy": 1_000_050}, spike)
+
+    assert spike[RAW_TOTALS_KEY] == {"total_grid_input_energy": 1_000_000.0}
+    assert after[TOTALS_FELL_KEY] is False
+
+
+def test_a_self_test_closed_after_the_recovery_poll_joins_its_restart() -> None:
+    """The plug confirms a test up to 30 s after it; that is the same boot, not a second one."""
+    detector, status = _baseline()
+    detector.record_failure()
+    detector.record_success(_T0 + 2 * _POLL, status, _status(**{TOTALS_FELL_KEY: True}))
+    detector.record_boot_pulse(_T0 + 2 * _POLL - 20)
+
+    assert detector.record_success(_T0 + 3 * _POLL, status, _status()) is None
+    assert detector.restarts == 1
+    assert detector.events[-1].evidence == (ENERGY_ROLLBACK, BOOT_PULSE)
+
+
+def test_a_late_self_test_turns_its_dropout_into_a_restart() -> None:
+    """The recovery poll saw no trace; the plug's test, confirmed after it, still did."""
+    detector, status = _baseline()
+    detector.record_failure()
+    first = detector.record_success(_T0 + 2 * _POLL, status, _status())
+    assert first is not None and first.kind == DROPOUT
+    detector.record_boot_pulse(_T0 + 2 * _POLL - 20)
+
+    assert detector.record_success(_T0 + 3 * _POLL, status, _status()) is None
+    assert [event.kind for event in detector.events] == [RESTART]
+    assert detector.events[-1].evidence == (BOOT_PULSE,)
+    assert detector.restarts == 1
+
+
+def test_dropouts_never_push_restarts_out_of_the_log() -> None:
+    """A flaky network fills the log with dropouts; the restarts stay countable."""
+    detector, status = _baseline()
+    detector.record_failure()
+    detector.record_success(_T0 + _POLL, status, _status(ct_connected=False))
+    at = _T0 + _POLL
+    for _ in range(MAX_EVENTS + 10):
+        at += 2 * _POLL
+        detector.record_failure()
+        detector.record_success(at, status, _status())
+
+    assert len(detector.events) == MAX_EVENTS
+    attrs = restart_attributes(detector, at)
+    assert attrs["restarts_30d"] == 1
+    assert attrs["dropouts_30d"] == MAX_EVENTS - 1
+    assert "last_restart_at" in attrs
+
+
+def test_a_corrupt_stored_time_is_dropped() -> None:
+    """A time datetime cannot render would break every poll, so it never loads."""
+    detector = RestartDetector.from_dict(
+        {"events": [{"at": 1e20, "kind": RESTART, "offline_s": 1, "failed_polls": 0}]}
+    )
+    assert detector.events == []
+    assert "outages" in restart_attributes(detector, _T0)
+
+
+def test_the_log_remembers_when_it_started() -> None:
+    """The card says "since" while the log is younger than 30 days."""
+    detector, _status = _baseline()
+    assert restart_attributes(detector, _T0)["tracked_since"] == "2023-11-14T22:13:20+00:00"
+    restored = RestartDetector.from_dict(detector.to_dict())
+    assert restored.since == _T0
+    assert RestartDetector.from_dict({"since": 1e20}).since is None
+
+
+def test_loading_the_store_keeps_a_self_test_already_seen() -> None:
+    """The store loads on the first good poll; a test seen before it still counts."""
+    detector = RestartDetector()
+    detector.record_boot_pulse(_T0 - 5)
+    detector.load({"restarts": 3, "events": []})
+    status = _status()
+    detector.record_success(_T0, None, status)
+    assert detector.restarts == 3

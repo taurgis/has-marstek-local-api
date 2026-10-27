@@ -54,14 +54,17 @@ The **Capacity** tab is the weekly chart: a line for the weekly estimate, a dot 
 
 **Restarts** lists the device restarts and network dropouts of the last 30
 days, newest first, under a heading per day (*Today*, *Yesterday*, then the
-date). A line above the list counts both. Each row names its kind next to its
-icon, its time, how long the battery was unreachable and how many polls
-failed, and what showed the restart: energy totals restored, CT meter lost,
-mode changed, or the boot self-test at a linked plug. A dropout row says no
-boot trace came back. Ten rows show at first; **Show more** adds ten at a
-time. **Download restarts (CSV)** saves `at`, `kind`, `offline_s`,
-`failed_polls`, and `evidence` (trace names separated by `;`). How the two
-kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
+date) that counts both kinds for that day. A line above the list gives the
+30-day totals, or the totals since tracking started while that is less than
+30 days ago. Each row names its kind next to its icon, with its time, and a
+second line says how long the battery was offline and what showed the
+restart: energy totals restored, CT meter disconnected, mode changed, or the
+start-up test at a linked plug. A restart that fell between two polls says
+so instead of an offline time. A dropout row says there was no sign of a
+restart. Ten rows show at first; **Show more** adds ten at a time and moves
+focus to the first new row. **Download restarts (CSV)** saves `at`, `kind`,
+`offline_s`, `failed_polls`, and `evidence` (trace names separated by `;`).
+How the two kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
 With no outage in 30 days the tab says so; with the **Restarts** sensor
 disabled it says to enable it.
 
@@ -386,9 +389,11 @@ restart from what a boot changes:
   count only when the device was unreachable in between: while it answers,
   a user or a flaky CT changes them on their own.
 
-Late Wi-Fi is not an outage. On Control 150+ the client sends a read again
-after 0.5, 2.5 and 5 seconds, so a reply the Wi-Fi module dropped is
-recovered inside the same poll and never reaches the sensor. A poll that
+Late Wi-Fi is not an outage. On firmware that tolerates a repeated read
+(Control 150+, HMG-50 156+) the client sends a read again after 0.5, 2.5 and
+5 seconds, so a reply the Wi-Fi module dropped is recovered inside the same
+poll and never reaches the sensor. Older firmware gets no retransmit, so one
+lost reply there is already a failed poll. A poll that
 still gets no reply opens an outage. When the device answers again, the
 outage is a **restart** if a trace above came with it, and a **dropout**
 otherwise. Dropouts with no restart point at the network, and the tab says
@@ -399,6 +404,15 @@ just before it went down and the CT reconnected before the next poll, there
 is nothing left to see, and a short reboot counts as a dropout or not at all.
 A linked plug closes most of that gap. How often a
 real unit saves its counters is not known.
+
+The other way round, a router or access point that reboots can leave a trace
+without a battery restart: if the CT meter shares that Wi-Fi, it can drop off
+while the battery is unreachable, and that outage then counts as a restart.
+A self-test seen at the plug, or energy totals restored, settle it; the
+tab lists every trace, so a restart backed only by *CT meter disconnected*
+is worth a second look. An outage still open when Home Assistant restarts or
+the integration reloads is not counted, because the last good poll it is
+measured from is not stored.
 
 ## Limits
 
