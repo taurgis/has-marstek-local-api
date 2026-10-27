@@ -146,7 +146,7 @@ def test_attributes_count_the_last_thirty_days() -> None:
     assert attrs["restarts_30d"] == 0
     assert attrs["dropouts_30d"] == 1
     assert attrs["last_restart_at"] == "2023-11-14T22:14:20+00:00"
-    assert [item["kind"] for item in attrs["outages"]] == [RESTART, DROPOUT]
+    assert [item["kind"] for item in attrs["outages"]] == [DROPOUT]
     assert "last_restart_at" not in restart_attributes(RestartDetector(), _T0)
 
 

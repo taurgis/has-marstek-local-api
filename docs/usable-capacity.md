@@ -25,7 +25,7 @@ Each battery card shows:
 - A band on the right: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), or **Measuring** while there is no estimate yet.
 - One sentence that says what the pack holds against its rating. On the screenshot, Venus E holds **4.86 kWh**, **95%** of its **5.12 kWh** rating.
 - A bar split into energy stored now, room left, and the part that has faded.
-- Short insights: how many runs the number is based on and how closely they agree, how much the weekly estimate has moved, what the round trip means per 10 kWh charged, standby draw when a plug is linked, restarts and network dropouts in the last 30 days (see [Restarts and dropouts](#restarts-and-dropouts)), and how long the pack can keep going at the current power.
+- Short insights: how many runs the number is based on and how closely they agree, how much the weekly estimate has moved, what the round trip means per 10 kWh charged, standby draw when a plug is linked, and how long the pack can keep going at the current power.
 
 While the battery is discharging at 50 W or more, that time runs down to the floor set by **Depth of discharge**. An 88% depth of discharge stops the pack at 12%, and the sentence names that floor. The Open API cannot read the setting back, so the card uses the last value written from Home Assistant, which starts at 88%.
 
@@ -49,6 +49,21 @@ The **Capacity** tab is the weekly chart: a line for the weekly estimate, a dot 
 - **Solar** appears on models that report PV energy, such as Venus A and Venus D.
 - **Backup socket** appears once the off-grid output has delivered some energy. On the screenshot Venus E's backup socket has barely been used, next to a long AC history. Venus A shows both **Solar** and **Backup socket**.
 - Full cycles are the energy delivered to AC divided by the nameplate. Below one nameplate of delivered energy, the card says less than one full cycle.
+
+### Restarts
+
+**Restarts** lists the device restarts and network dropouts of the last 30
+days, newest first, under a heading per day (*Today*, *Yesterday*, then the
+date). A line above the list counts both. Each row names its kind next to its
+icon, its time, how long the battery was unreachable and how many polls
+failed, and what showed the restart: energy totals restored, CT meter lost,
+mode changed, or the boot self-test at a linked plug. A dropout row says no
+boot trace came back. Ten rows show at first; **Show more** adds ten at a
+time. **Download restarts (CSV)** saves `at`, `kind`, `offline_s`,
+`failed_polls`, and `evidence` (trace names separated by `;`). How the two
+kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
+With no outage in 30 days the tab says so; with the **Restarts** sensor
+disabled it says to enable it.
 
 ## Turn on the sidebar dashboard
 
@@ -339,9 +354,8 @@ The storage version is unchanged.
 
 Some units restart on their own every few hours or days, with the Local API
 enabled too (Venus E 3.0 on Control 150 included). A restart takes about
-30 seconds to a minute. The **Restarts** sensor counts them, and the card
-adds a line such as *Restarted 2 times in 30 days, last on 20 Oct,
-unreachable for 48 s (energy totals restored, CT meter lost)*.
+30 seconds to a minute. The **Restarts** sensor counts them, and the
+battery health card lists each one on its [Restarts tab](#restarts).
 
 The Open API reports no uptime and no boot counter
 ([Open API note](marstek_device_openapi.MD)), so the integration reads a
@@ -377,7 +391,7 @@ after 0.5, 2.5 and 5 seconds, so a reply the Wi-Fi module dropped is
 recovered inside the same poll and never reaches the sensor. A poll that
 still gets no reply opens an outage. When the device answers again, the
 outage is a **restart** if a trace above came with it, and a **dropout**
-otherwise. Dropouts with no restart point at the network, and the card says
+otherwise. Dropouts with no restart point at the network, and the tab says
 so.
 
 What a restart cannot show without a plug: if the unit saved its counters
@@ -515,13 +529,14 @@ device reports (`bat_cap`).
   so the number is the last value written from Home Assistant (88% until
   then). Without that entity (older firmware), the card assumes the
   firmware's default of 88%, so the time still runs to 12% and never to 0%.
-  Three tabs hold the
+  Four tabs hold the
   detail: **Capacity** (weekly estimates with each run as a dot and the
   rating as a dashed line), **Runs** (every kept run, newest first, eight to
   a page, filterable by direction, each with its deviation from the median
   for its direction), and **Energy** (lifetime AC in and out, solar when the
   battery has a solar counter, the backup socket when it has delivered energy,
-  and equivalent full cycles).
+  and equivalent full cycles), and **Restarts** (the device restarts and
+  network dropouts of the last 30 days by day, newest first).
 
   The Capacity tab can download the weekly estimates as a CSV file
   (`week_start`, `usable_wh`, `rated_wh`), and the Runs tab can download

@@ -52,8 +52,8 @@ MODE_CHANGED = "mode_changed"
 BOOT_PULSE = "boot_pulse"
 _EVIDENCE = frozenset({ENERGY_ROLLBACK, CT_LOST, MODE_CHANGED, BOOT_PULSE})
 
-MAX_EVENTS = 20
-_CARD_EVENTS = 10
+# A unit that restarts every few hours logs 150 a month; the card lists 30 days.
+MAX_EVENTS = 200
 _RECENT_SECONDS = 30 * 86_400
 
 
@@ -225,7 +225,7 @@ def restart_attributes(detector: RestartDetector, now: float) -> dict[str, Any]:
     events = detector.events
     recent = [event for event in events if now - event.at <= _RECENT_SECONDS]
     attrs: dict[str, Any] = {
-        "outages": [{**event.to_dict(), "at": _iso(event.at)} for event in events[-_CARD_EVENTS:]],
+        "outages": [{**event.to_dict(), "at": _iso(event.at)} for event in recent],
         "restarts_30d": sum(1 for event in recent if event.kind == RESTART),
         "dropouts_30d": sum(1 for event in recent if event.kind == DROPOUT),
     }
