@@ -7,8 +7,10 @@ for an address again. Neither needs the Open API:
 
 * ``ping`` once a second and print every gap, with when it started and how long
   it lasted. Wired, a gap of 20 s or more is a restart, a cable, or the switch.
-* With ``--dhcp`` (needs tcpdump and root), also print every DHCP request the
-  unit's MAC broadcasts. A DISCOVER or REQUEST right after a gap is the boot.
+* With ``--dhcp`` (needs tcpdump and root), also log every DHCP packet the
+  unit's MAC sends, with all the options tcpdump decodes (hostname, client
+  ID, requested IP, vendor class, ...). A DISCOVER or REQUEST right after a
+  gap is the boot.
 * With ``--getdata``, also print the reply to ``Marstek.GetData``, a read the
   firmware accepts but the Open API document does not list. It is sent once at
   start, after every gap, and every ``--getdata-every`` seconds. Its
@@ -18,6 +20,8 @@ for an address again. Neither needs the Open API:
     python3 tools/watch_restarts_lan.py 192.168.1.50
     python3 tools/watch_restarts_lan.py 192.168.1.50 --getdata
     sudo python3 tools/watch_restarts_lan.py 192.168.1.50 --dhcp --mac aa:bb:cc:dd:ee:ff
+
+Add ``--log restarts.log`` to append every line to a file as well.
 
 Stop with Ctrl+C. Run it on any machine on the same LAN. Without ``--getdata``
 it sends nothing to the Open API. ``--getdata`` binds the Open API port (the
@@ -34,6 +38,18 @@ import subprocess
 import sys
 import threading
 import time
+
+_LOG_PATH: str | None = None
+_LOG_LOCK = threading.Lock()
+
+
+def _emit(line: str) -> None:
+    """Print a line and append it to the log file, if one was given."""
+    with _LOG_LOCK:
+        print(line, flush=True)
+        if _LOG_PATH:
+            with open(_LOG_PATH, "a", encoding="utf-8") as log:
+                log.write(line + "\n")
 
 
 def _stamp(moment: float) -> str:
@@ -71,9 +87,9 @@ def print_getdata(ip: str, port: int) -> None:
                     continue
                 if "result" in reply or "error" in reply:
                     body = reply.get("result", reply.get("error"))
-                    print(f"{_stamp(time.time())} GetData {json.dumps(body)}", flush=True)
+                    _emit(f"{_stamp(time.time())} GetData {json.dumps(body)}")
                     return
-    print(f"{_stamp(time.time())} GetData: no reply", flush=True)
+    _emit(f"{_stamp(time.time())} GetData: no reply")
 
 
 def watch_ping(ip: str, min_gap: float, getdata: tuple[int, float] | None) -> None:
@@ -81,7 +97,7 @@ def watch_ping(ip: str, min_gap: float, getdata: tuple[int, float] | None) -> No
 
     ``getdata`` is (Open API port, seconds between reads), or None for no reads.
     """
-    print(f"{_stamp(time.time())} watching {ip} (gaps of {min_gap:.0f} s or more)", flush=True)
+    _emit(f"{_stamp(time.time())} watching {ip} (gaps of {min_gap:.0f} s or more)")
     down_since: float | None = None
     next_read = time.time() if getdata else float("inf")
     while True:
@@ -90,7 +106,7 @@ def watch_ping(ip: str, min_gap: float, getdata: tuple[int, float] | None) -> No
             if down_since is not None:
                 gap = started - down_since
                 if gap >= min_gap:
-                    print(f"{_stamp(down_since)} unreachable for {gap:.0f} s", flush=True)
+                    _emit(f"{_stamp(down_since)} unreachable for {gap:.0f} s")
                     # The Open API starts a little after the network does.
                     next_read = min(next_read, started + 15.0)
                 down_since = None
@@ -103,17 +119,30 @@ def watch_ping(ip: str, min_gap: float, getdata: tuple[int, float] | None) -> No
 
 
 def watch_dhcp(mac: str, interface: str | None) -> None:
-    """Print every DHCP packet the unit's MAC sends, via tcpdump."""
-    command = ["tcpdump", "-l", "-n", "-v"]
+    """Log every DHCP packet the unit's MAC sends, with all its options.
+
+    tcpdump ``-vv`` prints one header line per packet and the decoded fields
+    (client ID, hostname, requested IP, vendor class, parameter list, ...)
+    on indented lines after it. Each header gets a timestamp and a short
+    summary; the decoded lines follow as tcpdump wrote them.
+    """
+    command = ["tcpdump", "-l", "-n", "-vv"]
     if interface:
         command += ["-i", interface]
     command += ["ether", "src", mac, "and", "udp", "port", "67"]
     with subprocess.Popen(command, stdout=subprocess.PIPE, text=True) as proc:
         assert proc.stdout is not None
         for line in proc.stdout:
-            if "DHCP-Message" in line:
-                kind = line.split("DHCP-Message", 1)[1].strip(" :()\n")
-                print(f"{_stamp(time.time())} DHCP {kind} from {mac}", flush=True)
+            text = line.rstrip("\n")
+            if not text.strip():
+                continue
+            if "DHCP-Message" in text:
+                kind = text.split(":", 1)[-1].strip()
+                _emit(f"{_stamp(time.time())} DHCP {kind} from {mac}")
+            if text[0].isspace():
+                _emit(text.expandtabs(4).rstrip())
+            else:
+                _emit(f"{_stamp(time.time())} DHCP packet: {text}")
 
 
 def main() -> None:
@@ -129,7 +158,10 @@ def main() -> None:
     parser.add_argument(
         "--getdata-every", type=float, default=300.0, help="Seconds between GetData reads"
     )
+    parser.add_argument("--log", help="Also append every line to this file")
     args = parser.parse_args()
+    global _LOG_PATH
+    _LOG_PATH = args.log
     if args.dhcp:
         if not args.mac:
             parser.error("--dhcp needs --mac")
