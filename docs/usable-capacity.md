@@ -50,6 +50,24 @@ The **Capacity** tab is the weekly chart: a line for the weekly estimate, a dot 
 - **Backup socket** appears once the off-grid output has delivered some energy. On the screenshot Venus E's backup socket has barely been used, next to a long AC history. Venus A shows both **Solar** and **Backup socket**.
 - Full cycles are the energy delivered to AC divided by the nameplate. Below one nameplate of delivered energy, the card says less than one full cycle.
 
+### Restarts
+
+**Restarts** lists the device restarts and network dropouts of the last 30
+days, newest first, under a heading per day (*Today*, *Yesterday*, then the
+date) that counts both kinds for that day. A line above the list gives the
+30-day totals, or the totals since tracking started while that is less than
+30 days ago. Each row names its kind next to its icon, with its time, and a
+second line says how long the battery was offline and what showed the
+restart: energy totals restored, CT meter disconnected, mode changed, or the
+start-up test at a linked plug. A restart that fell between two polls says
+so instead of an offline time. A dropout row says there was no sign of a
+restart. Ten rows show at first; **Show more** adds ten at a time and moves
+focus to the first new row. **Download restarts (CSV)** saves `at`, `kind`,
+`offline_s`, `failed_polls`, and `evidence` (trace names separated by `;`).
+How the two kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
+With no outage in 30 days the tab says so; with the **Restarts** sensor
+disabled it says to enable it.
+
 ## Turn on the sidebar dashboard
 
 The sidebar page is off until you enable it. The cards themselves stay available from **Add card** either way.
@@ -335,6 +353,67 @@ average reported power, duration, mode, and `pv_share`. A store written
 before those fields existed still loads; the missing fields stay absent.
 The storage version is unchanged.
 
+## Restarts and dropouts
+
+Some units restart on their own every few hours or days, with the Local API
+enabled too (Venus E 3.0 on Control 150 included). A restart takes about
+30 seconds to a minute. The **Restarts** sensor counts them, and the
+battery health card lists each one on its [Restarts tab](#restarts).
+
+The Open API reports no uptime and no boot counter
+([Open API note](marstek_device_openapi.MD)), so the integration reads a
+restart from what a boot changes:
+
+- **Energy totals restored.** At boot the Control firmware writes its stored
+  lifetime counters back to the inverter
+  ([firmware emulator notes](../tools/firmware_emulator/README.md), CAN
+  command 0x16/0x17). Energy counted since the last save is lost, so a raw
+  `ES.GetStatus` total comes back lower than the previous reply. Nothing else
+  makes these totals fall, so this counts even when no poll failed: a
+  30-second reboot fits between two 30-second polls. The comparison uses the
+  raw reply, before the grid-total floors described in
+  [Troubleshooting](troubleshooting.md#grid-energy-totals-look-frozen).
+- **Boot self-test at the plug**, with a [linked smart plug](#link-a-smart-plug).
+  As it boots, the unit runs the same test at its mains cord every time: the
+  standby draw (about 8 W) disappears, then it imports about 2.5 kW for 5 to
+  35 seconds, then the plug reads 0 W again before standby returns. Some tests
+  start with an export of about 1.25 kW. One user's plug showed this 37 times
+  in ten days, about every 5 hours, by day and by night. A charge never starts
+  or ends from a reading below standby and lasts longer than a minute, so the
+  test is not mistaken for one. The integration follows the plug's power
+  sensor (the one on the same device as the linked energy sensors) and sends
+  nothing to the battery; the test counts at the next good poll, together with
+  any other trace from the same boot.
+- **CT meter lost** and **mode changed**, as reported after resets in
+  [#14](https://github.com/taurgis/has-marstek-local-api/issues/14). These
+  count only when the device was unreachable in between: while it answers,
+  a user or a flaky CT changes them on their own.
+
+Late Wi-Fi is not an outage. On firmware that tolerates a repeated read
+(Control 150+, HMG-50 156+) the client sends a read again after 0.5, 2.5 and
+5 seconds, so a reply the Wi-Fi module dropped is recovered inside the same
+poll and never reaches the sensor. Older firmware gets no retransmit, so one
+lost reply there is already a failed poll. A poll that
+still gets no reply opens an outage. When the device answers again, the
+outage is a **restart** if a trace above came with it, and a **dropout**
+otherwise. Dropouts with no restart point at the network, and the tab says
+so.
+
+What a restart cannot show without a plug: if the unit saved its counters
+just before it went down and the CT reconnected before the next poll, there
+is nothing left to see, and a short reboot counts as a dropout or not at all.
+A linked plug closes most of that gap. How often a
+real unit saves its counters is not known.
+
+The other way round, a router or access point that reboots can leave a trace
+without a battery restart: if the CT meter shares that Wi-Fi, it can drop off
+while the battery is unreachable, and that outage then counts as a restart.
+A self-test seen at the plug, or energy totals restored, settle it; the
+tab lists every trace, so a restart backed only by *CT meter disconnected*
+is worth a second look. An outage still open when Home Assistant restarts or
+the integration reloads is not counted, because the last good poll it is
+measured from is not stored.
+
 ## Limits
 
 - The estimate is only as good as the device's state of charge. If the BMS
@@ -464,13 +543,14 @@ device reports (`bat_cap`).
   so the number is the last value written from Home Assistant (88% until
   then). Without that entity (older firmware), the card assumes the
   firmware's default of 88%, so the time still runs to 12% and never to 0%.
-  Three tabs hold the
+  Four tabs hold the
   detail: **Capacity** (weekly estimates with each run as a dot and the
   rating as a dashed line), **Runs** (every kept run, newest first, eight to
   a page, filterable by direction, each with its deviation from the median
   for its direction), and **Energy** (lifetime AC in and out, solar when the
   battery has a solar counter, the backup socket when it has delivered energy,
-  and equivalent full cycles).
+  and equivalent full cycles), and **Restarts** (the device restarts and
+  network dropouts of the last 30 days by day, newest first).
 
   The Capacity tab can download the weekly estimates as a CSV file
   (`week_start`, `usable_wh`, `rated_wh`), and the Runs tab can download

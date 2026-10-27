@@ -36,6 +36,20 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 | Total grid input energy | `total_grid_input_energy` | Wh | — | Enabled |
 | Total load energy | `total_load_energy` | Wh | — | Enabled |
 
+### Restarts
+
+| Entity name | Key | Unit | Category | Default |
+|---|---|---|---|---|
+| Restarts | `device_restarts` | — | Diagnostic | Enabled |
+
+Counts device restarts. The Open API has no uptime field, so a restart is
+read from what a boot leaves in the polls the integration already makes; no
+request is added. See [Restarts and dropouts](usable-capacity.md#restarts-and-dropouts)
+for how a restart is told apart from Wi-Fi that answers late or a network
+dropout. Attributes: `restarts_30d`, `dropouts_30d`, `last_restart_at`,
+`tracked_since` (when the log started), and `outages` (every outage of the last 30 days, for the card's Restarts tab;
+kept out of the recorder).
+
 ### PV channel sensors (PV1–PV4)
 
 Created when the device reports those values (typically Venus A/D with PV channels).

@@ -576,6 +576,8 @@ async def _async_setup_entry_with_client(
     )
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    if (stop_boot_tests := coordinator.async_track_plug_boot_tests()) is not None:
+        entry.async_on_unload(stop_boot_tests)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_remove_access_point_connections(hass, entry, device_info_dict)

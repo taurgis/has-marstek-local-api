@@ -8,7 +8,11 @@ from typing import Any
 
 from ..const import normalize_operating_mode
 from ..firmware_profile import FirmwareProfile, resolve_firmware_profile
-from .energy_guard import apply_energy_total_guard, without_implausible_energy_totals
+from .energy_guard import (
+    apply_energy_total_guard,
+    track_restored_totals,
+    without_implausible_energy_totals,
+)
 
 _LOGGER: logging.Logger | None = None
 _LEGACY_PROFILE = resolve_firmware_profile(None, None)
@@ -837,6 +841,8 @@ def merge_device_status(
         _recalculate_battery_from_pv(status, pv_status_data or status, es_status_data)
 
     energy_safe_previous = without_implausible_energy_totals(previous_status)
+    # Before the floors below, which hide a total that came back lower.
+    track_restored_totals(status, es_status_data, previous_status)
     _resolve_contradicted_energy_totals(status, energy_safe_previous)
 
     if device_ip:

@@ -17,6 +17,7 @@ from .capacity_estimator import CARD_ATTRIBUTES
 from .const import BAT_STATUS_KEYS, EM_STATUS_KEYS
 from .coordinator import MarstekDataUpdateCoordinator
 from .entity import MarstekEntity
+from .helpers.restart_detector import RESTART_CARD_ATTRIBUTES
 from .helpers.sensor_descriptions import (
     API_STABILITY_SENSORS,
     PV_SENSORS,
@@ -62,9 +63,9 @@ class MarstekSensor(MarstekEntity, RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
     entity_description: MarstekSensorEntityDescription
-    # The usable-capacity sensor exposes lists for the Lovelace cards. The
-    # cards read the live state, so the recorder does not need them.
-    _unrecorded_attributes = CARD_ATTRIBUTES
+    # The usable-capacity and restart sensors expose lists for the Lovelace
+    # cards. The cards read the live state, so the recorder does not need them.
+    _unrecorded_attributes = CARD_ATTRIBUTES | RESTART_CARD_ATTRIBUTES
 
     def __init__(
         self,

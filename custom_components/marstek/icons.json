@@ -39,6 +39,9 @@
       "battery_state_of_health": {
         "default": "mdi:heart-pulse"
       },
+      "device_restarts": {
+        "default": "mdi:restart-alert"
+      },
       "device_ip": {
         "default": "mdi:ip-network"
       },

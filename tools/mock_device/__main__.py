@@ -6,6 +6,7 @@ import argparse
 
 from .const import DEFAULT_CONFIG, DEFAULT_HOUSE_PV_WP, DEFAULT_PHASE_COUNT, DEFAULT_UDP_PORT
 from .device import DEFAULT_STATUS_INTERVAL, MockMarstekDevice
+from .simulators.restart import DEFAULT_BOOT_S, DEFAULT_CT_RECONNECT_S, DEFAULT_ENERGY_SAVE_S
 from .utils import DEFAULT_STATE_DIR
 
 
@@ -105,6 +106,64 @@ def _add_experiment_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_fault_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the restart and Wi-Fi drop flags."""
+    parser.add_argument(
+        "--restart-every",
+        type=float,
+        default=None,
+        help="Restart the device about every N seconds (±25%%); kill -USR1 restarts it now",
+    )
+    parser.add_argument(
+        "--boot-seconds",
+        type=float,
+        default=DEFAULT_BOOT_S,
+        help=f"Seconds a restart stays silent (default: {DEFAULT_BOOT_S:g})",
+    )
+    parser.add_argument(
+        "--ct-reconnect-seconds",
+        type=float,
+        default=DEFAULT_CT_RECONNECT_S,
+        help=f"Seconds after boot until the CT is back (default: {DEFAULT_CT_RECONNECT_S:g})",
+    )
+    parser.add_argument(
+        "--energy-save-seconds",
+        type=float,
+        default=DEFAULT_ENERGY_SAVE_S,
+        help=(
+            "Seconds between saves of the energy totals; a restart rolls them back "
+            f"to the last save (default: {DEFAULT_ENERGY_SAVE_S:g})"
+        ),
+    )
+    parser.add_argument(
+        "--wifi-drop-rate",
+        type=float,
+        default=0.0,
+        help="Share of requests lost to Wi-Fi, 0 to 1 (default: 0)",
+    )
+
+
+def _fault_config(args: argparse.Namespace) -> dict[str, object]:
+    """Return restart and Wi-Fi drop keys, or exit when a value is unusable."""
+    if args.restart_every is not None and args.restart_every <= 0:
+        raise SystemExit("--restart-every must be positive")
+    if not 0.0 <= args.wifi_drop_rate < 1.0:
+        raise SystemExit("--wifi-drop-rate must be at least 0 and below 1")
+    if min(args.boot_seconds, args.ct_reconnect_seconds, args.energy_save_seconds) < 0:
+        raise SystemExit(
+            "--boot-seconds, --ct-reconnect-seconds and --energy-save-seconds must be non-negative"
+        )
+    config: dict[str, object] = {
+        "boot_s": args.boot_seconds,
+        "ct_reconnect_s": args.ct_reconnect_seconds,
+        "energy_save_s": args.energy_save_seconds,
+        "wifi_drop_rate": args.wifi_drop_rate,
+    }
+    if args.restart_every is not None:
+        config["restart_every_s"] = args.restart_every
+    return config
+
+
 def _experiment_config(args: argparse.Namespace) -> dict[str, object]:
     """Return capacity-experiment keys, or exit when a value is unusable."""
     config: dict[str, object] = {}
@@ -179,6 +238,7 @@ def main() -> None:
         help="Initial battery SOC percentage (default: 50)",
     )
     _add_experiment_arguments(parser)
+    _add_fault_arguments(parser)
     parser.add_argument(
         "--pv-channels",
         type=str,
@@ -248,6 +308,7 @@ def main() -> None:
     }
 
     config.update(_experiment_config(args))
+    config.update(_fault_config(args))
 
     if args.stale_ip:
         config["stale_ip"] = args.stale_ip

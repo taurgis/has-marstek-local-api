@@ -185,6 +185,9 @@
       "battery_state_of_health": {
         "name": "Battery state of health"
       },
+      "device_restarts": {
+        "name": "Restarts"
+      },
       "device_mode": {
         "name": "Device mode",
         "state": {

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import signal
 import socket
 import struct
 import threading
 import time
 from collections import Counter
+from dataclasses import replace
 from typing import Any
 
 from custom_components.marstek.firmware_profile import (
@@ -64,6 +66,13 @@ from .handlers import (
 )
 from .plug_server import PlugServer
 from .simulators import BatterySimulator
+from .simulators.plug import PlugReading
+from .simulators.restart import (
+    DEFAULT_BOOT_S,
+    DEFAULT_CT_RECONNECT_S,
+    DEFAULT_ENERGY_SAVE_S,
+    RestartSimulator,
+)
 from .utils import (
     LIMITED_BROADCAST,
     get_broadcast_address,
@@ -157,6 +166,7 @@ class MockMarstekDevice:
             phases=phases,
         )
         self._apply_capacity_experiment()
+        self.restarts = self._restart_simulator(simulate)
         standby_w = self.config.pop("standby_w", None)
         if isinstance(standby_w, int) and not isinstance(standby_w, bool):
             self.simulator.standby_power = standby_w
@@ -165,7 +175,7 @@ class MockMarstekDevice:
             PlugServer(
                 plug_port,
                 self.config["wifi_mac"],
-                self.simulator.get_plug_reading,
+                self._plug_reading,
                 self.simulator.wifi.get_rssi,
             )
             if isinstance(plug_port, int)
@@ -247,8 +257,39 @@ class MockMarstekDevice:
             ),
         )
 
+    def _plug_reading(self) -> PlugReading:
+        """Return the plug's reading, showing the boot self-test after a restart."""
+        reading = self.simulator.get_plug_reading()
+        watts = self.restarts.plug_watts(time.time())
+        return reading if watts is None else replace(reading, power_w=watts)
+
+    def _restart_simulator(self, simulate: bool) -> RestartSimulator:
+        """Build the restart and Wi-Fi drop schedule from the config keys."""
+        options = {
+            key: float(value)
+            for key in (
+                "restart_every_s",
+                "boot_s",
+                "ct_reconnect_s",
+                "energy_save_s",
+                "wifi_drop_rate",
+            )
+            if isinstance(value := self.config.pop(key, None), (int, float))
+        }
+        return RestartSimulator(
+            self.simulator if simulate else None,
+            every_s=options.get("restart_every_s"),
+            boot_s=options.get("boot_s", DEFAULT_BOOT_S),
+            ct_reconnect_s=options.get("ct_reconnect_s", DEFAULT_CT_RECONNECT_S),
+            energy_save_s=options.get("energy_save_s", DEFAULT_ENERGY_SAVE_S),
+            wifi_drop_rate=options.get("wifi_drop_rate", 0.0),
+        )
+
     def start(self) -> None:
         """Start the mock device server."""
+        # ``kill -USR1`` (or ``docker kill -s USR1``) restarts the device now.
+        if hasattr(signal, "SIGUSR1"):
+            signal.signal(signal.SIGUSR1, lambda *_: self.restarts.request_restart())
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, "SO_REUSEPORT"):
@@ -417,6 +458,10 @@ class MockMarstekDevice:
 
         if self._openapi_frozen:
             self._log_dropped(f"Open API frozen, {len(data)} bytes", sender)
+            return
+
+        if (reason := self.restarts.drop_reason(time.time())) is not None:
+            self._log_dropped(reason, sender)
             return
 
         if not data:

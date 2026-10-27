@@ -8,7 +8,7 @@ const HEALTH_CARD = "marstek-battery-health-card";
 const FLEET_CARD = "marstek-battery-fleet-card";
 const EDITOR = "marstek-battery-health-card-editor";
 const STRATEGY = "marstek-battery-health";
-const TABS = ["capacity", "runs", "energy"];
+const TABS = ["capacity", "runs", "energy", "restarts"];
 const DOCS = "https://github.com/taurgis/has-marstek-local-api/blob/main/docs/usable-capacity.md";
 // Health bands. They describe fade, not a warranty: the Open API carries no warranty terms.
 const GOOD_HEALTH = 90;
@@ -20,8 +20,9 @@ const DAY_S = 86400;
 // outlives an update. The backend hashes both files into that token.
 const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
 const { plugPowerId, plugFlow } = await import(`./marstek-battery-health-plug.js${new URL(import.meta.url).search}`);
+const { restartsHtml, outagesOf, OUTAGES_STEP, RESTART_STYLES } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
 
-const STYLES = `
+const STYLES = RESTART_STYLES + `
   :host { display: block; }
   ha-card { padding: 16px; display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color); }
   .num { font-variant-numeric: tabular-nums; }
@@ -65,10 +66,14 @@ const STYLES = `
   .insights ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
   .progress { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: var(--divider-color); overflow: hidden; }
   .progress i { display: block; height: 100%; background: var(--primary-color); }
-  [role="tablist"] { display: flex; border-bottom: 1px solid var(--divider-color); margin: 2px -16px 0; padding: 0 8px; }
-  [role="tab"] { min-height: 40px; padding: 0 12px; font-size: 14px; font-weight: 500; color: var(--secondary-text-color); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  ha-card { container-type: inline-size; }
+  [role="tablist"] { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--divider-color); margin: 2px -16px 0; padding: 0 8px; }
+  [role="tab"] { white-space: nowrap; min-height: 40px; padding: 0 12px; font-size: 14px; font-weight: 500; color: var(--secondary-text-color); border-bottom: 2px solid transparent; margin-bottom: -1px; }
   [role="tab"][aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
   [role="tabpanel"] { display: flex; flex-direction: column; gap: 10px; }
+  /* Four labels fit a 320 px card; narrower (or zoomed) they wrap rather than clip:
+     https://www.w3.org/WAI/WCAG22/Understanding/reflow.html */
+  @container (max-width: 400px) { [role="tablist"] { padding: 0 4px; } [role="tab"] { padding: 0 8px; font-size: 13px; } }
   .muted { margin: 0; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
   .chart .grid { stroke: var(--divider-color); }
@@ -211,13 +216,22 @@ function toDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Building a formatter costs about 0.2 ms and the card redraws with every
+// plug reading, so each locale and option set is built once.
+const formatters = new Map();
+function formatter(locale, options) {
+  const key = `${locale} ${JSON.stringify(options)}`;
+  if (!formatters.has(key)) formatters.set(key, new Intl.DateTimeFormat(locale, options));
+  return formatters.get(key);
+}
+
 function day(hass, value, withTime = false) {
   const date = toDate(value);
   if (!date) return "—";
   const options = { day: "numeric", month: "short" };
   if (withTime) Object.assign(options, { hour: "2-digit", minute: "2-digit" });
   if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
-  return new Intl.DateTimeFormat(localeOf(hass), options).format(date);
+  return formatter(localeOf(hass), options).format(date);
 }
 
 function stateOf(hass, entityId) {
@@ -247,6 +261,7 @@ const KINDS = {
   solar: "total_pv_energy",
   load: "total_load_energy",
   dod: "depth_of_discharge",
+  restarts: "device_restarts",
 };
 // DOD_DEFAULT_VALUE in pymarstek/const.py: the depth of discharge until one is written.
 const DEFAULT_DOD = 88;
@@ -342,6 +357,7 @@ function readModel(hass, pack) {
     rte: metered ?? rteOf(attrs.implied_round_trip_efficiency),
     rteMetered: metered != null,
     standby: finite(attrs.plug_standby_w),
+    restarts: stateOf(hass, pack.entities.restarts)?.attributes || null,
     windows: Array.isArray(attrs.windows) ? attrs.windows : [],
     history: Array.isArray(attrs.history) ? attrs.history : [],
     active: attrs.active_window && typeof attrs.active_window === "object" ? attrs.active_window : null,
@@ -602,20 +618,33 @@ function energyHtml(hass, model, text) {
   return `<div class="meters">${meters}</div>${line ? `<p class="muted">${esc(line)}</p>` : ""}`;
 }
 
-function tabsHtml(hass, model, text, selected, cardId, width, runs) {
+function outagesTab(hass, model, text, shown) {
+  const time = formatter(localeOf(hass), { hour: "2-digit", minute: "2-digit" });
+  const tracked = Boolean(model.pack?.entities?.restarts);
+  return restartsHtml(model.restarts, text, { day: (date) => day(hass, date), clock: (date) => time.format(date), tracked, shown });
+}
+
+const PANELS = {
+  capacity: (hass, model, text, { width }) => capacityChart(hass, model, text, width),
+  runs: (hass, model, text, { runs }) => runsHtml(hass, model, text, runs),
+  energy: (hass, model, text) => energyHtml(hass, model, text),
+  restarts: (hass, model, text, { shown }) => outagesTab(hass, model, text, shown),
+};
+
+function tabsHtml(hass, model, text, selected, cardId, view) {
   const tabs = TABS.map((name) => `<button type="button" role="tab" id="${cardId}-${name}" aria-controls="${cardId}-panel"
     aria-selected="${name === selected}" tabindex="${name === selected ? 0 : -1}" data-tab="${name}">${esc(text.tabs[name])}</button>`).join("");
-  const panel = selected === "runs" ? runsHtml(hass, model, text, runs) : selected === "energy" ? energyHtml(hass, model, text) : capacityChart(hass, model, text, width);
+  const panel = PANELS[selected](hass, model, text, view);
   return `<div role="tablist" aria-label="${esc(text.tabList)}">${tabs}</div>
     <div role="tabpanel" id="${cardId}-panel" aria-labelledby="${cardId}-${selected}" tabindex="0">${panel}${exportHtml(model, selected, text)}</div>`;
 }
 
-function healthCardHtml(hass, config, tab, cardId, width, runs) {
+function healthCardHtml(hass, config, tab, cardId, view) {
   const text = copyFor(hass);
   const pack = hass ? findPack(hass, config) : null;
   if (!pack) return `<style>${STYLES}</style><ha-card><p class="muted">${esc(text.pickDevice)}</p></ha-card>`;
   const model = readModel(hass, pack);
-  const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, width, runs);
+  const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, view);
   return `<style>${STYLES}</style><ha-card>
     <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><div class="title-wrap"><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>${bandHtml(model, text)}</div>
     ${headlineHtml(hass, model, text)}
@@ -740,15 +769,25 @@ function openMoreInfo(host, entityId) {
 const CSV_COLUMNS = {
   capacity: ["week_start", "usable_wh", "rated_wh"],
   runs: ["closed_at", "direction", "start_soc", "end_soc", "soc_delta", "capacity_wh", "duration_s", "average_power_w", "pv_share"],
+  restarts: ["at", "kind", "offline_s", "failed_polls", "evidence"],
 };
 
 function csvCell(row, column) {
   if (column === "closed_at" || column === "week_start") return toDate(row[column])?.toISOString() ?? "";
   if (column === "direction") return row.direction === "charge" ? "charge" : "discharge";
+  if (column === "at") return row.date.toISOString();
+  if (column === "kind") return row.kind === "restart" ? "restart" : "dropout";
+  // Trace names are fixed snake_case words; a semicolon keeps them in one cell.
+  if (column === "evidence") return (Array.isArray(row.evidence) ? row.evidence : []).filter((trace) => /^[a-z_]+$/.test(trace)).join(";");
   return finite(row[column]) ?? "";
 }
 
-const csvRows = (model, tab) => (tab === "runs" ? model.windows : model.history.map((point) => ({ ...point, rated_wh: model.rated })));
+const CSV_ROWS = {
+  capacity: (model) => model.history.map((point) => ({ ...point, rated_wh: model.rated })),
+  runs: (model) => model.windows,
+  restarts: (model) => outagesOf(model.restarts).reverse(),
+};
+const csvRows = (model, tab) => CSV_ROWS[tab](model);
 
 function csvOf(model, tab) {
   const columns = CSV_COLUMNS[tab];
@@ -766,7 +805,7 @@ function exportHtml(model, tab, text) {
 function saveCsv(model, tab) {
   const url = URL.createObjectURL(new Blob([csvOf(model, tab)], { type: "text/csv" }));
   const slug = model.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "marstek";
-  const link = Object.assign(document.createElement("a"), { href: url, download: `${slug}-${tab === "runs" ? "runs" : "weekly"}.csv`, target: "_blank" });
+  const link = Object.assign(document.createElement("a"), { href: url, download: `${slug}-${tab === "capacity" ? "weekly" : tab}.csv`, target: "_blank" });
   document.body.append(link);
   link.click();
   link.remove();
@@ -794,7 +833,7 @@ function signatureOf(hass, packs, extra) {
 function focusKey(root) {
   const active = root.activeElement;
   if (!active) return null;
-  for (const name of ["tab", "action", "entity"]) {
+  for (const name of ["tab", "action", "entity", "outage"]) {
     const value = active.dataset?.[name];
     if (value) return `[data-${name}="${CSS.escape(value)}"]`;
   }
@@ -848,6 +887,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
     super();
     this._tab = TABS[0];
     this._runs = { filter: "all", page: 0 };
+    this._shown = OUTAGES_STEP;
     this._id = `mbh${(cardCount += 1)}`;
     this.shadowRoot.addEventListener("click", (event) => this._onClick(event));
     this.shadowRoot.addEventListener("keydown", (event) => this._onKey(event));
@@ -872,9 +912,11 @@ class MarstekBatteryHealthCard extends MarstekCard {
     return pack ? [pack] : [];
   }
 
-  _view() { return [this._tab, this._config, this._width, this._runs]; }
+  _view() { return [this._tab, this._config, this._width, this._runs, this._shown]; }
 
-  _html() { return healthCardHtml(this._hass, this._config, this._tab, this._id, this._width, this._runs); }
+  _html() {
+    return healthCardHtml(this._hass, this._config, this._tab, this._id, { width: this._width, runs: this._runs, shown: this._shown });
+  }
 
   // Redraw when the width moves to another 40 px step, so the chart fits it.
   connectedCallback() {
@@ -889,6 +931,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
 
   _select(tab) {
     this._tab = tab;
+    this._shown = OUTAGES_STEP;
     this._render(true, `[data-tab="${tab}"]`);
   }
 
@@ -905,6 +948,14 @@ class MarstekBatteryHealthCard extends MarstekCard {
     if (verb === "device") openDevice(this, pack?.deviceId);
     else if (verb === "csv" && pack) saveCsv(readModel(this._hass, pack), arg);
     else if (verb === "runs" || verb === "page") this._showRuns(verb, arg, action);
+    else if (verb === "more") this._showMore();
+  }
+
+  // Focus moves to the first row the press revealed, so reading carries on there.
+  _showMore() {
+    const first = this._shown;
+    this._shown += OUTAGES_STEP;
+    this._render(true, `[data-outage="${first}"]`);
   }
 
   // A filter starts again on page one. A page step counts from the page on

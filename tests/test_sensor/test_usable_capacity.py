@@ -154,10 +154,12 @@ async def test_successive_polls_publish_and_unload_persists(
     clock = {"t": 1_700_000_000.0}
     original = MarstekDataUpdateCoordinator._async_record_capacity
 
-    async def record(self: MarstekDataUpdateCoordinator, device_status: dict[str, Any]) -> None:
+    async def record(
+        self: MarstekDataUpdateCoordinator, device_status: dict[str, Any], **kwargs: Any
+    ) -> None:
         clock["t"] += _POINT_SECONDS
         with patch("custom_components.marstek.coordinator.time.time", return_value=clock["t"]):
-            await original(self, device_status)
+            await original(self, device_status, **kwargs)
 
     with (
         patch_marstek_integration(client=client),

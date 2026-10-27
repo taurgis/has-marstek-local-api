@@ -9,7 +9,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -20,6 +20,7 @@ from .const import (
     BAT_STATUS_KEYS,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
+    CONF_PLUG_ENERGY_IN,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -38,6 +39,7 @@ from .const import (
     WIFI_STATUS_KEYS,
 )
 from .firmware_profile import FirmwareProfile, resolve_firmware_profile
+from .helpers.boot_pulse import async_track_boot_pulses, plug_power_entity
 from .helpers.capacity_store import CapacityEstimateStore
 from .helpers.coordinator_helpers import raise_if_invalid_status
 from .helpers.plug_round_trip import (
@@ -45,6 +47,13 @@ from .helpers.plug_round_trip import (
     PlugRoundTrip,
     apply_plug_round_trip,
     plug_from_options,
+)
+from .helpers.restart_detector import (
+    RESTARTS_ATTR_KEY,
+    RESTARTS_DATA_KEY,
+    RESTARTS_STORE_KEY,
+    RestartDetector,
+    restart_attributes,
 )
 from .pymarstek import MarstekUDPClient
 from .scanner import MarstekScanner
@@ -109,6 +118,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._capacity = UsableCapacityEstimator()
         self._capacity_store = CapacityEstimateStore(hass, config_entry.entry_id)
         self._capacity_loaded = False
+        # Restarts and dropouts, told apart from what a boot leaves in the
+        # polls. Stored with the capacity windows.
+        self._restarts = RestartDetector()
         # Round trip and standby from a linked energy meter, when one is set.
         self._plug: PlugRoundTrip | None = None
 
@@ -173,6 +185,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Handle polling errors and return cached data or raise UpdateFailed."""
         cached = self.data
         self.consecutive_failures += 1
+        self._restarts.record_failure()
         failure_threshold = self._get_failure_threshold()
         # One line per run of failures, not one per poll: a device offline
         # overnight at the default 30s interval would otherwise write
@@ -450,31 +463,41 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # battery_power was carried forward. The recorder still runs so
             # the sensors keep their last estimate. The capacity estimator
             # treats that poll as a hole and leaves the open window alone.
-            await self._async_record_capacity(device_status)
+            await self._async_record_capacity(device_status, previous_status=self.data)
 
             return device_status
         except (TimeoutError, OSError, ValueError) as err:
             # Connection failed - Scanner will detect IP changes and update config entry
             return self._handle_update_error(current_ip, err)
 
-    async def _async_record_capacity(self, device_status: dict[str, Any]) -> None:
+    async def _async_record_capacity(
+        self,
+        device_status: dict[str, Any],
+        *,
+        previous_status: dict[str, Any] | None = None,
+    ) -> None:
         """Fold this poll into the usable-capacity estimate and attach it.
 
         No extra UDP. The result stays unknown until enough clean windows exist.
+        The restart log is closed here too: it is kept in the same store, so
+        both load together and one delayed save writes both.
         """
         if not self._capacity_loaded:
             stored = await self._capacity_store.async_load()
             self._capacity = UsableCapacityEstimator.from_dict(stored)
             self._capacity.set_poll_interval(self._capacity_poll_interval)
             self._plug = plug_from_options(self._entry.options, stored)
+            self._restarts.load((stored or {}).get(RESTARTS_STORE_KEY))
             self._capacity_loaded = True
         now = time.time()
+        self._record_restarts(device_status, previous_status, now)
         apply_capacity_estimate(self._capacity, device_status, now)
         if self._plug is not None:
             apply_plug_round_trip(self._plug, self.hass, device_status, now)
         plug_dirty = self._plug is not None and self._plug.consume_dirty()
+        restarts_dirty = self._restarts.consume_dirty()
         capacity_dirty = self._capacity.consume_dirty()
-        if not (capacity_dirty or plug_dirty):
+        if not (capacity_dirty or plug_dirty or restarts_dirty):
             return
         estimate = device_status.get("battery_usable_capacity")
         if capacity_dirty and estimate is not None:
@@ -486,12 +509,49 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         self._capacity_store.delay_save(self._store_payload())
 
+    def _record_restarts(
+        self,
+        device_status: dict[str, Any],
+        previous_status: dict[str, Any] | None,
+        now: float,
+    ) -> None:
+        """Close any outage this poll ends and attach the restart log."""
+        outage = self._restarts.record_success(now, previous_status, device_status)
+        if outage is not None:
+            _LOGGER.info(
+                "Device %s %s: offline %.0fs over %d failed poll(s)%s",
+                self.device_ip,
+                "restarted" if outage.evidence else "dropped out",
+                outage.offline_s,
+                outage.failed_polls,
+                f" ({', '.join(outage.evidence)})" if outage.evidence else "",
+            )
+        device_status[RESTARTS_DATA_KEY] = self._restarts.restarts
+        device_status[RESTARTS_ATTR_KEY] = restart_attributes(self._restarts, now)
+
     def _store_payload(self) -> dict[str, Any]:
-        """Return the capacity windows and, with a linked meter, its readings."""
+        """Return the capacity windows, the restart log and any meter readings."""
         payload = self._capacity.to_dict()
+        payload[RESTARTS_STORE_KEY] = self._restarts.to_dict()
         if self._plug is not None:
             payload[PLUG_STORE_KEY] = self._plug.to_dict()
         return payload
+
+    def async_track_plug_boot_tests(self) -> CALLBACK_TYPE | None:
+        """Watch a linked plug's watts for the self-test the unit runs as it boots.
+
+        Event-driven from the plug's own sensor: no request goes to the device.
+        """
+        power = plug_power_entity(self.hass, self._entry.options.get(CONF_PLUG_ENERGY_IN))
+        if power is None:
+            return None
+        return async_track_boot_pulses(self.hass, power, self._on_boot_pulse)
+
+    @callback
+    def _on_boot_pulse(self, at: float) -> None:
+        """Hold the plug's self-test for the next good poll."""
+        _LOGGER.info("Device %s ran its boot self-test at the plug", self.device_ip)
+        self._restarts.record_boot_pulse(at)
 
     async def async_save_capacity_estimate(self) -> None:
         """Flush accepted windows. A reload before the first poll must not wipe them."""

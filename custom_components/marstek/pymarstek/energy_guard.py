@@ -126,3 +126,58 @@ def apply_energy_total_guard(
         else:
             _LOGGER.warning("Ignoring implausible %s reading %s", key, current)
             status[key] = None
+
+
+# ES.GetStatus totals the battery counts itself. At boot the Control firmware
+# writes its last saved counters back (tools/firmware_emulator/README.md, CAN
+# cmd 0x16/0x17), so a restart can bring them back lower. The EM totals come
+# from the CT meter and are not restored.
+RESTORED_TOTAL_KEYS: Final[tuple[str, ...]] = (
+    "total_grid_input_energy",
+    "total_grid_output_energy",
+    "total_pv_energy",
+    "total_load_energy",
+)
+# The totals exactly as ES.GetStatus last sent them, before the stall floor in
+# ``data_parser`` lifts a stuck grid total. Comparing against the lifted value
+# would read every stall as a fall.
+RAW_TOTALS_KEY: Final = "es_energy_totals_raw"
+TOTALS_FELL_KEY: Final = "es_energy_totals_fell"
+# Wire totals are whole watt-hours (10 Wh steps for scaled solar).
+_MIN_FALL_WH: Final = 0.5
+
+
+def track_restored_totals(
+    status: dict[str, Any],
+    es_status: Mapping[str, Any] | None,
+    previous_status: Mapping[str, Any] | None,
+) -> None:
+    """Record the raw totals and whether any of them fell since the last reply.
+
+    0 is a placeholder or a factory reset of the totals, never a restored
+    counter, so it does not count as a fall. A poll without ES.GetStatus keeps
+    the previous raw totals and reports no fall.
+    """
+    previous_raw = (previous_status or {}).get(RAW_TOTALS_KEY)
+    previous = previous_raw if isinstance(previous_raw, dict) else {}
+    raw: dict[str, float] = {}
+    for key in RESTORED_TOTAL_KEYS:
+        value = (es_status or {}).get(key)
+        if not isinstance(value, (int, float)) or not energy_total_is_plausible(value):
+            continue
+        before = previous.get(key)
+        # A spike apply_energy_total_guard rejects must not become the
+        # baseline, or the next sane reply would look like a fall.
+        if isinstance(before, (int, float)) and value - before > MAX_PLAUSIBLE_ENERGY_JUMP_WH:
+            raw[key] = float(before)
+        else:
+            raw[key] = float(value)
+    status[RAW_TOTALS_KEY] = raw or dict(previous)
+    fell = False
+    for key, after in raw.items():
+        before = previous.get(key)
+        if not isinstance(before, (int, float)) or not energy_total_is_plausible(before):
+            continue
+        if 0.0 < after < float(before) - _MIN_FALL_WH:
+            fell = True
+    status[TOTALS_FELL_KEY] = fell
