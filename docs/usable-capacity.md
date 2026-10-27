@@ -356,6 +356,17 @@ restart from what a boot changes:
   30-second reboot fits between two 30-second polls. The comparison uses the
   raw reply, before the grid-total floors described in
   [Troubleshooting](troubleshooting.md#grid-energy-totals-look-frozen).
+- **Boot self-test at the plug**, with a [linked smart plug](#link-a-smart-plug).
+  As it boots, the unit runs the same test at its mains cord every time: the
+  standby draw (about 8 W) disappears, then it imports about 2.5 kW for 5 to
+  35 seconds, then the plug reads 0 W again before standby returns. Some tests
+  start with an export of about 1.25 kW. One user's plug showed this 37 times
+  in ten days, about every 5 hours, by day and by night. A charge never starts
+  or ends from a reading below standby and lasts longer than a minute, so the
+  test is not mistaken for one. The integration follows the plug's power
+  sensor (the one on the same device as the linked energy sensors) and sends
+  nothing to the battery; the test counts at the next good poll, together with
+  any other trace from the same boot.
 - **CT meter lost** and **mode changed**, as reported after resets in
   [#14](https://github.com/taurgis/has-marstek-local-api/issues/14). These
   count only when the device was unreachable in between: while it answers,
@@ -369,9 +380,10 @@ outage is a **restart** if a trace above came with it, and a **dropout**
 otherwise. Dropouts with no restart point at the network, and the card says
 so.
 
-What a restart cannot show: if the unit saved its counters just before it
-went down and the CT reconnected before the next poll, there is nothing left
-to see, and a short reboot counts as a dropout or not at all. How often a
+What a restart cannot show without a plug: if the unit saved its counters
+just before it went down and the CT reconnected before the next poll, there
+is nothing left to see, and a short reboot counts as a dropout or not at all.
+A linked plug closes most of that gap. How often a
 real unit saves its counters is not known.
 
 ## Limits

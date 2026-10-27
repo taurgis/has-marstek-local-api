@@ -34,7 +34,12 @@ export const COPY = {
       + (offline ? `, unreachable for ${offline}` : "")
       + (traces ? ` (${traces})` : "")
       + ".",
-    restartTrace: { energy_rollback: "energy totals restored", ct_lost: "CT meter lost", mode_changed: "mode changed" },
+    restartTrace: {
+      energy_rollback: "energy totals restored",
+      ct_lost: "CT meter lost",
+      mode_changed: "mode changed",
+      boot_pulse: "boot self-test at the plug",
+    },
     dropoutsToo: (count) => `The network also dropped it ${count} ${count === 1 ? "time" : "times"} without a restart.`,
     dropouts: (count) =>
       `Unreachable ${count} ${count === 1 ? "time" : "times"} in 30 days, with no sign of a restart: check the Wi-Fi.`,
@@ -132,7 +137,12 @@ export const COPY = {
       + (offline ? `, ${offline} onbereikbaar` : "")
       + (traces ? ` (${traces})` : "")
       + ".",
-    restartTrace: { energy_rollback: "energietellers teruggezet", ct_lost: "CT-meter kwijt", mode_changed: "modus gewijzigd" },
+    restartTrace: {
+      energy_rollback: "energietellers teruggezet",
+      ct_lost: "CT-meter kwijt",
+      mode_changed: "modus gewijzigd",
+      boot_pulse: "opstarttest aan de stekker",
+    },
     dropoutsToo: (count) => `Het netwerk verloor hem daarnaast ${count} keer zonder herstart.`,
     dropouts: (count) => `${count} keer onbereikbaar in 30 dagen, zonder teken van een herstart: controleer de wifi.`,
     fills: (power, time) => `Bij ${power} is hij over ongeveer ${time} vol.`,

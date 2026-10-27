@@ -11,6 +11,11 @@ traces ``custom_components/marstek/helpers/restart_detector.py`` looks for:
   lost, so the mode falls back to Auto. Issue #14 reports a lost CT and a mode
   change after resets. Which mode a healthy 150 falls back to is not known.
 
+A linked smart plug sees the self-test the unit runs as it boots: the standby
+draw is gone, then about 2.5 kW of import for 20 s, then nothing until
+standby returns (a user's plug history, 37 times in ten days). The plug
+server shows that in place of the live watts.
+
 A Wi-Fi drop loses one datagram at random and nothing else, which the
 integration's retransmits recover inside the same poll.
 """
@@ -36,6 +41,9 @@ _TOTAL_KEYS = (
 # A scheduled restart lands within this share of the interval either side, so
 # restarts in a long run do not line up with the poll interval.
 _JITTER = 0.25
+
+# (until seconds after the restart, plug watts) for the boot self-test.
+BOOT_PULSE = ((10.0, 0), (15.0, 2550), (30.0, 2200), (40.0, 0))
 
 REBOOTING = "rebooting"
 WIFI_DROP = "Wi-Fi drop"
@@ -66,6 +74,7 @@ class RestartSimulator:
         self._booting_until = 0.0
         self._ct_back_at: float | None = None
         self._requested: float | None = None
+        self._restarted_at: float | None = None
         self.restarts = 0
         now = time.time()
         self._next_restart = self._schedule(now)
@@ -98,6 +107,15 @@ class RestartSimulator:
             return WIFI_DROP
         return None
 
+    def plug_watts(self, now: float) -> int | None:
+        """Return what the plug shows during the boot self-test, else None."""
+        if self._restarted_at is None:
+            return None
+        elapsed = now - self._restarted_at
+        if elapsed < 0:
+            return None
+        return next((watts for until, watts in BOOT_PULSE if elapsed < until), None)
+
     def _tick(self, now: float) -> None:
         if self._requested is not None:
             started, self._requested = self._requested, None
@@ -116,6 +134,7 @@ class RestartSimulator:
     def restart(self, started: float) -> None:
         """Reboot at *started*: go silent and lose what was only in RAM."""
         self.restarts += 1
+        self._restarted_at = started
         self._booting_until = started + self._boot
         self._next_restart = self._schedule(started)
         battery = self._battery

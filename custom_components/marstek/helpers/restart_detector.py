@@ -10,6 +10,9 @@ leaves behind in the polls this integration already makes:
   Nothing else makes these totals fall.
 * The CT link drops and the operating mode changes. Issue #14 reports both
   after a reset: "loses CT connection, falls back to manual".
+* With an energy meter linked, the plug shows the self-test the unit runs as
+  it boots (see ``boot_pulse.py``). That arrives between polls and is held
+  until the next good poll closes the outage it belongs to.
 
 Wi-Fi that answers late is not an outage. The UDP client retransmits a read
 after 0.5, 2.5 and 5 s, so a reply lost to the modem waking up is recovered
@@ -46,7 +49,8 @@ _KINDS = frozenset({RESTART, DROPOUT})
 ENERGY_ROLLBACK = "energy_rollback"
 CT_LOST = "ct_lost"
 MODE_CHANGED = "mode_changed"
-_EVIDENCE = frozenset({ENERGY_ROLLBACK, CT_LOST, MODE_CHANGED})
+BOOT_PULSE = "boot_pulse"
+_EVIDENCE = frozenset({ENERGY_ROLLBACK, CT_LOST, MODE_CHANGED, BOOT_PULSE})
 
 MAX_EVENTS = 20
 _CARD_EVENTS = 10
@@ -124,6 +128,7 @@ class RestartDetector:
         self._restarts = 0
         self._last_ok: float | None = None
         self._failed = 0
+        self._pulse_at: float | None = None
         self._dirty = False
 
     @classmethod
@@ -172,6 +177,14 @@ class RestartDetector:
         if self._last_ok is not None:
             self._failed += 1
 
+    def record_boot_pulse(self, at: float) -> None:
+        """Hold a self-test seen at the plug for the next good poll.
+
+        Several before that poll are one restart as far as the polls can tell.
+        """
+        if self._pulse_at is None:
+            self._pulse_at = at
+
     def record_success(
         self,
         now: float,
@@ -183,11 +196,13 @@ class RestartDetector:
         ``previous`` is the last good status, which the coordinator keeps
         through failed polls.
         """
-        last_ok, failed = self._last_ok, self._failed
-        self._last_ok, self._failed = now, 0
+        last_ok, failed, pulse = self._last_ok, self._failed, self._pulse_at
+        self._last_ok, self._failed, self._pulse_at = now, 0, None
         if last_ok is None or previous is None:
             return None
         evidence = boot_traces(previous, current, outage=failed > 0)
+        if pulse is not None:
+            evidence = (*evidence, BOOT_PULSE)
         if not failed and not evidence:
             return None
         kind = RESTART if evidence else DROPOUT

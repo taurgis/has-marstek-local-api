@@ -9,7 +9,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -20,6 +20,7 @@ from .const import (
     BAT_STATUS_KEYS,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
+    CONF_PLUG_ENERGY_IN,
     CONF_POLL_INTERVAL_FAST,
     CONF_POLL_INTERVAL_MEDIUM,
     CONF_POLL_INTERVAL_SLOW,
@@ -38,6 +39,7 @@ from .const import (
     WIFI_STATUS_KEYS,
 )
 from .firmware_profile import FirmwareProfile, resolve_firmware_profile
+from .helpers.boot_pulse import async_track_boot_pulses, plug_power_entity
 from .helpers.capacity_store import CapacityEstimateStore
 from .helpers.coordinator_helpers import raise_if_invalid_status
 from .helpers.plug_round_trip import (
@@ -533,6 +535,21 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._plug is not None:
             payload[PLUG_STORE_KEY] = self._plug.to_dict()
         return payload
+
+    def async_track_plug_boot_tests(self) -> CALLBACK_TYPE | None:
+        """Watch a linked plug's watts for the self-test the unit runs as it boots.
+
+        Event-driven from the plug's own sensor: no request goes to the device.
+        """
+        power = plug_power_entity(self.hass, self._entry.options.get(CONF_PLUG_ENERGY_IN))
+        if power is None:
+            return None
+        return async_track_boot_pulses(self.hass, power, self._on_boot_pulse)
+
+    @callback
+    def _on_boot_pulse(self, at: float) -> None:
+        _LOGGER.info("Device %s ran its boot self-test at the plug", self.device_ip)
+        self._restarts.record_boot_pulse(at)
 
     async def async_save_capacity_estimate(self) -> None:
         """Flush accepted windows. A reload before the first poll must not wipe them."""

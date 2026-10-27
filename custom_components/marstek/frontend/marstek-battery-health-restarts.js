@@ -1,10 +1,11 @@
 // Device restarts and network dropouts from the Restarts sensor.
 // The integration decides which is which: a dropout is silence that ends with
 // the device unchanged, a restart leaves a boot trace (energy totals restored
-// from the last save, the CT link lost, the mode changed). Wi-Fi that answers
+// from the last save, the CT link lost, the mode changed, or the self-test a
+// linked plug sees as the unit boots). Wi-Fi that answers
 // a retry inside the same poll never reaches the sensor at all.
 
-const TRACES = ["energy_rollback", "ct_lost", "mode_changed"];
+const TRACES = ["energy_rollback", "ct_lost", "mode_changed", "boot_pulse"];
 
 function count(raw) {
   const value = Number(raw);

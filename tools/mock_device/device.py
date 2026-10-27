@@ -9,6 +9,7 @@ import struct
 import threading
 import time
 from collections import Counter
+from dataclasses import replace
 from typing import Any
 
 from custom_components.marstek.firmware_profile import (
@@ -65,6 +66,7 @@ from .handlers import (
 )
 from .plug_server import PlugServer
 from .simulators import BatterySimulator
+from .simulators.plug import PlugReading
 from .simulators.restart import (
     DEFAULT_BOOT_S,
     DEFAULT_CT_RECONNECT_S,
@@ -173,7 +175,7 @@ class MockMarstekDevice:
             PlugServer(
                 plug_port,
                 self.config["wifi_mac"],
-                self.simulator.get_plug_reading,
+                self._plug_reading,
                 self.simulator.wifi.get_rssi,
             )
             if isinstance(plug_port, int)
@@ -254,6 +256,12 @@ class MockMarstekDevice:
                 float(fluctuation) if isinstance(fluctuation, (int, float)) else None
             ),
         )
+
+    def _plug_reading(self) -> PlugReading:
+        """Return the plug's reading, showing the boot self-test after a restart."""
+        reading = self.simulator.get_plug_reading()
+        watts = self.restarts.plug_watts(time.time())
+        return reading if watts is None else replace(reading, power_w=watts)
 
     def _restart_simulator(self, simulate: bool) -> RestartSimulator:
         """Build the restart and Wi-Fi drop schedule from the config keys."""

@@ -7,9 +7,12 @@ from unittest.mock import AsyncMock
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.marstek.const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
 from custom_components.marstek.helpers.capacity_store import usable_capacity_storage_key
 from custom_components.marstek.sensor import MarstekSensor
 from tests.conftest import create_mock_client, patch_marstek_integration
@@ -113,6 +116,60 @@ async def test_stored_restarts_survive_a_reload(
     assert state is not None
     assert state.state == "4"
     assert state.attributes["last_restart_at"] == "2023-11-14T22:13:20+00:00"
+
+
+async def test_plug_self_test_counts_without_a_failed_poll(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A linked plug's boot self-test is a restart even when every poll answered."""
+    plug_entry = MockConfigEntry(domain="homewizard")
+    plug_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=plug_entry.entry_id, identifiers={("homewizard", "plug")}
+    )
+    registry = er.async_get(hass)
+    ids = [
+        registry.async_get_or_create(
+            "sensor",
+            "homewizard",
+            key,
+            device_id=device.id,
+            suggested_object_id=key,
+            original_device_class=device_class,
+        ).entity_id
+        for key, device_class in (
+            ("plug_import", "energy"),
+            ("plug_export", "energy"),
+            ("plug_power", "power"),
+        )
+    ]
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={CONF_PLUG_ENERGY_IN: ids[0], CONF_PLUG_ENERGY_OUT: ids[1]},
+    )
+    status = dict(_STATUS)
+    client = create_mock_client(status=status)
+    client.get_device_status = AsyncMock(side_effect=lambda *_a, **_k: dict(status))
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        coordinator = mock_config_entry.runtime_data.coordinator
+        await coordinator.async_refresh()
+
+        for watts in ("8", "0", "2550", "2200", "1", "8"):
+            hass.states.async_set(ids[2], watts, {"unit_of_measurement": "W"})
+            await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.venus_restarts")
+        assert state is not None
+        assert state.state == "1"
+        assert state.attributes["outages"][-1]["evidence"] == ["boot_pulse"]
+
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
 
 
 def test_restart_log_stays_out_of_the_recorder() -> None:

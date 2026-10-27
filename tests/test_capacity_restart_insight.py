@@ -94,3 +94,11 @@ def test_dropouts_alone_point_at_the_network(tmp_path: Path) -> None:
 def test_a_quiet_month_shows_nothing(attrs: dict[str, Any] | None, tmp_path: Path) -> None:
     """No outage in 30 days, a missing sensor or junk adds no insight."""
     assert _insight(attrs, "en", tmp_path) is None
+
+
+def test_a_plug_self_test_is_named(tmp_path: Path) -> None:
+    """A restart seen only at the linked plug says so."""
+    seen = {**_RESTART, "failed_polls": 0, "offline_s": 30.0, "evidence": ["boot_pulse"]}
+    attrs = {"restarts_30d": 1, "last_restart_at": seen["at"], "outages": [seen]}
+    assert "(boot self-test at the plug)" in _insight(attrs, "en", tmp_path)["text"]
+    assert "(opstarttest aan de stekker)" in _insight(attrs, "nl", tmp_path)["text"]

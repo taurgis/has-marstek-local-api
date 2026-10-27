@@ -11,6 +11,7 @@ from mock_device.const import MODE_AUTO, MODE_PASSIVE
 from mock_device.simulators.restart import REBOOTING, WIFI_DROP, RestartSimulator
 
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
+from custom_components.marstek.helpers.boot_pulse import BootPulseDetector
 from custom_components.marstek.helpers.restart_detector import (
     CT_LOST,
     DROPOUT,
@@ -196,3 +197,22 @@ def test_a_reboot_between_two_polls_still_counts(tmp_path: Path) -> None:
     assert restart.kind == RESTART
     assert restart.failed_polls == 0
     assert restart.evidence == (ENERGY_ROLLBACK,)
+
+
+def test_the_mock_plug_shows_the_boot_self_test(tmp_path: Path) -> None:
+    """The plug server reads what the integration's pulse detector looks for."""
+    device = _device(tmp_path, boot_s=45)
+    assert device.restarts.plug_watts(0.0) is None
+    device.restarts.restart(1000.0)
+
+    shown = [device.restarts.plug_watts(1000.0 + offset) for offset in range(-5, 50, 5)]
+    assert shown == [None, 0, 0, 2550, 2200, 2200, 2200, 0, 0, None, None]
+
+    detector = BootPulseDetector()
+    readings = [
+        (990.0, 8),
+        *((1000.0 + o, w) for o, w in zip(range(0, 45, 5), shown[1:], strict=False)),
+    ]
+    found = [detector.feed(at, 8 if watts is None else watts) for at, watts in readings]
+    assert 1010.0 in found
+    assert device._plug_reading().power_w != 2550

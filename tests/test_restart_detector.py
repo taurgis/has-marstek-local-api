@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from custom_components.marstek.helpers.restart_detector import (
+    BOOT_PULSE,
     CT_LOST,
     DROPOUT,
     ENERGY_ROLLBACK,
@@ -189,3 +190,33 @@ def test_zero_and_missing_replies_are_not_falls() -> None:
     assert missing[TOTALS_FELL_KEY] is False
     assert missing[RAW_TOTALS_KEY] == {"total_pv_energy": 300.0}
     assert garbage == {RAW_TOTALS_KEY: {}, TOTALS_FELL_KEY: False}
+
+
+def test_a_plug_self_test_is_held_for_the_next_good_poll() -> None:
+    """The plug sees the boot between polls; two tests before one poll are one restart."""
+    detector, status = _baseline()
+    detector.record_boot_pulse(_T0 + 10)
+    detector.record_boot_pulse(_T0 + 20)
+
+    outage = detector.record_success(_T0 + _POLL, status, _status())
+
+    assert outage is not None
+    assert outage.kind == RESTART
+    assert outage.failed_polls == 0
+    assert outage.evidence == (BOOT_PULSE,)
+    assert detector.record_success(_T0 + 2 * _POLL, status, _status()) is None
+
+
+def test_a_self_test_joins_the_outage_it_belongs_to() -> None:
+    """Rollback and CT loss from the same boot stay one restart with all traces."""
+    detector, status = _baseline()
+    detector.record_failure()
+    detector.record_boot_pulse(_T0 + 40)
+
+    outage = detector.record_success(
+        _T0 + 2 * _POLL, status, _status(ct_connected=False, **{TOTALS_FELL_KEY: True})
+    )
+
+    assert outage is not None
+    assert outage.evidence == (ENERGY_ROLLBACK, CT_LOST, BOOT_PULSE)
+    assert detector.restarts == 1

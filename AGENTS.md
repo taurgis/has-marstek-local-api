@@ -87,7 +87,7 @@ If you add/modify device control:
 | Device info helper | `device_info.py` | Shared `build_device_info()` + identifier utilities |
 | Polling pause | `helpers/polling.py` | `polling_paused()` context manager wrapped around every write |
 | Write retries | `helpers/command_retry.py`, `helpers/service_retry.py` | One retry loop; the service layer adds the pause and the error mapping |
-| Restart detection | `helpers/restart_detector.py` | Tells device restarts (energy totals restored, CT lost, mode changed) from dropouts; no extra UDP. Raw-total tracking is `pymarstek/energy_guard.track_restored_totals` |
+| Restart detection | `helpers/restart_detector.py`, `helpers/boot_pulse.py` | Tells device restarts (energy totals restored, CT lost, mode changed, boot self-test at a linked plug) from dropouts; no extra UDP. Raw-total tracking is `pymarstek/energy_guard.track_restored_totals` |
 | Diagnostics | `diagnostics.py` | Config entry diagnostics with redaction |
 | Mode configuration | `mode_config.py` | Mode parameter building helpers |
 | Text/translations | `strings.json`, `translations/en.json` | Keep in sync; use translation keys in entities |
