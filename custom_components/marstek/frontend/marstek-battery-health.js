@@ -20,6 +20,7 @@ const DAY_S = 86400;
 // outlives an update. The backend hashes both files into that token.
 const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
 const { plugPowerId, plugFlow } = await import(`./marstek-battery-health-plug.js${new URL(import.meta.url).search}`);
+const { restartInsight } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
 
 const STYLES = `
   :host { display: block; }
@@ -247,6 +248,7 @@ const KINDS = {
   solar: "total_pv_energy",
   load: "total_load_energy",
   dod: "depth_of_discharge",
+  restarts: "device_restarts",
 };
 // DOD_DEFAULT_VALUE in pymarstek/const.py: the depth of discharge until one is written.
 const DEFAULT_DOD = 88;
@@ -342,6 +344,7 @@ function readModel(hass, pack) {
     rte: metered ?? rteOf(attrs.implied_round_trip_efficiency),
     rteMetered: metered != null,
     standby: finite(attrs.plug_standby_w),
+    restarts: stateOf(hass, pack.entities.restarts)?.attributes || null,
     windows: Array.isArray(attrs.windows) ? attrs.windows : [],
     history: Array.isArray(attrs.history) ? attrs.history : [],
     active: attrs.active_window && typeof attrs.active_window === "object" ? attrs.active_window : null,
@@ -473,6 +476,7 @@ function insightsHtml(hass, model, text) {
   }
   items.push(trendInsight(hass, model, text));
   items.push(correctionInsight(hass, model, text));
+  items.push(restartInsight(model.restarts, text, (at) => day(hass, at)));
   if (model.rte != null) {
     const args = [pct(hass, model.rte, 1), `${fmt(hass, model.rte / 10, 1)} kWh`];
     const rte = model.rteMetered ? text.rteMetered(...args, day(hass, model.attrs.plug_round_trip_since)) : text.rte(...args);

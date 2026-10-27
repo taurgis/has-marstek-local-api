@@ -64,7 +64,12 @@ def test_entity_kinds_are_real_translation_keys() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["marstek-battery-health-copy.js", "marstek-battery-health-plug.js"]
+    "name",
+    [
+        "marstek-battery-health-copy.js",
+        "marstek-battery-health-plug.js",
+        "marstek-battery-health-restarts.js",
+    ],
 )
 def test_imported_modules_load_with_the_card_token(name: str) -> None:
     """Each imported module uses this module's own ?v= token, so an update reaches the browser."""

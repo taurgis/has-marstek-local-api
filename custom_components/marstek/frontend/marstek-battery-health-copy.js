@@ -29,6 +29,15 @@ export const COPY = {
       `The battery corrected its charge level ${count} ${count === 1 ? "time" : "times"} in 30 days, last on ${when} from ${from}% (${size}).`,
     driftBound: (bound) => `Runs carry up to about ±${bound} counting drift.`,
     notFull: (when) => `Not fully charged since ${when}. A full charge lets the battery recalibrate its charge level.`,
+    restarts: (count, when, offline, traces) =>
+      `Restarted ${count} ${count === 1 ? "time" : "times"} in 30 days, last on ${when}`
+      + (offline ? `, unreachable for ${offline}` : "")
+      + (traces ? ` (${traces})` : "")
+      + ".",
+    restartTrace: { energy_rollback: "energy totals restored", ct_lost: "CT meter lost", mode_changed: "mode changed" },
+    dropoutsToo: (count) => `The network also dropped it ${count} ${count === 1 ? "time" : "times"} without a restart.`,
+    dropouts: (count) =>
+      `Unreachable ${count} ${count === 1 ? "time" : "times"} in 30 days, with no sign of a restart: check the Wi-Fi.`,
     fills: (power, time) => `At ${power}, it reaches 100% in about ${time}.`,
     empties: (power, floor, time) => `At ${power}, it reaches its ${floor} floor in about ${time}.`,
     measuring: (direction, done, target) => `Measuring a ${direction} run: ${done} of ${target} points so far.`,
@@ -118,6 +127,14 @@ export const COPY = {
       `De batterij corrigeerde haar laadtoestand ${count} keer in 30 dagen, het laatst op ${when} vanaf ${from}% (${size}).`,
     driftBound: (bound) => `Ritten bevatten tot ongeveer ±${bound} telafwijking.`,
     notFull: (when) => `Niet volledig geladen sinds ${when}. Een volle lading laat de batterij haar laadtoestand herijken.`,
+    restarts: (count, when, offline, traces) =>
+      `${count} keer herstart in 30 dagen, het laatst op ${when}`
+      + (offline ? `, ${offline} onbereikbaar` : "")
+      + (traces ? ` (${traces})` : "")
+      + ".",
+    restartTrace: { energy_rollback: "energietellers teruggezet", ct_lost: "CT-meter kwijt", mode_changed: "modus gewijzigd" },
+    dropoutsToo: (count) => `Het netwerk verloor hem daarnaast ${count} keer zonder herstart.`,
+    dropouts: (count) => `${count} keer onbereikbaar in 30 dagen, zonder teken van een herstart: controleer de wifi.`,
     fills: (power, time) => `Bij ${power} is hij over ongeveer ${time} vol.`,
     empties: (power, floor, time) => `Bij ${power} zit hij over ongeveer ${time} op zijn ondergrens van ${floor}.`,
     measuring: (direction, done, target) => `Meet een ${direction}rit: ${done} van ${target} punten tot nu toe.`,

@@ -25,7 +25,7 @@ Each battery card shows:
 - A band on the right: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), or **Measuring** while there is no estimate yet.
 - One sentence that says what the pack holds against its rating. On the screenshot, Venus E holds **4.86 kWh**, **95%** of its **5.12 kWh** rating.
 - A bar split into energy stored now, room left, and the part that has faded.
-- Short insights: how many runs the number is based on and how closely they agree, how much the weekly estimate has moved, what the round trip means per 10 kWh charged, standby draw when a plug is linked, and how long the pack can keep going at the current power.
+- Short insights: how many runs the number is based on and how closely they agree, how much the weekly estimate has moved, what the round trip means per 10 kWh charged, standby draw when a plug is linked, restarts and network dropouts in the last 30 days (see [Restarts and dropouts](#restarts-and-dropouts)), and how long the pack can keep going at the current power.
 
 While the battery is discharging at 50 W or more, that time runs down to the floor set by **Depth of discharge**. An 88% depth of discharge stops the pack at 12%, and the sentence names that floor. The Open API cannot read the setting back, so the card uses the last value written from Home Assistant, which starts at 88%.
 
@@ -334,6 +334,45 @@ Each accepted window is stored with its start and end state of charge,
 average reported power, duration, mode, and `pv_share`. A store written
 before those fields existed still loads; the missing fields stay absent.
 The storage version is unchanged.
+
+## Restarts and dropouts
+
+Some units restart on their own every few hours or days, with the Local API
+enabled too (Venus E 3.0 on Control 150 included). A restart takes about
+30 seconds to a minute. The **Restarts** sensor counts them, and the card
+adds a line such as *Restarted 2 times in 30 days, last on 20 Oct,
+unreachable for 48 s (energy totals restored, CT meter lost)*.
+
+The Open API reports no uptime and no boot counter
+([Open API note](marstek_device_openapi.MD)), so the integration reads a
+restart from what a boot changes:
+
+- **Energy totals restored.** At boot the Control firmware writes its stored
+  lifetime counters back to the inverter
+  ([firmware emulator notes](../tools/firmware_emulator/README.md), CAN
+  command 0x16/0x17). Energy counted since the last save is lost, so a raw
+  `ES.GetStatus` total comes back lower than the previous reply. Nothing else
+  makes these totals fall, so this counts even when no poll failed: a
+  30-second reboot fits between two 30-second polls. The comparison uses the
+  raw reply, before the grid-total floors described in
+  [Troubleshooting](troubleshooting.md#grid-energy-totals-look-frozen).
+- **CT meter lost** and **mode changed**, as reported after resets in
+  [#14](https://github.com/taurgis/has-marstek-local-api/issues/14). These
+  count only when the device was unreachable in between: while it answers,
+  a user or a flaky CT changes them on their own.
+
+Late Wi-Fi is not an outage. On Control 150+ the client sends a read again
+after 0.5, 2.5 and 5 seconds, so a reply the Wi-Fi module dropped is
+recovered inside the same poll and never reaches the sensor. A poll that
+still gets no reply opens an outage. When the device answers again, the
+outage is a **restart** if a trace above came with it, and a **dropout**
+otherwise. Dropouts with no restart point at the network, and the card says
+so.
+
+What a restart cannot show: if the unit saved its counters just before it
+went down and the CT reconnected before the next poll, there is nothing left
+to see, and a short reboot counts as a dropout or not at all. How often a
+real unit saves its counters is not known.
 
 ## Limits
 

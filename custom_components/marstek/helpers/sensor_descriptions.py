@@ -46,6 +46,7 @@ from ..pymarstek.const import (
     CMD_PV_GET_STATUS,
     CMD_WIFI_STATUS,
 )
+from .restart_detector import RESTARTS_ATTR_KEY, RESTARTS_DATA_KEY
 from .sensor_stats import (
     command_stats_attributes,
     command_success_rate,
@@ -158,6 +159,16 @@ def _health_attributes(
     if raw is None:
         return None
     return {key: value for key, value in raw.items() if key not in CARD_ATTRIBUTES}
+
+
+def _restart_attributes(
+    coordinator: MarstekDataUpdateCoordinator,
+    _info: dict[str, Any],
+    _entry: ConfigEntry | None,
+) -> dict[str, Any] | None:
+    """Return the outage log, or None before the first poll."""
+    raw = (coordinator.data or {}).get(RESTARTS_ATTR_KEY)
+    return raw if isinstance(raw, dict) else None
 
 
 def _exists_present_value(key: str, data: dict[str, Any]) -> bool:
@@ -300,6 +311,18 @@ SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
         ),
         attributes_fn=_health_attributes,
         exists_fn=_nameplate_capacity_present,
+    ),
+    # Restarts inferred from the polls above; see helpers/restart_detector.py.
+    # Enabled so the battery health card can read it.
+    MarstekSensorEntityDescription(
+        key=RESTARTS_DATA_KEY,
+        translation_key="device_restarts",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda coordinator, _info, _entry: _value_from_data(
+            RESTARTS_DATA_KEY, coordinator.data or {}
+        ),
+        attributes_fn=_restart_attributes,
     ),
     MarstekSensorEntityDescription(
         key="device_mode",
