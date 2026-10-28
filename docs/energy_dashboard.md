@@ -1,13 +1,13 @@
 # Energy dashboard
 
-The integration gives you lifetime energy counters for the battery, and for solar on Venus A and Venus D. This page shows where each one belongs on Home Assistant's [Energy dashboard](https://www.home-assistant.io/docs/energy/).
+The integration gives you lifetime energy counters for the battery, and for solar on Venus A and Venus D. This page shows where each one belongs on Home Assistant's [Energy dashboard](https://www.home-assistant.io/docs/energy/). Use it when you set up the dashboard for the first time, or when your battery's charging shows up as grid import.
 
 ## Add Marstek to the Energy dashboard
 
 Open **Settings** > **Dashboards** > **Energy**, then:
 
 1. **Home battery storage:** add **Total grid input energy** as *energy going in to the battery* and **Total grid output energy** as *energy coming out of the battery*. Despite their names, these count energy through the battery's own AC connection, not your house's grid connection.
-2. **Electricity grid:** use your house meter, for example a P1 or utility-meter integration. If your Marstek CT meter reports them, **Meter input energy** and **Meter output energy** work too. Compare them with your utility meter once to confirm which is import and which is export.
+2. **Electricity grid:** use your house meter, for example a P1 or utility-meter integration. If your Marstek [CT meter](guide/glossary.md#ct-meter-ct002-ct003) reports them, **Meter input energy** and **Meter output energy** work too. Compare them with your utility meter once to confirm which is import and which is export.
 3. **Solar panels (Venus A and Venus D):** see [Venus A and Venus D: solar and the battery row](#venus-a-and-venus-d-solar-and-the-battery-row) first.
 4. Leave **Total load energy** off this dashboard. What it measures differs between models and firmware.
 
@@ -29,11 +29,18 @@ Marstek's Open API calls the battery's AC connection its grid side, so its count
 
 ## Technical details
 
+You don't need the rest of this page to set up the dashboard. It explains units, the firmware quirks the integration corrects, and a few templates.
+
 To be accepted by the Energy dashboard, a sensor must have `device_class: energy`, `state_class: total` or `total_increasing`, and a unit such as Wh or kWh. All the energy sensors below meet that.
 
 ## Why Wh instead of kWh
 
-The integration stores energy totals in Wh, a Home Assistant-supported energy unit. Open API energy fields are **not** all Wh on the wire. Each field is normalized individually:
+The integration shows energy totals in watt-hours (Wh). 1000 Wh is 1 kWh, the unit on your electricity bill. The Energy dashboard accepts both, so you don't have to convert anything.
+
+The battery itself reports some totals in other units, and those units differ between models and firmware. The integration converts each one to Wh for you.
+
+::: details Technical details
+Open API energy fields are **not** all Wh on the wire. Each field is normalized individually:
 
 | Field | Typical wire unit | Home Assistant | When the scale applies |
 | --- | --- | --- | --- |
@@ -43,6 +50,7 @@ The integration stores energy totals in Wh, a Home Assistant-supported energy un
 | `EM.GetStatus` `input_energy` / `output_energy` | 0.1 Wh on Rev 3.1 | Wh (`raw × 0.1`) | Known family at firmware 150+; sensors omitted when the fields are absent |
 
 `0.01 kWh` is a wire encoding, not a custom Home Assistant unit. Energy dashboard eligibility still requires `device_class: energy`, `state_class: total` or `total_increasing`, and a supported unit such as Wh or kWh ([Energy FAQ](https://www.home-assistant.io/docs/energy/faq/)).
+:::
 
 ## Energy totals mapping
 
@@ -55,10 +63,9 @@ The integration stores energy totals in Wh, a Home Assistant-supported energy un
 | Grid import or export (CT meter, if reported) | Meter output energy | em_output_energy | Wh |
 
 > [!NOTE]
-> Some Marstek firmware versions can keep the raw grid input/output energy
-> counters fixed even while the battery's AC power is still changing. When that happens, the
-> integration keeps these totals monotonic by deriving the missing growth from
-> `on_grid_power` between updates and restoring the corrected total after Home
+> Some Marstek firmware versions can stop updating the grid input and output energy
+> counters while the battery is still charging or discharging. When that happens, the
+> integration fills in the missing energy from the battery's power (`on_grid_power`) between updates, so the totals keep counting up. It keeps the corrected total when Home
 > Assistant restarts. Impossible spikes (above 1 GWh, or more than 5 MWh in one
 > poll) are ignored on every lifetime energy total so they cannot freeze the
 > Energy dashboard at a bogus value.
@@ -68,15 +75,22 @@ The integration stores energy totals in Wh, a Home Assistant-supported energy un
 > off-grid energy, and its semantics vary by device and firmware. The integration
 > does not recommend it as the Energy dashboard's home consumption source.
 
+Meter input and output energy are measured at the CT meter, so they describe your
+house's grid connection. The Total grid input and output energy counters above describe the
+battery. The meter sensors only exist when your battery reports them.
+
+::: details Technical details
 Meter input/output energy (`em_input_energy` / `em_output_energy`) come from
 the existing fast-tier `EM.GetStatus` payload when the device reports those
 lifetime totals (Open API Rev 3.1). The wire unit is 0.1 Wh; Home Assistant
-exposes watt-hours. They are measured at the CT meter, so they describe your
-house's grid connection, unlike the ES counters above, which describe the
-battery. The sensors are omitted when the fields are absent.
+exposes watt-hours. Unlike the ES counters above, they describe the grid connection. The sensors are omitted when the fields are absent.
+:::
 
 ## Solar energy unit correction
 
+This section only matters if your Total solar energy history started before the integration corrected the solar unit. That affects Venus A firmware 149 and other firmware that reports solar energy in 0.01 kWh steps. Older history from those batteries is about 10 times too low, and the first corrected value shows up as one large jump in solar production. That jump is not a meter reset. If the Energy dashboard shows inflated production for that moment, fix it in **Developer tools** > **Statistics** (see below).
+
+::: details Technical details
 On Venus A firmware 149, `ES.GetStatus.total_pv_energy` is encoded as **0.01 kWh**
 on the wire (issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
 That is the solar *energy* counter, not PV1 *power* ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
@@ -99,9 +113,10 @@ Do not treat that jump as a reset. Review and adjust the transition in
 production for that interval. See Home Assistant's
 [Statistics tab](https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab)
 and the [`total_increasing` state class](https://contributors.home-assistant.io/core/entities/sensor/#state-classes).
+:::
 
 ## Optional power sensors
-These are not required for the energy dashboard. Use them for real time cards and sanity checks. These sensors use `state_class: measurement`.
+These show what is happening right now, in watts. The Energy dashboard doesn't need them. Use them for live dashboard cards and to check that the numbers make sense. (They use `state_class: measurement`.)
 
 | Sensor use | Entity name | Entity key | Unit |
 | --- | --- | --- | --- |

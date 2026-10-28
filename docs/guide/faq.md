@@ -7,15 +7,15 @@ description: Short answers to common questions about the Marstek integration for
 
 ## Does it need the Marstek cloud or an account?
 
-No. Home Assistant talks to the battery directly on your network. You still need the Marstek app once, to set up the battery and turn on Open API.
+No. Home Assistant talks to the battery directly on your network. You still need the Marstek app once, to set up the battery and turn on [Open API](glossary.md#open-api-local-api), the local interface the integration talks to.
 
 ## Can I keep using the Marstek app?
 
-Yes. The app and Home Assistant can both see the battery. A change made in the app shows up in Home Assistant on the next poll. Marstek says enabling Open API may disable some app features to prevent conflicting commands.
+Yes. The app and Home Assistant can both see the battery. A change made in the app shows up in Home Assistant the next time it asks the battery for data, within 30 seconds by default. Settings the Open API can't read back, such as depth of discharge, never show up. See [Limitations](limitations.md#limits-of-the-open-api). Marstek says enabling Open API may disable some app features to prevent conflicting commands.
 
 ## Is it safe for my battery?
 
-The integration is built to go easy on the battery: one request at a time by default, firmware-aware controls, and risky requests off by default. Still, some Marstek firmware misbehaves under polling, and the Open API is provided by Marstek "as is". Keep the battery firmware up to date, and read [Limitations](limitations.md). The project comes with no warranty.
+The integration is built to go easy on the battery. By default it sends one request at a time, it only offers controls the battery's [firmware](glossary.md#firmware) is known to accept, and it leaves risky requests off. Still, some Marstek firmware misbehaves when it is [polled](glossary.md#polling), and the Open API is provided by Marstek "as is". Keep the battery firmware up to date, and read [Limitations](limitations.md). The project comes with no warranty.
 
 ## Is it secure?
 
@@ -35,7 +35,7 @@ Usually a network hiccup or a battery restart. The integration keeps the last va
 
 ## Is it as reliable as a Modbus integration?
 
-Not quite, and it's worth knowing why. Modbus uses a wired connection and doesn't depend on the Open API at all. The Open API needs no extra hardware, but it runs over Wi-Fi, drops some replies, and older firmware can switch it off or reset settings under polling. On firmware 150 or newer, Venus A, D, and E 3.0 are not known to reset under polling. Venus C has its own [caveat](supported-devices.md#venus-c-caveat). If your battery keeps resetting anyway, read [Limitations](limitations.md#choices-this-integration-makes) and consider a [Modbus integration](comparison.md#modbus-integrations).
+Not quite, and it's worth knowing why. [Modbus](glossary.md#modbus) uses a wired connection and doesn't depend on the Open API at all. The Open API needs no extra hardware, but it runs over Wi-Fi, drops some replies, and older firmware can switch it off or reset settings when polled. On firmware 150 or newer, Venus A, D, and E 3.0 are not known to reset when polled. Venus C has its own [caveat](supported-devices.md#venus-c-caveat). If your battery keeps resetting anyway, read [Limitations](limitations.md#choices-this-integration-makes) and consider a [Modbus integration](comparison.md#modbus-integrations).
 
 ## Can I run it next to a Modbus integration?
 
@@ -43,13 +43,13 @@ They use separate connections on the battery, so both can be installed. Both can
 
 ## Can it keep my grid import at zero?
 
-Let the battery do that itself. In **Auto** mode it follows its CT meter and reacts within seconds. Home Assistant only sees new values every 30 seconds, so an automation that chases a P1 meter by changing passive power will lag behind and overshoot.
+Let the battery do that itself. In [Auto mode](glossary.md#auto-mode-self-consumption) it follows its [CT meter](glossary.md#ct-meter-ct002-ct003) and reacts within seconds. Home Assistant only sees new values every 30 seconds. An automation that chases a P1 meter (a reader on the data port of many European smart meters) by changing the power in [Passive mode](glossary.md#passive-mode) will lag behind and overshoot.
 
-No Marstek CT meter, but a P1 or other grid meter in Home Assistant? [AstraMeter](https://github.com/tomquist/AstraMeter) can pose as a Marstek CT meter and feed it that reading, so Auto mode follows your existing meter.
+No Marstek CT meter, but a P1 reading or another grid meter in Home Assistant? [AstraMeter](https://github.com/tomquist/AstraMeter) can pose as a Marstek CT meter and feed it that reading, so Auto mode follows your existing meter.
 
 ## Does it support peak shaving?
 
-Not yet. The Marstek app's **Peak shaving** (maximum grid import) setting is not part of the Open API on firmware 150 or 151, so no Open API integration can read or change it. Marstek only exposes it through its cloud (MQTT) link and Bluetooth. If a later firmware adds it, the integration will follow ([#122](https://github.com/taurgis/has-marstek-local-api/issues/122)).
+Not yet. The Marstek app's **Peak shaving** (maximum grid import) setting is not part of the Open API on firmware 150 or 151, so no Open API integration can read or change it. Marstek only offers it through its cloud link ([MQTT](glossary.md#mqtt)) and Bluetooth. If a later firmware adds it, the integration will follow ([#122](https://github.com/taurgis/has-marstek-local-api/issues/122)).
 
 ## Does it work with more than one battery?
 
@@ -57,11 +57,11 @@ Yes. Add each battery separately. The Battery health dashboard shows them side b
 
 ## Can I control the battery from the Energy dashboard?
 
-No. The Energy dashboard only shows energy. Control comes from the **Operating mode** select, device actions, and services in automations. See [Automations and services](../services.md).
+No. The Energy dashboard only shows energy. Control comes from the **Operating mode** select, [device actions](glossary.md#device-action), and [services](glossary.md#service-action) in automations. See [Automations and services](../services.md).
 
 ## How do I update the integration?
 
-HACS shows an update when a new release is out. Install it and restart Home Assistant. The [changelog](https://github.com/taurgis/has-marstek-local-api/blob/main/CHANGELOG.md) lists what changed.
+[HACS](glossary.md#hacs) shows an update when a new release is out. Install it and restart Home Assistant. The [changelog](https://github.com/taurgis/has-marstek-local-api/blob/main/CHANGELOG.md) lists what changed.
 
 ## How do I remove it?
 

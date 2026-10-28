@@ -7,7 +7,7 @@ description: An honest comparison of Home Assistant integrations for Marstek bat
 
 # Compared with other integrations
 
-There are several ways to get a Marstek battery into Home Assistant. They differ mostly in **how** they talk to the battery, and that decides which batteries they support and what extra hardware you need. This page is written by the maintainers of one of them, so check the links and judge for yourself.
+There are several ways to get a Marstek battery into Home Assistant. They differ mostly in **how** they talk to the battery, and that decides which batteries they support and what extra hardware you need. Words like [UDP](glossary.md#udp), [Modbus](glossary.md#modbus), and [MQTT](glossary.md#mqtt) are explained in the [glossary](glossary.md). This page is written by the maintainers of one of them, so check the links and judge for yourself.
 
 > [!NOTE] Last reviewed 2026-10-28
 > Release and activity facts come from each project's own GitHub page on that date. Projects change quickly. Every change to this page is in its [Git history](https://github.com/taurgis/has-marstek-local-api/commits/main/docs/guide/comparison.md). Corrections are welcome as a [pull request](https://github.com/taurgis/has-marstek-local-api/edit/main/docs/guide/comparison.md).
@@ -16,24 +16,24 @@ There are several ways to get a Marstek battery into Home Assistant. They differ
 
 | Connection | How it works | Extra hardware | Good for |
 |---|---|---|---|
-| **Local Open API (UDP)** | Home Assistant asks the battery over Wi-Fi or Ethernet, using the interface you enable in the Marstek app. | None | Venus A, C, D, E 3.0, E mini. No wiring. |
-| **Modbus TCP** | Home Assistant reads the battery's control registers. | An RS485-to-Ethernet adapter on most models. Some newer models have it over Ethernet. | Venus E 2.0, and anyone who wants a wired, register-level connection. |
-| **MQTT** | The battery's cloud connection is redirected to a local MQTT broker. | An MQTT broker and a bridge add-on | B2500 and Jupiter, which have no Open API. |
+| **Local Open API (UDP)** | Home Assistant asks the battery over Wi-Fi or Ethernet, using the [Open API](glossary.md#open-api-local-api) you enable in the Marstek app. | None | Venus A, C, D, E 3.0, E mini. No wiring. |
+| **Modbus TCP** | Home Assistant reads and writes the battery's settings over a wired connection. | An RS485-to-Ethernet adapter on most models, which connects the battery's RS485 wiring port to your network. Some newer models offer Modbus over Ethernet directly. | Venus E 2.0, and anyone who wants a wired connection that doesn't use the Open API. |
+| **MQTT** | The battery's cloud connection is redirected to an MQTT broker (a small message server) on your own network. | An MQTT broker and a bridge add-on | B2500 and Jupiter, which have no Open API. |
 | **Cloud** | Home Assistant logs in to Marstek's servers. | None | Read-only monitoring when nothing local works. Stops when the cloud is down. |
 | **Bluetooth** | Home Assistant reads the battery over Bluetooth Low Energy. | A Bluetooth adapter or proxy in range | Read-only monitoring. |
 
 ## Open API (UDP) integrations
 
-All three use the same local interface as this one, so they share its limits: polling, fragile older firmware, and no Venus E 2.0.
+All three use the same local interface as this one, so they share its limits: Home Assistant has to [poll](glossary.md#polling) for changes, older [firmware](glossary.md#firmware) is fragile, and Venus E 2.0 is not supported.
 
 | Feature | This integration | Marstek (vendor) | Marstek Venus E (yuyuki) | Marstek Local API (jaapp) |
 |---|---|---|---|---|
 | Repository | [taurgis/has-marstek-local-api](https://github.com/taurgis/has-marstek-local-api) | [marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek) | [yuyuki/hacs_marstek_venus_e](https://github.com/yuyuki/hacs_marstek_venus_e) | [jaapp/ha-marstek-local-api](https://github.com/jaapp/ha-marstek-local-api) |
 | Models | Venus A, C, D, E 3.0, E mini | Venus E 3.0, A, D | Venus E | Venus C, D, E |
-| Mode select | Auto, AI, and UPS where the firmware allows it. Manual and Passive are shown, but set through device actions and services | Auto, AI, Manual, UPS | Auto, AI, Manual, Passive | Buttons for Auto, AI, Manual |
+| Mode select | Auto, AI, and UPS where the firmware allows it. Manual and Passive are shown, but set through [device actions](glossary.md#device-action) and [services](glossary.md#service-action) | Auto, AI, Manual, UPS | Auto, AI, Manual, Passive | Buttons for Auto, AI, Manual |
 | Passive mode | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> (service) | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
 | Manual schedules | <span class="mk-yes">Yes</span> | <span class="mk-partial">Experimental</span> | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
-| Depth of discharge, LED, Bluetooth | <span class="mk-yes">Yes</span>, firmware-gated | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span> | <span class="mk-no">No</span> |
+| Depth of discharge, LED, Bluetooth | <span class="mk-yes">Yes</span>, depending on firmware | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span> | <span class="mk-no">No</span> |
 | Several batteries as one device | <span class="mk-no">No</span> (comparison dashboard) | <span class="mk-no">No</span> | <span class="mk-no">No</span> | <span class="mk-yes">Yes</span> |
 | Battery health estimate | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span>¹ | <span class="mk-no">No</span>¹ | <span class="mk-no">No</span>¹ |
 | Install | HACS custom | HACS custom | HACS custom | HACS custom |
