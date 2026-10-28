@@ -78,6 +78,8 @@ failing uploads.
   Each time the Open API was gone about 10 seconds. `EM.GetStatus` kept
   `ct_state: 1` with the last `total_power`, and in Auto the battery held
   its last output until CT data returned.
+- With the emulator's stand-in cloud answering, the same image ran 46
+  minutes without a reset: every upload was accepted and nothing queued up.
 - The integration lists a start-up check at the plug with no other trace and
   at most one failed poll as a brief network reset and leaves it out of the
   **Restarts** count. Why the plug sees a start-up check after a chip reset

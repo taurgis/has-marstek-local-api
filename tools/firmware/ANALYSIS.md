@@ -163,6 +163,11 @@ after each.
   not show at this outage length: the network flag stays set while the
   module rejoins. The unsent-record count at `0x20001004` grew by one about
   every 5 minutes.
+- **With a cloud.** `fc41d.py` now answers MQTT and HTTP through a stand-in
+  cloud (`cloud.py`; `--no-cloud` restores the run above). The same image
+  set its RTC from `getDateInfo`, connected MQTT, and posted an upload about
+  every 5 minutes, each answered `{"code":0}`. `upload_cnt` stayed at 1 and
+  the module was never reset in 46 minutes.
 
 Open: why the plug sees the start-up check after a chip reset. Nothing in the
 paths above touches the inverter (Micro 116/119, BMS 115 run their own
