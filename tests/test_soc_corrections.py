@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import math
 import statistics
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import pairwise
+from typing import Any
 
 import pytest
 
@@ -158,7 +160,10 @@ def test_a_charge_counted_short_ends_in_a_jump_that_bounds_the_error() -> None:
     assert {event.style for event in corrected} == {JUMP}
     assert all(event.points > 3.0 for event in corrected)
     attrs = pack.estimator.attributes()
-    error = abs(pack.estimator.estimate_wh / _TRUE - 1.0) * 100.0
+    honest = _Pack()
+    _cycles(honest, 6)
+    assert pack.estimator.estimate_wh is not None and honest.estimator.estimate_wh is not None
+    error = abs(pack.estimator.estimate_wh / honest.estimator.estimate_wh - 1.0) * 100.0
     assert error > 2.0
     assert attrs["soc_drift_bound_pct"] == pytest.approx(error, abs=1.0)
     assert attrs["confidence"] in {"low", "medium"}
@@ -423,3 +428,44 @@ def test_a_correction_cannot_tell_which_direction_miscounted() -> None:
     for side in ("discharge", "charge"):
         worst = max(abs(error[side]) for error in errors)
         assert worst > max(abs(error["published"]) for error in errors)
+
+
+def _bound_and_error(**miscount: Any) -> tuple[float, float]:
+    """Return the drift bound and the estimate's error against an honest pack."""
+    packs = (_Pack(), _Pack(**miscount))
+    for pack in packs:
+        _cycles(pack, 10)
+    honest, drifted = (pack.estimator.estimate_wh for pack in packs)
+    bound = packs[1].estimator._corrections.bound_pct()
+    assert honest is not None and drifted is not None and bound is not None
+    return bound, abs(drifted / honest - 1.0) * 100.0
+
+
+@pytest.mark.parametrize(
+    "miscount",
+    [
+        {"k_charge": 0.94},
+        {"k_charge": 1.06, "resync": "hold"},
+        {"k_discharge": 1.06},
+        {"k_discharge": 0.94, "resync": "hold"},
+    ],
+)
+def test_the_bound_covers_the_error_for_a_hold_as_for_a_jump(miscount: dict[str, Any]) -> None:
+    """Approach energy is converted with the median of its own direction.
+
+    The published value is the mean of both directions, so it hid part of a
+    hold's correction: a 3.4% error showed a 2.5% bound.
+    """
+    bound, error = _bound_and_error(**miscount)
+    assert 0.85 * error <= bound <= error + 1.0
+
+
+def test_the_bound_does_not_lean_on_the_efficiency_assumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same drift reads the same bound whatever the real efficiency."""
+    bounds = []
+    for eta in (0.93, 0.89):
+        monkeypatch.setattr(sys.modules[__name__], "_ETA", eta)
+        bounds.append(_bound_and_error(k_charge=1.06, resync="hold")[0])
+    assert bounds[0] == pytest.approx(bounds[1], abs=0.2)

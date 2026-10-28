@@ -311,7 +311,11 @@ the percentage. That reset shows up in three ways:
 
 The estimator records each arrival at 100%. With a published capacity it
 compares the points the percentage moved on the last 15 or more points
-before full with the points the measured watt-hours explain. A difference
+before full with the points the measured watt-hours explain. Once three
+charge windows are accepted, it converts those watt-hours with their median
+rather than the published value. The charge median is what the BMS itself
+counts per point, so the difference is the whole correction whichever
+direction miscounted, and the efficiency assumption drops out. A difference
 under three points is an ordinary full charge. Without a published capacity
 only a step the watts cannot explain counts. A hold also ends the open
 window, because the watt-hours charged at a frozen 99% belong to no

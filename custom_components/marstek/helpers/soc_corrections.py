@@ -187,8 +187,9 @@ class SocCorrectionTracker:
 
         ``energy_in_wh`` is DC energy into the pack over the segment, negative
         on discharge. ``jumped`` is the per-poll check's verdict on the step.
-        ``reference_wh`` is the published capacity, or None before there is
-        one; without it only flagged jumps are measured.
+        ``reference_wh`` is the capacity that converts energy to points: the
+        median of windows in the segment's direction, or the published value
+        until that direction has one. Without it only flagged jumps are measured.
         """
         if not self._trace or self._trace[-1].timestamp != start:
             self._trace.clear()
