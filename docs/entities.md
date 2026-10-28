@@ -124,7 +124,7 @@ Do not skip the ÷10 ([#57](https://github.com/taurgis/has-marstek-local-api/iss
 | Venus E mini with a known `ver` below 150 | No (SYS still appears; UPS does not) |
 | Unknown or unparseable `ver` | No |
 
-> Auto, AI, and UPS (when listed) are selectable directly. Manual and Passive still require extra parameters and are set via services (see [Services](services.md)). Venus E mini firmware 301 refuses Passive mode. `Set.Ver` and factory reset are not operating modes and are not offered here.
+> Auto, AI, and UPS (when listed) are selectable directly. Manual and Passive still require extra parameters and are set via services (see [Services](services.md)). Venus E mini firmware 301 has no Passive mode, so it is left out of the select and the `Set passive mode` action refuses it. `Set.Ver` and factory reset are not operating modes and are not offered here.
 
 ## Number (configuration)
 

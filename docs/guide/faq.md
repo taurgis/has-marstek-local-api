@@ -33,6 +33,24 @@ Most often the battery's firmware doesn't support it, so the integration leaves 
 
 Usually a network hiccup or a battery restart. The integration keeps the last values until three polls in a row have failed, then marks it unavailable. You can change that number under **Configure** > **Network Settings** (**Failures before unavailable**). [Why a battery goes offline](../firmware-resets.md) explains the different cases and how to tell them apart.
 
+## Is it as reliable as a Modbus integration?
+
+Not quite, and it's worth knowing why. Modbus uses a wired connection and doesn't depend on the Open API at all. The Open API needs no extra hardware, but it runs over Wi-Fi, drops some replies, and older firmware can switch it off or reset settings under polling. On firmware 150 or newer, Venus A, D, and E 3.0 are not known to reset under polling. Venus C has its own [caveat](supported-devices.md#venus-c-caveat). If your battery keeps resetting anyway, read [Limitations](limitations.md#choices-this-integration-makes) and consider a [Modbus integration](comparison.md#modbus-integrations).
+
+## Can I run it next to a Modbus integration?
+
+They use separate connections on the battery, so both can be installed. Both can also change the operating mode, though, so let only one of them control the battery. One owner reported having to [disconnect Modbus before firmware 150 would install](https://thuisbatterijgids.net/community/t/marstek-venus-e-3-0-met-home-assistant-local-api-instabiel-modbus-werkt-goed/614). If an update stalls, try that first.
+
+## Can it keep my grid import at zero?
+
+Let the battery do that itself. In **Auto** mode it follows its CT meter and reacts within seconds. Home Assistant only sees new values every 30 seconds, so an automation that chases a P1 meter by changing passive power will lag behind and overshoot.
+
+No Marstek CT meter, but a P1 or other grid meter in Home Assistant? [AstraMeter](https://github.com/tomquist/AstraMeter) can pose as a Marstek CT meter and feed it that reading, so Auto mode follows your existing meter.
+
+## Does it support peak shaving?
+
+Not yet. The Marstek app's **Peak shaving** (maximum grid import) setting is not part of the Open API on firmware 150 or 151, so no Open API integration can read or change it. Marstek only exposes it through its cloud (MQTT) link and Bluetooth. If a later firmware adds it, the integration will follow ([#122](https://github.com/taurgis/has-marstek-local-api/issues/122)).
+
 ## Does it work with more than one battery?
 
 Yes. Add each battery separately. The Battery health dashboard shows them side by side.

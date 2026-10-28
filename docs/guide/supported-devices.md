@@ -14,7 +14,7 @@ Short answer: it works with **Venus A, Venus C, Venus D, Venus E 3.0, and Venus 
 | Venus E 3.0 | <span class="mk-yes">Yes</span> | The most tested model. Depth of discharge, LED, Bluetooth, and UPS mode from firmware 150. Ten schedule slots. |
 | Venus A | <span class="mk-yes">Yes</span> | Adds solar (PV) sensors. Same firmware 150 gate for the extra controls. |
 | Venus D | <span class="mk-yes">Yes</span> | Adds up to four solar (PV) channels. Same firmware 150 gate. |
-| Venus E mini | <span class="mk-partial">Mostly</span> | Six schedule slots. Depth of discharge, LED, and Bluetooth controls. UPS mode on firmware 301. Firmware 301 refuses passive mode. Add it by IP address, and keep it on a normal /24 home network. |
+| Venus E mini | <span class="mk-partial">Mostly</span> | Six schedule slots. Depth of discharge, LED, and Bluetooth controls. UPS mode on firmware 301. Firmware 301 refuses passive mode. Add it by IP address, and keep it on a normal /24 home network. See [Venus E mini notes](#venus-e-mini-notes). |
 | Venus C | <span class="mk-partial">With a caveat</span> | Polling can stop Auto mode from charging on excess solar. No depth of discharge, LED, Bluetooth, or UPS controls. [Read the caveat](#venus-c-caveat). |
 | Venus E 2.0 | <span class="mk-no">No</span> | Polling can disconnect it from its CT meter. The integration refuses to set it up. |
 | Other Open API devices | <span class="mk-partial">Maybe</span> | Treated as an unknown model with the safest feature set. Untested. |
@@ -55,6 +55,18 @@ No firmware fixes this so far, 156 included. On Venus E 2.0 firmware 158, one ow
 - If Auto mode keeps stalling, poll less, or stop polling the battery for a while. That is the only reliable fix known today. Most Modbus integrations in the [comparison](comparison.md) don't list Venus C. hm2mqtt does, over MQTT.
 
 Venus E 2.0 runs the same controller, which is why it is not supported.
+
+## Venus E mini notes
+
+Venus E mini works, but it differs from the other models in a few ways ([#86](https://github.com/taurgis/has-marstek-local-api/issues/86)):
+
+- **Add it by IP address.** It doesn't answer the discovery broadcast, so it won't show up in the list. Choose **Enter IP/port manually** when you [add the battery](getting-started.md#step-2-add-your-battery).
+- **Keep it on a normal /24 home network.** Firmware 301 sends its replies to an address that only works with the usual `255.255.255.0` subnet mask.
+- **Six schedule slots**, not ten. Manual schedules with a power value work since integration 1.3.2. If one is refused, turn off any overlapping schedule in the Marstek app.
+- **No Passive mode on firmware 301.** The firmware doesn't have it, so the integration leaves it out. Auto, AI, Manual, and UPS work.
+- **Depth of discharge, the panel LED, and Bluetooth advertising** are available.
+
+[Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out) has the details.
 
 ## What else you need
 

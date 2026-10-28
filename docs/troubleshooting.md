@@ -28,7 +28,7 @@ Older notes that “LED is not in the API” applied to legacy Open API firmware
 
 On `VNSEM-0` firmware **301** these are two different results ([#104](https://github.com/taurgis/has-marstek-local-api/issues/104)).
 
-**Manual.** `Set manual schedule` can succeed, and the Marstek app shows the slot's time, weekday and enabled state, while the power stays `---` after a six-field `manual_cfg` (no `manual_set`). The device answered `set_result: true` for positive, negative and zero `power`. Rev 3.1 documents an extra `manual_set` field for Venus E mini only (0 disable, 1 charge, 2 discharge, 3 auto) and the official Manual example uses `"power": 100` with `"manual_set": 1`. This integration now sends that field for the mini, with `power` as a non-negative magnitude (HA services stay signed). Whether that payload stores a numeric power on firmware 301 is unconfirmed. An enabled 0 W slot sends `manual_set` 1, not auto (3), until hardware confirms otherwise.
+**Manual.** `Set manual schedule` can succeed, and the Marstek app shows the slot's time, weekday and enabled state, while the power stays `---` after a six-field `manual_cfg` (no `manual_set`). The device answered `set_result: true` for positive, negative and zero `power`. Rev 3.1 documents an extra `manual_set` field for Venus E mini only (0 disable, 1 charge, 2 discharge, 3 auto) and the official Manual example uses `"power": 100` with `"manual_set": 1`. Since integration 1.3.2 the mini gets that field, with `power` as a non-negative magnitude (HA services stay signed), and an owner confirmed that Manual mode with a power value works on firmware 301 ([#86](https://github.com/taurgis/has-marstek-local-api/issues/86)). If a slot is still refused, check the Marstek app for a schedule that overlaps it and turn that one off first. An enabled 0 W slot sends `manual_set` 1, not auto (3).
 
 **Passive.** The same device answers `ES.SetMode` Passive with `Parse error` (`-32700`, data `401`) and JSON-RPC id `0`, not the request id. The firmware image explains it: its `ES.SetMode` only knows Auto, AI, Manual and UPS, and the word "Passive" is not in it. On `VNSEM-0` 301 the integration therefore leaves Passive out of the operating-mode select and the `Set passive mode` action refuses it without sending anything. Older versions sent it and reported `Request timeout` or the parse error. Auto, AI, UPS, depth of discharge, the panel LED and Bluetooth advertising were all acknowledged by the firmware in the emulator.
 
@@ -104,6 +104,25 @@ The integration now keeps those totals moving by using the reported grid power
 between updates and restores the corrected total after Home Assistant restarts.
 If the totals still look wrong, compare the grid energy sensors with
 `sensor.<device>_on_grid_power` and include debug logs in your report.
+
+## Energy statistics look wrong after a firmware update
+
+A firmware update restarts the battery, and some updates change how its
+lifetime counters are reported. Match what you see to the section that
+explains it:
+
+- **A total stops rising** while the battery is clearly charging or
+  discharging: [Grid energy totals look frozen](#grid-energy-totals-look-frozen).
+- **One huge spike** on the day of the update:
+  [Energy totals jump to an impossible value](#energy-totals-jump-to-an-impossible-value).
+- **Solar about 10× too low or too high** from then on (Venus A and Venus D):
+  [Venus A solar totals look 10× too low, then jump](#venus-a-solar-totals-look-10×-too-low-then-jump).
+
+Readings of zero while the battery boots are ignored, so a restart alone
+should not dent the Energy dashboard. Points Home Assistant already stored
+are never rewritten by the integration. Fix those under **Developer tools** >
+**Statistics**, and include diagnostics in a
+[bug report](#what-to-include-in-a-bug-report) if the pattern is new.
 
 ## Energy totals jump to an impossible value
 

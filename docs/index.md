@@ -66,15 +66,15 @@ features:
 
 <div class="mk-gallery">
 <figure>
-<img src="./screenshots/device-details.png" alt="Marstek device page in Home Assistant with battery level, power, operating mode, and controls." loading="lazy" />
+<a href="/screenshots#discovery-and-setup"><img src="./screenshots/device-details.png" alt="Marstek device page in Home Assistant with battery level, power, operating mode, and controls." loading="lazy" /></a>
 <figcaption>The device page: charge, power, mode, and controls.</figcaption>
 </figure>
 <figure>
-<img src="./screenshots/automation-action.png" alt="Automation editor with Marstek device actions to charge, discharge, or stop the battery." loading="lazy" />
+<a href="/screenshots#controlling-the-battery"><img src="./screenshots/automation-action.png" alt="Automation editor with Marstek device actions to charge, discharge, or stop the battery." loading="lazy" /></a>
 <figcaption>Charge, discharge, or stop from the visual automation editor.</figcaption>
 </figure>
 <figure>
-<img src="./screenshots/battery-health-dashboard-desktop.png" alt="Battery health dashboard comparing usable capacity and state of health over time." loading="lazy" />
+<a href="/screenshots#battery-health-sidebar-dashboard"><img src="./screenshots/battery-health-dashboard-desktop.png" alt="Battery health dashboard comparing usable capacity and state of health over time." loading="lazy" /></a>
 <figcaption>An optional battery health dashboard.</figcaption>
 </figure>
 </div>

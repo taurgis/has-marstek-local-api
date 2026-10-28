@@ -31,7 +31,7 @@ On Venus C, polling competes with the battery's own grid-meter link for one Wi-F
 It runs the same controller as Venus C, and polling it can disconnect it from its CT meter.
 
 **Venus E mini firmware 301 is limited.**
-Passive mode is refused by the firmware. Replies only arrive on a normal /24 home network. Manual schedules are accepted, but whether the battery stores the power value is not confirmed yet. See [Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).
+Passive mode is refused by the firmware. Discovery can't find it, so add it by IP address. Replies only arrive on a normal /24 home network. Manual schedules with a power value work since integration 1.3.2. See [Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).
 
 ## Choices this integration makes
 

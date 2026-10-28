@@ -279,6 +279,33 @@ async def test_diagnostics_redacts_sensitive_data(
     assert coordinator_data.get("SSID") == "**REDACTED**"
 
 
+async def test_diagnostics_redacts_wifi_network_details(
+    hass: HomeAssistant,
+    mock_config_entry: MagicMock,
+    mock_runtime_data: MagicMock,
+) -> None:
+    """Wi-Fi status fields and the polled address never reach a bug report."""
+    network = {
+        "wifi_ssid": "HomeNetwork",
+        "wifi_sta_ip": "192.168.1.50",
+        "wifi_sta_gate": "192.168.1.1",
+        "wifi_sta_mask": "255.255.255.0",
+        "wifi_sta_dns": "192.168.1.1",
+        "device_ip": "192.168.1.50",
+    }
+    mock_runtime_data.coordinator.data = {**network, "wifi_rssi": -60}
+    mock_config_entry.data = {**mock_config_entry.data, "network_mac": "aabbccddeeff"}
+    mock_config_entry.runtime_data = mock_runtime_data
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    coordinator_data = result["coordinator_data"]
+    for key in network:
+        assert coordinator_data[key] == "**REDACTED**", key
+    assert coordinator_data["wifi_rssi"] == -60
+    assert result["entry"]["data"]["network_mac"] == "**REDACTED**"
+
+
 async def test_diagnostics_with_exception(
     hass: HomeAssistant,
     mock_config_entry: MagicMock,

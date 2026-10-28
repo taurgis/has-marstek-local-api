@@ -14,4 +14,15 @@ export default {
       'home-hero-image': () => h(LocalFlowHero),
     });
   },
+  enhanceApp() {
+    if (typeof window === 'undefined') return;
+    // The default theme's phone menu ignores Escape; close it and hand
+    // focus back to the button that opened it.
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !document.querySelector('.VPNavScreen')) return;
+      const toggle = document.querySelector<HTMLButtonElement>('.VPNavBarHamburger');
+      toggle?.click();
+      toggle?.focus();
+    });
+  },
 } satisfies Theme;
