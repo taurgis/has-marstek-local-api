@@ -21,6 +21,7 @@ These pages follow a simple order: do a task, look up a fact, then read why it w
 
 - [Entities](entities.md) — every sensor, switch, number, and select, including diagnostics that start disabled.
 - [Repairs](repairs.md) — connection repair and the firmware warnings.
+- [Why a battery goes offline](firmware-resets.md) — restarts, brief network resets, dropouts and settings resets, in plain language with technical notes.
 - [Troubleshooting](troubleshooting.md) — discovery, Venus C in Auto mode, missing controls, and entities that stay unavailable.
 
 ## Under the hood

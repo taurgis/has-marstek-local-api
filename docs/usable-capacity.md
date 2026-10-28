@@ -421,11 +421,13 @@ measured from is not stored.
 
 The plug's self-test also follows something smaller than a restart. Control
 150 resets its own network chip while its cloud uploads keep failing: the
-Ethernet chip every 30 minutes, the Wi-Fi module every 15
+Ethernet chip about every 35 minutes, the Wi-Fi module about every 15 to 30
 ([firmware notes](../tools/firmware/ANALYSIS.md#network-chip-resets)). The
 battery leaves the LAN for 5 to 10 seconds, asks the router for an address
 again, and the plug shows the same start-up check, but its energy totals,
-CT link and mode are untouched. Control 151 lists fixes for failing uploads.
+CT link and mode are untouched. It keeps its last output until the meter
+data returns about a minute later. All the kinds of outage are compared in
+[Why a battery goes offline](firmware-resets.md). Control 151 lists fixes for failing uploads.
 
 So a self-test with no other trace, and at most one failed poll, is listed
 as a **brief network reset** and is not added to the **Restarts** count. A
