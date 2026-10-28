@@ -14,12 +14,12 @@ The Open API port is configurable per device in the Marstek app, and firmware an
 ### Discovery screen examples
 
 <img src="screenshots/device-discovery.png" alt="Device discovery" width="340" />
-<img src="screenshots/device-list.png" alt="Device list" width="340" />
 
 ## Device page
 
 After setup you’ll see a device page with sensors/entities grouped under the device.
 
+<img src="screenshots/device-list.png" alt="Marstek on the Integrations page after setup, with two devices." width="340" />
 <img src="screenshots/device-details.png" alt="Device details" width="560" />
 
 The [visual tour](screenshots.md) continues from here: the Battery health sidebar, the Lovelace cards, and linking a smart plug. Diagnostic sensors such as battery temperature start disabled; how to enable them is in that tour and in [Entities](entities.md).

@@ -6,7 +6,7 @@ Home Assistant lists these under **Settings** > **System** > **Repairs** when th
 
 If Home Assistant can’t connect to the device (for example, after a DHCP IP change), the integration can raise a repair flow that lets you:
 
-- Enter an updated **Host** and **Port**
+- Enter an updated **IP address** and **Port**
 - Validate device identity (the device unique ID must match)
 - Apply the fix and automatically reload the config entry
 
@@ -14,7 +14,7 @@ If the unique ID doesn’t match, the repair refuses the update to prevent accid
 
 ## Firmware can reset Open API
 
-On Venus A, D and E 3.0 firmware below **150**, Venus C (HMG-50) below **156**,
+On Venus A, D, E 3.0 and Venus E mini firmware below **150**, Venus C (HMG-50) below **156**,
 and any battery whose firmware number is missing or unknown, polling the Open API can disable it and
 wipe settings ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)).
 The warning is created from stored firmware metadata before the first UDP
@@ -36,6 +36,6 @@ including firmware **156**, and is not fixable from Home Assistant. See
 
 The three repairs above are the ones the integration creates today: the connection repair, the reset-prone firmware warning, and the HMG-50 meter warning.
 
-<img src="screenshots/repair-list.png" alt="Repair list" width="340" />
-<img src="screenshots/repair-detail.png" alt="Repair detail" width="340" />
-<img src="screenshots/repair-fix.png" alt="Repair fix" width="340" />
+<img src="screenshots/repair-list.png" alt="Repairs list with Marstek connection and firmware warnings." width="340" />
+<img src="screenshots/repair-detail.png" alt="Update device connection form with IP address and Port." width="340" />
+<img src="screenshots/repair-fix.png" alt="Success message after the repair." width="340" />

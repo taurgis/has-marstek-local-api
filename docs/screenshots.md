@@ -15,13 +15,18 @@ Turn on **Open API** in the Marstek app first, and keep Home Assistant on the sa
 3. Pick the battery from the discovered list.
 
 <img src="screenshots/device-discovery.png" alt="A Marstek battery discovered on the local network, with the brand icon." width="340" />
-<img src="screenshots/device-list.png" alt="Discovered Marstek devices ready to add." width="340" />
 
 When discovery finds nothing, or every discovered battery is already added, Home Assistant asks for the **IP address** and the **port**. The port in the Marstek app is **30000** unless you changed it. The full steps, including what happens when the IP changes later, are in [Configuration](configuration.md).
 
-After setup, the device page groups the sensors, the operating-mode select, and the controls.
+After setup, Marstek shows on the Integrations page with one device per battery.
+
+<img src="screenshots/device-list.png" alt="Marstek on the Integrations page after setup, with two batteries." width="340" />
+
+The device page groups the sensors, the operating-mode select, and the controls.
 
 <img src="screenshots/device-details.png" alt="Venus E device page with battery sensors and controls." width="560" />
+
+*Shown on older firmware 145. On 150 and newer you also see the **Restarts** sensor, and the battery-detail sensors under **Diagnostic**.*
 
 A few diagnostic sensors, including **Battery temperature**, start disabled. `Bat.GetStatus`, the request behind them, has been suspected of resetting some batteries, so the integration waits until you opt in. On the device page, show disabled entities, open **Battery temperature** (or another battery-detail entity), open the gear, and turn **Enabled** on. On recent firmware the request starts on its own. On older firmware those entities stay omitted. The full list is in [Entities](entities.md).
 
@@ -141,10 +146,10 @@ Home Assistant's Energy dashboard wants lifetime energy sensors with an energy d
 
 The entity names, units, and the cases where firmware counters stall are in [Energy dashboard](energy_dashboard.md). Official setup of the dashboard itself is [Home Assistant Energy](https://www.home-assistant.io/docs/energy/).
 
-When Home Assistant loses the battery, **Settings** > **System** > **Repairs** offers a fix flow. You enter the new host and port, and the integration checks that the device is still the same one before it reloads.
+When Home Assistant loses the battery, **Settings** > **System** > **Repairs** offers a fix flow. You enter the new IP address and port, and the integration checks that the device is still the same one before it reloads.
 
 <img src="screenshots/repair-list.png" alt="Home Assistant repairs list with a Marstek connection issue." width="340" />
-<img src="screenshots/repair-detail.png" alt="Repair detail explaining that Home Assistant cannot connect to the Marstek device." width="340" />
-<img src="screenshots/repair-fix.png" alt="Repair fix form for a new host and port." width="340" />
+<img src="screenshots/repair-detail.png" alt="Update device connection form with the IP address and port, showing Unable to connect to the device." width="340" />
+<img src="screenshots/repair-fix.png" alt="Success message: the issue is repaired." width="340" />
 
 Firmware warnings, including Venus C sharing a Wi-Fi channel with its meter, are described in [Repairs](repairs.md) and [Troubleshooting](troubleshooting.md).

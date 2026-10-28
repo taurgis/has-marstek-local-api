@@ -12,7 +12,7 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 > [!WARNING] Battery detail sensors start disabled
 > The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically on Control firmware **150+**.
 >
-> **Reset-prone firmware (Venus A, D or E 3.0 below 150, Venus C below 156, or an unknown firmware number):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, setup or the scanner reloads the config entry so they can be created again (still disabled by default).
+> **Reset-prone firmware (Venus A, D, E 3.0 or Venus E mini below 150, Venus C below 156, or an unknown firmware number):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, setup or the scanner reloads the config entry so they can be created again (still disabled by default).
 >
 > **Upgrading an existing 150+ install?** Entities that were already registered stay enabled — upgrades never disable entities on firmware that can safely opt in. To stop `Bat.GetStatus` on a 150+ installation, disable the five entities above manually once (device page → entity → ⚙️ → *Enabled* off).
 
@@ -27,13 +27,13 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 | PV power | `pv_power` | W | — | Enabled (if supported) |
 | Device mode | `device_mode` | — | — | Enabled |
 | Battery status | `battery_status` | — | — | Enabled |
-| Total power | `em_total_power` | W | — | Enabled |
-| Phase A power | `em_a_power` | W | — | Enabled |
-| Phase B power | `em_b_power` | W | — | Enabled |
-| Phase C power | `em_c_power` | W | — | Enabled |
+| Total power | `em_total_power` | W | — | Enabled (not on Venus C below 155) |
+| Phase A power | `em_a_power` | W | — | Enabled (not on Venus C below 155) |
+| Phase B power | `em_b_power` | W | — | Enabled (not on Venus C below 155) |
+| Phase C power | `em_c_power` | W | — | Enabled (not on Venus C below 155) |
 | Meter input energy | `em_input_energy` | Wh | — | Enabled (if reported) |
 | Meter output energy | `em_output_energy` | Wh | — | Enabled (if reported) |
-| Total solar energy | `total_pv_energy` | Wh | — | Enabled |
+| Total solar energy | `total_pv_energy` | Wh | — | Enabled (Venus A and D only) |
 | Total grid output energy | `total_grid_output_energy` | Wh | — | Enabled |
 | Total grid input energy | `total_grid_input_energy` | Wh | — | Enabled |
 | Total load energy | `total_load_energy` | Wh | — | Enabled |
@@ -58,7 +58,7 @@ kept out of the recorder).
 
 ### PV channel sensors (PV1 to PV4)
 
-Created when the device reports those values (typically Venus A/D with PV channels).
+Created on every Venus A and Venus D, for all four channels, even if a channel has no panel. Other models don't get them.
 Values are stored in watts. Channel 1 is deciwatts on observed firmware
 (including 148.3, 149, and 150.9); the parser divides by 10, matching 1.0.0.
 That PV1 scale is independent of the solar-energy ×10 used for [#35](https://github.com/taurgis/has-marstek-local-api/issues/35).

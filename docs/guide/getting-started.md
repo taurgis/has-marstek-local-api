@@ -76,10 +76,10 @@ What you are looking at:
 - **Battery level** is the state of charge, in percent.
 - **Battery power** is how fast the battery charges or discharges, in watts.
 - **Operating mode** is a dropdown. **Auto** is self-consumption: the battery follows your grid meter to keep grid import near zero.
-- **Total power** is the power at your grid meter, when a CT meter is connected. **Phase A/B/C power** split it per phase.
+- **Total power** is the power at your grid meter, when a CT meter is connected. **Phase A/B/C power** split it per phase. Venus C below firmware 155 doesn't have these.
 - Solar (**PV**) sensors appear on Venus A and Venus D.
 
-Some diagnostic sensors, such as **Battery temperature**, start disabled on purpose. The request behind them has been linked to battery resets on some firmware. To turn one on later, open it from the **Diagnostic** section of the device page (select **+ N entities not shown** first), select the gear icon, switch on **Enabled**, and select **Update**. [Entities](../entities.md) lists every sensor.
+Some diagnostic sensors, such as **Battery temperature**, start disabled on purpose. The request behind them has been linked to battery resets on some firmware. To turn one on later, open it from the **Diagnostic** section of the device page (select the **+ … entities** link first if they are hidden), select the gear icon, switch on **Enabled**, and select **Update**. On firmware older than 150 (Venus C: 156) the battery detail sensors are left out entirely; update the battery firmware first. [Entities](../entities.md) lists every sensor.
 
 Readings refresh every 30 seconds. That is normal. The battery doesn't push changes by itself.
 
