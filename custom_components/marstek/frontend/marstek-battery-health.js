@@ -20,7 +20,8 @@ const DAY_S = 86400;
 // outlives an update. The backend hashes both files into that token.
 const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
 const { plugPowerId, plugFlow } = await import(`./marstek-battery-health-plug.js${new URL(import.meta.url).search}`);
-const { restartsHtml, outagesOf, OUTAGES_STEP, RESTART_STYLES } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
+const { PAGE_SIZE, firstOf, pagerHtml } = await import(`./marstek-battery-health-pager.js${new URL(import.meta.url).search}`);
+const { restartsHtml, outagesOf, RESTART_STYLES } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
 const { correctionsHtml, correctionsOf, CORRECTION_STYLES } = await import(`./marstek-battery-health-corrections.js${new URL(import.meta.url).search}`);
 
 const STYLES = RESTART_STYLES + CORRECTION_STYLES + `
@@ -558,8 +559,6 @@ function capacityChart(hass, model, text, width = 360) {
     </ul>`;
 }
 
-const RUNS_PER_PAGE = 8;
-
 // Rounded first, so a run 0.04 % under the median reads 0,0 % and not −0,0 %.
 function signedPct(hass, value) {
   const rounded = Math.round(value * 10) / 10 || 0;
@@ -585,22 +584,16 @@ function runRowHtml(hass, item, base, text) {
 
 // Newest first, by direction, a page at a time. data-action lets a redraw
 // put focus back on the button that was pressed.
-function runsHtml(hass, model, text, { filter, page }) {
+function runsHtml(hass, model, text, { filter }, page) {
   if (!model.windows.length) return `<p class="muted">${esc(text.noRuns)}</p>`;
   const median = (direction) => finite(model.attrs[`${direction}_median_wh`]);
   const both = new Set(model.windows.map((item) => item.direction)).size > 1;
   const runs = [...model.windows].reverse().filter((item) => !both || filter === "all" || item.direction === filter);
-  const pages = Math.ceil(runs.length / RUNS_PER_PAGE);
-  const first = clamp(page, 0, pages - 1) * RUNS_PER_PAGE;
-  const rows = runs.slice(first, first + RUNS_PER_PAGE).map((item) => runRowHtml(hass, item, median(item.direction), text));
+  const first = firstOf(page, runs.length);
+  const rows = runs.slice(first, first + PAGE_SIZE).map((item) => runRowHtml(hass, item, median(item.direction), text));
   const seg = !both ? "" : `<div class="seg" role="group" aria-label="${esc(text.tabs.runs)}">${Object.entries(text.runFilter).map(([name, label]) =>
     `<button type="button" data-action="runs-${name}" aria-pressed="${name === filter}">${esc(label)}</button>`).join("")}</div>`;
-  // The redraw focuses a new button, so readers announce its name and the range.
-  const step = (action, icon, label, off) => `<button type="button" data-action="${action}" aria-disabled="${off}"
-    aria-describedby="runs-range"><ha-icon icon="${icon}"></ha-icon>${esc(label)}</button>`;
-  const pager = pages < 2 ? "" : `<nav class="pager" aria-label="${esc(text.runPages.label)}" data-page="${first / RUNS_PER_PAGE}">${step("page-prev", "mdi:chevron-left", text.runPages.prev, first === 0)}
-    <span class="muted num" id="runs-range">${esc(text.range(first + 1, first + rows.length, runs.length))}</span>${step("page-next", "mdi:chevron-right", text.runPages.next, first + RUNS_PER_PAGE >= runs.length)}</nav>`;
-  return `<p class="muted num">${esc(text.medians(kwh(hass, median("discharge")), kwh(hass, median("charge"))))}</p>${seg}<ul class="runs">${rows.join("")}</ul>${pager}`;
+  return `<p class="muted num">${esc(text.medians(kwh(hass, median("discharge")), kwh(hass, median("charge"))))}</p>${seg}<ul class="runs">${rows.join("")}</ul>${pagerHtml("runs", text, first, runs.length)}`;
 }
 
 function energyHtml(hass, model, text) {
@@ -623,10 +616,10 @@ function energyHtml(hass, model, text) {
   return `<div class="meters">${meters}</div>${line ? `<p class="muted">${esc(line)}</p>` : ""}`;
 }
 
-function outagesTab(hass, model, text, shown) {
+function outagesTab(hass, model, text, page) {
   const time = formatter(localeOf(hass), { hour: "2-digit", minute: "2-digit" });
   const tracked = Boolean(model.pack?.entities?.restarts);
-  return restartsHtml(model.restarts, text, { day: (date) => day(hass, date), clock: (date) => time.format(date), tracked, shown });
+  return restartsHtml(model.restarts, text, { day: (date) => day(hass, date), clock: (date) => time.format(date), tracked, page });
 }
 
 function correctionsTab(hass, model, text) {
@@ -635,9 +628,9 @@ function correctionsTab(hass, model, text) {
 
 const PANELS = {
   capacity: (hass, model, text, { width }) => capacityChart(hass, model, text, width),
-  runs: (hass, model, text, { runs }) => runsHtml(hass, model, text, runs),
+  runs: (hass, model, text, { runs, page }) => runsHtml(hass, model, text, runs, page),
   energy: (hass, model, text) => energyHtml(hass, model, text),
-  restarts: (hass, model, text, { shown }) => outagesTab(hass, model, text, shown),
+  restarts: (hass, model, text, { page }) => outagesTab(hass, model, text, page),
   corrections: (hass, model, text) => correctionsTab(hass, model, text),
 };
 
@@ -1007,8 +1000,8 @@ class MarstekBatteryHealthCard extends MarstekCard {
   constructor() {
     super();
     this._tab = TABS[0];
-    this._runs = { filter: "all", page: 0 };
-    this._shown = OUTAGES_STEP;
+    this._runs = { filter: "all" };
+    this._page = 0;
     this._id = `mbh${(cardCount += 1)}`;
     this.shadowRoot.addEventListener("click", (event) => this._onClick(event));
     this.shadowRoot.addEventListener("keydown", (event) => this._onKey(event));
@@ -1033,10 +1026,10 @@ class MarstekBatteryHealthCard extends MarstekCard {
     return pack ? [pack] : [];
   }
 
-  _view() { return [this._tab, this._config, this._width, this._runs, this._shown]; }
+  _view() { return [this._tab, this._config, this._width, this._runs, this._page]; }
 
   _html() {
-    return healthCardHtml(this._hass, this._config, this._tab, this._id, { width: this._width, runs: this._runs, shown: this._shown });
+    return healthCardHtml(this._hass, this._config, this._tab, this._id, { width: this._width, runs: this._runs, page: this._page });
   }
 
   // Redraw when the width moves to another 40 px step, so the chart fits it.
@@ -1052,7 +1045,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
 
   _select(tab) {
     this._tab = tab;
-    this._shown = OUTAGES_STEP;
+    this._page = 0;
     this._render(true, `[data-tab="${tab}"]`);
   }
 
@@ -1068,22 +1061,15 @@ class MarstekBatteryHealthCard extends MarstekCard {
     const pack = findPack(this._hass, this._config);
     if (verb === "device") openDevice(this, pack?.deviceId);
     else if (verb === "csv" && pack) saveCsv(readModel(this._hass, pack), arg);
-    else if (verb === "runs" || verb === "page") this._showRuns(verb, arg, action);
-    else if (verb === "more") this._showMore();
-  }
-
-  // Focus moves to the first row the press revealed, without scrolling the page.
-  _showMore() {
-    const first = this._shown;
-    this._shown += OUTAGES_STEP;
-    this._render(true, `[data-outage="${first}"]`);
+    else if (verb === "runs" || verb === "page") this._showPage(verb, arg, action);
   }
 
   // A filter starts again on page one. A page step counts from the page on
-  // screen, because the stored one can be past the end once runs drop out.
-  _showRuns(verb, arg, button) {
+  // screen, because the stored one can be past the end once entries drop out.
+  _showPage(verb, arg, button) {
     const shown = Number(button.closest("[data-page]")?.dataset.page ?? 0);
-    this._runs = verb === "runs" ? { filter: arg, page: 0 } : { ...this._runs, page: shown + (arg === "next" ? 1 : -1) };
+    if (verb === "runs") this._runs = { filter: arg };
+    this._page = verb === "runs" ? 0 : shown + (arg === "next" ? 1 : -1);
     this._render(true, `[data-action="${verb}-${arg}"]`);
   }
 

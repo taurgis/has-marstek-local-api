@@ -13,12 +13,16 @@
 // The kind is written out next to its icon, so colour never carries it alone
 // (https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html). An empty
 // tab says why it is empty (https://contributors.home-assistant.io/design/patterns/empty-states/).
+// A long log pages like Runs, so the card keeps its height on a dashboard. A
+// day split over two pages keeps its heading and full-day count on both.
 
 const TRACES = ["energy_rollback", "ct_lost", "mode_changed", "boot_pulse"];
 const KINDS = ["restart", "network_reset", "dropout"];
 const KIND_ICON = { restart: "mdi:restart-alert", network_reset: "mdi:lan-disconnect", dropout: "mdi:wifi-off" };
 const MONTH_MS = 30 * 86400 * 1000;
-export const OUTAGES_STEP = 10;
+
+// Same ?v= token as this module, like the card's own imports.
+const { PAGE_SIZE, firstOf, pagerHtml } = await import(`./marstek-battery-health-pager.js${new URL(import.meta.url).search}`);
 
 export const RESTART_STYLES = `
   .log h3 { margin: 6px 0 0; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary-text-color); }
@@ -31,7 +35,6 @@ export const RESTART_STYLES = `
   .outages .head strong { font-weight: 500; }
   .outages .head time { flex: none; color: var(--secondary-text-color); }
   .outages .why { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
-  .more { align-self: center; min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; color: var(--primary-color); border: 1px solid var(--divider-color); }
   .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; text-align: center; }
   .empty ha-icon { --mdc-icon-size: 40px; color: var(--secondary-text-color); }
   .empty h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; }
@@ -78,10 +81,8 @@ function whyOf(item, text) {
   return [first, esc(reasons[item.kind])].filter(Boolean).join(" · ");
 }
 
-function rowHtml(item, index, shown, text, clock) {
-  // The first row a "Show more" press reveals takes focus, so it can be read on.
-  const focus = index === shown - OUTAGES_STEP && index > 0 ? ` tabindex="-1" data-outage="${index}"` : "";
-  return `<li class="${item.kind}"${focus}><ha-icon icon="${KIND_ICON[item.kind]}"></ha-icon>
+function rowHtml(item, text, clock) {
+  return `<li class="${item.kind}"><ha-icon icon="${KIND_ICON[item.kind]}"></ha-icon>
     <span><span class="head"><strong>${esc(text.outageKind[item.kind])}</strong>
       <time class="num" datetime="${esc(item.date.toISOString())}">${esc(clock(item.date))}</time></span>
       <span class="why num">${whyOf(item, text)}</span></span></li>`;
@@ -95,7 +96,7 @@ function sinceOf(attrs, now, day) {
 
 // ``day`` and ``clock`` format a Date in the viewer's locale; the card passes
 // its own. ``now`` is a Date, so Today and Yesterday can be tested.
-export function restartsHtml(attrs, text, { day, clock, now = new Date(), tracked = true, shown = OUTAGES_STEP }) {
+export function restartsHtml(attrs, text, { day, clock, now = new Date(), tracked = true, page = 0 }) {
   if (!attrs) return `<p class="muted">${esc(tracked ? text.outagesWaiting : text.outagesOff)}</p>`;
   const since = sinceOf(attrs, now, day);
   const items = outagesOf(attrs);
@@ -107,17 +108,16 @@ export function restartsHtml(attrs, text, { day, clock, now = new Date(), tracke
   yesterday.setDate(now.getDate() - 1);
   const names = { [localDay(now)]: text.today, [localDay(yesterday)]: text.yesterday };
   const days = new Map();
+  const first = firstOf(page, items.length);
   items.forEach((item, index) => {
     const key = localDay(item.date);
     const group = days.get(key) || { title: names[key] || day(item.date), restart: 0, network_reset: 0, dropout: 0, rows: [] };
     group[item.kind] += 1;
-    if (index < shown) group.rows.push(rowHtml(item, index, shown, text, clock));
+    if (index >= first && index < first + PAGE_SIZE) group.rows.push(rowHtml(item, text, clock));
     days.set(key, group);
   });
   const lists = [...days.values()].filter((group) => group.rows.length).map((group, index) => `<h3 id="outage-day-${index}">${esc(`${group.title} · ${text.dayCount(group.restart, group.dropout, group.network_reset)}`)}</h3>
     <ul class="outages" aria-labelledby="outage-day-${index}">${group.rows.join("")}</ul>`).join("");
-  const rest = items.length - shown;
-  const more = rest > 0 ? `<button class="more" type="button" data-action="more-outages">${esc(text.moreOutages(Math.min(rest, OUTAGES_STEP)))}</button>` : "";
   const summary = text.outageSummary(count(attrs.restarts_30d), count(attrs.dropouts_30d), since, count(attrs.network_resets_30d));
-  return `<p class="muted num">${esc(summary)}</p><div class="log">${lists}</div>${more}`;
+  return `<p class="muted num">${esc(summary)}</p><div class="log">${lists}</div>${pagerHtml("restarts", text, first, items.length)}`;
 }

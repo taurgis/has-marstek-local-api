@@ -132,6 +132,11 @@ const windows = Array.from({ length: 12 }, (_, i) => ({
   direction: i % 2 ? "charge" : "discharge", start_soc: 40, end_soc: 70, soc_delta: 30,
   capacity_wh: 4700 + i, closed_at: 1760000000 + i * 3600, duration_s: 2400, average_power_w: 900,
 }));
+// More than one page, so the Restarts tab shows its pager too.
+const outages = Array.from({ length: 12 }, (_, i) => ({
+  at: new Date(Date.UTC(2026, 9, 27, 12 - i)).toISOString(), kind: "dropout",
+  offline_s: 120, failed_polls: 2, evidence: [],
+}));
 function hass(power, soc) {
   const stamp = "2026-10-28T06:10:" + String(power % 60).padStart(2, "0") + "+00:00";
   const state = (value, attributes = {}) => ({
@@ -156,7 +161,7 @@ function hass(power, soc) {
       "sensor.soh": state(93.6, { unit_of_measurement: "%" }),
       "sensor.in": state(1200000, { unit_of_measurement: "Wh" }),
       "sensor.out": state(1100000, { unit_of_measurement: "Wh" }),
-      "sensor.restarts": state(1, { restarts_30d: 1, dropouts_30d: 0, outages: [] }),
+      "sensor.restarts": state(0, { restarts_30d: 0, dropouts_30d: 12, outages }),
     },
   };
 }
@@ -406,9 +411,14 @@ async def _clicks_keep_scroll(http_port: int, cdp_port: int) -> None:
             )
             assert selected == "true", name
 
-        await press('[data-tab="runs"]')
-        await press('[data-action="page-next"]')
-        await press('[data-action="page-prev"]')
+        for name in ("restarts", "runs"):
+            await press(f'[data-tab="{name}"]')
+            await press('[data-action="page-next"]')
+            shown = await cdp.evaluate(
+                f"window.__card.shadowRoot.getElementById('{name}-range').textContent"
+            )
+            assert shown == "9\u201312 of 12", (name, shown)
+            await press('[data-action="page-prev"]')
         for name in ("discharge", "charge", "all"):
             await press(f'[data-action="runs-{name}"]')
             state = await cdp.evaluate(
