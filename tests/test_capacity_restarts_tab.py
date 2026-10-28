@@ -27,7 +27,7 @@ def _node(tmp_path: Path, body: str, *args: Any) -> Any:
     script = tmp_path / "restarts-tab.mjs"
     script.write_text(
         f"import {{ COPY }} from {json.dumps(_COPY.resolve().as_uri())};\n"
-        "import { restartsHtml, outagesOf, OUTAGES_STEP } from "
+        "import { restartsHtml, outagesOf } from "
         f"{json.dumps(_RESTARTS.resolve().as_uri())};\n"
         "const [attrs, language, extra] = process.argv.slice(2).map((arg) => JSON.parse(arg));\n"
         "const text = COPY[language];\n"
@@ -111,23 +111,52 @@ def test_outages_are_grouped_by_day_newest_first(tmp_path: Path) -> None:
     assert "data-action" not in html
 
 
-def test_long_logs_show_ten_rows_and_a_show_more_button(tmp_path: Path) -> None:
-    """The first revealed row can take focus; the button counts what is left."""
+def test_long_logs_page_eight_rows_at_a_time(tmp_path: Path) -> None:
+    """A long log pages like Runs, so the card keeps its height on a dashboard."""
     outages = [_outage(f"2026-10-{day:02d}T08:00:00+00:00") for day in range(1, 26)]
     attrs = {"restarts_30d": 25, "dropouts_30d": 0, "outages": outages}
 
     first = _tab(tmp_path, attrs)
-    assert first.count("<li") == 10
-    assert "data-outage" not in first
-    assert 'data-action="more-outages">Show 10 more</button>' in first
+    assert first.count("<li") == 8
+    assert 'aria-label="Pages of restarts" data-page="0"' in first
+    assert 'data-action="page-prev" aria-disabled="true"' in first
+    assert 'data-action="page-next" aria-disabled="false"' in first
+    assert 'aria-describedby="restarts-range"' in first
+    assert '<span class="muted num" id="restarts-range">1\u20138 of 25</span>' in first
+    assert "Show" not in first
 
-    second = _tab(tmp_path, attrs, "nl", shown=20)
-    assert second.count("<li") == 20
-    assert 'tabindex="-1" data-outage="10"' in second
-    assert ">Toon nog 5</button>" in second
-    assert "25 herstarts en 0 netwerkonderbrekingen in de laatste 30 dagen." in second
+    last = _tab(tmp_path, attrs, "nl", page=3)
+    assert last.count("<li") == 1
+    assert ">25\u201325 van 25</span>" in last
+    assert 'data-action="page-next" aria-disabled="true"' in last
+    assert 'aria-label="Pagina\'s met herstarts"' in last
+    assert "25 herstarts en 0 netwerkonderbrekingen in de laatste 30 dagen." in last
 
-    assert ">Show" not in _tab(tmp_path, attrs, shown=30)
+    # A page past the end, after old entries dropped out, shows the last one.
+    assert _tab(tmp_path, attrs, page=9) == _tab(tmp_path, attrs, page=3)
+
+
+def test_a_day_split_over_two_pages_keeps_its_heading_and_count(tmp_path: Path) -> None:
+    """Four restarts on 19 October span rows 7-10; both pages head them with all four."""
+    single = [_outage(f"2026-10-{day:02d}T08:00:00+00:00") for day in range(20, 26)]
+    split = [_outage(f"2026-10-19T{hour:02d}:00:00+00:00") for hour in (8, 9, 10, 11)]
+    attrs = {"restarts_30d": 10, "dropouts_30d": 0, "outages": single + split}
+
+    first = _tab(tmp_path, attrs)
+    second = _tab(tmp_path, attrs, page=1)
+    assert first.count("<li") == 8
+    assert second.count("<li") == 2
+    assert first.count(">day(19) · 4 restarts</h3>") == 1
+    assert second.count("<h3") == 1
+    assert ">day(19) · 4 restarts</h3>" in second
+
+
+def test_a_short_log_has_no_pager(tmp_path: Path) -> None:
+    """One page of rows needs no Newer/Older buttons."""
+    outages = [_outage(f"2026-10-{day:02d}T08:00:00+00:00") for day in range(1, 9)]
+    html = _tab(tmp_path, {"restarts_30d": 8, "dropouts_30d": 0, "outages": outages})
+    assert html.count("<li") == 8
+    assert "pager" not in html
 
 
 @pytest.mark.parametrize(

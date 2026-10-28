@@ -37,7 +37,7 @@ The **Capacity** tab is the weekly chart: a line for the weekly estimate, a dot 
 
 <img src="screenshots/battery-health-runs-desktop.png" alt="Runs tab on Venus E. Charge and discharge runs of about 20 state-of-charge points, each with a date, a capacity, and a comparison to the median. A link downloads the runs as CSV." width="840" />
 
-**Runs** lists every kept run, newest first, eight to a page. Filter with **All**, **Charge**, or **Discharge**. Each row is one stretch that moved the state of charge by about 20 points, with its capacity and how far it sits from the median for that direction. The line above the list gives the median of the discharge runs and the median of the charge runs. **Download runs (CSV)** saves every kept run, including ones hidden by the filter.
+**Runs** lists every kept run, newest first, eight to a page, with **Newer** and **Older** buttons. Filter with **All**, **Charge**, or **Discharge**. Each row is one stretch that moved the state of charge by about 20 points, with its capacity and how far it sits from the median for that direction. The line above the list gives the median of the discharge runs and the median of the charge runs. **Download runs (CSV)** saves every kept run, including ones hidden by the filter.
 
 ### Energy
 
@@ -63,8 +63,10 @@ start-up test at a linked plug. A restart that fell between two polls says
 so instead of an offline time. A brief network reset row explains in one
 sentence that the battery dropped off the network for a few seconds and ran
 its start-up check without restarting. A dropout row says there was no sign
-of a restart. Ten rows show at first; **Show more** adds ten at a time and moves
-focus to the first new row. **Download restarts (CSV)** saves `at`, `kind`,
+of a restart. Like **Runs**, the log shows eight rows to a page, with
+**Newer** and **Older** buttons and the range on screen, so the card keeps its
+height on a dashboard. A day that runs onto the next page keeps its heading and
+its count there. **Download restarts (CSV)** saves `at`, `kind`,
 `offline_s`, `failed_polls`, and `evidence` (trace names separated by `;`).
 How the kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
 With no outage in 30 days the tab says so; with the **Restarts** sensor
