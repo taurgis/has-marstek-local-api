@@ -53,6 +53,7 @@ UART_PORT = 3456
 CT_PORT = 12345  # CT003 meter protocol (AstraMeter listens here)
 CAN_PORT = 3457
 METER_PORT = 8099
+MODEM_RESET_PORT = 3466  # fc41d.py hears the module reset line here
 
 RESC = """\
 mach create "marstek"
@@ -86,6 +87,20 @@ SPI_CS_HOOK = (
 # UART TC follows the last stop bit, so PMU 301's DMA TX-complete IRQ clears
 # the stale TC on UART7 and waits for a fresh one before posting the Modbus
 # task. Keeping TC on through SR writes stands in for that later edge.
+# The FC41D reset line. Control 150's reset routine (0x0800b224) writes BRR
+# to pull PE5 and PE4 low, waits 1 s and writes BSRR to raise them. The hook
+# sends the level (0 or 1) to fc41d.py, which switches the module off while
+# the line is low, the way the real module loses its Wi-Fi link and sockets.
+MODEM_RESET_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.{port} "'
+    "lvl = 0 if ((offset == 0x14 and value & {mask:#x}) or "
+    "(offset == 0x10 and value & {high:#x})) else "
+    "(1 if (offset == 0x10 and value & {mask:#x}) else -1); "
+    "(lambda s: (s.sendto(str(lvl), ('127.0.0.1', {udp})), s.close()))"
+    "(__import__('socket').socket(2, 2)) if lvl >= 0 else None"
+    '"'
+)
+
 UART7_TC_HOOK = (
     'sysbus SetHookBeforePeripheralWrite sysbus.uart7 "'
     "value = (value | 0x40) if offset == 0 else value"
@@ -114,6 +129,8 @@ class Board:
     eeprom_wait: bool = True  # reboot once so a fresh EEPROM is read back
     spi_flash: bool = False  # settings in SPI1 NOR flash (renode/spiflash.py), CS on PA4
     modem_args: tuple[str, ...] = ()  # extra fc41d.py options for this board
+    # (GPIO port, pin mask) of the FC41D reset line, or None where it is unknown.
+    modem_reset: tuple[str, int] | None = None
 
 
 BOARDS = {
@@ -124,6 +141,7 @@ BOARDS = {
         wifi_uart="wifi_uart",
         can="can1",
         uarts=tuple(f"usart{n}" for n in range(1, 6)),
+        modem_reset=("gpioPortE", 0x30),  # PE4/PE5
     ),
     # Same repl. VNSEMINI-0 PMU 301 loads at 0x08008000 (catalog loadAddress).
     # A boot log showed the FC41D AT stream on USART2 (0x40004400, IRQ 38),
@@ -324,11 +342,14 @@ def _link_lines(board: Board) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _hook_lines(board: Board) -> str:
-    """Bus hooks that stand in for hardware timing. Only PMU 301 needs any."""
+def _hook_lines(board: Board, reset_port: int) -> str:
+    """Bus hooks that stand in for hardware the emulator has no model of."""
     lines = [SPI_CS_HOOK] if board.spi_flash else []
     if board.link_uarts:
         lines.append(UART7_TC_HOOK)
+    if board.modem_reset:
+        port, mask = board.modem_reset
+        lines.append(MODEM_RESET_HOOK.format(port=port, mask=mask, high=mask << 16, udp=reset_port))
     return "".join(line + "\n" for line in lines)
 
 
@@ -400,7 +421,7 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         wifi_uart=board.wifi_uart,
         can=board.can,
         links=_link_lines(board),
-        hooks=_hook_lines(board),
+        hooks=_hook_lines(board, args.modem_reset_port),
         tuning="".join(
             [
                 f'emulation SetGlobalQuantum "{args.quantum}"\n' if args.quantum else "",
@@ -489,6 +510,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--uart-port", type=int, default=UART_PORT, help="Wi-Fi UART TCP port")
     parser.add_argument("--can-port", type=int, default=CAN_PORT, help="CAN bridge TCP port")
     parser.add_argument(
+        "--modem-reset-port",
+        type=int,
+        default=MODEM_RESET_PORT,
+        help="UDP port on 127.0.0.1 where fc41d.py hears the module reset line",
+    )
+    parser.add_argument(
         "--meter-port", type=int, default=METER_PORT, help="can_peers.py grid meter HTTP port"
     )
     parser.add_argument("--meter-bind", default="127.0.0.1", help="Address the meter HTTP binds")
@@ -572,6 +599,8 @@ def main() -> int:
         fc41d_cmd += ["--loopback-port", str(CT_PORT)]
     if args.broadcast_to:
         fc41d_cmd += ["--broadcast-to", args.broadcast_to]
+    if board.modem_reset:
+        fc41d_cmd += ["--reset-port", str(args.modem_reset_port)]
     fc41d_cmd += board.modem_args
     peers_cmd = [
         sys.executable, str(HERE / "can_peers.py"), "--port", str(args.can_port),

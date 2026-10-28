@@ -58,6 +58,7 @@ def _render(board_name: str, work: Path) -> tuple[str, str]:
         local_api_port=30000,
         can_port=3457,
         uart_port=3456,
+        modem_reset_port=3466,
         ble_mac="02:ee:00:00:00:02",
         quantum=None,
         mips=None,
@@ -100,7 +101,9 @@ def test_shared_control_board_keeps_timer6_dma_and_default_uart_clock(tmp_path: 
     assert "@TIMER6_DMA@" not in repl
     assert "@SPI1_SCRIPT@" not in repl
     assert str(run_firmware.HERE / "renode" / "spi2.py") in repl
-    assert "SetHookBeforePeripheralWrite" not in resc
+    # Only the FC41D reset line is hooked on the shared board.
+    assert resc.count("SetHookBeforePeripheralWrite") == 1
+    assert "sysbus.gpioPortE" in resc
     assert not (tmp_path / "spiflash.py").exists()
 
 

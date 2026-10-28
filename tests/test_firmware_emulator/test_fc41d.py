@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from typing import Any
@@ -71,3 +72,52 @@ def test_without_lan_broadcast_the_subnet_broadcast_is_kept() -> None:
     """The other boards still send the address the firmware chose."""
     modem, _writer = _modem(netmask="255.255.255.0")
     assert _send(modem, "172.28.0.255") == ("172.28.0.255", 30000)
+
+
+class _Closable:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+async def test_reset_line_switches_the_module_off_and_back_on() -> None:
+    """Low closes every socket and silences the module; high boots and rejoins."""
+    modem, writer = _modem(boot_s=0.0, rejoin_s=0.0)
+    transport = _Closable()
+    modem.services[3] = fc41d.UdpService(3, 30000, transport=transport)  # type: ignore[arg-type]
+
+    modem.reset_line(0)
+    assert transport.closed is True
+    assert modem.services == {}
+    assert modem.powered is False
+
+    modem.handle('AT+QIOPEN=3,"UDP SERVICE","0.0.0.0",0,30000,1')
+    assert b"+QIOPEN: 3,1" in writer.data  # no address until the rejoin
+
+    writer.data = b""
+    modem.reset_line(1)
+    await asyncio.sleep(0.01)
+    assert modem.powered is True
+    assert modem.linked is True
+    assert writer.data.index(b"WLAN_CONNECTED") < writer.data.index(b"GOT_IP")
+
+
+async def test_a_second_pulse_cancels_the_first_boot() -> None:
+    """Only the boot after the last pulse brings the module back."""
+    modem, writer = _modem(boot_s=0.02, rejoin_s=0.0)
+    modem.reset_line(0)
+    modem.reset_line(1)
+    modem.reset_line(0)
+    await asyncio.sleep(0.05)
+    assert modem.powered is False
+    assert b"GOT_IP" not in writer.data
+
+
+def test_reset_line_ignores_a_high_level_while_powered() -> None:
+    """Boot-time GPIO set-up raises the line on a module that is already on."""
+    modem, writer = _modem()
+    modem.reset_line(1)
+    assert modem.powered is True
+    assert writer.data == b""

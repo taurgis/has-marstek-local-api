@@ -50,6 +50,10 @@ class ModemConfig:
     autojoin: bool = False
     # Send a broadcast to the reported subnet as 255.255.255.255 (--lan-broadcast).
     lan_broadcast: bool = False
+    # After the reset line goes high: seconds until the module answers AT
+    # commands, then until it has rejoined the saved AP and has an address.
+    boot_s: float = 1.0
+    rejoin_s: float = 4.0
 
 
 @dataclass
@@ -60,6 +64,17 @@ class UdpService:
     local_port: int
     transport: asyncio.DatagramTransport | None = None
     last_peer: tuple[str, int] | None = None
+
+
+class _ResetLine(asyncio.DatagramProtocol):
+    """The reset line level, sent by run_firmware.py's GPIO hook as b"0" or b"1"."""
+
+    def __init__(self, current: list[FC41D]) -> None:
+        self._current = current
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        if self._current and data.strip() in (b"0", b"1"):
+            self._current[0].reset_line(int(data.strip()))
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
@@ -85,6 +100,12 @@ class FC41D:
     # once it does. A fixed "ADVERTISING" left every disable request unanswered.
     ble_advertising: bool = True
     joined: bool = False  # --autojoin already reported GOT_IP on this UART link
+    # False while the MCU holds the reset line low and until the module has
+    # booted again. An unpowered module answers nothing and has no sockets.
+    powered: bool = True
+    resets: int = 0  # reset pulses seen; a newer pulse cancels an older boot
+    linked: bool = True  # has an address; False from a reset until the rejoin
+    held: bool = False  # the reset line is low right now
 
     # ---- output -------------------------------------------------------
     def send(self, data: bytes) -> None:
@@ -100,6 +121,43 @@ class FC41D:
         _LOGGER.info("URC <- %s", line)
         self.send(CRLF + line.encode() + CRLF)
 
+    def reset_line(self, level: int) -> None:
+        """Follow the module reset line: 0 switches it off, 1 starts its boot.
+
+        The Control firmware does not rejoin Wi-Fi or reopen its sockets after
+        a reset. The module rejoins the AP it saved (``AT+QSTAAPINFODEF``) by
+        itself, and the firmware's ``AT+QISTATE`` checks find the sockets gone
+        and reopen them, so the outage is as long as the firmware makes it.
+        """
+        if level == 0 and not self.held:
+            # A pulse during a boot starts it over.
+            self.resets += 1
+            self.held = True
+            self.powered = False
+            self.joined = False
+            self.linked = False
+            self.pending_payload = None
+            for service in self.services.values():
+                if service.transport:
+                    service.transport.close()
+            self.services.clear()
+            _LOGGER.warning("reset line low: module off, sockets closed")
+        elif level == 1 and self.held:
+            self.held = False
+            asyncio.get_running_loop().create_task(self._boot(self.resets))
+
+    async def _boot(self, pulse: int) -> None:
+        await asyncio.sleep(self.config.boot_s)
+        if pulse != self.resets:
+            return
+        self.powered = True
+        _LOGGER.warning("module booted after reset #%d", pulse)
+        await asyncio.sleep(self.config.rejoin_s)
+        if pulse == self.resets and self.powered:
+            self.linked = True
+            self.urc("+QSTASTAT:WLAN_CONNECTED")
+            self.urc("+QSTASTAT:GOT_IP")
+
     def push_udp(self, service: UdpService, data: bytes, addr: tuple[str, int]) -> None:
         _LOGGER.info("UDP %s:%d -> fw[%d] %r", addr[0], addr[1], service.conn_id, data[:200])
         head = f'+QIURC: "recv",{service.conn_id},{len(data)},"{addr[0]}",{addr[1]}'
@@ -113,6 +171,9 @@ class FC41D:
             if not chunk:
                 _LOGGER.warning("UART socket closed")
                 return
+            if not self.powered:
+                buf = b""  # an unpowered module hears nothing
+                continue
             buf += chunk
             buf = await self._consume(buf)
 
@@ -245,6 +306,9 @@ class FC41D:
             return
         conn_id, remote_port, local_port = int(m.group(1)), int(m.group(3)), int(m.group(4))
         self.reply("OK")
+        if not self.linked:
+            self.urc(f"+QIOPEN: {conn_id},1")  # no address yet
+            return
         bind_ip = "127.0.0.1" if remote_port in self.config.loopback_ports else self.config.bind_ip
         asyncio.get_running_loop().create_task(self._open_udp(conn_id, local_port, bind_ip))
 
@@ -351,7 +415,15 @@ async def _main(args: argparse.Namespace) -> None:
         autojoin=args.autojoin,
         netmask=args.netmask,
         lan_broadcast=args.lan_broadcast,
+        boot_s=args.boot_seconds,
+        rejoin_s=args.rejoin_seconds,
     )
+    current: list[FC41D] = []
+    if args.reset_port:
+        loop = asyncio.get_running_loop()
+        await loop.create_datagram_endpoint(
+            lambda: _ResetLine(current), local_addr=("127.0.0.1", args.reset_port)
+        )
     while True:
         try:
             reader, writer = await asyncio.open_connection(args.uart_host, args.uart_port)
@@ -360,6 +432,7 @@ async def _main(args: argparse.Namespace) -> None:
             continue
         _LOGGER.info("connected to firmware UART at %s:%d", args.uart_host, args.uart_port)
         modem = FC41D(config, writer)
+        current[:] = [modem]
         await modem.run(reader)
         await asyncio.sleep(0.5)
 
@@ -412,6 +485,21 @@ def main() -> None:
         action="store_true",
         help="Report WLAN_CONNECTED and GOT_IP after AT+QWLMAC without a join command, "
         "like a module that already holds AP credentials (VNSEMINI-0 PMU 301)",
+    )
+    parser.add_argument(
+        "--reset-port",
+        type=int,
+        default=0,
+        help="UDP port on 127.0.0.1 for the module reset line (run_firmware.py's GPIO hook)",
+    )
+    parser.add_argument(
+        "--boot-seconds", type=float, default=1.0, help="Module boot time after a reset"
+    )
+    parser.add_argument(
+        "--rejoin-seconds",
+        type=float,
+        default=4.0,
+        help="Wi-Fi join and DHCP time after that boot",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
