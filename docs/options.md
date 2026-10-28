@@ -1,6 +1,6 @@
 # Options
 
-Open **Settings → Devices & services → Marstek → (device) → Configure**.
+Open **Settings** > **Devices & services** > **Marstek** > your battery > **Configure**.
 
 ## Polling Intervals
 
@@ -16,10 +16,10 @@ The integration uses tiered polling to reduce device load:
 
 Options also expose request timing knobs to avoid UDP bursts:
 
-- Parallel API requests (advanced)
-- Request delay (range 1–30s)
-- Request timeout (range 5–60s)
-- Failures before unavailable (range 1–10)
+- **Parallel API requests** (advanced, default off)
+- **Delay between requests** (default 5 s, range 1–30 s)
+- **Request timeout** (default 10 s, range 5–60 s)
+- **Failures before unavailable** (default 3, range 1–10)
 
 ### Parallel API requests (advanced)
 
@@ -30,16 +30,24 @@ inter-request delay.
 - Can increase API timeouts/failures, especially on Wi-Fi.
 - Wired LAN is recommended if this mode is enabled. Firmware 150 fixed Local
   API **Ethernet** sends; Wi-Fi still goes through the FC41D module and can
-  time out more often (limited local testing). Read requests on Wi-Fi get up
-  to three extra copies, at 0.5 s, 2.5 s and 5 s, while the device stays
-  silent; copies past the **Request timeout** are skipped. Ethernet replies
-  typically arrive well under 500 ms, so no copy is sent.
-- Ignored on Control firmware the integration treats as reset-prone
-  (generation below 150, including Open API `ver` 1476 / app 147.6). Venus E
+  time out more often (limited local testing).
+- Ignored on Venus C and other HMG-50 firmware (the Open API shares a Wi-Fi
+  channel with the battery's meter link there), and on firmware the
+  integration treats as reset-prone (Venus A, D and E 3.0 below 150, including
+  Open API `ver` 1476 / app 147.6; Venus E mini below 150; HMG-50 below 156;
+  a missing or unknown `ver`). Venus E
   3.0 **150** is the vendor Local API Ethernet fix. Reset-prone devices also
   serialize unicast requests and skip `Bat.GetStatus`.
 
-The **Request delay** field remains configurable, but it is ignored while
+### Repeated requests
+
+This happens whether parallel requests are on or off. On firmware the
+integration does not treat as reset-prone (and not on Venus C), a read request
+that gets no reply is sent again at 0.5 s, 2.5 s and 5 s, as long as that stays
+within the **Request timeout**. A reply stops the copies, so a battery that
+answers within 0.5 s never gets one.
+
+The **Delay between requests** field remains configurable, but it is ignored while
 parallel API requests is enabled.
 
 The failures threshold controls when entities are marked unavailable. Until the
@@ -52,12 +60,12 @@ flapping on an unstable device API.
 
 These settings affect automations, command validation, and how off-grid power is shown:
 
-- Action charge power (W, range -5000–0, default -1300): default power for the **Charge** device action
-- Action discharge power (W, range 0–5000, default 800): default power for the **Discharge** device action
-- Socket limit: toggles an internal power-limit model used to validate requested power (applies to services and actions)
-- Clamp negative off-grid power to 0 W (default **off**): the Off-grid power sensor reports 0 W instead of small negative readings some firmware reports while charging with nothing on the EPS socket. Derived battery power still uses the signed value from the parser.
+- **Default charge power** (W, range -5000–0, default -1300): default power for the **Charge** device action
+- **Default discharge power** (W, range 0–5000, default 800): default power for the **Discharge** device action
+- **Enforce 800 W discharge limit**: caps the discharge power that services and actions may request, for batteries plugged into a wall socket
+- **Clamp negative off-grid power to 0 W** (default **off**): the Off-grid power sensor reports 0 W instead of small negative readings some firmware reports while charging with nothing on the EPS socket. Derived battery power still uses the signed value from the parser.
 
-Socket limit defaults to **on** for Venus C, Venus D, Venus E and Venus E mini, and **off** for Venus A. While it is on, validated discharge power is capped at **800 W**. With it off, the cap is the per-family maximum:
+The 800 W limit defaults to **on** for Venus C, Venus D, Venus E and Venus E mini, and **off** for Venus A. While it is on, a discharge request above **800 W** is refused. With it off, the cap is the per-family maximum:
 
 | Family | Maximum absolute power |
 |---|---|
@@ -76,7 +84,7 @@ Charging is always validated against the same per-family maximum (as a negative 
 
 <img src="screenshots/options-battery-health-dashboard.png" alt="Battery health dashboard option with Show Battery health in the sidebar turned on." width="720" />
 
-What the page shows, and how to add the same cards to a dashboard you already have, is the [visual tour](screenshots.md#2-battery-health-sidebar-dashboard).
+What the page shows, and how to add the same cards to a dashboard you already have, is the [visual tour](screenshots.md#battery-health-sidebar-dashboard).
 
 ## Energy meter (optional)
 
@@ -97,6 +105,6 @@ How to link the plug, step by step, is [Link a smart plug](usable-capacity.md#li
 
 ## Reconfigure
 
-If you need to reconfigure the entry (e.g., after changes), use the device’s configure/reconfigure flow.
+To change a battery's IP address or port, open **Settings** > **Devices & services** > **Marstek**, select the three-dot menu next to the battery, and choose **Reconfigure**.
 
 <img src="screenshots/device-reconfigure.png" alt="Reconfigure flow" width="560" />

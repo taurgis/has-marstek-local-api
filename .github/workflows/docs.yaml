@@ -1,0 +1,84 @@
+# Builds the VitePress site in docs/ and deploys it to GitHub Pages at
+# https://marstek.rhino-inquisitor.com/.
+#
+# One-time repository setup (not stored in this repo):
+# - Settings > Pages > Build and deployment > Source: "GitHub Actions".
+# - Settings > Pages > Custom domain: marstek.rhino-inquisitor.com, then
+#   "Enforce HTTPS" once the certificate is issued.
+# - DNS: a CNAME record for marstek.rhino-inquisitor.com pointing to
+#   taurgis.github.io.
+# With an Actions workflow, GitHub ignores a CNAME file in the artifact, so the
+# domain lives only in those settings.
+# https://vitepress.dev/guide/deploy#github-pages
+# https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/docs.yaml"
+  # Pull requests only build, so a dead link fails review instead of deploy.
+  pull_request:
+    paths:
+      - "docs/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/docs.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One Pages deployment at a time; never cancel one that is running.
+concurrency:
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so "Last updated" reflects each page's last commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with VitePress
+        run: npm run docs:build
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

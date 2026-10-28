@@ -6,30 +6,33 @@ The pictures use two lab batteries, **Venus E (3.0)** and **Venus A**, plus a st
 
 The overview is the [README](../README.md). The calculation behind the estimate is [Battery health](usable-capacity.md#how-it-works-under-the-hood).
 
-## 1. Discovery and setup
+## Discovery and setup
 
 Turn on **Open API** in the Marstek app first, and keep Home Assistant on the same network as the battery. Then:
 
-1. Go to **Settings → Devices & services**.
+1. Go to **Settings** > **Devices & services**.
 2. Choose **Add integration** and search for **Marstek**.
 3. Pick the battery from the discovered list.
 
 <img src="screenshots/device-discovery.png" alt="A Marstek battery discovered on the local network, with the brand icon." width="340" />
-<img src="screenshots/device-list.png" alt="Discovered Marstek devices ready to add." width="340" />
 
 When discovery finds nothing, or every discovered battery is already added, Home Assistant asks for the **IP address** and the **port**. The port in the Marstek app is **30000** unless you changed it. The full steps, including what happens when the IP changes later, are in [Configuration](configuration.md).
 
-After setup, the device page groups the sensors, the operating-mode select, and the controls.
+After setup, Marstek shows on the Integrations page with one device per battery.
+
+<img src="screenshots/device-list.png" alt="Marstek on the Integrations page after setup, with two batteries." width="340" />
+
+The device page groups the sensors, the operating-mode select, and the controls.
 
 <img src="screenshots/device-details.png" alt="Venus E device page with battery sensors and controls." width="560" />
 
 A few diagnostic sensors, including **Battery temperature**, start disabled. `Bat.GetStatus`, the request behind them, has been suspected of resetting some batteries, so the integration waits until you opt in. On the device page, show disabled entities, open **Battery temperature** (or another battery-detail entity), open the gear, and turn **Enabled** on. On recent firmware the request starts on its own. On older firmware those entities stay omitted. The full list is in [Entities](entities.md).
 
-## 2. Battery health sidebar dashboard
+## Battery health sidebar dashboard
 
 The sidebar dashboard compares every Marstek battery. It is off until you turn it on.
 
-1. Go to **Settings → Devices & services → Marstek**.
+1. Go to **Settings** > **Devices & services** > **Marstek**.
 2. Open a device and choose **Configure**.
 3. Open **Battery health dashboard**.
 4. Turn on **Show Battery health in the sidebar** and submit.
@@ -55,7 +58,7 @@ On a phone the same page stacks the totals in two columns and stacks the cards.
 
 <img src="screenshots/battery-health-mobile.png" alt="Battery health dashboard at phone width. Your batteries uses two columns, and the Venus E card with its weekly chart follows below Venus A." width="280" />
 
-## 3. Battery health cards on any dashboard
+## Battery health cards on any dashboard
 
 The same two cards can go on a dashboard you already have. This integration registers the card module, so after you install or upgrade you reload the browser and the cards are in the picker. There is no separate Lovelace resource to add.
 
@@ -88,12 +91,12 @@ The picker keeps the English card names in every language. The words on the card
 
 A first estimate needs three runs in one direction. Each run has to move the state of charge by 20 points, all charging or all discharging. The card shows progress on the open run, for example "3 of 20 points so far." The plain-language version is [Why does my card say Still measuring?](usable-capacity.md#why-does-my-card-say-still-measuring).
 
-## 4. Link a smart plug
+## Link a smart plug
 
 A plug between the battery and the mains measures the round trip the battery's own sensors cannot, because those sensors miss the power the battery uses to stay awake. Use a HomeWizard Energy Socket, a Shelly plug, or any meter with two total-energy sensors. The plug has to see only this battery, not the whole house.
 
 1. On the plug's device page, enable the export sensor. On HomeWizard it is named **Energy export**, and Home Assistant leaves it disabled until you enable it. **Energy import** is energy into the battery.
-2. Open **Settings → Devices & services → Marstek → (device) → Configure**.
+2. Open **Settings** > **Devices & services** > **Marstek** > your battery > **Configure**.
 3. Open **Energy meter (optional)**.
 4. Set **Energy into the battery** and **Energy out of the battery**. Fill both, or leave both empty, and pick two different sensors.
 5. Submit.
@@ -110,7 +113,7 @@ After the next matching state of charge, the cards can show:
 
 Details and the rules (both sensors, or neither) are in [Options](options.md#energy-meter-optional) and [Link a smart plug](usable-capacity.md#link-a-smart-plug).
 
-## 5. Controlling the battery
+## Controlling the battery
 
 **Auto**, **AI**, and, on firmware that allows it, **UPS** are on the operating-mode select on the device page. **Manual** and **Passive** need a power, a duration, or time slots, so they are services rather than a dropdown choice.
 
@@ -129,21 +132,22 @@ In an automation, choose the action type **Device**, pick the battery, and use *
 
 Ready-to-copy YAML is in [Automations and services](services.md).
 
-## 6. Energy dashboard and Repairs
+## Energy dashboard and Repairs
 
 Home Assistant's Energy dashboard wants lifetime energy sensors with an energy device class. For a Marstek battery:
 
-1. Open **Settings → Dashboards → Energy**.
-2. Add **Total solar energy** as solar production on Venus A or Venus D.
-3. Add **Total grid input energy** as grid consumption and **Total grid output energy** as return to the grid.
-4. Leave **Total load energy** off that dashboard. Its meaning depends on the device, so the integration does not recommend it as home consumption.
+1. Open **Settings** > **Dashboards** > **Energy**.
+2. Under **Home battery storage**, add **Total grid input energy** as energy going in to the battery and **Total grid output energy** as energy coming out. They count the battery's own AC connection, not your house's grid connection.
+3. For the grid, use your house meter, or **Meter input energy** and **Meter output energy** when the CT meter reports them.
+4. On Venus A or Venus D, read [solar and the battery row](energy_dashboard.md#venus-a-and-venus-d-solar-and-the-battery-row) before adding **Total solar energy**.
+5. Leave **Total load energy** off that dashboard. Its meaning depends on the device, so the integration does not recommend it as home consumption.
 
 The entity names, units, and the cases where firmware counters stall are in [Energy dashboard](energy_dashboard.md). Official setup of the dashboard itself is [Home Assistant Energy](https://www.home-assistant.io/docs/energy/).
 
-When Home Assistant loses the battery, **Settings → System → Repairs** offers a fix flow. You enter the new host and port, and the integration checks that the device is still the same one before it reloads.
+When Home Assistant loses the battery, **Settings** > **System** > **Repairs** offers a fix flow. You enter the new IP address and port, and the integration checks that the device is still the same one before it reloads.
 
 <img src="screenshots/repair-list.png" alt="Home Assistant repairs list with a Marstek connection issue." width="340" />
-<img src="screenshots/repair-detail.png" alt="Repair detail explaining that Home Assistant cannot connect to the Marstek device." width="340" />
-<img src="screenshots/repair-fix.png" alt="Repair fix form for a new host and port." width="340" />
+<img src="screenshots/repair-detail.png" alt="Update device connection form with the IP address and port, showing Unable to connect to the device." width="340" />
+<img src="screenshots/repair-fix.png" alt="Success message: the issue is repaired." width="340" />
 
 Firmware warnings, including Venus C sharing a Wi-Fi channel with its meter, are described in [Repairs](repairs.md) and [Troubleshooting](troubleshooting.md).

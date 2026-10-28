@@ -1,3 +1,7 @@
+---
+next: false
+---
+
 # Development
 
 Install and day-to-day use live in the [documentation index](README.md). This page is for working on the integration.
@@ -100,6 +104,22 @@ docker compose pull homeassistant
 docker compose up -d homeassistant
 ```
 
+## Documentation site
+
+`docs/` is also the source of the public site at [marstek.rhino-inquisitor.com](https://marstek.rhino-inquisitor.com/), built with [VitePress](https://vitepress.dev/) and deployed to GitHub Pages by `.github/workflows/docs.yaml` on every push to `main` that touches `docs/`. Pull requests that touch `docs/` run the same build, so a dead link fails the check instead of the deploy.
+
+```bash
+npm ci
+npm run docs:dev      # live preview at http://localhost:5173
+npm run docs:build    # the CI build, including the dead-link check
+```
+
+- Every page renders twice: on GitHub and on the site. Use plain relative links (`entities.md`, `../tools/...`). Links that leave `docs/`, and links to `README.md` or `marstek_device_openapi.MD`, are rewritten to GitHub at build time (`docs/.vitepress/config.mts`).
+- Beginner pages that only make sense on the site live in `docs/guide/` and carry their `description` in front matter. Other pages get theirs from `docs/.vitepress/pages.ts`.
+- New pages need a sidebar entry in `docs/.vitepress/config.mts`.
+- Use GitHub alert syntax (`> [!TIP]`) for callouts. It renders on both GitHub and the site; VitePress `:::` containers do not render on GitHub.
+- `guide/comparison.md` carries a review date. Recheck the other projects before you change it.
+
 ## Releases
 
 Release preparation uses Changesets:
@@ -112,7 +132,7 @@ npm install
 npm run changeset
 ```
 
-The `Changesets` GitHub Action keeps a `Release` PR up to date on `main`. Its version step updates `CHANGELOG.md`, `package.json`, `custom_components/marstek/manifest.json`, and `pyproject.toml`. After that PR is merged, the workflow pushes the matching `v*` tag and the existing release workflow creates the GitHub release.
+The `Changesets` GitHub Action keeps a `Release` PR up to date on `main`. Its version step updates `CHANGELOG.md`, `package.json`, `custom_components/marstek/manifest.json`, and `pyproject.toml`. After that PR is merged, the same workflow pushes the matching `v*` tag and creates the GitHub release from the changelog.
 
 If you are continuing an RC train, enter prerelease mode first:
 
@@ -199,7 +219,7 @@ Firmware images come from Marstek's public update server and community archives;
 
 ### How we test in Docker
 
-- **★ starts by default.** A plain `docker compose up -d` in `.devcontainer/` starts Home Assistant, the four mock-only devices and four emulators: Venus E 150, Venus A 150, Venus D 150 and Venus C 156. The mix of ports 30000, 30002 and 30004 also tests that devices on different Open API ports each get their own socket.
+- **★ starts by default.** A plain `docker compose up -d` in `.devcontainer/` starts Home Assistant, the three mock-only devices and four emulators: Venus E 150, Venus A 150, Venus D 150 and Venus C 156. The mix of ports 30000, 30002 and 30004 also tests that devices on different Open API ports each get their own socket.
 - **Other versions run in batches.** Each emulator needs about half a CPU core and 550 MB of RAM, so start the others by name, a few at a time, then remove them before the next batch:
 
   ```bash
@@ -218,7 +238,7 @@ Firmware images come from Marstek's public update server and community archives;
 
 If your combination is absent from the table above, or shows **Mock only**, please **[open a firmware coverage issue](https://github.com/taurgis/has-marstek-local-api/issues/new?template=firmware_coverage.yml)**. The issue form asks for the following.
 
-1. **Your device model and firmware version.** In Home Assistant, go to **Settings → Devices & services → Marstek** and open the device. The **Device info** card shows the model and **Firmware**. That number is the Open API `ver` this table uses. If the integration is not set up yet, run `python3 tools/query_device.py <device IP> --port <Open API port>` from a checkout of this repository and copy `device` and `ver` from the reply. The Marstek app shows a version too, and it can be written differently: `147.6` in the app is `ver` `1476` here.
+1. **Your device model and firmware version.** In Home Assistant, go to **Settings** > **Devices & services** > **Marstek** and open the device. The **Device info** card shows the model and **Firmware**. That number is the Open API `ver` this table uses. If the integration is not set up yet, run `python3 tools/query_device.py <device IP> --port <Open API port>` from a checkout of this repository and copy `device` and `ver` from the reply. The Marstek app shows a version too, and it can be written differently: `147.6` in the app is `ver` `1476` here.
 2. **What works and what does not.** Say so even if everything looks right. For a mock-only version, one owner confirming the values is what turns our guess into a checked fact.
 3. **Diagnostics (optional).** On the device page, open the ⋮ menu and choose **Download diagnostics**. MAC addresses, IP addresses and the Wi-Fi name are redacted, but check the file before you attach it.
 

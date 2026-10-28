@@ -2,6 +2,8 @@
 
 This integration connects Marstek batteries (Venus A, C, D, E 3.0, and Venus E mini) to Home Assistant over your local network. Start with the install, then the pictures.
 
+The same pages, with search and a beginner's guide, are published at **[marstek.rhino-inquisitor.com](https://marstek.rhino-inquisitor.com/)**.
+
 These pages follow a simple order: do a task, look up a fact, then read why it works that way. Install steps stay short. The calculation and the firmware notes live further down the list.
 
 ## Getting started

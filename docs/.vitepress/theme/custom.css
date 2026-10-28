@@ -1,0 +1,340 @@
+/*
+ * Teal for the brand (energy, without borrowing Marstek's own branding) and
+ * amber for charge. Text-on-background pairs meet WCAG 2.2 AA (4.5:1).
+ * https://vitepress.dev/guide/extending-default-theme#customizing-css
+ */
+:root {
+  --vp-c-brand-1: #0f766e;
+  --vp-c-brand-2: #0d9488;
+  --vp-c-brand-3: #0f766e;
+  --vp-c-brand-soft: rgba(13, 148, 136, 0.14);
+  --mk-charge: #b45309;
+  --mk-line: #94a3b8;
+  --mk-surface: #f8fafc;
+
+  /* Hover and code colours that keep 4.5:1 against their backgrounds. */
+  --vp-button-brand-hover-bg: #115e59;
+  --vp-button-brand-active-bg: #134e4a;
+  --vp-code-color: #0d6b63;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #0f766e 30%, #0369a1);
+}
+
+.dark {
+  --vp-c-brand-1: #2dd4bf;
+  --vp-c-brand-2: #5eead4;
+  --vp-c-brand-3: #0f766e;
+  --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
+  --mk-charge: #fbbf24;
+  --mk-line: #64748b;
+  --mk-surface: #202127;
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #2dd4bf 30%, #38bdf8);
+
+  --vp-button-brand-bg: #0f766e;
+  --vp-button-brand-text: #fff;
+  --vp-button-brand-hover-bg: #115e59;
+  --vp-button-brand-hover-text: #fff;
+  --vp-button-brand-active-bg: #134e4a;
+  --vp-button-brand-active-text: #fff;
+  --vp-code-color: #5eead4;
+}
+
+/* The default code-language label and tinted callout code fall below 4.5:1. */
+.vp-doc [class*='language-'] > span.lang {
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc .custom-block code {
+  color: #115e59;
+}
+
+.dark .vp-doc .custom-block code {
+  color: var(--vp-c-text-1);
+}
+
+:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Home hero: smaller, balanced headline; text before the picture on narrow screens. */
+.VPHero .name,
+.VPHero .text {
+  text-wrap: balance;
+}
+
+.VPHero .name {
+  font-size: clamp(32px, 4.4vw, 48px) !important;
+  line-height: 1.15 !important;
+}
+
+.VPHero .text {
+  font-size: clamp(26px, 3.8vw, 44px) !important;
+  line-height: 1.2 !important;
+}
+
+@media (max-width: 959px) {
+  .VPHero .image {
+    order: 2;
+    margin: 32px 0 0 !important;
+  }
+
+  /* The default square box suits a logo; this picture is wide, so let it size itself. */
+  .VPHero .image-container {
+    width: 100% !important;
+    height: auto !important;
+    transform: none !important;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero .image .mk-hero {
+    width: min(100%, 500px);
+  }
+}
+
+/* Feature cards: two per row on tablets, links pinned to the bottom. */
+.VPFeature .box {
+  display: flex;
+  flex-direction: column;
+}
+
+.VPFeature .link-text {
+  margin-top: auto;
+}
+
+@media (min-width: 640px) and (max-width: 959px) {
+  .VPFeatures .item.grid-6 {
+    width: 50% !important;
+  }
+}
+
+/* Screenshots: keep them inside the column and give them a frame. */
+.vp-doc img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.vp-doc a > img {
+  border: 0;
+  border-radius: 0;
+}
+
+/* Wide tables scroll inside the page instead of widening it on phones. */
+.vp-doc table {
+  display: block;
+  overflow-x: auto;
+}
+
+.vp-doc td {
+  vertical-align: top;
+}
+
+@media (max-width: 639px) {
+  .vp-doc table {
+    font-size: 14px;
+  }
+
+  .vp-doc th,
+  .vp-doc td {
+    padding: 8px 10px;
+  }
+}
+
+/* Verdict chips used in the support and comparison tables. */
+.mk-yes,
+.mk-partial,
+.mk-no {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mk-yes {
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+.mk-partial {
+  background: rgba(217, 119, 6, 0.16);
+  color: #92400e;
+}
+
+.mk-no {
+  background: rgba(220, 38, 38, 0.12);
+  color: #991b1b;
+}
+
+.dark .mk-yes {
+  color: #86efac;
+}
+
+.dark .mk-partial {
+  color: #fcd34d;
+}
+
+.dark .mk-no {
+  color: #fca5a5;
+}
+
+/* Numbered checklist cards on Before you start. */
+.vp-doc .mk-check {
+  list-style: none;
+  padding-left: 0;
+}
+
+.vp-doc .mk-check li {
+  padding: 12px 16px;
+  margin: 8px 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+}
+
+/* Comparison matrix: keep columns readable; the table scrolls if needed. */
+.mk-compare .vp-doc th,
+.mk-compare .vp-doc td {
+  min-width: 7.5rem;
+  overflow-wrap: anywhere;
+}
+
+.mk-compare .vp-doc td:first-child {
+  min-width: 11rem;
+  font-weight: 600;
+}
+
+/* On phones the row labels stay in view while the columns scroll past them. */
+@media (max-width: 767px) {
+  .mk-compare .vp-doc th:first-child,
+  .mk-compare .vp-doc td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 8.5rem;
+    background-color: inherit;
+    box-shadow: 1px 0 0 var(--vp-c-divider);
+  }
+
+  .mk-compare .vp-doc thead th:first-child {
+    background-color: var(--vp-c-bg-soft);
+  }
+}
+
+/* Let the comparison use the width the outline would have taken. */
+@media (min-width: 960px) {
+  .mk-compare .VPDoc .container,
+  .mk-compare .VPDoc .content-container {
+    max-width: 1040px;
+  }
+}
+
+/* Home page: a row of plain facts under the features. */
+.mk-proof {
+  margin-top: 24px;
+}
+
+.mk-proof ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: center;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mk-proof li {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.mk-proof li:has(img) {
+  padding: 0;
+  border: 0;
+}
+
+.vp-doc .mk-proof img {
+  display: block;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Home page: screenshot gallery. */
+.mk-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.mk-gallery figure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.vp-doc .mk-gallery img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  object-position: top;
+  background: var(--vp-c-bg-soft);
+}
+
+.mk-gallery figcaption {
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* Home page: closing call to action. */
+.mk-cta p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 32px 0;
+}
+
+.vp-doc a.mk-button {
+  display: inline-block;
+  padding: 0 20px;
+  border: 1px solid var(--vp-c-brand-3);
+  border-radius: 20px;
+  background: var(--vp-c-brand-3);
+  color: #fff;
+  font-weight: 600;
+  line-height: 38px;
+  text-decoration: none;
+}
+
+.vp-doc a.mk-button:hover {
+  border-color: #115e59;
+  background: #115e59;
+}
+
+.vp-doc a.mk-button-alt {
+  border-color: var(--vp-c-divider);
+  background: var(--vp-c-default-soft);
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc a.mk-button-alt:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-default-soft);
+  color: var(--vp-c-brand-1);
+}

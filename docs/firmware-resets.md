@@ -22,8 +22,10 @@ the first three. How the integration tells them apart is in
 Home Assistant. A weak Wi-Fi signal, a busy access point or a router that
 restarts are the usual causes.
 
-**What you notice.** Sensors go unavailable for one poll or a few, then carry
-on as if nothing happened. Energy totals, the operating mode and the meter
+**What you notice.** Sensors keep their last values through a short dropout,
+and only show as unavailable after several polls in a row fail (3 by default,
+set with **Failures before unavailable**). Then they carry on as if nothing
+happened. Energy totals, the operating mode and the meter
 link are unchanged.
 
 **What you can do.** Move the access point closer or use a network cable.
@@ -36,7 +38,8 @@ Many dropouts in a row point at the network, not the battery.
 - On Wi-Fi, firmware 150 and newer get up to three repeat requests within one
   poll (after 0.5, 2.5 and 5 seconds), so a single lost reply is recovered
   and never counts. Older firmware gets one request, and one lost reply is a
-  failed poll. See [Wi-Fi Open API timeouts](../tools/firmware/ANALYSIS.md#wi-fi-open-api-timeouts-fc41d-firmware-150-included).
+  failed poll. HMG-50 units (Venus C, Venus E 2.0) never get repeat requests,
+  because they would compete with the battery's own meter traffic. See [Wi-Fi Open API timeouts](../tools/firmware/ANALYSIS.md#wi-fi-open-api-timeouts-fc41d-firmware-150-included).
 - On Venus C and other HMG-50 units, Home Assistant's requests and the
   device's own meter share one Wi-Fi receive channel, so some loss is
   expected there ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)).
@@ -54,14 +57,14 @@ catch up. A linked smart plug may show the same short start-up check it
 shows after a restart. Energy totals and the operating mode are kept.
 
 **What you can do.** These repeat as long as the cloud cannot be reached:
-about every 15 to 30 minutes on Wi-Fi, about every 35 minutes on Ethernet.
+anywhere from a few minutes to about half an hour apart on Wi-Fi, about every 35 minutes on Ethernet.
 If you see many, check whether a firewall, DNS filter or separate network
 blocks the battery from the internet. Control firmware 151 lists fixes for
 failing uploads.
 
 ### Technical details
 
-- Present in Control 150, 1509 and 151 for Venus E, Venus A and Venus D.
+- Present in Control 150 and 151 for Venus E, Venus A and Venus D, and in Venus A 1508 and 1509.
   Older Control firmware, HMG-50 (Venus C, Venus E 2.0) and the Venus E mini
   do not have it. On Ethernet only Control 150 has it.
 - Ethernet: the HTTP task (`0x08014ecc`) resets the CH395 chip when more than
@@ -99,8 +102,10 @@ restart from the Marstek app and some of the battery's own safety checks
 also restart it.
 
 **What you notice.** Home Assistant loses the battery for 30 seconds to a
-minute. Energy used since the battery last saved its totals is lost, so a
-lifetime total can step back a little. The meter shows as disconnected for
+minute. Energy used since the battery last saved its totals is lost, so the
+battery's own counter can step back a little. The integration holds the grid
+import and export totals at their last value, so only the solar and load
+totals can dip. The meter shows as disconnected for
 about a minute after start-up. A command from Home Assistant, such as
 Passive mode, can end, and the battery goes back to its normal mode. A
 linked smart plug shows a short start-up check: the standby draw drops, the
@@ -118,7 +123,7 @@ CSV) and report them to Marstek.
   hardware watchdog (IWDG, `0x08016f48`) restarts a stalled controller.
 - At boot the Control firmware writes its saved lifetime counters back to
   the inverter (CAN command 0x16/0x17), so a raw `ES.GetStatus` total comes
-  back lower than before. Nothing else makes these totals fall, so this
+  back lower than before. Nothing else is known to make these totals fall, so this
   counts even when no poll failed.
 - The integration also counts a lost CT meter or a changed mode, but only
   when the battery was unreachable in between.
@@ -144,7 +149,9 @@ update the firmware. Firmware 150 fixed the Ethernet problem behind this.
 ### Technical details
 
 - Firmware before Control generation 150 is treated as *reset-prone*. On it
-  the integration sends one request at a time, never repeats a request, and
+  the integration sends one request at a time, never sends extra copies of a
+  read request (commands such as mode changes are still retried if the
+  battery doesn't answer), and
   never sends `Bat.GetStatus`, which is suspected of triggering resets
   ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)).
 - The best explanation from the firmware: a Local API reply sent through the
@@ -168,5 +175,5 @@ API**, and use **Reconfigure** in Home Assistant if its address changed.
 
 ### Technical details
 
-- `Reset.Factory` and `Set.Ver` are part of Open API Rev 3.1 since Control
-  150. The integration does not send them and does not expose them.
+- `Reset.Factory` and `Set.Ver` are in the firmware from Control 149 (Venus A
+  148.7) on. The integration does not send them and does not expose them.

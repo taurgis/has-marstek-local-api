@@ -13,7 +13,7 @@
       "registered_devices": true
     }
   ],
-  "documentation": "https://github.com/taurgis/has-marstek-local-api",
+  "documentation": "https://marstek.rhino-inquisitor.com/",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/taurgis/has-marstek-local-api/issues",
