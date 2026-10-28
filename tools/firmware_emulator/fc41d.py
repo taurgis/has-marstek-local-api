@@ -17,7 +17,10 @@ import ipaddress
 import logging
 import re
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass, field
+
+from cloud import StandInCloud
 
 _LOGGER = logging.getLogger("fc41d")
 
@@ -54,6 +57,9 @@ class ModemConfig:
     # commands, then until it has rejoined the saved AP and has an address.
     boot_s: float = 1.0
     rejoin_s: float = 4.0
+    # Answer MQTT/HTTP as a reachable Marstek cloud (cloud.py). False fails
+    # them fast, like a battery whose internet access is blocked (--no-cloud).
+    cloud: bool = True
 
 
 @dataclass
@@ -94,7 +100,7 @@ class FC41D:
     config: ModemConfig
     writer: asyncio.StreamWriter | None = None
     services: dict[int, UdpService] = field(default_factory=dict)
-    pending_payload: tuple[int, object] | None = None  # (length, handler)
+    pending_payload: tuple[int, Callable[[bytes], None]] | None = None  # (length, handler)
     # The MCU's BLE task (build 150: 0x8006a1c) re-issues AT+QBLEADVSTOP/START
     # until AT+QBLESTAT reports the state it asked for, and Ble.Adv only answers
     # once it does. A fixed "ADVERTISING" left every disable request unanswered.
@@ -106,6 +112,7 @@ class FC41D:
     resets: int = 0  # reset pulses seen; a newer pulse cancels an older boot
     linked: bool = True  # has an address; False from a reset until the rejoin
     held: bool = False  # the reset line is low right now
+    cloud: StandInCloud = field(default_factory=StandInCloud)
 
     # ---- output -------------------------------------------------------
     def send(self, data: bytes) -> None:
@@ -120,6 +127,10 @@ class FC41D:
     def urc(self, line: str) -> None:
         _LOGGER.info("URC <- %s", line)
         self.send(CRLF + line.encode() + CRLF)
+
+    def expect_payload(self, length: int, handler: Callable[[bytes], None]) -> None:
+        """Hand the next ``length`` raw bytes from the MCU to ``handler``."""
+        self.pending_payload = (length, handler)
 
     def reset_line(self, level: int) -> None:
         """Follow the module reset line: 0 switches it off, 1 starts its boot.
@@ -137,6 +148,7 @@ class FC41D:
             self.joined = False
             self.linked = False
             self.pending_payload = None
+            self.cloud.reset()
             for service in self.services.values():
                 if service.transport:
                     service.transport.close()
@@ -185,7 +197,7 @@ class FC41D:
                     return buf
                 payload, buf = buf[:length], buf[length:]
                 self.pending_payload = None
-                handler(payload)  # type: ignore[operator]
+                handler(payload)
                 continue
             buf = buf.lstrip(b"\r\n")
             inline = _INLINE_SEND.match(buf)
@@ -276,6 +288,8 @@ class FC41D:
                 for s in self.services.values()
             ]
             self.reply(*lines, "OK")
+        elif self.config.cloud and self.cloud.handle(cmd, self):
+            pass
         elif up.startswith(("AT+QMTOPEN=", "AT+QMTCONN=", "AT+QHTTPGET")):
             # No cloud: MQTT/HTTP fail fast the way a module with no route would.
             self.reply("ERROR")
@@ -417,6 +431,7 @@ async def _main(args: argparse.Namespace) -> None:
         lan_broadcast=args.lan_broadcast,
         boot_s=args.boot_seconds,
         rejoin_s=args.rejoin_seconds,
+        cloud=not args.no_cloud,
     )
     current: list[FC41D] = []
     if args.reset_port:
@@ -500,6 +515,12 @@ def main() -> None:
         type=float,
         default=4.0,
         help="Wi-Fi join and DHCP time after that boot",
+    )
+    parser.add_argument(
+        "--no-cloud",
+        action="store_true",
+        help="Fail MQTT and HTTP like a battery with no internet access. Control 150 "
+        "and newer then reset the module about every 30 minutes",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()

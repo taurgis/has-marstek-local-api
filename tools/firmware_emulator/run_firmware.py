@@ -524,6 +524,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--broadcast-to", default="", help="Send the firmware's LAN broadcasts to this IP instead"
     )
     parser.add_argument(
+        "--no-cloud",
+        action="store_true",
+        help="Block the stand-in Marstek cloud (fc41d.py --no-cloud). Control 150 and "
+        "newer then reset the network chip about every 30 minutes",
+    )
+    parser.add_argument(
         "--bssid", help="AP BSSID the modem reports (default: --wifi-mac, which it becomes)"
     )
     parser.add_argument("--soc", type=float, default=50.0, help="Initial battery SoC")
@@ -601,6 +607,8 @@ def main() -> int:
         fc41d_cmd += ["--broadcast-to", args.broadcast_to]
     if board.modem_reset:
         fc41d_cmd += ["--reset-port", str(args.modem_reset_port)]
+    if args.no_cloud:
+        fc41d_cmd.append("--no-cloud")
     fc41d_cmd += board.modem_args
     peers_cmd = [
         sys.executable, str(HERE / "can_peers.py"), "--port", str(args.can_port),
