@@ -49,6 +49,7 @@ from .helpers.plug_round_trip import (
     plug_from_options,
 )
 from .helpers.restart_detector import (
+    LOG_VERBS,
     RESTARTS_ATTR_KEY,
     RESTARTS_DATA_KEY,
     RESTARTS_STORE_KEY,
@@ -521,7 +522,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.info(
                 "Device %s %s: offline %.0fs over %d failed poll(s)%s",
                 self.device_ip,
-                "restarted" if outage.evidence else "dropped out",
+                LOG_VERBS[outage.kind],
                 outage.offline_s,
                 outage.failed_polls,
                 f" ({', '.join(outage.evidence)})" if outage.evidence else "",

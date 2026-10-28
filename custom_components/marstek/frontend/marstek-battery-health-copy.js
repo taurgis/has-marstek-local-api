@@ -35,13 +35,15 @@ export const COPY = {
       mode_changed: "mode changed",
       boot_pulse: "start-up test seen at the plug",
     },
-    outageKind: { restart: "Restart", dropout: "Network dropout" },
-    outageSummary: (restarts, dropouts, since) =>
-      `${restarts} ${restarts === 1 ? "restart" : "restarts"} and ${dropouts} network ${dropouts === 1 ? "dropout" : "dropouts"} ${since ? `since ${since}` : "in the last 30 days"}.`,
-    dayCount: (restarts, dropouts) => [
+    outageKind: { restart: "Restart", network_reset: "Brief network reset", dropout: "Network dropout" },
+    outageSummary: (restarts, dropouts, since, resets = 0) =>
+      `${restarts} ${restarts === 1 ? "restart" : "restarts"}${resets ? `, ${resets} brief network ${resets === 1 ? "reset" : "resets"}` : ""} and ${dropouts} network ${dropouts === 1 ? "dropout" : "dropouts"} ${since ? `since ${since}` : "in the last 30 days"}.`,
+    dayCount: (restarts, dropouts, resets = 0) => [
       restarts ? `${restarts} ${restarts === 1 ? "restart" : "restarts"}` : "",
+      resets ? `${resets} network ${resets === 1 ? "reset" : "resets"}` : "",
       dropouts ? `${dropouts} ${dropouts === 1 ? "dropout" : "dropouts"}` : "",
     ].filter(Boolean).join(", "),
+    networkReset: "The battery dropped off the network for a few seconds and ran its start-up check, but kept running without a restart. It usually does this when it cannot reach the Marstek cloud for a while.",
     offline: (time) => `Offline ${time}`,
     betweenPolls: "Restarted between two checks",
     noTrace: "no sign of a restart",
@@ -147,13 +149,15 @@ export const COPY = {
       mode_changed: "modus gewijzigd",
       boot_pulse: "opstarttest gezien aan de stekker",
     },
-    outageKind: { restart: "Herstart", dropout: "Netwerkonderbreking" },
-    outageSummary: (restarts, dropouts, since) =>
-      `${restarts} ${restarts === 1 ? "herstart" : "herstarts"} en ${dropouts} ${dropouts === 1 ? "netwerkonderbreking" : "netwerkonderbrekingen"} ${since ? `sinds ${since}` : "in de laatste 30 dagen"}.`,
-    dayCount: (restarts, dropouts) => [
+    outageKind: { restart: "Herstart", network_reset: "Korte netwerkreset", dropout: "Netwerkonderbreking" },
+    outageSummary: (restarts, dropouts, since, resets = 0) =>
+      `${restarts} ${restarts === 1 ? "herstart" : "herstarts"}${resets ? `, ${resets} ${resets === 1 ? "korte netwerkreset" : "korte netwerkresets"}` : ""} en ${dropouts} ${dropouts === 1 ? "netwerkonderbreking" : "netwerkonderbrekingen"} ${since ? `sinds ${since}` : "in de laatste 30 dagen"}.`,
+    dayCount: (restarts, dropouts, resets = 0) => [
       restarts ? `${restarts} ${restarts === 1 ? "herstart" : "herstarts"}` : "",
+      resets ? `${resets} ${resets === 1 ? "netwerkreset" : "netwerkresets"}` : "",
       dropouts ? `${dropouts} ${dropouts === 1 ? "onderbreking" : "onderbrekingen"}` : "",
     ].filter(Boolean).join(", "),
+    networkReset: "De batterij was enkele seconden van het netwerk en deed haar opstartcontrole, maar bleef werken zonder te herstarten. Dat doet ze meestal wanneer ze de Marstek-cloud een tijd niet bereikt.",
     offline: (time) => `${time} offline`,
     betweenPolls: "Herstart tussen twee controles",
     noTrace: "geen teken van een herstart",

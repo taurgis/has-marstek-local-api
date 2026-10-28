@@ -2,8 +2,10 @@
 // The integration decides which is which: a dropout is silence that ends with
 // the device unchanged, a restart leaves a boot trace (energy totals restored
 // from the last save, the CT link lost, the mode changed, or the self-test a
-// linked plug sees as the unit boots). Wi-Fi that answers a retry inside the
-// same poll never reaches the sensor at all.
+// linked plug sees as the unit boots). A plug self-test with nothing else and
+// at most one missed poll is a brief network reset: the unit reset its network
+// chip, not itself. Wi-Fi that answers a retry inside the same poll never
+// reaches the sensor at all.
 //
 // Newest first, grouped under a heading per day that counts both kinds, as an
 // event log reads best: the heading carries the date, each row its clock time
@@ -13,7 +15,8 @@
 // tab says why it is empty (https://contributors.home-assistant.io/design/patterns/empty-states/).
 
 const TRACES = ["energy_rollback", "ct_lost", "mode_changed", "boot_pulse"];
-const KIND_ICON = { restart: "mdi:restart-alert", dropout: "mdi:wifi-off" };
+const KINDS = ["restart", "network_reset", "dropout"];
+const KIND_ICON = { restart: "mdi:restart-alert", network_reset: "mdi:lan-disconnect", dropout: "mdi:wifi-off" };
 const MONTH_MS = 30 * 86400 * 1000;
 export const OUTAGES_STEP = 10;
 
@@ -57,12 +60,13 @@ function localDay(date) {
 export function outagesOf(attrs) {
   const items = Array.isArray(attrs?.outages) ? attrs.outages : [];
   return items
-    .filter((item) => (item?.kind === "restart" || item?.kind === "dropout") && !Number.isNaN(new Date(item.at).getTime()))
+    .filter((item) => KINDS.includes(item?.kind) && !Number.isNaN(new Date(item.at).getTime()))
     .map((item) => ({ ...item, date: new Date(item.at) }))
     .sort((a, b) => b.date - a.date);
 }
 
 // One line: how long it was gone, then why it counts as a restart or not.
+// A network reset gets a plain sentence instead of the trace names.
 function whyOf(item, text) {
   const restart = item.kind === "restart";
   const gone = count(item.failed_polls) ? offline(item.offline_s) : null;
@@ -70,8 +74,8 @@ function whyOf(item, text) {
     ? `<time datetime="PT${Math.round(item.offline_s)}S">${esc(text.offline(gone))}</time>`
     : restart ? esc(text.betweenPolls) : "";
   const traces = (Array.isArray(item.evidence) ? item.evidence : []).filter((trace) => TRACES.includes(trace));
-  const second = restart ? traces.map((trace) => text.restartTrace[trace]).join(", ") : text.noTrace;
-  return [first, esc(second)].filter(Boolean).join(" · ");
+  const reasons = { restart: traces.map((trace) => text.restartTrace[trace]).join(", "), network_reset: text.networkReset, dropout: text.noTrace };
+  return [first, esc(reasons[item.kind])].filter(Boolean).join(" · ");
 }
 
 function rowHtml(item, index, shown, text, clock) {
@@ -105,15 +109,15 @@ export function restartsHtml(attrs, text, { day, clock, now = new Date(), tracke
   const days = new Map();
   items.forEach((item, index) => {
     const key = localDay(item.date);
-    const group = days.get(key) || { title: names[key] || day(item.date), restart: 0, dropout: 0, rows: [] };
+    const group = days.get(key) || { title: names[key] || day(item.date), restart: 0, network_reset: 0, dropout: 0, rows: [] };
     group[item.kind] += 1;
     if (index < shown) group.rows.push(rowHtml(item, index, shown, text, clock));
     days.set(key, group);
   });
-  const lists = [...days.values()].filter((group) => group.rows.length).map((group, index) => `<h3 id="outage-day-${index}">${esc(`${group.title} · ${text.dayCount(group.restart, group.dropout)}`)}</h3>
+  const lists = [...days.values()].filter((group) => group.rows.length).map((group, index) => `<h3 id="outage-day-${index}">${esc(`${group.title} · ${text.dayCount(group.restart, group.dropout, group.network_reset)}`)}</h3>
     <ul class="outages" aria-labelledby="outage-day-${index}">${group.rows.join("")}</ul>`).join("");
   const rest = items.length - shown;
   const more = rest > 0 ? `<button class="more" type="button" data-action="more-outages">${esc(text.moreOutages(Math.min(rest, OUTAGES_STEP)))}</button>` : "";
-  const summary = text.outageSummary(count(attrs.restarts_30d), count(attrs.dropouts_30d), since);
+  const summary = text.outageSummary(count(attrs.restarts_30d), count(attrs.dropouts_30d), since, count(attrs.network_resets_30d));
   return `<p class="muted num">${esc(summary)}</p><div class="log">${lists}</div>${more}`;
 }

@@ -11,6 +11,7 @@ from custom_components.marstek.helpers.restart_detector import (
     ENERGY_ROLLBACK,
     MAX_EVENTS,
     MODE_CHANGED,
+    NETWORK_RESET,
     RESTART,
     Outage,
     RestartDetector,
@@ -194,8 +195,13 @@ def test_zero_and_missing_replies_are_not_falls() -> None:
     assert garbage == {RAW_TOTALS_KEY: {}, TOTALS_FELL_KEY: False}
 
 
-def test_a_plug_self_test_is_held_for_the_next_good_poll() -> None:
-    """The plug sees the boot between polls; two tests before one poll are one restart."""
+def test_a_lone_plug_self_test_is_a_network_reset() -> None:
+    """Control 150 resets its network chip every 30 min while uploads fail.
+
+    The plug shows its self-test, but nothing in the polls changes and at most
+    one poll is missed: that is a brief network reset, not a restart. Two tests
+    before one poll are one event.
+    """
     detector, status = _baseline()
     detector.record_boot_pulse(_T0 + 10)
     detector.record_boot_pulse(_T0 + 20)
@@ -203,10 +209,35 @@ def test_a_plug_self_test_is_held_for_the_next_good_poll() -> None:
     outage = detector.record_success(_T0 + _POLL, status, _status())
 
     assert outage is not None
-    assert outage.kind == RESTART
+    assert outage.kind == NETWORK_RESET
     assert outage.failed_polls == 0
     assert outage.evidence == (BOOT_PULSE,)
+    assert detector.restarts == 0
     assert detector.record_success(_T0 + 2 * _POLL, status, _status()) is None
+
+    detector.record_failure()
+    detector.record_boot_pulse(_T0 + 2 * _POLL + 10)
+    second = detector.record_success(_T0 + 4 * _POLL, status, _status())
+    assert second is not None and second.kind == NETWORK_RESET
+    attrs = restart_attributes(detector, _T0 + 4 * _POLL)
+    assert attrs["network_resets_30d"] == 2
+    assert attrs["restarts_30d"] == 0
+    assert "last_restart_at" not in attrs
+
+
+def test_a_self_test_after_a_long_outage_is_still_a_restart() -> None:
+    """A full restart keeps the unit away 30-60 s, so it misses two polls or more."""
+    detector, status = _baseline()
+    detector.record_failure()
+    detector.record_failure()
+    detector.record_boot_pulse(_T0 + 50)
+
+    outage = detector.record_success(_T0 + 3 * _POLL, status, _status())
+
+    assert outage is not None
+    assert outage.kind == RESTART
+    assert outage.evidence == (BOOT_PULSE,)
+    assert detector.restarts == 1
 
 
 def test_a_self_test_joins_the_outage_it_belongs_to() -> None:
@@ -253,14 +284,27 @@ def test_a_late_self_test_turns_its_dropout_into_a_restart() -> None:
     """The recovery poll saw no trace; the plug's test, confirmed after it, still did."""
     detector, status = _baseline()
     detector.record_failure()
-    first = detector.record_success(_T0 + 2 * _POLL, status, _status())
+    detector.record_failure()
+    first = detector.record_success(_T0 + 3 * _POLL, status, _status())
     assert first is not None and first.kind == DROPOUT
-    detector.record_boot_pulse(_T0 + 2 * _POLL - 20)
+    detector.record_boot_pulse(_T0 + 3 * _POLL - 20)
 
-    assert detector.record_success(_T0 + 3 * _POLL, status, _status()) is None
+    assert detector.record_success(_T0 + 4 * _POLL, status, _status()) is None
     assert [event.kind for event in detector.events] == [RESTART]
     assert detector.events[-1].evidence == (BOOT_PULSE,)
     assert detector.restarts == 1
+
+
+def test_a_late_self_test_after_one_missed_poll_is_a_network_reset() -> None:
+    """One missed poll and a self-test is the network chip reset, not the unit."""
+    detector, status = _baseline()
+    detector.record_failure()
+    detector.record_success(_T0 + 2 * _POLL, status, _status())
+    detector.record_boot_pulse(_T0 + 2 * _POLL - 20)
+
+    assert detector.record_success(_T0 + 3 * _POLL, status, _status()) is None
+    assert [event.kind for event in detector.events] == [NETWORK_RESET]
+    assert detector.restarts == 0
 
 
 def test_dropouts_never_push_restarts_out_of_the_log() -> None:
@@ -307,3 +351,23 @@ def test_loading_the_store_keeps_a_self_test_already_seen() -> None:
     status = _status()
     detector.record_success(_T0, None, status)
     assert detector.restarts == 3
+
+
+def test_stored_self_test_only_restarts_load_as_network_resets() -> None:
+    """Logs from before the split counted these as restarts; the count drops with them."""
+    pulse_only = {"at": _T0, "kind": RESTART, "offline_s": 30, "failed_polls": 0}
+    stored = {
+        "restarts": 3,
+        "events": [
+            {**pulse_only, "evidence": [BOOT_PULSE]},
+            {**pulse_only, "at": _T0 + 60, "evidence": [ENERGY_ROLLBACK, BOOT_PULSE]},
+            {**pulse_only, "at": _T0 + 120, "failed_polls": 3, "evidence": [BOOT_PULSE]},
+        ],
+    }
+    detector = RestartDetector.from_dict(stored)
+
+    assert [event.kind for event in detector.events] == [NETWORK_RESET, RESTART, RESTART]
+    assert detector.restarts == 2
+    assert detector.consume_dirty() is True
+    # Saved with its new kind, it is not taken off the count a second time.
+    assert RestartDetector.from_dict(detector.to_dict()).restarts == 2

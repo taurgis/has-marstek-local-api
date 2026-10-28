@@ -79,7 +79,11 @@ def test_outages_are_grouped_by_day_newest_first(tmp_path: Path) -> None:
         "outages": [
             _outage("2026-10-20T03:12:00+00:00", "dropout", offline_s=600.0, failed_polls=12),
             _outage("2026-10-26T21:05:00+00:00"),
-            _outage("2026-10-27T09:30:00+00:00", evidence=["boot_pulse"], failed_polls=0),
+            _outage(
+                "2026-10-27T09:30:00+00:00",
+                evidence=["energy_rollback", "boot_pulse"],
+                failed_polls=0,
+            ),
         ],
     }
     html = _tab(tmp_path, attrs)
@@ -90,7 +94,9 @@ def test_outages_are_grouped_by_day_newest_first(tmp_path: Path) -> None:
     headings = [part.split("</h3>", 1)[0].split(">", 1)[1] for part in html.split("<h3")[1:]]
     assert headings == ["Today · 1 restart", "Yesterday · 1 restart", "day(20) · 1 dropout"]
     # Two lines a row: kind and time, then how long it was gone and why.
-    assert "Restarted between two checks · start-up test seen at the plug" in html
+    assert (
+        "Restarted between two checks · energy totals restored, start-up test seen at the plug"
+    ) in html
     assert (
         '<time datetime="PT66S">Offline 66\u00a0s</time> · energy totals restored, '
         "CT meter disconnected"
@@ -168,6 +174,36 @@ def test_a_dropout_between_polls_claims_no_restart(tmp_path: Path) -> None:
     assert '<span class="why num">no sign of a restart</span>' in html
 
 
+def test_a_network_reset_is_explained_not_called_a_restart(tmp_path: Path) -> None:
+    """A self-test with nothing else gets its own name and a plain sentence."""
+    reset = _outage(
+        "2026-10-27T09:30:00+00:00",
+        "network_reset",
+        failed_polls=0,
+        evidence=["boot_pulse"],
+    )
+    attrs = {"restarts_30d": 0, "dropouts_30d": 0, "network_resets_30d": 1, "outages": [reset]}
+
+    html = _tab(tmp_path, attrs)
+    assert html.startswith(
+        '<p class="muted num">0 restarts, 1 brief network reset and 0 network dropouts'
+    )
+    assert '<h3 id="outage-day-0">Today · 1 network reset</h3>' in html
+    assert '<ha-icon icon="mdi:lan-disconnect"></ha-icon>' in html
+    assert "<strong>Brief network reset</strong>" in html
+    assert (
+        '<span class="why num">The battery dropped off the network for a few seconds and '
+        "ran its start-up check, but kept running without a restart."
+    ) in html
+    assert "Restarted" not in html
+    assert "start-up test seen at the plug" not in html
+
+    dutch = _tab(tmp_path, attrs, "nl")
+    assert "0 herstarts, 1 korte netwerkreset en 0 netwerkonderbrekingen" in dutch
+    assert "<strong>Korte netwerkreset</strong>" in dutch
+    assert "zonder te herstarten" in dutch
+
+
 def test_dutch_rows(tmp_path: Path) -> None:
     """Every row's words come from the copy, so the Dutch card has no English left."""
     attrs = {
@@ -201,10 +237,12 @@ def test_restarts_csv_holds_fixed_words_only(tmp_path: Path) -> None:
         "outages": [
             _outage("2026-10-27T09:30:00+00:00", evidence=["ct_lost", "=cmd()", "boot_pulse"]),
             _outage("2026-10-20T03:12:00+00:00", "dropout"),
+            _outage("2026-10-24T03:12:00+00:00", "network_reset", evidence=["boot_pulse"]),
         ]
     }
     assert _node(tmp_path, body, attrs, "en", {}) == (
         "at,kind,offline_s,failed_polls,evidence\r\n"
         "2026-10-20T03:12:00.000Z,dropout,66,1,\r\n"
+        "2026-10-24T03:12:00.000Z,network_reset,66,1,boot_pulse\r\n"
         "2026-10-27T09:30:00.000Z,restart,66,1,ct_lost;boot_pulse\r\n"
     )

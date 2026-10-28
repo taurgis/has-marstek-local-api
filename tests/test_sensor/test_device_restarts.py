@@ -118,10 +118,14 @@ async def test_stored_restarts_survive_a_reload(
     assert state.attributes["last_restart_at"] == "2023-11-14T22:13:20+00:00"
 
 
-async def test_plug_self_test_counts_without_a_failed_poll(
+async def test_plug_self_test_without_a_failed_poll_is_a_network_reset(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """A linked plug's boot self-test is a restart even when every poll answered."""
+    """A linked plug's self-test with every poll answered is logged, not counted.
+
+    The unit only reset its network chip (Control 150 does every 30 min while
+    its cloud uploads fail), so the Restarts count stays at zero.
+    """
     plug_entry = MockConfigEntry(domain="homewizard")
     plug_entry.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -165,8 +169,10 @@ async def test_plug_self_test_counts_without_a_failed_poll(
 
         state = hass.states.get("sensor.venus_restarts")
         assert state is not None
-        assert state.state == "1"
+        assert state.state == "0"
+        assert state.attributes["outages"][-1]["kind"] == "network_reset"
         assert state.attributes["outages"][-1]["evidence"] == ["boot_pulse"]
+        assert state.attributes["network_resets_30d"] == 1
 
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
         await hass.async_block_till_done()

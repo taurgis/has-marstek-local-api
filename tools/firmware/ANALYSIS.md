@@ -122,6 +122,49 @@ These do not make a Wi-Fi-only Open API as reliable as a cable. Prefer
 Ethernet for polling. If the AP isolates STA clients or NATs Wi-Fi, unicast
 replies never arrive and retries cannot help.
 
+## Network chip resets
+
+Control 150 (`VNSEE3-0_app_0150_0804_151249.bin`, base `0x08000000`)
+resets its own network chip while cloud uploads keep failing. A user's LAN
+log on Ethernet showed a DHCP Discover and Request, then 5 to 9 s without
+ping, about every 35 minutes; a linked plug showed the start-up check right
+after each.
+
+- **Ethernet.** The HTTP task at `0x08014ecc` reads the unsent-record count
+  (halfword `0x20001004`; records of 0x227 bytes at `0x60000040`). With more
+  than one queued and the 1800 s timer at `0x20001fce` expired
+  (`0x08014f9e`-`0x08014fb8`), it calls `0x08027b04`, which logs
+  `[HTTP]ch395 reset!!!!`, pulses the CH395 reset pin (PD9, `0x08003be4`),
+  re-sends its init commands and logs `CH395 reset!!!`. The CH395 restarts
+  DHCP from Discover.
+- **Wi-Fi.** The same path resets the FC41D every 900 s through `0x0800b224`
+  (PE4/PE5 low for 1 s; logs `[HTTP]fc41d reset!!!!`).
+- **Timer helper `0x0802bce0(stamp, seconds)`.** A zero stamp is set to now
+  and returns 0; once `now - stamp >= seconds` it clears the stamp and returns
+  1. The period is the limit plus the time to the next call, so 1800 s shows
+  up as about 35 minutes.
+- **Neither path resets the MCU.** The software reboot (`0x08027e18`, "system
+  will reboot!") is called from OTA, develop-mode, MQTT `Reset` and two
+  battery-state checks (`0x0802b394` after 3600 s, `0x0802b444`), not from
+  the HTTP task.
+- **Control loop.** The self-use loop (`0x08029c88`) checks the network flag
+  (`0x2001a634`, `g_dev_net_info`) first; with it clear it zeroes the target
+  power and commands 0 W (`0x08005c8c(1, 0)`). While the chip is down the
+  CT meter's UDP packets do not arrive, and the loop then restarts its ramp
+  from 0 W (`0x08029ecc`).
+
+Open: why the plug sees the start-up check after a chip reset. Nothing in the
+paths above touches the inverter (Micro 116/119, BMS 115 run their own
+`self_check` behind CAN/RS-485). The hardware watchdog at `0x08016f48`
+(IWDG) could turn a stalled reset into a full reboot, but the code does not
+show that. The integration lists a self-test with no other trace and at most
+one missed poll as a **brief network reset** instead of a restart
+(`helpers/restart_detector.py`).
+
+Control 151's changelog lists "Fixed the pre-release server URL error,
+causing data upload failure" and "Optimize the stability of Https upload
+data", which address the trigger.
+
 ## Plugin-side mitigations (cannot patch the MCU)
 
 1. JSON-RPC ids cycle `1..65535` and never emit `0` from the command

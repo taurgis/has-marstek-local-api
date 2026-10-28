@@ -776,7 +776,7 @@ function csvCell(row, column) {
   if (column === "closed_at" || column === "week_start") return toDate(row[column])?.toISOString() ?? "";
   if (column === "direction") return row.direction === "charge" ? "charge" : "discharge";
   if (column === "at") return row.date.toISOString();
-  if (column === "kind") return row.kind === "restart" ? "restart" : "dropout";
+  if (column === "kind") return ["restart", "network_reset"].includes(row.kind) ? row.kind : "dropout";
   // Trace names are fixed snake_case words; a semicolon keeps them in one cell.
   if (column === "evidence") return (Array.isArray(row.evidence) ? row.evidence : []).filter((trace) => /^[a-z_]+$/.test(trace)).join(";");
   return finite(row[column]) ?? "";
