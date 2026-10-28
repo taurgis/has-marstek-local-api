@@ -63,6 +63,13 @@
   width: min(100%, 420px);
 }
 
+/* On phones the headline matters more than the picture. */
+@media (max-width: 639px) {
+  .mk-hero {
+    width: min(100%, 260px);
+  }
+}
+
 svg {
   width: 100%;
   height: auto;
@@ -77,13 +84,13 @@ svg {
 
 .mk-ha {
   fill: none;
-  stroke: #18bcf2;
+  stroke: #0284c7;
   stroke-width: 6;
   stroke-linejoin: round;
 }
 
 .mk-ha-dot {
-  fill: #18bcf2;
+  fill: #0284c7;
 }
 
 .mk-battery-shell {
@@ -98,18 +105,25 @@ svg {
 }
 
 .mk-bolt {
-  fill: var(--mk-charge);
+  fill: #fff;
+  stroke: var(--vp-c-brand-1);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+:global(.dark) .mk-bolt {
+  fill: #0f172a;
 }
 
 .mk-label {
   fill: var(--vp-c-text-1);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .mk-small {
   fill: var(--vp-c-text-2);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .mk-link {
@@ -121,7 +135,6 @@ svg {
 
 .mk-link-back {
   stroke: var(--mk-charge);
-  opacity: 0.6;
 }
 
 .mk-packet {
@@ -134,13 +147,13 @@ svg {
 
 .mk-cloud path {
   fill: none;
-  stroke: var(--mk-line);
+  stroke: #64748b;
   stroke-width: 3;
 }
 
 .mk-cloud text {
   fill: var(--vp-c-text-2);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .mk-strike {

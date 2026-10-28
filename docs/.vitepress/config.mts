@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress';
 import type { HeadConfig } from 'vitepress';
-import { pageDescriptions } from './pages';
+import { pageDescriptions, pageTitles } from './pages';
 
 // The site builds straight from docs/, so the same Markdown renders on GitHub
 // and here. Pages that only make sense on the site live under guide/.
@@ -53,7 +53,13 @@ export default defineConfig({
     ['meta', { name: 'theme-color', content: '#0f766e' }],
     ['meta', { property: 'og:site_name', content: siteName }],
     ['meta', { property: 'og:locale', content: 'en_US' }],
-    ['meta', { name: 'twitter:card', content: 'summary' }],
+    ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
+    // One share card for every page: https://ogp.me/
+    ['meta', { property: 'og:image', content: `${siteUrl}og.png` }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { property: 'og:image:alt', content: `${siteName}: your home battery, on your own network.` }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
   ],
 
   markdown: {
@@ -90,11 +96,13 @@ export default defineConfig({
   transformPageData(pageData) {
     const description = pageData.frontmatter.description ?? pageDescriptions[pageData.relativePath];
     if (description) pageData.description = description;
+    const shortTitle = pageTitles[pageData.relativePath];
+    if (shortTitle) pageData.title = shortTitle;
     const url = canonicalUrl(pageData.relativePath);
     const title = pageData.frontmatter.layout === 'home' ? siteName : `${pageData.title} | ${siteName}`;
     const head: HeadConfig[] = [
       ['link', { rel: 'canonical', href: url }],
-      ['meta', { property: 'og:type', content: pageData.frontmatter.layout === 'home' ? 'website' : 'article' }],
+      ['meta', { property: 'og:type', content: 'website' }],
       ['meta', { property: 'og:url', content: url }],
       ['meta', { property: 'og:title', content: title }],
       ['meta', { property: 'og:description', content: pageData.description || siteDescription }],
@@ -107,10 +115,18 @@ export default defineConfig({
     siteTitle: 'Marstek for HA',
 
     nav: [
-      { text: 'Get started', link: '/guide/getting-started', activeMatch: '^/guide/' },
-      { text: 'Use it', link: '/services', activeMatch: '^/(services|energy_dashboard|usable-capacity|options|configuration|screenshots)' },
-      { text: 'Reference', link: '/entities', activeMatch: '^/(entities|repairs|installation)' },
-      { text: 'Compare', link: '/guide/comparison' },
+      {
+        text: 'Get started',
+        link: '/guide/getting-started',
+        activeMatch: '^/guide/(introduction|supported-devices|before-you-start|getting-started|features|limitations)',
+      },
+      { text: 'Use it', link: '/services', activeMatch: '^/(services|energy_dashboard|usable-capacity|screenshots)' },
+      {
+        text: 'Reference',
+        link: '/entities',
+        activeMatch: '^/(entities|repairs|installation|configuration|options|guide/glossary|capacity-estimation-methods|development)',
+      },
+      { text: 'Compare', link: '/guide/comparison', activeMatch: '^/guide/comparison' },
       { text: 'Help', link: '/troubleshooting', activeMatch: '^/(troubleshooting|firmware-resets|guide/faq)' },
     ],
 
@@ -139,7 +155,6 @@ export default defineConfig({
           { text: 'Energy dashboard', link: '/energy_dashboard' },
           { text: 'Automations and services', link: '/services' },
           { text: 'Battery health', link: '/usable-capacity' },
-          { text: 'Options', link: '/options' },
         ],
       },
       {
@@ -147,6 +162,7 @@ export default defineConfig({
         items: [
           { text: 'Installation', link: '/installation' },
           { text: 'Configuration', link: '/configuration' },
+          { text: 'Options', link: '/options' },
           { text: 'Entities', link: '/entities' },
           { text: 'Repairs', link: '/repairs' },
           { text: 'Glossary', link: '/guide/glossary' },

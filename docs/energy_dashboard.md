@@ -1,4 +1,4 @@
-# Energy Dashboard
+# Energy dashboard
 
 ## Add Marstek to the Energy dashboard
 

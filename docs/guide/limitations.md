@@ -13,7 +13,7 @@ Read this page before you rely on the integration for anything that matters, lik
 The battery never reports a change by itself. Home Assistant asks every 30 seconds by default. A change made in the Marstek app, or by the battery itself, can take up to that long to appear. Don't build automations that need a reaction within seconds.
 
 **Some firmware is fragile.**
-Some firmware versions switch the Open API off, or even reset their settings, when they are polled. Venus A, D, and E 3.0 firmware below 150 is the known case. Home Assistant shows a warning for these versions. Update the firmware in the Marstek app if you can. [Details](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults)
+Some firmware versions switch the Open API off, or even reset their settings, when they are polled. The known cases are Venus A, D, and E 3.0 below firmware 150, Venus C below 156, and Venus E mini 145. Home Assistant shows a warning for these versions. Update the firmware in the Marstek app if you can. [Details](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults)
 
 **Requests sometimes get no answer.**
 Over Wi-Fi, even good firmware drops some replies. On a Venus E 3.0 with firmware 150, about one Wi-Fi reply in five goes missing. On firmware known to cope with it, the integration resends read requests. It always keeps the last values for a few failed polls before marking entities unavailable. A wired Ethernet connection is more reliable where the battery has one.
@@ -36,22 +36,22 @@ Passive mode is refused by the firmware. Replies only arrive on a normal /24 hom
 ## Choices this integration makes
 
 **One request at a time.**
-Each battery gets one request at a time, with a pause between them. That's slower, but it is what the fragile firmware needs. Writing many schedule slots takes one round trip per slot.
+By default each battery gets one request at a time, with a pause between them. On firmware known to cope, you can allow parallel requests under [Options](../options.md). That's slower, but it is what the fragile firmware needs. Writing many schedule slots takes one round trip per slot.
 
 **Risky requests are off by default.**
 Battery temperature and the other battery-detail sensors use a request that has been linked to resets on some firmware ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)). They start disabled. Firmware updates and factory reset are not offered at all.
 
 **Controls depend on firmware.**
-Depth of discharge, the panel LED, Bluetooth advertising, and UPS mode only appear on firmware that accepts them (150 or newer on Venus A, D, and E 3.0). If the integration can't recognize the firmware, it uses the safest feature set.
+Depth of discharge, the panel LED, Bluetooth advertising, and UPS mode only appear on firmware that accepts them: 150 or newer on Venus A, D, and E 3.0. Venus E mini has them too. Venus C has none of them. If the integration can't recognize the firmware, it uses the safest feature set.
 
-**Manual and Passive are not on the mode dropdown.**
-Both need extra settings: a power, a duration, or time slots. Set them with the services or device actions instead.
+**Manual and Passive can't be chosen from the mode dropdown.**
+They appear there so you can see the current mode, but both need extra settings: a power, a duration, or time slots. Choosing them in the dropdown shows an error. Set them with the services or device actions instead.
 
 **One battery per entry.**
 Each battery is added separately. There is no combined "system" device that adds batteries together. The Battery health dashboard does compare batteries side by side.
 
-**Energy totals never go down.**
-If the firmware briefly reports a lower or impossible lifetime total, the integration keeps the last plausible value so your Energy dashboard doesn't break. A real reset of the counter on the battery needs a statistics correction in Home Assistant.
+**Glitched energy totals are filtered.**
+Grid totals are held so they never drop. On every lifetime total, readings of zero, impossible values, and huge jumps are ignored, so your Energy dashboard doesn't break. A real reset of the counter on the battery needs a statistics correction in Home Assistant.
 
 ## Project limits
 
@@ -64,6 +64,8 @@ It is not in the HACS default store or built into Home Assistant, so you add it 
 **Only one `marstek` integration at a time.**
 This integration, Marstek's own HACS integration, and a proposed built-in Home Assistant integration all use the same `marstek` name. Home Assistant can load only one of them. See the [comparison](comparison.md).
 
-## What it does well despite all this
+## Why it's built this way
 
-These limits are why the integration is careful, and they are what most of its code is for: tracking firmware versions, retrying lost replies, following IP changes, and telling a battery restart apart from a network hiccup. Each supported firmware version runs in automated tests, most of them against Marstek's own firmware in an emulator.
+These limits are why the integration is careful, and they are what most of its code is for: tracking firmware versions, retrying lost replies, following IP changes, and telling a battery restart apart from a network hiccup. Every supported firmware version is covered by the automated tests, and most have also been run against Marstek's own firmware in an emulator.
+
+Still a fit? Follow [Getting started](getting-started.md).

@@ -174,7 +174,7 @@ These are constraints of the Open API or of this integration's design.
 - **One request at a time per battery.** A batch such as clearing every schedule slot takes one round trip per slot.
 - **LAN only.** Discovery uses UDP broadcast. A battery on another VLAN needs its IP entered by hand.
 - **Depth of discharge, Bluetooth advertising, and the panel LED cannot be read back.** Home Assistant shows the last value the battery accepted.
-- **Passive and Manual are services, not choices on the mode dropdown.** Both need a power, a duration, or time slots.
+- **Passive and Manual can't be chosen from the mode dropdown.** They show there so the current mode is visible, but both need a power, a duration, or time slots, so set them with services or device actions.
 - **One device per config entry.** Several batteries are several entries. The fleet card is the on-screen comparison.
 - **Venus E 2.0 is not supported.**
 - **Features the firmware lacks are omitted.** SYS and UPS need firmware 150 or newer on Venus A, D, and E. PV sensors exist on Venus A and Venus D.

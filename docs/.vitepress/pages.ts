@@ -16,3 +16,8 @@ export const pageDescriptions: Record<string, string> = {
   'capacity-estimation-methods.md': 'How the integration estimates usable battery capacity, and why it is built that way.',
   'development.md': 'Run the tests, the firmware emulator matrix, and the release flow for the Marstek integration.',
 };
+
+// Shorter <title> values for pages whose H1 is long or written for GitHub.
+export const pageTitles: Record<string, string> = {
+  'capacity-estimation-methods.md': 'How capacity estimation works',
+};

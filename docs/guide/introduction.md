@@ -29,7 +29,7 @@ Three things follow from that design:
 - Charges or discharges at a set power for a set time (passive mode).
 - Writes the battery's built-in charge and discharge schedules (manual mode).
 - Sets depth of discharge, Bluetooth advertising, and the panel LED, on firmware that accepts them.
-- Estimates usable capacity and battery health, if you turn that on.
+- Estimates usable capacity and battery health from long charge and discharge runs.
 - Finds the battery again when its IP address changes.
 
 The full list, with links, is on [Features](features.md).
@@ -47,8 +47,8 @@ The honest list of rough edges is on [Limitations](limitations.md).
 
 Marstek's Open API is young, and some firmware versions misbehave under load. Some switch the Open API off, or even reset their settings, when they get too many requests ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Because of that, the integration:
 
-- sends one request at a time to each battery, with a pause between requests,
-- polls slow-changing data (Wi-Fi, battery cell details) only every 5 minutes, and only when you use those sensors,
+- sends one request at a time to each battery by default, with a pause between requests,
+- polls slow-changing data (Wi-Fi, battery details) only every 5 minutes, and only when you use those sensors,
 - checks the firmware version and leaves out controls the battery would reject,
 - warns you in **Settings** > **System** > **Repairs** when your firmware is known to be fragile.
 

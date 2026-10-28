@@ -1,12 +1,13 @@
 ---
 layout: home
 title: Marstek for Home Assistant
+titleTemplate: false
 description: Monitor and control Marstek home batteries (Venus A, C, D, E 3.0, E mini) from Home Assistant over your local network. Free, open source, no cloud account.
 
 hero:
   name: Marstek for Home Assistant
-  text: Your home battery, on your own network.
-  tagline: See charge, power, and solar in Home Assistant, and tell the battery when to charge or discharge. Everything stays on your local network. No Marstek cloud account and no extra hardware.
+  text: Local control for your home battery
+  tagline: Live charge, power, and solar in Home Assistant. Charge or discharge from automations. Works with Venus A, C, D, E 3.0, and E mini over your own network, with no Marstek cloud account and no extra hardware.
   actions:
     - theme: brand
       text: Get started
@@ -15,13 +16,13 @@ hero:
       text: Will it work with my battery?
       link: /guide/supported-devices
     - theme: alt
-      text: Compare integrations
-      link: /guide/comparison
+      text: See it in action
+      link: /screenshots
 
 features:
   - icon: 🔋
     title: Live battery state
-    details: State of charge, charge and discharge power, grid power per phase, and solar on Venus A and Venus D. Updated every 30 seconds by default.
+    details: Charge level, battery power, grid power, and solar on Venus A and Venus D, refreshed every 30 seconds.
     link: /entities
     linkText: Every sensor
   - icon: ⚡
@@ -36,7 +37,7 @@ features:
     linkText: Set it up
   - icon: 🩺
     title: Battery health, optional
-    details: Estimates usable capacity and state of health from long charge and discharge runs. Off until you turn it on.
+    details: Estimates usable capacity and state of health from long charge and discharge runs. The dashboard and smart-plug linking are opt-in.
     link: /usable-capacity
     linkText: How it works
   - icon: 🔍
@@ -45,15 +46,44 @@ features:
     link: /configuration
     linkText: Adding a battery
   - icon: 🛡️
-    title: Careful with your battery
-    details: One request at a time, features gated by firmware version, and risky requests left off by default. Some Marstek firmware resets when it is polled too hard.
+    title: Gentle on your battery
+    details: Paced requests and firmware-aware controls keep older firmware stable. Requests linked to resets stay off unless you turn them on.
     link: /guide/limitations
     linkText: Known limitations
 ---
 
+<div class="mk-proof">
+
+- Free and MIT-licensed
+- No cloud account
+- Tested against Marstek's own firmware in an emulator
+- [![Latest release](https://img.shields.io/github/v/release/taurgis/has-marstek-local-api?label=release&color=0f766e)](https://github.com/taurgis/has-marstek-local-api/releases)
+- [![GitHub stars](https://img.shields.io/github/stars/taurgis/has-marstek-local-api?style=flat&color=0f766e)](https://github.com/taurgis/has-marstek-local-api)
+
+</div>
+
+## See it in Home Assistant
+
+<div class="mk-gallery">
+<figure>
+<img src="./screenshots/device-details.png" alt="Marstek device page in Home Assistant with battery level, power, operating mode, and controls." loading="lazy" />
+<figcaption>The device page: charge, power, mode, and controls.</figcaption>
+</figure>
+<figure>
+<img src="./screenshots/automation-action.png" alt="Automation editor with Marstek device actions to charge, discharge, or stop the battery." loading="lazy" />
+<figcaption>Charge, discharge, or stop from the visual automation editor.</figcaption>
+</figure>
+<figure>
+<img src="./screenshots/battery-health-dashboard-desktop.png" alt="Battery health dashboard comparing usable capacity and state of health over time." loading="lazy" />
+<figcaption>An optional battery health dashboard.</figcaption>
+</figure>
+</div>
+
+[Take the visual tour →](/screenshots)
+
 ## Is this for me?
 
-This integration fits if **all** of these are true:
+You're set if:
 
 - You have a **Marstek Venus A, C, D, E 3.0, or Venus E mini**. Venus E 2.0 does not work with it. See [supported devices](/guide/supported-devices).
 - You run **Home Assistant 2025.10 or newer** with [HACS](https://hacs.xyz/) installed, or you are comfortable copying a folder into Home Assistant.
@@ -69,6 +99,12 @@ Not sure what some of these words mean? The [glossary](/guide/glossary) explains
 3. **Add the battery** under **Settings** > **Devices & services**. Most batteries are found automatically.
 
 The [getting started guide](/guide/getting-started) walks through each step with screenshots, then shows you how to add the battery to the Energy dashboard and build a first automation.
+
+<div class="mk-cta">
+
+[Get started](/guide/getting-started){.mk-button} [Check your battery](/guide/supported-devices){.mk-button .mk-button-alt}
+
+</div>
 
 > [!NOTE] Independent project
 > This is a free, MIT-licensed community project. It is not made, endorsed, or supported by Marstek. Read the [limitations](/guide/limitations) before you rely on it for anything important.

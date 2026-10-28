@@ -59,7 +59,7 @@ This is expected behavior.
 - Reduce request rate (increase fast/medium intervals).
 - Ensure only one controller is talking to the device.
 - If **Parallel API requests** is enabled, try disabling it first (especially on Wi-Fi).
-- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API **Ethernet** send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Wi-Fi Open API still uses the Quectel FC41D `AT+QISEND` path; on a Venus E 3.0 150 about one Wi-Fi datagram in five gets no reply, and losses come in bursts: the firmware drops a reply it cannot hand to the Wi-Fi module within 500 ms, then ignores requests for a second or two. On known-safe firmware (Control 150+ / HMG-50 156+) the integration sends **read-only** unicasts again at 0.5 s, 2.5 s and 5 s while there is no reply, staying inside the configured request timeout (at most four datagrams). A wired LAN, or HA talking to the Ethernet IP of a dual-homed device, typically answers before 500 ms and never gets an extra copy. Writes, unknown firmware, and reset-prone builds stay one-shot.
+- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API **Ethernet** send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Wi-Fi Open API still uses the Quectel FC41D `AT+QISEND` path; on a Venus E 3.0 150 about one Wi-Fi datagram in five gets no reply, and losses come in bursts: the firmware drops a reply it cannot hand to the Wi-Fi module within 500 ms, then ignores requests for a second or two. On known-safe firmware (Control 150+; never on HMG-50, where a second copy would land on the shared meter channel) the integration sends **read-only** unicasts again at 0.5 s, 2.5 s and 5 s while there is no reply, staying inside the configured request timeout (at most four datagrams). A wired LAN, or HA talking to the Ethernet IP of a dual-homed device, typically answers before 500 ms and never gets an extra copy. Writes, unknown firmware, and reset-prone builds stay one-shot.
 - The diagnostic **Restarts** sensor separates a device that rebooted from one the
   network lost. Its `dropouts_30d` attribute counts outages with no restart behind them;
   see [Restarts and dropouts](usable-capacity.md#restarts-and-dropouts).
@@ -244,10 +244,10 @@ Add to `configuration.yaml`:
 
 ```yaml
 logger:
-	default: warning
-	logs:
-		custom_components.marstek: debug
-		custom_components.marstek.pymarstek: debug
+  default: warning
+  logs:
+    custom_components.marstek: debug
+    custom_components.marstek.pymarstek: debug
 ```
 
 Then reload/restart as appropriate.

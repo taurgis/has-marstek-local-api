@@ -6,9 +6,11 @@ Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only
 
 Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Firmware `ver >= 150` on a known family scales the wire unit 0.1 Wh → Wh; older profiles leave a present value unscaled.
 
-> Note: Some entities are **Diagnostic** and **disabled by default** (can be enabled in the entity registry).
+> [!NOTE]
+> Some entities are **Diagnostic** and **disabled by default**. To turn one on, open it from the device page, select the gear icon, switch on **Enabled**, and select **Update**.
 
-> ⚠️ The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically on Control firmware **150+**.
+> [!WARNING] Battery detail sensors start disabled
+> The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically on Control firmware **150+**.
 >
 > **Reset-prone firmware (Control generation below 150):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, setup or the scanner reloads the config entry so they can be created again (still disabled by default).
 >
@@ -147,4 +149,4 @@ Entities are grouped under one device, and unique IDs remain stable across IP ch
 
 Meter input/output energy sensors are created only when `EM.GetStatus` (or Rev 3.1 `ES.GetMode` fallback) reports those lifetime totals. They use the same BLE-MAC unique ID pattern as other sensors and are suitable for the Energy Dashboard (`device_class: energy`, `state_class: total_increasing`, native unit `Wh`).
 
-<img src="screenshots/device-details-venusa.png" alt="Device details (Venus A)" width="560" />
+<img src="screenshots/device-details-venusa.png" alt="Venus A device page in Home Assistant with battery, grid, and four solar input sensors." width="560" />

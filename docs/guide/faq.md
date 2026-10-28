@@ -15,7 +15,7 @@ Yes. The app and Home Assistant can both see the battery. A change made in the a
 
 ## Is it safe for my battery?
 
-The integration is built to go easy on the battery: one request at a time, firmware-aware controls, and risky requests off by default. Still, some Marstek firmware misbehaves under polling, and the Open API is provided by Marstek "as is". Keep the battery firmware up to date, and read [Limitations](limitations.md). The project comes with no warranty.
+The integration is built to go easy on the battery: one request at a time by default, firmware-aware controls, and risky requests off by default. Still, some Marstek firmware misbehaves under polling, and the Open API is provided by Marstek "as is". Keep the battery firmware up to date, and read [Limitations](limitations.md). The project comes with no warranty.
 
 ## Is it secure?
 
@@ -31,7 +31,7 @@ Most often the battery's firmware doesn't support it, so the integration leaves 
 
 ## Why did my battery go unavailable?
 
-Usually a network hiccup or a battery restart. The integration keeps the last values for three failed polls before marking it unavailable. [Why a battery goes offline](../firmware-resets.md) explains the different cases and how to tell them apart.
+Usually a network hiccup or a battery restart. The integration keeps the last values until three polls in a row have failed, then marks it unavailable. You can change that number under **Configure** > **Network Settings** (**Failures before unavailable**). [Why a battery goes offline](../firmware-resets.md) explains the different cases and how to tell them apart.
 
 ## Does it work with more than one battery?
 
