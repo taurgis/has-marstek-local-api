@@ -398,7 +398,7 @@ async def _clicks_keep_scroll(http_port: int, cdp_port: int) -> None:
             assert abs(float(after) - before) < 48, (selector, before, after)
             return before, float(after)
 
-        for name in ("runs", "energy", "restarts", "capacity"):
+        for name in ("runs", "energy", "restarts", "corrections", "capacity"):
             await press(f'[data-tab="{name}"]')
             selected = await cdp.evaluate(
                 f"window.__card.shadowRoot.querySelector('[data-tab=\"{name}\"]')"

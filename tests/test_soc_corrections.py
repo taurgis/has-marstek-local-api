@@ -9,9 +9,12 @@ hold at 99.
 from __future__ import annotations
 
 import math
+import statistics
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import pairwise
+from typing import Any
 
 import pytest
 
@@ -21,6 +24,7 @@ from custom_components.marstek.capacity_estimator import (
     UsableCapacityEstimator,
     apply_capacity_estimate,
 )
+from custom_components.marstek.helpers import soc_corrections
 from custom_components.marstek.helpers.soc_corrections import (
     CREEP,
     FULL,
@@ -48,13 +52,15 @@ def _iso(moment: float) -> str:
 class _Pack:
     """True energy plus the BMS's reported whole percent.
 
-    ``k_charge`` scales what the BMS counts on charge. At true full the BMS
-    resets its reading: ``jump`` at once, ``creep`` by ``creep_step`` points a
-    poll, ``hold`` caps the reading at 99 until full.
+    ``k_charge`` scales what the BMS counts on charge, ``k_discharge`` on
+    discharge. At true full the BMS resets its reading: ``jump`` at once,
+    ``creep`` by ``creep_step`` points a poll, ``hold`` caps the reading at 99
+    until full.
     """
 
     soc: float = 50.0
     k_charge: float = 1.0
+    k_discharge: float = 1.0
     resync: str = "jump"
     creep_step: float = 2.0
     capacity: float = _TRUE
@@ -92,8 +98,8 @@ class _Pack:
         hours = _POLL / 3600.0
         dc = -watts * _ETA * hours if watts < 0.0 else -watts / _ETA * hours
         self.energy = min(self.capacity, max(0.0, self.energy + dc))
-        factor = self.k_charge if dc > 0.0 else 1.0
-        self.counted = min(99.9, self.counted + factor * dc / self.capacity * 100.0)
+        factor = self.k_charge if dc > 0.0 else self.k_discharge
+        self.counted = min(99.9, max(0.0, self.counted + factor * dc / self.capacity * 100.0))
         if self.full:
             if self.resync == "creep":
                 self.counted = min(100.0, max(self.counted, self.shown + self.creep_step))
@@ -155,7 +161,10 @@ def test_a_charge_counted_short_ends_in_a_jump_that_bounds_the_error() -> None:
     assert {event.style for event in corrected} == {JUMP}
     assert all(event.points > 3.0 for event in corrected)
     attrs = pack.estimator.attributes()
-    error = abs(pack.estimator.estimate_wh / _TRUE - 1.0) * 100.0
+    honest = _Pack()
+    _cycles(honest, 6)
+    assert pack.estimator.estimate_wh is not None and honest.estimator.estimate_wh is not None
+    error = abs(pack.estimator.estimate_wh / honest.estimator.estimate_wh - 1.0) * 100.0
     assert error > 2.0
     assert attrs["soc_drift_bound_pct"] == pytest.approx(error, abs=1.0)
     assert attrs["confidence"] in {"low", "medium"}
@@ -384,3 +393,160 @@ def test_thirty_day_counts_follow_the_latest_poll() -> None:
 
 def test_the_card_list_stays_out_of_the_recorder() -> None:
     assert "soc_corrections" in CARD_ATTRIBUTES
+
+
+def test_a_correction_cannot_tell_which_direction_miscounted() -> None:
+    """Charge counted short and discharge counted long look the same.
+
+    Both end in an upward correction of the same size and a charge median
+    above the discharge median, yet they push the estimate opposite ways.
+    Publishing either direction's median alone would double one error, so the
+    geometric mean stays: it splits the difference.
+    """
+    short = _Pack(k_charge=0.94)
+    long = _Pack(k_discharge=1.06)
+    for pack in (short, long):
+        _cycles(pack, 10)
+    errors = []
+    for pack in (short, long):
+        estimator = pack.estimator
+        charge = statistics.median(estimator._capacities("charge"))
+        discharge = statistics.median(estimator._capacities("discharge"))
+        assert estimator.estimate_wh is not None
+        assert charge > discharge
+        assert all(event.points > 0.0 for event in _corrections(pack) if event.corrected)
+        errors.append(
+            {
+                "published": estimator.estimate_wh / _TRUE - 1.0,
+                "discharge": discharge / _TRUE - 1.0,
+                "charge": charge / _TRUE - 1.0,
+            }
+        )
+    assert short.estimator._corrections.bound_pct() == pytest.approx(
+        long.estimator._corrections.bound_pct(), abs=0.5
+    )
+    assert errors[0]["published"] > 0.0 > errors[1]["published"]
+    for side in ("discharge", "charge"):
+        worst = max(abs(error[side]) for error in errors)
+        assert worst > max(abs(error["published"]) for error in errors)
+
+
+def _bound_and_error(**miscount: Any) -> tuple[float, float]:
+    """Return the drift bound and the estimate's error against an honest pack."""
+    packs = (_Pack(), _Pack(**miscount))
+    for pack in packs:
+        _cycles(pack, 10)
+    honest, drifted = (pack.estimator.estimate_wh for pack in packs)
+    bound = packs[1].estimator._corrections.bound_pct()
+    assert honest is not None and drifted is not None and bound is not None
+    return bound, abs(drifted / honest - 1.0) * 100.0
+
+
+@pytest.mark.parametrize(
+    "miscount",
+    [
+        {"k_charge": 0.94},
+        {"k_charge": 1.06, "resync": "hold"},
+        {"k_discharge": 1.06},
+        {"k_discharge": 0.94, "resync": "hold"},
+    ],
+)
+def test_the_bound_covers_the_error_for_a_hold_as_for_a_jump(miscount: dict[str, Any]) -> None:
+    """Approach energy is converted with the median of its own direction.
+
+    The published value is the mean of both directions, so it hid part of a
+    hold's correction: a 3.4% error showed a 2.5% bound.
+    """
+    bound, error = _bound_and_error(**miscount)
+    assert 0.85 * error <= bound <= error + 1.0
+
+
+def test_the_bound_does_not_lean_on_the_efficiency_assumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same drift reads the same bound whatever the real efficiency.
+
+    The standby allowance is a fixed number of watts, not a share of the
+    charge, so it is left out here.
+    """
+    monkeypatch.setattr(soc_corrections, "STANDBY_ALLOWANCE_W", 0.0)
+    bounds = []
+    for eta in (0.93, 0.89):
+        monkeypatch.setattr(sys.modules[__name__], "_ETA", eta)
+        bounds.append(_bound_and_error(k_charge=1.06, resync="hold")[0])
+    assert bounds[0] == pytest.approx(bounds[1], abs=0.2)
+
+
+def _hold_level(
+    tracker: SocCorrectionTracker, start: float, level: float, polls: int, energy: float
+) -> float:
+    """Sit at ``level`` for ``polls`` polls, charging ``energy`` Wh each."""
+    for _ in range(polls):
+        _segment(tracker, start, level, level, energy=energy, reference=_TRUE)
+        start += _POLL
+    return start
+
+
+def test_a_slow_approach_with_long_flat_stretches_is_still_judged() -> None:
+    """Forty polls a point is 520 polls before full; flat runs keep two ends."""
+    tracker = SocCorrectionTracker()
+    moment = _T0
+    for level in range(80, 92):
+        moment = _hold_level(tracker, moment, float(level), 39, 46.0 / 40.0)
+        _segment(tracker, moment, level, level + 1.0, energy=46.0 / 40.0, reference=_TRUE)
+        moment += _POLL
+    assert len(tracker._trace) < 40
+    event = _segment(tracker, moment, 92.0, 100.0, energy=46.0, jumped=True, reference=_TRUE)
+    assert event is not None
+    assert event.style == JUMP
+    # Seven points from where each level began; up to one more of whole-percent
+    # quantization from where a level ended.
+    assert 7.0 <= event.points <= 8.0
+
+
+def test_a_climb_that_a_flagged_step_began_is_not_counted_twice() -> None:
+    tracker = SocCorrectionTracker()
+    moment = _climb(
+        tracker, _T0, [80.0 + index for index in range(11)], energy=46.0, reference=_TRUE
+    )
+    mid = _segment(tracker, moment, 90.0, 95.0, energy=46.0, jumped=True, reference=_TRUE)
+    assert mid is not None and mid.points == pytest.approx(4.0, abs=0.1)
+    moment = _climb(tracker, moment + _POLL, [95.0, 97.0, 99.0], energy=23.0, reference=_TRUE)
+    event = _segment(tracker, moment, 99.0, 100.0, energy=23.0, reference=_TRUE)
+    assert event is not None
+    assert event.style == JUMP
+    # Five points moved on 69 Wh: 3.5 unexplained, on top of the 4 already stored.
+    assert event.points == pytest.approx(3.5, abs=0.1)
+    assert tracker.to_dict()["throughput"] == 0.0
+
+
+def test_a_hold_counts_from_where_the_reading_reached_99() -> None:
+    """A counter that ran ahead mid-approach and then held is still a hold.
+
+    Over the whole approach the two cancel; from the 99 entry the pack took
+    five points of energy for one point of reading.
+    """
+    tracker = SocCorrectionTracker()
+    levels = [85.0 + index for index in range(15)]
+    moment = _climb(tracker, _T0, levels, energy=46.0 * 10.0 / 14.0, reference=_TRUE)
+    moment = _hold_level(tracker, moment, 99.0, 10, 23.0)
+    event = _segment(tracker, moment, 99.0, 100.0, reference=_TRUE)
+    assert event is not None
+    assert event.style == HOLD
+    assert event.points == pytest.approx(-4.0, abs=0.15)
+
+
+def test_an_honest_taper_that_feeds_the_unit_is_not_a_hold() -> None:
+    """The last five points at 40 W reported, 15 W of it the unit's own draw."""
+    tracker = SocCorrectionTracker()
+    moment = _climb(
+        tracker, _T0, [80.0 + index for index in range(16)], energy=46.0, reference=_TRUE
+    )
+    reported = 40.0 * _POLL / 3600.0
+    polls = math.ceil(46.0 / (25.0 * _POLL / 3600.0))
+    for level in range(95, 100):
+        moment = _hold_level(tracker, moment, float(level), polls - 1, reported)
+        event = _segment(tracker, moment, level, level + 1.0, energy=reported, reference=_TRUE)
+        moment += _POLL
+    assert event is not None
+    assert (event.style, event.points) == (FULL, 0.0)

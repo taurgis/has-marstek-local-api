@@ -608,20 +608,35 @@ class UsableCapacityEstimator:
 
     def _track_correction(self, previous: _Sample, sample: _Sample, jumped: bool) -> bool:
         """Pass one segment to the correction tracker; True when it ended a hold."""
-        reference, _correction = self._published()
+        energy_in = -_dc_energy_wh([previous, sample])
         verdict = self._corrections.observe(
             start=previous.timestamp,
             end=sample.timestamp,
             soc_before=previous.soc,
             soc_after=sample.soc,
-            energy_in_wh=-_dc_energy_wh([previous, sample]),
+            energy_in_wh=energy_in,
             jumped=jumped,
-            reference_wh=reference,
+            reference_wh=self._correction_reference(energy_in),
         )
         if verdict.correction is not None:
             self._dirty = True
             self._corrected = self._corrected or verdict.correction.corrected
         return verdict.hold
+
+    def _correction_reference(self, energy_in_wh: float) -> float | None:
+        """Return the watt-hours one counted percent stands for in this direction.
+
+        A direction median is what the BMS counts per point of that energy,
+        so the points it explains are the points the BMS itself counted. The
+        unexplained rest is then the whole correction whichever direction
+        miscounted, and the one-way efficiency cancels. The published value
+        would split a hold's correction with the other direction. It stands
+        in until this direction has its median.
+        """
+        capacities = self._capacities("charge" if energy_in_wh > 0.0 else "discharge")
+        if len(capacities) >= MIN_WINDOWS:
+            return statistics.median(capacities)
+        return self._published()[0]
 
     def _active_window(self) -> dict[str, Any] | None:
         """Return the in-progress charge or discharge, before it is accepted.

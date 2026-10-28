@@ -70,6 +70,39 @@ How the kinds are told apart is in [Restarts and dropouts](#restarts-and-dropout
 With no outage in 30 days the tab says so; with the **Restarts** sensor
 disabled it says to enable it.
 
+### Corrections
+
+**Corrections** lists the newest ten times the battery reset its own charge
+level, newest first. One line above the list counts corrections and full
+charges in the last 30 days and gives the last full charge, or says the
+battery has not been full for more than 14 days. A second line turns
+`soc_drift_bound_pct` into how far a single run can be off and, at 2% or
+more, the confidence it allows.
+
+With two or more corrections a bar strip shows them oldest to newest: above
+the line the battery had counted short, below it counted long. Taller bars
+are larger corrections, so a strip that grows means the counting drifts
+further between full charges.
+
+Each row names the kind next to its icon, with the signed size on the right:
+
+- **Jumped up**: the percentage stepped up in one go, usually to 100%.
+- **Climbed fast**: it caught up over a few polls, faster than the charging
+  power explains.
+- **Held near full**: it waited near 100% while the battery kept charging.
+- **Dropped**: it fell in one step the battery's power does not explain.
+
+The second line gives the date and time and what share the correction is of
+the points the percentage moved since the full charge before. A step that
+did not end at 100% also shows both levels (*60% → 52%*). A correction that
+ends at full shows no starting level: the estimator judges the last 15
+points before 100%, so that start says nothing about where the jump began.
+**What these corrections mean** opens a short explanation of each kind and
+of why LFP batteries correct near full. **Download corrections (CSV)** saves
+`at`, `style`, `from_soc`, `to_soc`, `points`, and `throughput`. How a
+correction is found is in
+[Charge-level corrections near 100%](#charge-level-corrections-near-100).
+
 ## Turn on the sidebar dashboard
 
 The sidebar page is off until you enable it. The cards themselves stay available from **Add card** either way.
@@ -278,7 +311,19 @@ the percentage. That reset shows up in three ways:
 
 The estimator records each arrival at 100%. With a published capacity it
 compares the points the percentage moved on the last 15 or more points
-before full with the points the measured watt-hours explain. A difference
+before full with the points the measured watt-hours explain. The size is
+the largest difference between any point of that approach and full, so a
+hold counts from where the reading reached 99. A step mid-range that the
+per-poll check already flagged is not counted again on arrival. A hold must
+also survive the unit's own draw: the reported watts leave out what the unit
+uses itself, and a charge that tapers near full can spend much of its power
+there, so every charging second is allowed some watts of it before the
+difference counts. Runs of polls at one reading are kept as their two ends,
+so a slow solar charge or a long hold still fits the trace. Once three
+charge windows are accepted, it converts those watt-hours with their median
+rather than the published value. The charge median is what the BMS itself
+counts per point, so the difference is the whole correction whichever
+direction miscounted, and the efficiency assumption drops out. A difference
 under three points is an ordinary full charge. Without a published capacity
 only a step the watts cannot explain counts. A hold also ends the open
 window, because the watt-hours charged at a frozen 99% belong to no
@@ -287,17 +332,30 @@ percentage.
 A correction does not rescale or discard the runs before it. A charge
 counter that misses charge and a discharge counter that over-counts both end
 in an upward jump, yet they bias the two direction medians in opposite
-directions, so the jump does not say which way to correct. It does bound the
-error: the corrected points divided by the points the percentage moved since
-the previous full charge. `soc_drift_bound_pct` is that ratio pooled over the
-last eight full charges, published once at least 100 points have moved.
-At 2% or more it caps the confidence at `medium`, at 5% or more at `low`.
+directions, so the jump does not say which way to correct.
+`soc_drift_bound_pct` gives its scale: the corrected points divided by the
+points the percentage moved, pooled over the last eight full charges and
+published once at least 100 points have moved. At 2% or more it caps the
+confidence at `medium`, at 5% or more at `low`.
+
+How close that is to the error depends on which counter drifted:
+
+- **One direction.** The figure is about the error. Simulated packs with
+  a charge or a discharge counter 2 to 8% off land within a point of it.
+- **Both, opposite ways.** The geometric mean cancels most of the error, so
+  the figure warns more than it needs to.
+- **Both, the same way.** A BMS that divides by a stale capacity counts
+  every point too large or too small in both directions. Its count still
+  agrees at full, so nothing is corrected and the figure stays at zero
+  while the estimate is off by the full mismatch. Only a discharge to the
+  cutoff, where the BMS resets to empty, shows it.
 
 Attributes: `soc_corrections` (the newest ten, card only, not recorded),
 `soc_corrections_30d`, `full_charges_30d`, `last_full_charge_at`, and
 `soc_drift_bound_pct`. The card names the latest correction and the bound,
 or, when the battery has not reached 100% in 14 days, says so: without a
-full charge the drift has no point to reset at.
+full charge the drift has no point to reset at. Its
+[Corrections tab](#corrections) lists the newest ten.
 
 A linked smart plug compares charge in and charge out between two moments at
 the same percentage. After a correction the same percentage is no longer the

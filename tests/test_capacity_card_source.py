@@ -69,6 +69,7 @@ def test_entity_kinds_are_real_translation_keys() -> None:
         "marstek-battery-health-copy.js",
         "marstek-battery-health-plug.js",
         "marstek-battery-health-restarts.js",
+        "marstek-battery-health-corrections.js",
     ],
 )
 def test_imported_modules_load_with_the_card_token(name: str) -> None:
