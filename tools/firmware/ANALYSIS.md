@@ -725,7 +725,8 @@ binary waits for, found by disassembly and confirmed on the running image:
    control task sets it when the inverter's command `0x02` reply puts a pack
    voltage above `0xFA0` at `0x2000b780+0x56` and a second reading above
    `0x320` at `+0x58`. `mini_peers.py` answers USART4 (inverter, address
-   `0x81`) and USART5 (DCDC, `0x82`) with the image's own AA frames.
+   `0x81`) and USART5 (DCDC, `0x82`) with the image's own AA frames and a
+   simulated pack behind them (see **Battery** below).
 3. **UART timing.** Renode clocks `STM32_UART` at 8 MHz. The image sets BRR
    for a 36 MHz PCLK1, so at 8 MHz an inverter reply outlasted the next poll
    and the frames merged; the USART4 parser (`0x080259c0`) wants one frame
@@ -786,3 +787,52 @@ coordinator read populated, the mode select offered Auto/AI/Manual/UPS and
 each write was acknowledged, DoD, LED and BLE writes were acknowledged, and a
 Manual slot 5 write carried `manual_set`. Passive and slot 6 were refused by
 the integration before any datagram was sent.
+
+**Battery.** The PMU keeps SoC and the energy totals itself; the peers only
+report what a pack, DCDC and inverter would. Confirmed on the running image
+(RAM reads through the Renode monitor and the frames the PMU sends):
+
+- Replies must carry the polled command. The inverter parser (`0x080259c0`)
+  marks a poll answered only on a matching command, and the inverter
+  sequence (`0x08025b78`: `0x40 0x41 0x43 0x60 0x44 0x45 0x46 0x01 0x02`,
+  then `0x21`) retries and stalls otherwise. A fixed `0x02` reply never got
+  past the register reads.
+- Register writes must be echoed. `0x08025748` compares six register groups
+  and the `cmd 0x72` block (`0x2000b780+0x4b6`, 16 bytes) with the
+  inverter's last echo (`+0x4d6`, written by the `0x72` reply handler
+  `0x080196ec`) and rewrites while they differ. With zero replies the PMU
+  looped on `0x60`/`0x72` and stopped polling `0x02`, so `ongrid_power`
+  froze at the last value.
+- `cmd 0x72` bytes 0-1 are the direction (1 charge, 2 discharge, 0 none)
+  and bytes 2-3 the power in W. Manual `manual_set` 2 at 800 W sent
+  `0002 0320`, `manual_set` 1 at 600 W sent `0001 0258`, Auto sent
+  `0000 0258`.
+- `cmd 0x02` byte 6 (s16) lands at `0x2000b780+0x5c` and is reported as
+  `ongrid_power`. `cmd 0x80` carries the pack voltage, the current (mA,
+  + = charge; the PMU's `0x2001d55c+8` read 86188 mA while the pack
+  delivered 86.2 A), the two cell voltages and the cell temperatures
+  (`bat_temp` 25 from 250).
+- `cmd 0x21` bytes 0-1 come from `0x2000b780+0xaa`, the CT meter power
+  (`0x0801e560`). They stayed 0 with no CT, so the sign under a real meter is
+  not confirmed.
+
+Two clocks had to be fixed for the counters to run at real speed. The PMU's
+millisecond tick (`0x20002e58`, TIMER6 IRQ) assumes a 72 MHz timer clock
+(PSC 1, ARR 35999); at Renode's 10 MHz it ran at 0.139x, and so did SoC and
+the energy totals. SysTick is loaded with 143999 for 1 ms at 144 MHz; at
+72 MHz the 20 ms control task ran every 40 ms and the energy task (one sum
+per 50 runs) counted half. After both: 22016 ticks in 22.05 s, the control
+task every 20.4 ms, 800 W for about 193 s gave `total_grid_output_energy`
+42 (43 Wh expected), 600 W charge for about 162 s gave
+`total_grid_input_energy` 26-27 (27 Wh), and over 120 s of 800 W discharge
+the PMU's SoC fell 1.39 % against the pack's 1.40 %.
+
+On a blank SoC record the PMU starts from the open-circuit voltage about a
+second after boot, before its first DCDC `0x80` poll. It looked up 0 mV and
+started at 43 % whatever the pack held. Its counter is saved to flash
+(`0xF000`) only on the power-down path (`0x0802904c`) or a reboot command,
+so a container restart loses it the same way. `run_firmware.py` therefore
+writes 1 to `0x2001a020` once `0x2001d55c` holds a voltage; the 1 s task
+(`0x0802b2d8`) then restarts SoC from the OCV with real readings. A fresh
+`--soc 60` image read 60.00 %; after a restart at 59.17 % it read 57.99 %,
+since the lookup is in whole percent on a flat LFP plateau.

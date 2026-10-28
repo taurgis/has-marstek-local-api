@@ -27,6 +27,7 @@ while this emulator is the vendor's own implementation, including its quirks
 | BMS and inverter | energy-counted battery (`--packs`, `--capacity`), inverter that follows the MCU's setpoint within the family's AC limits | `can_peers.py --family` |
 | PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, day/month/year 0.01 kWh yield counters (persisted next to the EEPROM), MCU on/off | `can_peers.py --pv`, `--pv-energy`, `--pv-state` |
 | EPS socket (Venus A) | constant off-grid load served from the battery | `can_peers.py --offgrid-load` |
+| Venus E mini pack, DCDC and inverter (UART AA links) | energy-counted 2S LFP pack (2009 Wh, `--soc`, `--capacity`) behind a DCDC that reports its voltage, current and temperature, and an inverter that follows the PMU's forced direction and power; the PMU counts SoC and energy itself | `mini_peers.py` |
 | BMS charge counter | reported SoC from a coulomb counter that can miss charge or over-count discharge, and resets at full by a jump, a creep or a hold at 99% (`SocCounter`); honest by default | `can_peers.py --bms-charge-error`, `--bms-discharge-error`, `--bms-resync` (also on `run_firmware.py`) |
 | HMG-50 board (Venus C / E 2.0): STM32G474 map, USART/LPUART FIFO mode, RCC/PWR/FLASH/RTC/HRTIM/ADC/CORDIC stubs, FDCAN | Renode STM32 models + G4 stubs | `renode/hmg50.repl.in`, `STM32G4_USART.cs`, `g4*.py` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
@@ -269,7 +270,7 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
 | `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
 | `fw-venus-a-1491`, `fw-venus-a-151` | .73-.74 | VNSA-0 1491 and 151, PV 420/360 W | `firmware-all` |
-| `fw-venus-e-mini-301` | .75 | VNSEMINI-0 PMU 301 (32-byte header, load `0x08008000`). Modem is USART2. Settings in SPI1 NOR (`renode/spiflash.py`). `mini_peers.py` answers the inverter and DCDC UARTs; `fc41d.py --autojoin --netmask 255.255.255.0 --lan-broadcast`. Opens UDP and answers the Open API itself; replies go to `<a.b.c>.255`. See `tools/firmware/ANALYSIS.md` | `firmware-all` |
+| `fw-venus-e-mini-301` | .75 | VNSEMINI-0 PMU 301 (32-byte header, load `0x08008000`). Modem is USART2. Settings in SPI1 NOR (`renode/spiflash.py`). `mini_peers.py` simulates the pack, DCDC and inverter (`--soc`, `--capacity`); `fc41d.py --autojoin --netmask 255.255.255.0 --lan-broadcast`. Opens UDP and answers the Open API itself; replies go to `<a.b.c>.255`. See `tools/firmware/ANALYSIS.md` | `firmware-all` |
 
 ```bash
 cd .devcontainer
@@ -353,12 +354,25 @@ second try, and the first full poll can take several minutes.
   reaches Home Assistant on the /16 Docker network. On a real LAN that is not
   a /24 the replies are lost. The image also hears its own broadcast replies
   back on port 30000 and drops them (they carry no `method`).
-  `mini_peers.py` answers the inverter (USART4) and DCDC (USART5) links with
-  a fixed pack reading and only drains the UART7 Modbus link; there is no
-  battery behind it, so SoC and power read 0. Two Renode timing gaps are
-  patched for this board only: the link UARTs are clocked at 36 MHz, and a
-  bus hook keeps UART7 TC set (Renode raises TC once per DR write). TIMER6's
-  DMA line is left off because it shares DMA2 request 3 with USART4 RX.
+  `mini_peers.py` plays the inverter (USART4) and DCDC (USART5) around an
+  energy-counted 2S LFP pack and only drains the UART7 Modbus link. Its pack
+  energy is kept in `mini_pack.json` next to the EEPROM. Every reply echoes
+  the polled command, and register writes are echoed back, because the PMU
+  retries a poll or a write until the reply matches. Manual mode drives the
+  inverter through `cmd 0x72` (direction and watts); Passive is not
+  implemented in this image. The PMU computes SoC and the energy totals
+  itself from the DCDC current and the inverter's AC power. Its counter is
+  saved to flash only on its power-down path, so after every boot the
+  launcher asks it to restart SoC from the cell voltage once readings arrive
+  (`0x2001a020` = 1). That lookup is in whole percent and the LFP plateau is
+  flat, so the PMU can start a percent or two away from the pack. Field map
+  and evidence: the `mini_peers.py` docstring. Renode timing is patched for
+  this board only: the link UARTs are clocked at 36 MHz, TIMER6 at 72 MHz
+  (the PMU's millisecond clock; at 10 MHz its SoC and energy ran at 0.14x),
+  SysTick at 144 MHz (its task timers; at 72 MHz the energy totals ran at
+  half rate), and a bus hook keeps UART7 TC set (Renode raises TC once per
+  DR write). TIMER6's DMA line is left off because it shares DMA2 request 3
+  with USART4 RX.
 - **CH395 (`--ethernet`).** The DHCP lease arrives at once, with the PHY
   already linked at 100 Mbit/s full duplex. Only UDP is bridged: a TCP connect
   times out after `--tcp-timeout` (3 s), and TCP listen sockets (Modbus TCP on

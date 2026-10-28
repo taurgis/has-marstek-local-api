@@ -197,6 +197,13 @@ BOARDS = {
     ),
 }
 FLASH_BASE = 0x08000000
+# PMU 301 SoC start (0x0802b2d8). Its 1 s coulomb task reads SoC from the
+# open-circuit voltage when the flash record is blank, or when the halfword at
+# MINI_SOC_REINIT is 1. The blank-record start runs about a second after boot,
+# before the PMU's first DCDC 0x80 poll, so it looks up 0 mV (43 % on the 0 C
+# table). MINI_PACK_MV (0x2001d55c) holds the pack voltage once one arrived.
+MINI_PACK_MV = 0x2001D55C
+MINI_SOC_REINIT = 0x2001A020
 UID_BASE = 0x1FFF7590  # STM32G4 96-bit unique ID
 FLASH_SIZE_REG = 0x1FFF75E0
 
@@ -335,11 +342,13 @@ def _uid_words(ble_mac: str) -> tuple[int, int, int]:
     return 0x00470031, int.from_bytes(mac[:4], "little"), int.from_bytes(mac[4:] + b"PH", "little")
 
 
-def _start_mini_peers(board: Board, work: Path) -> subprocess.Popen[bytes] | None:
+def _start_mini_peers(
+    board: Board, work: Path, pack_args: list[str]
+) -> subprocess.Popen[bytes] | None:
     """Answer the mini PMU's INV, DCDC and Modbus UARTs. Other boards skip this."""
     if not board.link_uarts:
         return None
-    command = [sys.executable, str(HERE / "mini_peers.py")]
+    command = [sys.executable, str(HERE / "mini_peers.py"), *pack_args]
     for name, port in board.link_uarts:
         command += [f"--{name}", str(port)]
     # The child keeps its own copy of the log fd; the parent closes this one.
@@ -348,6 +357,14 @@ def _start_mini_peers(board: Board, work: Path) -> subprocess.Popen[bytes] | Non
         return subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
     finally:
         log.close()
+
+
+def _mini_pack_args(args: argparse.Namespace) -> list[str]:
+    """The simulated pack's start SoC, rating and state file, like ``can_peers``."""
+    pack = ["--soc", str(args.soc), "--state", str(args.eeprom.parent / "mini_pack.json")]
+    if args.capacity:
+        pack += ["--capacity", str(args.capacity)]
+    return pack
 
 
 def _link_lines(board: Board) -> str:
@@ -424,6 +441,16 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         # runs TIMER6 with only UIE set and owns DMA2 channel 3 for USART4 RX,
         # so the shared line would read an empty DR into every inverter frame.
         "@TIMER6_DMA@": "" if board.link_uarts else "    UpdateInterrupt -> dma2@3\n",
+        # PMU 301 counts milliseconds (0x20002e58) on TIMER6 with PSC 1 and
+        # ARR 35999, i.e. a 72 MHz timer clock. At the shared 10 MHz its clock,
+        # coulomb counter and energy totals ran at 0.139x real time.
+        "@TIMER6_CLOCK@": f"    frequency: {72_000_000 if board.link_uarts else 10_000_000}\n",
+        # PMU 301 loads SysTick with 143999 for a 1 ms tick: a 144 MHz core.
+        # Its task timers count those ticks; at 72 MHz the 20 ms control task
+        # ran every 40 ms and the energy totals (50 runs = 1 s) at half rate.
+        "@SYSTICK_CLOCK@": (
+            f"    systickFrequency: {144_000_000 if board.link_uarts else 72_000_000}"
+        ),
     }.items():
         repl = repl.replace(key, value)
     spi1 = renode_dir / "spi2.py"
@@ -506,6 +533,27 @@ def _rotate_logs(work: Path, max_bytes: int) -> None:
             os.truncate(log, 0)
         except OSError:
             continue
+
+
+def _mini_soc_from_ocv(mon: Monitor, board: Board, timeout: float = 90) -> bool:
+    """Once the PMU reads a pack voltage, have it take SoC from the OCV again.
+
+    The pack's energy survives restarts in ``mini_pack.json``; the PMU's own
+    counter does not (it saves only on its power-down path). Re-reading the
+    OCV on every boot keeps the two in step. Other boards skip this.
+    """
+    if not board.link_uarts:
+        return False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        out = mon.run(f"sysbus ReadDoubleWord {MINI_PACK_MV:#x}", wait=0.5)
+        values = re.findall(r"0x[0-9A-Fa-f]+", out.split("ReadDoubleWord", 1)[-1])
+        if len(values) > 1 and int(values[-1], 16):
+            mon.run(f"sysbus WriteWord {MINI_SOC_REINIT:#x} 1", wait=0.5)
+            return True
+        time.sleep(1)
+    print("No pack voltage from the PMU; its SoC keeps the boot value", flush=True)
+    return False
 
 
 def _boot(mon: Monitor, resc: Path, fc41d_cmd: list[str], log: Path) -> subprocess.Popen[bytes]:
@@ -702,6 +750,9 @@ def main() -> int:
     try:
         mon = Monitor(args.monitor_port)
         fresh = board.eeprom_wait and not _eeprom_initialised(args.eeprom)
+        # Start the mini's peers before the PMU boots, so its first INV and
+        # DCDC polls are answered.
+        mini = _start_mini_peers(board, args.work, _mini_pack_args(args))
         modem = _boot(mon, resc, fc41d_cmd, modem_log)
         if fresh:
             print("Fresh EEPROM: waiting for the defaults, then rebooting once", flush=True)
@@ -714,7 +765,7 @@ def main() -> int:
             modem = _boot(mon, resc, fc41d_cmd, modem_log)
         with (args.work / "can_peers.log").open("ab") as out:
             peers = subprocess.Popen(peers_cmd, stdout=out, stderr=subprocess.STDOUT)
-        mini = _start_mini_peers(board, args.work)
+        _mini_soc_from_ocv(mon, board)
         print(
             f"Running {args.blob.name} as {args.ip}. Local API on UDP {args.local_api_port};"
             f" modem log {modem_log}",

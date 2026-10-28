@@ -1081,7 +1081,8 @@ services:
   # Venus E mini PMU 301 (VNSEMINI-0). Same GD32F30x board as the other
   # Control images; the loader strips the 32-byte header and loads at
   # 0x08008000. --capacity 2009 is the rated_capacity from issue #86, not a
-  # constant in the image. INV and DCDC are catalogued but not emulated.
+  # constant in the image. mini_peers.py plays the INV and DCDC boards around
+  # a simulated pack that starts at --soc.
   fw-venus-e-mini-301:
     <<: *firmware-emulator
     profiles: ["firmware-all"]

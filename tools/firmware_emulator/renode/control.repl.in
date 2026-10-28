@@ -42,7 +42,7 @@ usart5: UART.STM32_UART @ sysbus <0x40005000, +0x100>
 @DWT@
 nvic: IRQControllers.NVIC @ sysbus 0xE000E000
     priorityMask: 0xF0
-    systickFrequency: 72000000
+@SYSTICK_CLOCK@
     IRQ -> cpu@0
 
 cpu: CPU.CortexM @ sysbus
@@ -132,7 +132,7 @@ timer5: Timers.STM32_Timer @ sysbus 0x40000C00
 timer6: Timers.STM32_Timer @ sysbus 0x40001000
     IRQ -> nvic@54
 @TIMER6_DMA@
-    frequency: 10000000
+@TIMER6_CLOCK@
     initialLimit: 0xFFFF
 
 timer7: Timers.STM32_Timer @ sysbus 0x40001400
