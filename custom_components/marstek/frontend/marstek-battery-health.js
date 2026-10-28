@@ -469,7 +469,11 @@ function correctionInsight(hass, model, text) {
   const count = finite(model.attrs.soc_corrections_30d) ?? 0;
   const bound = finite(model.attrs.soc_drift_bound_pct);
   if (latest && count > 0) {
-    const jump = text.correction(count, day(hass, latest.at), fmt(hass, finite(latest.from_soc), 0), points(hass, finite(latest.points) ?? 0));
+    // An arrival at 100% keeps the start of its 15-point approach as from_soc,
+    // not where the jump began, so only a step mid-range names its ends.
+    const [from, to] = [finite(latest.from_soc), finite(latest.to_soc)];
+    const where = to == null || to >= 100 ? text.atFull : text.fromTo(pct(hass, from), pct(hass, to));
+    const jump = text.correction(count, day(hass, latest.at), where, points(hass, finite(latest.points) ?? 0));
     return { icon: "mdi:battery-sync-outline", text: bound == null ? jump : `${jump} ${text.driftBound(pct(hass, bound, 1))}` };
   }
   const full = toDate(model.attrs.last_full_charge_at);

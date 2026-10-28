@@ -65,7 +65,8 @@ def test_a_recent_correction_names_the_jump_and_the_drift_bound(tmp_path: Path) 
     insight = _insight(attrs, "en", tmp_path)
     assert insight["icon"] == "mdi:battery-sync-outline"
     assert "corrected its charge level 1 time in 30 days" in insight["text"]
-    assert "from 94% (6.0 points)" in insight["text"]
+    assert "on reaching 100% (6.0 points)" in insight["text"]
+    assert "94%" not in insight["text"]
     assert "±3.2%" in insight["text"]
 
 
@@ -100,3 +101,11 @@ def test_an_old_correction_gives_way_to_the_full_charge_tip(tmp_path: Path) -> N
 def test_nothing_to_say_shows_nothing(attrs: dict[str, Any], tmp_path: Path) -> None:
     """A recent full charge, no history or junk adds no insight."""
     assert _insight(attrs, "en", tmp_path) is None
+
+
+def test_a_step_mid_range_names_both_ends(tmp_path: Path) -> None:
+    """Only a step that did not end at 100% has a meaningful starting level."""
+    drop = {**_JUMP, "from_soc": 60, "to_soc": 52, "points": -6.0}
+    attrs = {"soc_corrections": [drop], "soc_corrections_30d": 1}
+    insight = _insight(attrs, "en", tmp_path)
+    assert "from 60% to 52% (6.0 points)" in insight["text"]

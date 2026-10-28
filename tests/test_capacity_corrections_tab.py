@@ -82,14 +82,17 @@ def test_corrections_are_listed_newest_first_with_their_kind(tmp_path: Path) -> 
         "soc_drift_bound_pct": 3.3,
     }
     html = _tab(tmp_path, attrs)
-    assert html.index("Jumped up") < html.index("Held near full")
-    assert "85% → 100%" in html
-    assert "4.3 points corrected" in html
-    assert "2.7% of the 160 points moved" in html
-    assert "5.0 points corrected" in html
-    assert "2 corrections and 6 full charges in the last 30 days." in html
-    assert "Last full charge on day(28)." in html
-    assert "±3.3%" in html
+    rows = html[html.index('<ul class="outages fixes"') :]
+    assert rows.index("Jumped up") < rows.index("Held near full")
+    assert "85% → 100%" not in html
+    assert "+4.3 points" in html
+    assert "2.7% of 160 points moved" in html
+    assert "\u22125.0 points" in html
+    assert "2 corrections in 6 full charges, last 30 days · last full day(28)" in html
+    assert "±3.3%, so confidence is at most medium" in html
+    assert (
+        'role="img" aria-label="2 corrections from day(20) to day(28), between 4.3 and 5.0' in html
+    )
     assert 'datetime="2026-10-28T09:30:00.000Z"' in html
     assert "mdi:pause" in html
 
@@ -101,6 +104,7 @@ def test_a_downward_jump_reads_as_a_drop(tmp_path: Path) -> None:
     }
     html = _tab(tmp_path, attrs, "nl")
     assert "Gedaald" in html
+    assert "60% → 52%" in html
     assert "mdi:arrow-down-bold" in html
 
 
@@ -124,16 +128,26 @@ def test_no_corrections_says_so_and_explains_why_they_happen(tmp_path: Path) -> 
     """The empty tab still carries the 30-day counts and the background."""
     attrs = {"soc_corrections": [], "soc_corrections_30d": 0, "full_charges_30d": 3}
     html = _tab(tmp_path, attrs)
-    assert "No charge-level corrections recorded" in html
-    assert "0 corrections and 3 full charges" in html
+    assert "No charge-level corrections yet" in html
+    assert "0 corrections in 3 full charges" in html
+    assert "<details" in html
     assert "LFP cells" in html
-    assert "moved 100 points" in html
+    assert 'class="strip"' not in html
 
 
 def test_a_stale_full_charge_is_named(tmp_path: Path) -> None:
     """Two weeks without 100% means the drift has had no point to reset at."""
     attrs = {"soc_corrections": [], "last_full_charge_at": "2026-10-01T10:00:00+00:00"}
-    assert "Not fully charged since day(1)." in _tab(tmp_path, attrs)
+    html = _tab(tmp_path, attrs)
+    assert "Not fully charged since day(1)." in html
+    assert "last full" not in html
+
+
+def test_a_single_correction_has_no_strip(tmp_path: Path) -> None:
+    """One bar says nothing a row does not; the drift line needs a bound."""
+    html = _tab(tmp_path, {"soc_corrections": [_fix("2026-10-27T09:00:00+00:00")]})
+    assert 'class="strip"' not in html
+    assert "Counting drift" not in html
 
 
 def test_without_the_attribute_the_tab_waits(tmp_path: Path) -> None:

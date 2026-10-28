@@ -73,8 +73,18 @@ disabled it says to enable it.
 ### Corrections
 
 **Corrections** lists the newest ten times the battery reset its own charge
-level, newest first. Each row names the kind next to its icon, with its date
-and time:
+level, newest first. One line above the list counts corrections and full
+charges in the last 30 days and gives the last full charge, or says the
+battery has not been full for more than 14 days. A second line turns
+`soc_drift_bound_pct` into how far a single run can be off and, at 2% or
+more, the confidence it allows.
+
+With two or more corrections a bar strip shows them oldest to newest: above
+the line the battery had counted short, below it counted long. Taller bars
+are larger corrections, so a strip that grows means the counting drifts
+further between full charges.
+
+Each row names the kind next to its icon, with the signed size on the right:
 
 - **Jumped up**: the percentage stepped up in one go, usually to 100%.
 - **Climbed fast**: it caught up over a few polls, faster than the charging
@@ -82,15 +92,15 @@ and time:
 - **Held near full**: it waited near 100% while the battery kept charging.
 - **Dropped**: it fell in one step the battery's power does not explain.
 
-A second line gives the move (*85% → 100%*), how many points the energy did
-not explain, and what share that is of the points the percentage moved since
-the full charge before. A third line says in one sentence what the battery
-had miscounted. Above the list the tab counts corrections and full charges
-in the last 30 days, gives the last full charge (or says it was more than 14
-days ago), and turns `soc_drift_bound_pct` into how far a single run can be
-off. Below it, two lines explain why LFP batteries correct near full.
-**Download corrections (CSV)** saves `at`, `style`, `from_soc`, `to_soc`,
-`points`, and `throughput`. How a correction is found is in
+The second line gives the date and time and what share the correction is of
+the points the percentage moved since the full charge before. A step that
+did not end at 100% also shows both levels (*60% → 52%*). A correction that
+ends at full shows no starting level: the estimator judges the last 15
+points before 100%, so that start says nothing about where the jump began.
+**What these corrections mean** opens a short explanation of each kind and
+of why LFP batteries correct near full. **Download corrections (CSV)** saves
+`at`, `style`, `from_soc`, `to_soc`, `points`, and `throughput`. How a
+correction is found is in
 [Charge-level corrections near 100%](#charge-level-corrections-near-100).
 
 ## Turn on the sidebar dashboard
