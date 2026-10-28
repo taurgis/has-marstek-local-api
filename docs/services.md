@@ -28,7 +28,7 @@ is available, the service call will return an error.
 | Mode | How to set it |
 |------|----------------|
 | Auto, AI | Operating-mode select |
-| UPS | Operating-mode select, only when the firmware profile allows it (`ver >= 150` on Venus A, D, E 3.0 and Venus E mini; never on Venus C) |
+| UPS | Operating-mode select, only when the firmware profile allows it (`ver >= 150` on Venus A, D, E 3.0 and Venus E mini; never on HMG-50 firmware, which is every Venus C firmware seen so far) |
 | Manual, Passive | Parameterized services below (the select does not apply empty defaults) |
 
 `Set.Ver` and factory reset are **not** services, entities, or recommended actions.
@@ -51,6 +51,8 @@ Set passive mode with a target power and duration.
   - Input range is `-5000..5000`, but the effective limit is validated per device/model (and may depend on the **Enforce 800 W discharge limit** option).
 - `duration` (optional, seconds): how long to keep passive mode active (default `3600`, range `0..86400`)
 
+Not available on Venus E mini firmware 301. That firmware has no Passive mode, so the action fails with a "mode not supported" error and nothing is sent.
+
 <img src="screenshots/automation-passive.png" alt="Automation calling marstek.set_passive_mode with a device, a power, and a duration." width="520" />
 
 ## `marstek.set_manual_schedule`
@@ -60,7 +62,7 @@ Configure one schedule slot.
 - `device_id` (required): target Marstek device
 - `schedule_slot` (optional): slot index (default `0`; max `9` on Venus A/C/D/E, max `5` on Venus E mini)
 - `start_time` (required): start time
-- `end_time` (required): end time
+- `end_time` (required): end time. It must be later than `start_time`; a slot can't run past midnight, so split an overnight window into two slots (for example 23:00–23:59 and 00:00–06:00).
 - `power` (required, W): negative = charge, positive = discharge
   - Input range is `-5000..5000`, but the effective limit is validated per device/model (and may depend on the **Enforce 800 W discharge limit** option).
   - On **Venus E mini** the Open API also has `manual_cfg.manual_set` (Rev 3.1: 0 disable, 1 charge, 2 discharge, 3 auto). The service stays signed. The wire payload sends `abs(power)` and derives `manual_set` (`enable` off → 0, negative → 1, positive → 2). An enabled 0 W slot sends `1` (charge), not `3` (auto), until hardware confirms auto. Other families omit the field and keep signed `power`.
@@ -247,7 +249,7 @@ All device actions respect the **Enforce 800 W discharge limit** option configur
 ### Technical details
 
 - Actions use **Manual mode** internally with a 24-hour schedule (00:00–23:59, all days)
-- Commands are retried up to 8 times, waiting about one poll cycle (plus a little random jitter) between attempts
+- Each action is tried up to 8 times. After each try, the integration waits about one poll cycle to check that the battery took the change, and about one more before it tries again
 - Verification confirms the device responded correctly before completing
 - Polling is paused during command execution to avoid UDP traffic conflicts
 

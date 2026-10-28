@@ -59,7 +59,7 @@ This is expected behavior.
 - Reduce request rate (increase fast/medium intervals).
 - Ensure only one controller is talking to the device.
 - If **Parallel API requests** is enabled, try disabling it first (especially on Wi-Fi).
-- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API **Ethernet** send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Wi-Fi Open API still uses the Quectel FC41D `AT+QISEND` path; on a Venus E 3.0 150 about one Wi-Fi request in four gets no reply to its first copy, and losses come in bursts: the firmware drops a reply it cannot hand to the Wi-Fi module within 500 ms, then ignores requests for a second or two. On known-safe firmware (Control 150+; never on HMG-50, where a second copy would land on the shared meter channel) the integration sends **read-only** unicasts again at 0.5 s, 2.5 s and 5 s while there is no reply, staying inside the configured request timeout (at most four datagrams). A wired LAN, or HA talking to the Ethernet IP of a dual-homed device, typically answers before 500 ms and never gets an extra copy. Writes, unknown firmware, and reset-prone builds stay one-shot.
+- Firmware **below Control 150** (including Venus E app **147.6**, Open API `ver` **1476**) ignores the parallel option. Venus E 3.0 **150** is the vendor fix for Local API **Ethernet** send failures ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Wi-Fi Open API still uses the Quectel FC41D `AT+QISEND` path; on a Venus E 3.0 150 about one Wi-Fi request in four gets no reply to its first copy, and losses come in bursts: the firmware drops a reply when the Wi-Fi module stays busy for about two seconds, then ignores requests for a second or two. On known-safe firmware (Control 150+; never on HMG-50, where a second copy would land on the shared meter channel) the integration sends **read-only** unicasts again at 0.5 s, 2.5 s and 5 s while there is no reply, staying inside the configured request timeout (at most four datagrams). A wired LAN, or HA talking to the Ethernet IP of a dual-homed device, typically answers before 500 ms and never gets an extra copy. Writes, unknown firmware, and reset-prone builds stay one-shot.
 - The diagnostic **Restarts** sensor separates a device that rebooted from one the
   network lost. Its `dropouts_30d` attribute counts outages with no restart behind them;
   see [Restarts and dropouts](usable-capacity.md#restarts-and-dropouts).
@@ -73,8 +73,8 @@ polled, some builds disable Local API and wipe user settings (Wi-Fi often
 survives). Venus E 3.0 Control **150** is the published fix (“Optimized Local
 API send anomaly on Ethernet”); a user confirmed [#15](https://github.com/taurgis/has-marstek-local-api/issues/15) after updating in the Marstek app (Wi-Fi or Bluetooth if LAN OTA fails).
 
-On firmware the integration treats as reset-prone (Venus A, D or E 3.0 below
-150, HMG-50 Venus C below 156, a known model with a missing `ver`, or an
+On firmware the integration treats as reset-prone (Venus A, D, E 3.0 or
+Venus E mini below 150, HMG-50 Venus C below 156, a known model with a missing `ver`, or an
 unknown model with a Control-like `ver` 100–149):
 
 1. A **warning** appears in **Settings** > **System** > **Repairs** (not a fixable flow) as soon
@@ -137,7 +137,7 @@ sane Open API value replaces a previously stored garbage floor instead of
 keeping it forever ([#70](https://github.com/taurgis/has-marstek-local-api/issues/70)).
 
 Already-recorded statistics are **not** rewritten. Use
-**Developer tools** > **Statistics** to delete the bad points if a spike was stored
+**Developer tools** > **Statistics**, find the sensor and use **Adjust sum** on the spike to cancel it out, if a spike was stored
 before this guard:
 https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
 
@@ -149,8 +149,9 @@ as Wh, so Energy Dashboard solar production was about 10× too low.
 
 The integration now converts that field to Wh. Existing recorder history is
 **not** rewritten. The first corrected state is a large upward delta, which
-Home Assistant accumulates; it is **not** a meter reset. A reset is a
-decrease in a `total_increasing` sensor.
+Home Assistant accumulates; it is **not** a meter reset. For a `total_increasing` sensor, Home
+Assistant treats a drop of 10% or more as a meter reset and ignores smaller
+drops as noise.
 
 If the Energy Dashboard shows a one-time production spike at the upgrade, use
 **Developer tools** > **Statistics** to locate and correct the transition:
@@ -252,7 +253,7 @@ When reporting an issue, enabling debug logging helps us diagnose UDP communicat
 
 1. Go to **Settings** > **Devices & services**.
 2. Open the **Marstek** integration.
-3. Open the **⋮**menu** > ****Enable debug logging**.
+3. Open the **⋮** menu > **Enable debug logging**.
 4. Reproduce the problem.
 5. Go back to the Marstek integration menu > **Disable debug logging** and download the log file.
 

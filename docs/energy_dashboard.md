@@ -80,7 +80,7 @@ battery. The sensors are omitted when the fields are absent.
 On Venus A firmware 149, `ES.GetStatus.total_pv_energy` is encoded as **0.01 kWh**
 on the wire (issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
 That is the solar *energy* counter, not PV1 *power* ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
-Known families at firmware 150+ use that solar unit too. Firmware **148 or older**
+Known families at firmware 150+ use that solar unit too. Venus A firmware **148 (148.3) or older**
 keeps the value in Wh. PV1 stays deciwatts through 150.9 and is not used here.
 
 The integration converts the 0.01 kWh wire unit to **Wh** (`raw × 10`) so a
@@ -90,8 +90,8 @@ totals in the same payload stay in Wh and are not scaled.
 The Total solar energy entity keeps its existing BLE-MAC unique ID and native
 unit `Wh`. After this correction, previously recorded solar states remain about
 10× too low. The first corrected state is a large **upward** jump, not a meter
-reset: Home Assistant treats a **decrease** in a `total_increasing` sensor as a
-new meter cycle, while an increase is added to long-term statistics and can
+reset: Home Assistant treats a **drop of 10% or more** in a `total_increasing`
+sensor as a new meter cycle (smaller drops are ignored as noise), while an increase is added to long-term statistics and can
 look like a one-time production spike.
 
 Do not treat that jump as a reset. Review and adjust the transition in
