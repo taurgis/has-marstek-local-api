@@ -152,6 +152,17 @@ after each.
   power and commands 0 W (`0x08005c8c(1, 0)`). While the chip is down the
   CT meter's UDP packets do not arrive, and the loop then restarts its ramp
   from 0 W (`0x08029ecc`).
+- **In the emulator.** `run_firmware.py` now feeds PE4/PE5 to `fc41d.py`, so
+  the vendor image resets its modem by itself when no cloud answers. Venus E
+  150 on Wi-Fi, booted at 07:42:47, pulsed the line at +31:05, +34:14,
+  +39:33 and +41:16. Each time the Open API was gone about 10 s (pulse to
+  the Local API socket reopening) and the CT socket came back about 75 s
+  after the pulse. `EM.GetStatus` kept `ct_state: 1` with the last
+  `total_power`, and in Auto the battery held its last output (-200 W)
+  until CT data returned, then regulated again. The 0 W branch above did
+  not show at this outage length: the network flag stays set while the
+  module rejoins. The unsent-record count at `0x20001004` grew by one about
+  every 5 minutes.
 
 Open: why the plug sees the start-up check after a chip reset. Nothing in the
 paths above touches the inverter (Micro 116/119, BMS 115 run their own

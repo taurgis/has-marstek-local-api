@@ -19,8 +19,10 @@ server shows that in place of the live watts.
 A network reset is smaller. Control 150+ resets its own network chip while
 cloud uploads fail (``firmware_quirks.upload_failure_resets``): the device
 answers nothing for a few seconds, its self-use loop commands 0 W until the CT
-data flows again and then ramps up from there, and the plug shows the same
-start-up check. Energy totals, CT link and mode stay as they were.
+data flows again, and the plug shows the same start-up check. The CT data
+comes back last: the firmware reopens the meter socket about 75 s after the
+reset (Renode emulator, Venus E 150), and holds its last setpoint until then.
+Energy totals, the reported CT link and mode stay as they were.
 
 A Wi-Fi drop loses one datagram at random and nothing else, which the
 integration's retransmits recover inside the same poll.
@@ -39,6 +41,8 @@ DEFAULT_BOOT_S = 45.0
 DEFAULT_CT_RECONNECT_S = 60.0
 DEFAULT_ENERGY_SAVE_S = 600.0
 DEFAULT_NETWORK_RESET_S = 8.0
+# Seconds from a network reset until CT meter data flows again.
+NETWORK_CT_GAP_S = 75.0
 _TOTAL_KEYS = (
     "total_pv_energy",
     "total_grid_output_energy",
@@ -157,8 +161,8 @@ class RestartSimulator:
             self.network_reset(started)
         elif self._next_network_reset is not None and now >= self._next_network_reset:
             self.network_reset(self._next_network_reset)
-        if self._battery is not None:
-            self._battery.network_down = now < self._network_down_until
+        if self._battery is not None and self._network_reset_at is not None:
+            self._battery.ct_stale = now < self._network_reset_at + NETWORK_CT_GAP_S
         if self._ct_back_at is not None and now >= self._ct_back_at:
             self._ct_back_at = None
             if self._battery is not None:

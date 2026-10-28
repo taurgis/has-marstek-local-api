@@ -21,6 +21,7 @@ while this emulator is the vendor's own implementation, including its quirks
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
+| FC41D reset line (Control: PE4/PE5) | write hook on `gpioPortE` sends the level to UDP 3466; the modem drops its sockets while low, then boots (`--boot-seconds`, 1) and rejoins (`--rejoin-seconds`, 4) | `run_firmware.py` `MODEM_RESET_HOOK`, `fc41d.py --reset-port` |
 | CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457; inbound frames paced 1 per ms of virtual time | `renode/CanBridge.cs` |
 | BMS and inverter | energy-counted battery (`--packs`, `--capacity`), inverter that follows the MCU's setpoint within the family's AC limits | `can_peers.py --family` |
 | PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, day/month/year 0.01 kWh yield counters (persisted next to the EEPROM), MCU on/off | `can_peers.py --pv`, `--pv-energy`, `--pv-state` |
@@ -354,6 +355,13 @@ second try, and the first full poll can take several minutes.
   then sends `AT+QGETIP=station` and `AT+QICFG="udp/broadcast",1`.
 - EEPROM byte 0 marks an initialised store. The Local API enable flag is at 0x371
   and the port at 0x372 (uint16 LE).
+- Control resets the module itself through `0x0800b224`: it takes the modem
+  mutex, drives PE5 and PE4 low (GPIOE BRR), waits 1 s, sets them high (BSRR)
+  and holds the mutex 2 s more. It then re-runs `AT+QSSLCERT?` and the BLE
+  setup but sends no `AT+QSTAAPINFO` and no `AT+QIOPEN` of its own: the module
+  rejoins from its saved network, and the `AT+QISTATE` checks reopen the Local
+  API (connection 3) within seconds and the CT socket (connection 1) about
+  75 s after the pulse.
 - HMG-50 (`--dialect hmg50`):
   - The modem is on LPUART1.
   - `AT+QISEND` waits for `CONNECT` instead of `>`.

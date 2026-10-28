@@ -16,7 +16,7 @@ from mock_device.simulators.restart import NETWORK_RESET, RestartSimulator
 
 from custom_components.marstek.firmware_profile import resolve_firmware_profile
 
-_WIFI = (1200.0, 15.0)
+_WIFI = (1200.0, 10.0)
 _ETHERNET = (2100.0, 8.0)
 
 
@@ -66,7 +66,7 @@ def _device(tmp_path: Path, **config: Any) -> MockMarstekDevice:
 
 
 def test_a_network_reset_is_brief_and_keeps_device_state(tmp_path: Path) -> None:
-    """Silent for a few seconds, 0 W meanwhile, totals, CT link and mode untouched."""
+    """Silent for a few seconds, setpoint held until CT data returns, state untouched."""
     device = _device(tmp_path, network_reset_s=8)
     battery = device.simulator
     restarts = device.restarts
@@ -76,10 +76,13 @@ def test_a_network_reset_is_brief_and_keeps_device_state(tmp_path: Path) -> None
     restarts.network_reset(1000.0)
 
     assert restarts.drop_reason(1007.0) == NETWORK_RESET
-    assert battery.network_down is True
-    assert battery._regulated_target_power(1.0) == 0
+    assert battery.ct_stale is True
+    held = int(battery.ongrid_power - battery.pv_power)
+    assert battery._regulated_target_power(1.0) == held
     assert restarts.drop_reason(1008.0) is None
-    assert battery.network_down is False
+    assert battery.ct_stale is True
+    assert restarts.drop_reason(1080.0) is None
+    assert battery.ct_stale is False
     assert battery.ct_connected is True
     assert battery.total_load_energy == totals
     assert battery.mode == mode

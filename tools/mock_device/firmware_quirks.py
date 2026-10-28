@@ -257,10 +257,10 @@ _WIFI_UPLOAD_RESET_S = 900.0
 _UPLOAD_RESET_REARM_S = 300.0  # 35 min observed minus the 30 min limit
 _UPLOAD_RESET_MIN_GENERATION = 150
 _ETHERNET_UPLOAD_RESET_VERSION = 150
-# Seconds off the network: observed on Ethernet. The Wi-Fi figure is an
-# estimate: a 1 s reset pulse, a 2 s wait, then a Wi-Fi join and DHCP.
+# Seconds off the network: observed on Ethernet. The Wi-Fi figure is the
+# Venus E 150 emulator's gap from the reset pulse to the Local API socket.
 _ETHERNET_RESET_OFFLINE_S = 8.0
-_WIFI_RESET_OFFLINE_S = 15.0
+_WIFI_RESET_OFFLINE_S = 10.0
 
 
 def upload_failure_resets(profile: FirmwareProfile, uplink: str) -> tuple[float, float] | None:
