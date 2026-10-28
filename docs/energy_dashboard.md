@@ -39,7 +39,9 @@ The integration shows energy totals in watt-hours (Wh). 1000 Wh is 1 kWh, the un
 
 The battery itself reports some totals in other units, and those units differ between models and firmware. The integration converts each one to Wh for you.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 Open API energy fields are **not** all Wh on the wire. Each field is normalized individually:
 
 | Field | Typical wire unit | Home Assistant | When the scale applies |
@@ -50,7 +52,8 @@ Open API energy fields are **not** all Wh on the wire. Each field is normalized 
 | `EM.GetStatus` `input_energy` / `output_energy` | 0.1 Wh on Rev 3.1 | Wh (`raw × 0.1`) | Known family at firmware 150+; sensors omitted when the fields are absent |
 
 `0.01 kWh` is a wire encoding, not a custom Home Assistant unit. Energy dashboard eligibility still requires `device_class: energy`, `state_class: total` or `total_increasing`, and a supported unit such as Wh or kWh ([Energy FAQ](https://www.home-assistant.io/docs/energy/faq/)).
-:::
+
+</details>
 
 ## Energy totals mapping
 
@@ -79,18 +82,23 @@ Meter input and output energy are measured at the CT meter, so they describe you
 house's grid connection. The Total grid input and output energy counters above describe the
 battery. The meter sensors only exist when your battery reports them.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 Meter input/output energy (`em_input_energy` / `em_output_energy`) come from
 the existing fast-tier `EM.GetStatus` payload when the device reports those
 lifetime totals (Open API Rev 3.1). The wire unit is 0.1 Wh; Home Assistant
 exposes watt-hours. Unlike the ES counters above, they describe the grid connection. The sensors are omitted when the fields are absent.
-:::
+
+</details>
 
 ## Solar energy unit correction
 
 This section only matters if your Total solar energy history started before the integration corrected the solar unit. That affects Venus A firmware 149 and other firmware that reports solar energy in 0.01 kWh steps. Older history from those batteries is about 10 times too low, and the first corrected value shows up as one large jump in solar production. That jump is not a meter reset. If the Energy dashboard shows inflated production for that moment, fix it in **Developer tools** > **Statistics** (see below).
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 On Venus A firmware 149, `ES.GetStatus.total_pv_energy` is encoded as **0.01 kWh**
 on the wire (issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35)).
 That is the solar *energy* counter, not PV1 *power* ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
@@ -113,7 +121,8 @@ Do not treat that jump as a reset. Review and adjust the transition in
 production for that interval. See Home Assistant's
 [Statistics tab](https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab)
 and the [`total_increasing` state class](https://contributors.home-assistant.io/core/entities/sensor/#state-classes).
-:::
+
+</details>
 
 ## Optional power sensors
 These show what is happening right now, in watts. The Energy dashboard doesn't need them. Use them for live dashboard cards and to check that the numbers make sense. (They use `state_class: measurement`.)

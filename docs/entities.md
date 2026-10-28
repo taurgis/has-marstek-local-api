@@ -16,7 +16,9 @@ Not every battery gets every entity. Solar inputs, UPS mode and the depth of dis
 >
 > **Upgrading an existing install on firmware 150 or newer?** Entities that were already registered stay enabled; upgrades never disable entities on firmware that can safely use them. To stop the battery detail requests, disable the five entities above once by hand (device page → entity → ⚙️ → *Enabled* off).
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 All entities are **coordinator-backed** (no per-entity polling): one shared update per battery feeds every entity.
 
 Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only when the firmware profile supports them**. After a firmware update that unlocks or removes those capabilities, setup, the scanner, or **Reconfigure** refreshes `ver` (unicast `Marstek.GetDevice` if broadcast cannot reach the device) and reloads the config entry so the entity set matches the new profile.
@@ -24,7 +26,8 @@ Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only
 Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Firmware `ver >= 150` on a known family scales the wire unit 0.1 Wh → Wh; older profiles leave a present value unscaled.
 
 The battery detail entities depend on the `Bat.GetStatus` call: Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`). Enabling any of them resumes the call automatically on Control firmware **150+**. On reset-prone firmware, `Bat.GetStatus` is never sent, and after a firmware update to 150+ setup or the scanner reloads the config entry so the entities can be created again.
-:::
+
+</details>
 
 ## Sensors
 
@@ -62,7 +65,9 @@ These are the main readings. Power is in watts (W), energy in watt-hours (Wh). *
 Counts how often the battery restarted. A battery that restarts often may have a firmware or Wi-Fi problem. Short network dropouts and brief network resets are listed on the card but not counted as restarts. See [Restarts and dropouts](usable-capacity.md#restarts-and-dropouts)
 for how the integration tells them apart.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 The Open API has no uptime field, so a restart is
 read from what a boot leaves in the polls the integration already makes; no
 request is added. A restart is told apart from Wi-Fi that answers late, a network
@@ -70,19 +75,23 @@ dropout, or a brief network reset (listed, not counted). Attributes:
 `restarts_30d`, `dropouts_30d`, `network_resets_30d`, `last_restart_at`,
 `tracked_since` (when the log started), and `outages` (every outage of the last 30 days, for the card's Restarts tab;
 kept out of the recorder).
-:::
+
+</details>
 
 ### PV channel sensors (PV1 to PV4)
 
 These show each solar panel input separately. They are created on every Venus A and Venus D, for all four channels, even if a channel has no panel. Other models don't get them.
 Power values are in watts.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 Channel 1 is deciwatts (tenths of a watt) on observed firmware
 (including 148.3, 149, and 150.9); the parser divides by 10, matching 1.0.0.
 That PV1 scale is independent of the solar-energy ×10 used for [#35](https://github.com/taurgis/has-marstek-local-api/issues/35).
 Do not skip the ÷10 ([#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
-:::
+
+</details>
 
 | Entity name | Key | Unit | Category | Default |
 |---|---|---|---|---|
@@ -181,8 +190,11 @@ Each battery's entities are grouped under one device. They keep their identity w
 
 **Meter input energy** and **Meter output energy** are only created when your battery reports them. You can use them on the [Energy dashboard](energy_dashboard.md).
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 Meter input/output energy sensors are created only when `EM.GetStatus` (or Rev 3.1 `ES.GetMode` fallback) reports those lifetime totals. They use the same BLE-MAC unique ID pattern as other sensors and are suitable for the Energy Dashboard (`device_class: energy`, `state_class: total_increasing`, native unit `Wh`).
-:::
+
+</details>
 
 <img src="screenshots/device-details-venusa.png" alt="Venus A device page in Home Assistant with battery, grid, and four solar input sensors." width="560" />

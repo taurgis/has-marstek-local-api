@@ -49,13 +49,16 @@ The actions work by putting the battery in **Manual mode** with one time slot th
 
 An action can take a minute or longer to finish. The integration checks that the battery accepted the change and tries again if it did not.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 - Actions use **Manual mode** internally with a 24-hour schedule (00:00–23:59, all days)
 - Each action is tried up to 8 times. After each try, the integration waits about one poll cycle to check that the battery took the change, and about one more before it tries again
 - Verification confirms the device responded correctly before completing
 - Polling is paused during command execution to avoid UDP traffic conflicts
 - The command is `ES.SetMode` with `manual_cfg.time_num` 0
-:::
+
+</details>
 
 ---
 
@@ -86,7 +89,9 @@ The services do more than the device actions: Passive mode with a time limit, Ma
 
 Every service needs to know which battery to control. Pick it in the **Device** field. The only exception is `marstek.request_data_sync`, where the device is optional and leaving it empty refreshes every battery.
 
-::: details Writing services in YAML
+<details class="details custom-block">
+<summary>Writing services in YAML</summary>
+
 Home Assistant device IDs are **32-character hex** strings. Quote them in YAML so they stay strings:
 
 ```yaml
@@ -102,7 +107,8 @@ If you are pasting YAML, prefer the device picker in Developer Tools, or pass th
 Services are registered when Home Assistant starts and remain available even if
 no Marstek devices are currently loaded. If no matching device or config entry
 is available, the service call will return an error.
-:::
+
+</details>
 
 ## `marstek.set_passive_mode`
 

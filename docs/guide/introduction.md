@@ -15,9 +15,12 @@ Marstek batteries have a built-in local connection that Marstek calls the **Open
 
 Every 30 seconds, Home Assistant asks the battery a short question, such as "how full are you?", and the battery answers. Asking at a fixed interval like this is called **polling**.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 The messages are small JSON requests sent over UDP, a lightweight network protocol, on port 30000 unless you changed the port in the Marstek app. Marstek documents the requests in its Open API specification; this repository keeps a copy in [the Open API protocol notes](https://github.com/taurgis/has-marstek-local-api/blob/main/docs/marstek_device_openapi.MD).
-:::
+
+</details>
 
 Three things follow from that design:
 

@@ -33,14 +33,17 @@ Shown as **Marstek Open API can interrupt this device's own meter**. On Venus C,
 The warning appears for every Venus C, including firmware **156**. You can't fix it from Home Assistant. See
 [Troubleshooting](troubleshooting.md#venus-c-stops-charging-from-excess-solar-in-auto-mode) for what you can do.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 HMG-50 Control (Venus C, and the Venus E 2.0 builds this integration
 refuses) shares one Wi-Fi receive channel between the Local API server and the
 device's own UDP meter client, so polling can cost it the meter samples
 that Self-consumption (Auto) mode regulates on. The
 warning is created from stored firmware metadata for every HMG-50 entry,
 including firmware **156**.
-:::
+
+</details>
 
 ## Other cases
 

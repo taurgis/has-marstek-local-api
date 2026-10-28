@@ -36,11 +36,14 @@ When you turn this on, the integration sends all its status requests at once ins
 - A wired network connection is recommended if you turn this on. Firmware 150 fixed the Open API over **Ethernet**. Over Wi-Fi, requests still go through the battery's Wi-Fi module and can time out more often (based on limited local testing).
 - The integration ignores this setting on Venus C, and on firmware known to reset the Open API. See the details below for the exact list.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 Ignored on Venus C and other [HMG-50](guide/glossary.md#hmg-50) firmware (the Open API shares a Wi-Fi channel with the battery's meter link there), and on firmware the integration treats as reset-prone (Venus A, D and E 3.0 below 150, including Open API `ver` 1476 / app 147.6; Venus E mini below 150; HMG-50 below 156; a missing or unknown `ver`). Venus E 3.0 **150** is the vendor Local API Ethernet fix. Reset-prone devices also serialize unicast requests and skip `Bat.GetStatus`.
 
 The Wi-Fi path goes through the FC41D module.
-:::
+
+</details>
 
 ### Repeated requests
 

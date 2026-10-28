@@ -28,9 +28,12 @@ The device page groups the sensors, the operating-mode select, and the controls.
 
 A few diagnostic sensors, including **Battery temperature**, start disabled. The request behind them has been suspected of resetting some batteries, so the integration waits until you opt in. To turn one on, go to the device page, show disabled [entities](guide/glossary.md#entity), and open **Battery temperature** (or another battery-detail entity). Then open the gear and turn **Enabled** on. On recent firmware the integration starts asking for that data on its own. On older firmware those entities are not offered at all. The full list is in [Entities](entities.md).
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 The battery-detail entities come from the `Bat.GetStatus` request. The integration only sends it while at least one of those entities is enabled ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)).
-:::
+
+</details>
 
 ## Battery health sidebar dashboard
 

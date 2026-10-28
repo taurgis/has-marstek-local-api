@@ -32,11 +32,14 @@ The [visual tour](screenshots.md) continues from here: the Battery health sideba
 
 You don't need to do anything when your router gives the battery a new IP address. The integration searches the network in the background and updates the stored address to the one the battery answers from. Your sensors, history and automations stay as they are, because the integration identifies each battery by a hardware address (normally its Bluetooth MAC address), not by its IP address.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 If your device IP changes (DHCP), the background scanner updates the config entry to the address the device answered from. A `Marstek.GetDevice` payload can keep naming the previous address after a lease change; that value is not written over a host that is still answering. A DHCP lease from Home Assistant still updates the host.
 
 Unique IDs are based on the device’s **BLE MAC** (falling back to other MACs when needed) so entities remain stable across IP changes.
-:::
+
+</details>
 
 ## Firmware updates
 
@@ -46,14 +49,17 @@ Some firmware versions add or remove features. For example, Venus A going from f
 
 If you want the new firmware picked up right away, open the battery in **Settings** > **Devices & services** > **Marstek** and choose **Reconfigure**. Reconfigure asks the battery directly.
 
-::: details Technical details
+<details class="details custom-block">
+<summary>Technical details</summary>
+
 The integration stores Open API `ver` on the config entry and uses it for the firmware profile, the device-registry **Firmware** field, and the reset-prone repair warning. After a device firmware update it refreshes that value on its own:
 
 1. **Setup / reload**: a unicast `Marstek.GetDevice` to the stored IP (the same request Reconfigure uses). Broadcast discovery is not required, so a VLAN-isolated device still updates.
 2. **Background scanner**: the 10-minute broadcast sweep still updates firmware when it hears the device. If that sweep sees nothing (no broadcast forwarding), the scanner falls back to the same unicast query.
 
 When the new `ver` unlocks or removes setup-time capabilities (for example Venus A firmware `148` → `150` adding SYS controls and clearing the Open API reset warning), the config entry reloads automatically. Cosmetic metadata such as Wi-Fi name or a firmware number that does not change those capabilities is stored without a reload.
-:::
+
+</details>
 
 ## Unsupported devices
 
