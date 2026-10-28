@@ -32,7 +32,7 @@ features:
     linkText: Automations and services
   - icon: 📊
     title: Energy dashboard ready
-    details: Lifetime battery and solar energy counters for Home Assistant's Energy dashboard, plus grid totals from the CT meter when it reports them.
+    details: Lifetime battery and solar energy counters for Home Assistant's Energy dashboard, plus grid totals from the CT meter (the clamp-on meter at your fuse box) when it reports them.
     link: /energy_dashboard
     linkText: Set it up
   - icon: 🩺
@@ -42,12 +42,12 @@ features:
     linkText: How it works
   - icon: 🔍
     title: Finds the battery for you
-    details: Discovers batteries on your network and follows them when the router hands out a new IP address.
+    details: Searches your home network for batteries, and keeps track of one when your router gives it a new network address (IP address).
     link: /configuration
     linkText: Adding a battery
   - icon: 🛡️
     title: Gentle on your battery
-    details: Paced requests and firmware-aware controls keep older firmware stable. Requests linked to resets stay off unless you turn them on.
+    details: Asks the battery one thing at a time, with pauses, and hides controls its firmware would reject, to keep older firmware stable. Readings linked to battery resets stay off unless you turn them on.
     link: /guide/limitations
     linkText: Known limitations
 ---
@@ -86,9 +86,9 @@ features:
 You're set if:
 
 - You have a **Marstek Venus A, C, D, E 3.0, or Venus E mini**. Venus E 2.0 does not work with it. See [supported devices](/guide/supported-devices).
-- You run **Home Assistant 2025.10 or newer** with [HACS](https://hacs.xyz/) installed, or you are comfortable copying a folder into Home Assistant.
+- You run **Home Assistant 2025.10 or newer** with [HACS](https://hacs.xyz/) (the Home Assistant Community Store) installed, or you are comfortable copying a folder into Home Assistant.
 - The battery and Home Assistant are on the **same home network**.
-- You can switch on **Open API** for the battery in the Marstek app.
+- You can switch on **Open API** for the battery in the Marstek app. Open API is the battery's local connection for other devices on your network. It is off by default.
 
 Not sure what some of these words mean? The [glossary](/guide/glossary) explains them in one line each.
 
@@ -96,7 +96,7 @@ Not sure what some of these words mean? The [glossary](/guide/glossary) explains
 
 1. **Turn on Open API** in the Marstek app. [Before you start](/guide/before-you-start) shows what to check.
 2. **Install the integration** from HACS and restart Home Assistant.
-3. **Add the battery** under **Settings** > **Devices & services**. Most batteries are found automatically. Venus E mini, and a battery on another network segment (VLAN), are added by IP address.
+3. **Add the battery** under **Settings** > **Devices & services**. Most batteries are found automatically. Two cases need you to type the battery's IP address instead: a Venus E mini, and a battery on a separate network (VLAN) from Home Assistant.
 
 The [getting started guide](/guide/getting-started) walks through each step with screenshots, then shows you how to add the battery to the Energy dashboard and build a first automation.
 

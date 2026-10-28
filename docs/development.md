@@ -4,7 +4,7 @@ next: false
 
 # Development
 
-Install and day-to-day use live in the [documentation index](README.md). This page is for working on the integration.
+This page is for contributors: people who change the integration's code, tests or documentation. To install and use the integration, start at the [documentation index](README.md) instead.
 
 ## Repo layout
 
@@ -42,12 +42,12 @@ The `Code Quality` workflow runs five static checks on every pull request and
 blocks the merge when any of them fails. All five are configured in
 `pyproject.toml` (plus `.jscpd.json`) so a local run and CI see the same rules.
 `requirements_quality.txt` pins every tool, ruff included, because `ruff format`
-output changes between releases — a floating version would make the formatting
+output changes between releases. A floating version would make the formatting
 gate disagree with a local run.
 
 ```bash
 # Install the quality tooling once (separate from requirements_test.txt, so
-# these checks run on any Python — no Home Assistant test harness needed)
+# these checks run on any Python; no Home Assistant test harness needed)
 pip install -r requirements_quality.txt
 
 # 1. Complexity, dead code and commented-out code
@@ -110,8 +110,10 @@ docker compose up -d homeassistant
 
 ```bash
 npm ci
-npm run docs:dev      # live preview at http://localhost:5173
-npm run docs:build    # the CI build, including the dead-link check
+# Live preview at http://localhost:5173
+npm run docs:dev
+# The CI build, including the dead-link check
+npm run docs:build
 ```
 
 - Every page renders twice: on GitHub and on the site. Use plain relative links (`entities.md`, `../tools/...`). Links that leave `docs/`, and links to `README.md` or `marstek_device_openapi.MD`, are rewritten to GitHub at build time (`docs/.vitepress/config.mts`).
@@ -246,37 +248,39 @@ You can skip sending the firmware file itself. We look for a public copy on Mars
 
 ## Repository map
 
-```
-has-marstek-local-api/
-├── custom_components/marstek/
-│   ├── __init__.py            # Integration setup and teardown
-│   ├── config_flow.py         # Config flow, discovery, reauth, reconfigure
-│   ├── options_flow.py        # Polling, network, power, dashboard, energy meter
-│   ├── const.py               # Constants and per-family limits
-│   ├── coordinator.py         # Tiered data update coordinator
-│   ├── firmware_profile.py    # Family + ver → capability/scaling profile
-│   ├── device_info.py         # Device registry metadata
-│   ├── mode_config.py         # ES.SetMode payload construction
-│   ├── power.py               # Power-limit validation
-│   ├── device_action.py       # Charge / discharge / stop device actions
-│   ├── discovery.py           # UDP discovery helpers
-│   ├── scanner.py             # Background IP/firmware change detection
-│   ├── diagnostics.py         # Downloadable diagnostics
-│   ├── repairs.py             # Repair issues and fix flows
-│   ├── binary_sensor.py       # CT/permission binary sensors
-│   ├── number.py              # Depth of discharge
-│   ├── select.py              # Operating mode select entity
-│   ├── sensor.py              # All sensor entities
-│   ├── switch.py              # Bluetooth advertising, panel LED
-│   ├── services.py            # Service implementations
-│   ├── services.yaml          # Service definitions
-│   ├── helpers/               # Entity descriptions, UDP client pool, capacity store
-│   └── pymarstek/             # UDP client library
-├── tests/                     # Test suite
-├── tools/                     # Mock device, firmware emulator, query tools
-├── scripts/                   # Release and code-limit tooling
-└── docs/                      # This documentation
-```
+Top-level folders:
+
+- `custom_components/marstek/`: the integration, listed below
+- `tests/`: Test suite
+- `tools/`: Mock device, firmware emulator, query tools
+- `scripts/`: Release and code-limit tooling
+- `docs/`: This documentation
+
+Inside `custom_components/marstek/`:
+
+- `__init__.py`: Integration setup and teardown
+- `config_flow.py`: Config flow, discovery, reauth, reconfigure
+- `options_flow.py`: Polling, network, power, dashboard, energy meter
+- `const.py`: Constants and per-family limits
+- `coordinator.py`: Tiered data update coordinator
+- `firmware_profile.py`: Family + ver → capability/scaling profile
+- `device_info.py`: Device registry metadata
+- `mode_config.py`: ES.SetMode payload construction
+- `power.py`: Power-limit validation
+- `device_action.py`: Charge / discharge / stop device actions
+- `discovery.py`: UDP discovery helpers
+- `scanner.py`: Background IP/firmware change detection
+- `diagnostics.py`: Downloadable diagnostics
+- `repairs.py`: Repair issues and fix flows
+- `binary_sensor.py`: CT/permission binary sensors
+- `number.py`: Depth of discharge
+- `select.py`: Operating mode select entity
+- `sensor.py`: All sensor entities
+- `switch.py`: Bluetooth advertising, panel LED
+- `services.py`: Service implementations
+- `services.yaml`: Service definitions
+- `helpers/`: Entity descriptions, UDP client pool, capacity store
+- `pymarstek/`: UDP client library
 
 ## Protocol reference
 

@@ -8,7 +8,7 @@ The overview is the [README](../README.md). The calculation behind the estimate 
 
 ## Discovery and setup
 
-Turn on **Open API** in the Marstek app first, and keep Home Assistant on the same network as the battery. Then:
+Turn on **Open API** in the Marstek app first. It is the local interface the integration talks to ([glossary](guide/glossary.md#open-api-local-api)). Keep Home Assistant on the same network as the battery, so discovery can find it. Then:
 
 1. Go to **Settings** > **Devices & services**.
 2. Choose **Add integration** and search for **Marstek**.
@@ -26,7 +26,14 @@ The device page groups the sensors, the operating-mode select, and the controls.
 
 <img src="screenshots/device-details.png" alt="Venus E device page with battery sensors and controls." width="560" />
 
-A few diagnostic sensors, including **Battery temperature**, start disabled. `Bat.GetStatus`, the request behind them, has been suspected of resetting some batteries, so the integration waits until you opt in. On the device page, show disabled entities, open **Battery temperature** (or another battery-detail entity), open the gear, and turn **Enabled** on. On recent firmware the request starts on its own. On older firmware those entities stay omitted. The full list is in [Entities](entities.md).
+A few diagnostic sensors, including **Battery temperature**, start disabled. The request behind them has been suspected of resetting some batteries, so the integration waits until you opt in. To turn one on, go to the device page, show disabled [entities](guide/glossary.md#entity), and open **Battery temperature** (or another battery-detail entity). Then open the gear and turn **Enabled** on. On recent firmware the integration starts asking for that data on its own. On older firmware those entities are not offered at all. The full list is in [Entities](entities.md).
+
+<details class="details custom-block">
+<summary>Technical details</summary>
+
+The battery-detail entities come from the `Bat.GetStatus` request. The integration only sends it while at least one of those entities is enabled ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14)).
+
+</details>
 
 ## Battery health sidebar dashboard
 
@@ -60,7 +67,7 @@ On a phone the same page stacks the totals in two columns and stacks the cards.
 
 ## Battery health cards on any dashboard
 
-The same two cards can go on a dashboard you already have. This integration registers the card module, so after you install or upgrade you reload the browser and the cards are in the picker. There is no separate Lovelace resource to add.
+The same two cards can go on a dashboard you already have. The integration adds the cards to Home Assistant for you. After you install or upgrade, reload the browser and the cards are in the picker. You don't need to add a dashboard resource by hand.
 
 1. Open the dashboard and choose **Edit dashboard**, then **Add card**.
 2. Open **By card**.
@@ -79,11 +86,11 @@ The picker keeps the English card names in every language. The words on the card
 
 **Capacity** is the weekly chart: the estimate as a line, each run as a dot, and the rating as a dashed line. **Download weekly estimates (CSV)** saves the weeks. The chart stays empty until the first estimate is published, which is what Venus A shows.
 
-**Runs** lists every 20-point charge or discharge, newest first, eight to a page, with **All**, **Charge**, and **Discharge** filters. Each row compares that run with the median for its direction. **Download runs (CSV)** saves every kept run.
+**Runs** lists every run, newest first. A run is a charge or discharge that moves the state of charge by 20 percentage points. The list shows eight runs to a page, with **All**, **Charge**, and **Discharge** filters. Each row compares that run with the median for its direction. **Download runs (CSV)** saves every kept run.
 
 <img src="screenshots/battery-health-runs-desktop.png" alt="Runs tab listing charge and discharge runs with dates, capacities, and the difference from the median, plus Download runs (CSV)." width="840" />
 
-**Energy** shows lifetime **Charged from AC** and **Delivered to AC**. **Solar** appears on PV models such as Venus A. **Backup socket** appears once the off-grid output has delivered energy. The last line is equivalent full cycles, or "less than one full cycle" until a nameplate of energy has been delivered.
+**Energy** shows lifetime **Charged from AC** and **Delivered to AC**. **Solar** appears on models with solar inputs ([PV](guide/glossary.md#pv)), such as Venus A. **Backup socket** appears once the off-grid output has delivered energy. The last line is equivalent full cycles, or "less than one full cycle" until the battery has delivered as much energy as its rated capacity.
 
 <img src="screenshots/battery-health-energy-desktop.png" alt="Energy tab. Venus E has a large AC charge and delivery history, about 216 full cycles, and a tiny backup-socket total. Venus A shows solar and backup-socket energy and less than one full cycle." width="840" />
 
@@ -115,13 +122,13 @@ Details and the rules (both sensors, or neither) are in [Options](options.md#ene
 
 ## Controlling the battery
 
-**Auto**, **AI**, and, on firmware that allows it, **UPS** are on the operating-mode select on the device page. **Manual** and **Passive** need a power, a duration, or time slots, so they are services rather than a dropdown choice.
+**Auto**, **AI**, and, on firmware that allows it, **UPS** are on the operating-mode select on the device page. **Manual** and **Passive** need a power, a duration, or time slots, so they are [services](guide/glossary.md#service-action) rather than a dropdown choice. The [glossary](guide/glossary.md#operating-modes) explains what each mode does.
 
-In an automation, choose the action type **Device**, pick the battery, and use **Charge battery**, **Discharge battery**, or **Stop charging/discharging**. Empty power fields use the defaults from [Options](options.md#power-settings).
+In an automation, choose the action type **Device** (a [device action](guide/glossary.md#device-action)), pick the battery, and use **Charge battery**, **Discharge battery**, or **Stop charging/discharging**. Empty power fields use the defaults from [Options](options.md#power-settings).
 
 <img src="screenshots/automation-action.png" alt="Automation editor with a Marstek device action for charging or discharging the battery." width="520" />
 
-`marstek.set_passive_mode` holds a watt setpoint for a number of seconds. Negative power charges, positive power discharges.
+`marstek.set_passive_mode` charges or discharges at a fixed power, in watts, for a number of seconds. Negative power charges, positive power discharges.
 
 <img src="screenshots/automation-passive.png" alt="Automation calling marstek.set_passive_mode with a power and a duration." width="520" />
 
@@ -134,17 +141,17 @@ Ready-to-copy YAML is in [Automations and services](services.md).
 
 ## Energy dashboard and Repairs
 
-Home Assistant's Energy dashboard wants lifetime energy sensors with an energy device class. For a Marstek battery:
+Home Assistant's Energy dashboard needs sensors that count energy over the battery's whole lifetime. For a Marstek battery:
 
 1. Open **Settings** > **Dashboards** > **Energy**.
 2. Under **Home battery storage**, add **Total grid input energy** as energy going in to the battery and **Total grid output energy** as energy coming out. They count the battery's own AC connection, not your house's grid connection.
-3. For the grid, use your house meter, or **Meter input energy** and **Meter output energy** when the CT meter reports them.
+3. For the grid, use your house meter, or **Meter input energy** and **Meter output energy** when the [CT meter](guide/glossary.md#ct-meter-ct002-ct003) reports them.
 4. On Venus A or Venus D, read [solar and the battery row](energy_dashboard.md#venus-a-and-venus-d-solar-and-the-battery-row) before adding **Total solar energy**.
 5. Leave **Total load energy** off that dashboard. Its meaning depends on the device, so the integration does not recommend it as home consumption.
 
 The entity names, units, and the cases where firmware counters stall are in [Energy dashboard](energy_dashboard.md). Official setup of the dashboard itself is [Home Assistant Energy](https://www.home-assistant.io/docs/energy/).
 
-When Home Assistant loses the battery, **Settings** > **System** > **Repairs** offers a fix flow. You enter the new IP address and port, and the integration checks that the device is still the same one before it reloads.
+When Home Assistant loses the battery, [Repairs](guide/glossary.md#repairs) (**Settings** > **System** > **Repairs**) offers a guided fix. You enter the new IP address and port. The integration checks that it is still the same battery, then reconnects.
 
 <img src="screenshots/repair-list.png" alt="Home Assistant repairs list with a Marstek connection issue." width="340" />
 <img src="screenshots/repair-detail.png" alt="Update device connection form with the IP address and port, showing Unable to connect to the device." width="340" />

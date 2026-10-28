@@ -1,5 +1,10 @@
 # How to estimate usable capacity from field data
 
+This page is for technical readers who want the research behind the battery
+health estimate. To use the dashboard and understand its numbers, read
+[Battery health](usable-capacity.md) instead; you do not need anything on
+this page.
+
 This note is the evidence behind the usable-capacity sensor. It records what
 the published methods need, what other products actually do, and what the
 Marstek Open API can support. How to turn the dashboard and the cards on is
@@ -300,7 +305,7 @@ resetting some devices (issue
 
 HMG-50 (Venus C, and Venus E 2.0 which this integration does not set up)
 shares one Wi-Fi receive channel with its meter client, so many Open API
-datagrams are simply lost (issue
+datagrams are lost (issue
 [#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). A gap over the limit (180 seconds at the default poll, longer only when the
 configured fast interval itself exceeds that) aborts the open window. That
 makes HMG-50 a poor source of clean windows, which is another reason the
