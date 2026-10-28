@@ -8,7 +8,7 @@ const HEALTH_CARD = "marstek-battery-health-card";
 const FLEET_CARD = "marstek-battery-fleet-card";
 const EDITOR = "marstek-battery-health-card-editor";
 const STRATEGY = "marstek-battery-health";
-const TABS = ["capacity", "runs", "energy", "restarts"];
+const TABS = ["capacity", "runs", "energy", "restarts", "corrections"];
 const DOCS = "https://github.com/taurgis/has-marstek-local-api/blob/main/docs/usable-capacity.md";
 // Health bands. They describe fade, not a warranty: the Open API carries no warranty terms.
 const GOOD_HEALTH = 90;
@@ -21,8 +21,9 @@ const DAY_S = 86400;
 const { COPY } = await import(`./marstek-battery-health-copy.js${new URL(import.meta.url).search}`);
 const { plugPowerId, plugFlow } = await import(`./marstek-battery-health-plug.js${new URL(import.meta.url).search}`);
 const { restartsHtml, outagesOf, OUTAGES_STEP, RESTART_STYLES } = await import(`./marstek-battery-health-restarts.js${new URL(import.meta.url).search}`);
+const { correctionsHtml, correctionsOf, CORRECTION_STYLES } = await import(`./marstek-battery-health-corrections.js${new URL(import.meta.url).search}`);
 
-const STYLES = RESTART_STYLES + `
+const STYLES = RESTART_STYLES + CORRECTION_STYLES + `
   :host { display: block; }
   ha-card { padding: 16px; display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color); }
   .num { font-variant-numeric: tabular-nums; }
@@ -624,11 +625,16 @@ function outagesTab(hass, model, text, shown) {
   return restartsHtml(model.restarts, text, { day: (date) => day(hass, date), clock: (date) => time.format(date), tracked, shown });
 }
 
+function correctionsTab(hass, model, text) {
+  return correctionsHtml(model.attrs, text, { fmt: (value, digits) => fmt(hass, value, digits), day: (date) => day(hass, date), when: (date) => day(hass, date, true) });
+}
+
 const PANELS = {
   capacity: (hass, model, text, { width }) => capacityChart(hass, model, text, width),
   runs: (hass, model, text, { runs }) => runsHtml(hass, model, text, runs),
   energy: (hass, model, text) => energyHtml(hass, model, text),
   restarts: (hass, model, text, { shown }) => outagesTab(hass, model, text, shown),
+  corrections: (hass, model, text) => correctionsTab(hass, model, text),
 };
 
 function tabsHtml(hass, model, text, selected, cardId, view) {
@@ -770,12 +776,14 @@ const CSV_COLUMNS = {
   capacity: ["week_start", "usable_wh", "rated_wh"],
   runs: ["closed_at", "direction", "start_soc", "end_soc", "soc_delta", "capacity_wh", "duration_s", "average_power_w", "pv_share"],
   restarts: ["at", "kind", "offline_s", "failed_polls", "evidence"],
+  corrections: ["at", "style", "from_soc", "to_soc", "points", "throughput"],
 };
 
 function csvCell(row, column) {
   if (column === "closed_at" || column === "week_start") return toDate(row[column])?.toISOString() ?? "";
   if (column === "direction") return row.direction === "charge" ? "charge" : "discharge";
   if (column === "at") return row.date.toISOString();
+  if (column === "style") return ["jump", "creep", "hold"].includes(row.style) ? row.style : "";
   if (column === "kind") return ["restart", "network_reset"].includes(row.kind) ? row.kind : "dropout";
   // Trace names are fixed snake_case words; a semicolon keeps them in one cell.
   if (column === "evidence") return (Array.isArray(row.evidence) ? row.evidence : []).filter((trace) => /^[a-z_]+$/.test(trace)).join(";");
@@ -786,6 +794,7 @@ const CSV_ROWS = {
   capacity: (model) => model.history.map((point) => ({ ...point, rated_wh: model.rated })),
   runs: (model) => model.windows,
   restarts: (model) => outagesOf(model.restarts).reverse(),
+  corrections: (model) => correctionsOf(model.attrs).reverse(),
 };
 const csvRows = (model, tab) => CSV_ROWS[tab](model);
 
