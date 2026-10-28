@@ -133,7 +133,8 @@ after each.
 - **Ethernet.** The HTTP task at `0x08014ecc` reads the unsent-record count
   (halfword `0x20001004`; records of 0x227 bytes at `0x60000040`). With more
   than one queued and the 1800 s timer at `0x20001fce` expired
-  (`0x08014f9e`-`0x08014fb8`), it calls `0x08027b04`, which logs
+  (`0x08014f9e`-`0x08014fb8`), and the halfword at `0x2000014c` at 0 (it stayed
+  0 in the emulator; its meaning is not known), it calls `0x08027b04`, which logs
   `[HTTP]ch395 reset!!!!`, pulses the CH395 reset pin (PD9, `0x08003be4`),
   re-sends its init commands and logs `CH395 reset!!!`. The CH395 restarts
   DHCP from Discover.
@@ -168,6 +169,14 @@ after each.
   set its RTC from `getDateInfo`, connected MQTT, and posted an upload about
   every 5 minutes, each answered `{"code":0}`. `upload_cnt` stayed at 1 and
   the module was never reset in 46 minutes.
+- **Ethernet in the emulator.** With `run_firmware.py --ethernet` the image
+  moves to the CH395, where `ch395.py` answers no DNS and no TCP, so the
+  uploads fail as above. `upload_cnt` reached 13, the 1800 s stamp at
+  `0x20001fce` was 58, and the reset came when the clock reached 1858:
+  `CH395 reset!!!`, `[HTTP]ch395 reset!!!!`, `INIT_CH395`, DHCP and the
+  Local API socket open again within 0.4 s. That took 62 wall-clock minutes
+  at the emulator's half speed. The stamp was then re-armed at 1858 for the
+  next period.
 
 Open: why the plug sees the start-up check after a chip reset. Nothing in the
 paths above touches the inverter (Micro 116/119, BMS 115 run their own

@@ -80,6 +80,10 @@ failing uploads.
   its last output until CT data returned.
 - With the emulator's stand-in cloud answering, the same image ran 46
   minutes without a reset: every upload was accepted and nothing queued up.
+- On Ethernet the emulator has no cloud. The same image queued its uploads
+  and reset the CH395 when its 1800 s timer ran out, then got its address
+  and reopened the Local API socket within a second. On a real unit DHCP
+  takes the 5 to 9 seconds seen in the LAN log.
 - The integration lists a start-up check at the plug with no other trace and
   at most one failed poll as a brief network reset and leaves it out of the
   **Restarts** count. Why the plug sees a start-up check after a chip reset

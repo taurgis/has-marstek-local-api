@@ -215,6 +215,19 @@ Once the chip has its lease, the firmware moves its uplink to Ethernet
 firmware drops its Wi-Fi sockets, so the Local API, the CT003 poll, DNS and
 the cloud all go over the CH395. The Wi-Fi address then stops answering.
 
+The stand-in cloud only answers on Wi-Fi. Over Ethernet the firmware does its
+own DNS, HTTPS and MQTT through CH395 sockets, and `ch395.py` answers no DNS
+query and no TCP connect. So an Ethernet unit behaves like one whose internet
+access is blocked: `[CH395] MQTT init err`, `[HTTP] upload data error`, and
+the upload queue (`0x20001004`) grows by one record about every 5 minutes.
+Control 150 then resets the CH395 every 1800 s of virtual time, as on a real
+unit. In one run (VNSE3-0:150, booted 10:03:43) the first reset came at
+11:05:39, 62 wall-clock minutes later, because virtual time runs at about half
+speed. The firmware logged `CH395 reset!!!` and `[HTTP]ch395 reset!!!!`,
+re-sent `INIT_CH395`, enabled DHCP again and reopened the Local API socket
+0.4 s later. A request every 5 s never went unanswered, because the model
+hands out its lease at once; a real unit takes 5 to 9 s for DHCP.
+
 ## Docker
 
 `Dockerfile` builds one image for every Venus E 3.0 / A / D image. It installs
