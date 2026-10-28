@@ -56,8 +56,6 @@ flapping on an unstable device API.
 
 <img src="screenshots/device-settings-network.png" alt="Network Settings" width="560" />
 
-*Older screenshot: it predates the Parallel API requests toggle and the 5 s default delay.*
-
 ## Power Settings
 
 These settings affect automations, command validation, and how off-grid power is shown:
@@ -79,8 +77,6 @@ The 800 W limit defaults to **on** for Venus C, Venus D, Venus E and Venus E min
 Charging is always validated against the same per-family maximum (as a negative value); the socket limit only caps discharge.
 
 <img src="screenshots/device-settings-power.png" alt="Power Settings" width="560" />
-
-*Older screenshot: the limit is now labelled **Enforce 800 W discharge limit**, and the Clamp negative off-grid power toggle is new.*
 
 ## Battery health dashboard
 

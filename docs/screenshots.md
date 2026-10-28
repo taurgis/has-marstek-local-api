@@ -26,8 +26,6 @@ The device page groups the sensors, the operating-mode select, and the controls.
 
 <img src="screenshots/device-details.png" alt="Venus E device page with battery sensors and controls." width="560" />
 
-*Shown on older firmware 145. On 150 and newer you also see the **Restarts** sensor, and the battery-detail sensors under **Diagnostic**.*
-
 A few diagnostic sensors, including **Battery temperature**, start disabled. `Bat.GetStatus`, the request behind them, has been suspected of resetting some batteries, so the integration waits until you opt in. On the device page, show disabled entities, open **Battery temperature** (or another battery-detail entity), open the gear, and turn **Enabled** on. On recent firmware the request starts on its own. On older firmware those entities stay omitted. The full list is in [Entities](entities.md).
 
 ## Battery health sidebar dashboard
