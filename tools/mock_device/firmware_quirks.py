@@ -237,3 +237,46 @@ def uses_broadcast_reply_rules(profile: FirmwareProfile) -> bool:
     no other mini capture and no other mini image exist.
     """
     return profile.family is DeviceFamily.VENUS_E_MINI
+
+
+# Network chip resets while cloud uploads fail (tools/firmware/ANALYSIS.md,
+# "Network chip resets"). The HTTP task resets the Ethernet chip (CH395) every
+# 1800 s while more than one record waits, and the Wi-Fi module (FC41D) every
+# 900 s while any record waits. The timer re-arms only on the task's next
+# pass, so the period is longer than the limit: one Ethernet log showed a
+# reset about every 35 minutes, 5-9 s without ping each.
+#
+# ``[HTTP]ch395 reset`` is in the three Control 150 images only (VNSE3-0,
+# VNSA-0, VNSD-0); 1508, 1509 and 151 dropped it. ``[HTTP]fc41d reset`` is in
+# 150, 1508, 1509 and 151. Older Control, HMG-50 and the Venus E mini PMU
+# have neither.
+UPLINK_ETHERNET = "ethernet"
+UPLINK_WIFI = "wifi"
+_ETHERNET_UPLOAD_RESET_S = 1800.0
+_WIFI_UPLOAD_RESET_S = 900.0
+_UPLOAD_RESET_REARM_S = 300.0  # 35 min observed minus the 30 min limit
+_UPLOAD_RESET_MIN_GENERATION = 150
+_ETHERNET_UPLOAD_RESET_VERSION = 150
+# Seconds off the network: observed on Ethernet. The Wi-Fi figure is an
+# estimate: a 1 s reset pulse, a 2 s wait, then a Wi-Fi join and DHCP.
+_ETHERNET_RESET_OFFLINE_S = 8.0
+_WIFI_RESET_OFFLINE_S = 15.0
+
+
+def upload_failure_resets(profile: FirmwareProfile, uplink: str) -> tuple[float, float] | None:
+    """Return (seconds between resets, seconds offline) without a cloud, or None.
+
+    Only Control VNSE3-0 / VNSA-0 / VNSD-0 images carry the HTTP-task reset.
+    """
+    if profile.hmg50_control or profile.family not in _SRC_SKUS:
+        return None
+    if profile.family is DeviceFamily.VENUS_E_MINI:
+        return None
+    generation = profile.control_generation
+    if generation is None or generation < _UPLOAD_RESET_MIN_GENERATION:
+        return None
+    if uplink == UPLINK_ETHERNET:
+        if profile.firmware_version != _ETHERNET_UPLOAD_RESET_VERSION:
+            return None
+        return _ETHERNET_UPLOAD_RESET_S + _UPLOAD_RESET_REARM_S, _ETHERNET_RESET_OFFLINE_S
+    return _WIFI_UPLOAD_RESET_S + _UPLOAD_RESET_REARM_S, _WIFI_RESET_OFFLINE_S

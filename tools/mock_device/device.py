@@ -36,6 +36,7 @@ from .const import (
     MODE_UPS,
 )
 from .firmware_quirks import (
+    UPLINK_WIFI,
     answers_unknown_methods,
     documented_manual_set,
     openapi_src_prefix,
@@ -44,6 +45,7 @@ from .firmware_quirks import (
     supports_set_ver_and_factory_reset,
     supports_wifi_set_config,
     undocumented_manual_set_reason,
+    upload_failure_resets,
     uses_broadcast_reply_rules,
     vnsem_301_passive_parse_error,
     vnsem_301_setmode_report,
@@ -71,6 +73,7 @@ from .simulators.restart import (
     DEFAULT_BOOT_S,
     DEFAULT_CT_RECONNECT_S,
     DEFAULT_ENERGY_SAVE_S,
+    DEFAULT_NETWORK_RESET_S,
     RestartSimulator,
 )
 from .utils import (
@@ -264,7 +267,13 @@ class MockMarstekDevice:
         return reading if watts is None else replace(reading, power_w=watts)
 
     def _restart_simulator(self, simulate: bool) -> RestartSimulator:
-        """Build the restart and Wi-Fi drop schedule from the config keys."""
+        """Build the restart, network reset and Wi-Fi drop schedule from the config keys."""
+        cloud_unreachable = self.config.pop("cloud_unreachable", False) is True
+        uplink = str(self.config.pop("uplink", UPLINK_WIFI))
+        resets = upload_failure_resets(self.profile, uplink) if cloud_unreachable else None
+        if cloud_unreachable and resets is None:
+            version = self.profile.firmware_version
+            print(f"Firmware {version} on {uplink} has no upload-failure reset")
         options = {
             key: float(value)
             for key in (
@@ -273,6 +282,8 @@ class MockMarstekDevice:
                 "ct_reconnect_s",
                 "energy_save_s",
                 "wifi_drop_rate",
+                "network_reset_every_s",
+                "network_reset_s",
             )
             if isinstance(value := self.config.pop(key, None), (int, float))
         }
@@ -283,13 +294,21 @@ class MockMarstekDevice:
             ct_reconnect_s=options.get("ct_reconnect_s", DEFAULT_CT_RECONNECT_S),
             energy_save_s=options.get("energy_save_s", DEFAULT_ENERGY_SAVE_S),
             wifi_drop_rate=options.get("wifi_drop_rate", 0.0),
+            network_reset_every_s=options.get(
+                "network_reset_every_s", resets[0] if resets else None
+            ),
+            network_reset_s=options.get(
+                "network_reset_s", resets[1] if resets else DEFAULT_NETWORK_RESET_S
+            ),
         )
 
     def start(self) -> None:
         """Start the mock device server."""
-        # ``kill -USR1`` (or ``docker kill -s USR1``) restarts the device now.
+        # ``kill -USR1`` (or ``docker kill -s USR1``) restarts the device now;
+        # ``-USR2`` resets its network chip now.
         if hasattr(signal, "SIGUSR1"):
             signal.signal(signal.SIGUSR1, lambda *_: self.restarts.request_restart())
+            signal.signal(signal.SIGUSR2, lambda *_: self.restarts.request_network_reset())
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, "SO_REUSEPORT"):
