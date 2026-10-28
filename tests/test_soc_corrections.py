@@ -9,6 +9,7 @@ hold at 99.
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -48,13 +49,15 @@ def _iso(moment: float) -> str:
 class _Pack:
     """True energy plus the BMS's reported whole percent.
 
-    ``k_charge`` scales what the BMS counts on charge. At true full the BMS
-    resets its reading: ``jump`` at once, ``creep`` by ``creep_step`` points a
-    poll, ``hold`` caps the reading at 99 until full.
+    ``k_charge`` scales what the BMS counts on charge, ``k_discharge`` on
+    discharge. At true full the BMS resets its reading: ``jump`` at once,
+    ``creep`` by ``creep_step`` points a poll, ``hold`` caps the reading at 99
+    until full.
     """
 
     soc: float = 50.0
     k_charge: float = 1.0
+    k_discharge: float = 1.0
     resync: str = "jump"
     creep_step: float = 2.0
     capacity: float = _TRUE
@@ -92,8 +95,8 @@ class _Pack:
         hours = _POLL / 3600.0
         dc = -watts * _ETA * hours if watts < 0.0 else -watts / _ETA * hours
         self.energy = min(self.capacity, max(0.0, self.energy + dc))
-        factor = self.k_charge if dc > 0.0 else 1.0
-        self.counted = min(99.9, self.counted + factor * dc / self.capacity * 100.0)
+        factor = self.k_charge if dc > 0.0 else self.k_discharge
+        self.counted = min(99.9, max(0.0, self.counted + factor * dc / self.capacity * 100.0))
         if self.full:
             if self.resync == "creep":
                 self.counted = min(100.0, max(self.counted, self.shown + self.creep_step))
@@ -384,3 +387,39 @@ def test_thirty_day_counts_follow_the_latest_poll() -> None:
 
 def test_the_card_list_stays_out_of_the_recorder() -> None:
     assert "soc_corrections" in CARD_ATTRIBUTES
+
+
+def test_a_correction_cannot_tell_which_direction_miscounted() -> None:
+    """Charge counted short and discharge counted long look the same.
+
+    Both end in an upward correction of the same size and a charge median
+    above the discharge median, yet they push the estimate opposite ways.
+    Publishing either direction's median alone would double one error, so the
+    geometric mean stays: it splits the difference.
+    """
+    short = _Pack(k_charge=0.94)
+    long = _Pack(k_discharge=1.06)
+    for pack in (short, long):
+        _cycles(pack, 10)
+    errors = []
+    for pack in (short, long):
+        estimator = pack.estimator
+        charge = statistics.median(estimator._capacities("charge"))
+        discharge = statistics.median(estimator._capacities("discharge"))
+        assert estimator.estimate_wh is not None
+        assert charge > discharge
+        assert all(event.points > 0.0 for event in _corrections(pack) if event.corrected)
+        errors.append(
+            {
+                "published": estimator.estimate_wh / _TRUE - 1.0,
+                "discharge": discharge / _TRUE - 1.0,
+                "charge": charge / _TRUE - 1.0,
+            }
+        )
+    assert short.estimator._corrections.bound_pct() == pytest.approx(
+        long.estimator._corrections.bound_pct(), abs=0.5
+    )
+    assert errors[0]["published"] > 0.0 > errors[1]["published"]
+    for side in ("discharge", "charge"):
+        worst = max(abs(error[side]) for error in errors)
+        assert worst > max(abs(error["published"]) for error in errors)
