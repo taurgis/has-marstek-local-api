@@ -30,19 +30,19 @@ Five checks, about five minutes. Each one prevents a problem that otherwise show
 </li>
 <li>
 
-**The battery firmware is up to date.** Update it in the Marstek app. On Venus A, D, and E 3.0, firmware 150 or newer is much more stable.
+**The battery firmware is up to date.** Firmware is the software inside the battery. Update it in the Marstek app. On Venus A, D, and E 3.0, firmware 150 or newer is much more stable.
 
 </li>
 </ol>
 
 ## Turn on Open API
 
-The Open API is the battery's local interface. It is off by default, and the integration cannot reach the battery until you turn it on.
+The Open API is the battery's local connection for other devices on your home network. It is off by default, and the integration cannot reach the battery until you turn it on.
 
 1. Open the **Marstek** app and select your battery.
 2. Open the battery's device settings and find **Open API**. Some app versions label it **Local API**. The exact menu differs between app versions.
 3. Turn it on.
-4. Note the **port**. The default is **30000**. Leave it unless you have a reason to change it.
+4. Note the **port**. The port is a number that tells the battery which messages belong to the Open API. The default is **30000**. Leave it unless you have a reason to change it.
 
 > [!WARNING] Open API has no password
 > Anyone on your home network can read and control the battery once Open API is on. That is how Marstek designed it. Keep the battery on a network you trust, such as your main home network or a separate IoT network, and not on a guest network.
@@ -52,22 +52,22 @@ The Open API is the battery's local interface. It is off by default, and the int
 
 ## Give the battery a fixed IP address (recommended)
 
-Your router hands out IP addresses and can give the battery a new one after a restart. The integration notices this and follows the battery, so this step is optional. A fixed address still makes everything faster and easier to troubleshoot.
+An IP address is a device's address on your home network. Your router hands these out and can give the battery a new one after a restart. The integration notices this and follows the battery, so this step is optional. A fixed address still makes everything faster and easier to troubleshoot.
 
-In your router, look for **DHCP reservation**, **static lease**, or **fixed IP**, and reserve the battery's current address. You can find the address in the router's device list or in the Marstek app.
+In your router's settings, look for **DHCP reservation**, **static lease**, or **fixed IP**. Different routers use different names for it. Reserve the battery's current address there. You can find the address in the router's device list or in the Marstek app.
 
 ## Check your network setup
 
 Most home networks need nothing here. Check these if your network is more advanced:
 
-- **Separate VLAN for IoT devices?** Automatic discovery won't cross VLANs. Allow UDP on the battery's port (default 30000) between Home Assistant and the battery, and add the battery by IP address.
+- **Separate VLAN for IoT devices?** A VLAN is a separate network for your smart-home devices. Automatic discovery won't reach across to it. Add the battery by IP address. In your router or firewall, allow UDP traffic on the battery's port (default 30000) between Home Assistant and the battery.
 - **Wi-Fi "client isolation" or "AP isolation" on?** It blocks devices from talking to each other. Turn it off for the battery's network.
-- **Home Assistant in Docker?** Use host networking (`network_mode: host`), as the [official container install](https://www.home-assistant.io/installation/linux#install-home-assistant-container) does. Without it, discovery broadcasts and the battery's UDP replies don't reach Home Assistant.
-- **Venus E mini on firmware 301?** It sends replies to the network's `.255` address, which only works on a normal home network with mask `255.255.255.0` (a /24). See [troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).
+- **Home Assistant in Docker?** Use host networking (`network_mode: host`), as the [official container install](https://www.home-assistant.io/installation/linux#install-home-assistant-container) does. Without it, Home Assistant's network search and the battery's answers don't reach Home Assistant. If you use Home Assistant OS or a Home Assistant Green or Yellow, this doesn't apply to you.
+- **Venus E mini on firmware 301?** It sends its answers to the network's `.255` address. That only works when the network uses the usual home-router subnet mask, `255.255.255.0` (also written /24). See [troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).
 
 ## Is anything else talking to the battery?
 
-Only one program should poll the battery's Open API at a time. If you tried another Marstek integration, a script, or a Node-RED flow, turn it off first. Two programs polling at once doubles the load on fragile firmware, and two programs listening on the same UDP port take each other's replies.
+Only one program should ask the battery for data through its Open API at a time. If you tried another Marstek integration, a script, or a Node-RED flow, turn it off first. Two programs asking at once doubles the load on fragile firmware. If both also listen on the same port, each one can catch answers meant for the other.
 
 ## Next
 
