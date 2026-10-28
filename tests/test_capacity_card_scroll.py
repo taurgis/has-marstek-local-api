@@ -270,7 +270,13 @@ def _start_server() -> tuple[ThreadingHTTPServer, int]:
     return server, port
 
 
-def _launch_chrome(port: int, profile: Path) -> subprocess.Popen[bytes]:
+def _launch_chrome(profile: Path) -> subprocess.Popen[bytes]:
+    """Start Chrome on a debugging port it picks itself.
+
+    Port 0 lets Chrome bind a free port and write it to ``DevToolsActivePort``
+    in the profile, so no other process can take it between choosing and
+    binding (the race a pre-picked free port has under pytest-xdist).
+    """
     binary = _chrome_bin()
     assert binary is not None
     return subprocess.Popen(
@@ -279,7 +285,9 @@ def _launch_chrome(port: int, profile: Path) -> subprocess.Popen[bytes]:
             "--headless=new",
             "--disable-gpu",
             "--no-sandbox",
-            f"--remote-debugging-port={port}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--remote-debugging-port=0",
             "--remote-allow-origins=*",
             f"--user-data-dir={profile}",
             "--window-size=390,844",
@@ -290,14 +298,23 @@ def _launch_chrome(port: int, profile: Path) -> subprocess.Popen[bytes]:
     )
 
 
-def _wait_for_chrome(port: int) -> None:
-    deadline = time.monotonic() + 8
+# A cold Chrome on a shared CI runner can take well over 8 s to start.
+_CHROME_START_TIMEOUT = 60.0
+
+
+def _wait_for_chrome(chrome: subprocess.Popen[bytes], profile: Path) -> int:
+    """Return the debugging port once Chrome answers on it."""
+    active = profile / "DevToolsActivePort"
+    deadline = time.monotonic() + _CHROME_START_TIMEOUT
     while time.monotonic() < deadline:
+        if chrome.poll() is not None:
+            raise RuntimeError(f"Chrome exited with {chrome.returncode} before it was ready")
         try:
-            with _OPENER.open(f"http://127.0.0.1:{port}/json/version") as response:
+            port = int(active.read_text(encoding="utf-8").split("\n", 1)[0])
+            with _OPENER.open(f"http://127.0.0.1:{port}/json/version", timeout=5) as response:
                 json.load(response)
-                return
-        except (URLError, TimeoutError, OSError):
+                return port
+        except (ValueError, URLError, TimeoutError, OSError):
             time.sleep(0.1)
     raise RuntimeError("Chrome did not open a debugging port")
 
@@ -409,12 +426,11 @@ def _run_in_chrome(tmp_path: Path, scenario: Any) -> None:
     if _chrome_bin() is None:
         pytest.skip("Chrome is not installed")
     server, http_port = _start_server()
-    cdp_port = _free_port()
     profile = tmp_path / "chrome-profile"
     profile.mkdir()
-    chrome = _launch_chrome(cdp_port, profile)
+    chrome = _launch_chrome(profile)
     try:
-        _wait_for_chrome(cdp_port)
+        cdp_port = _wait_for_chrome(chrome, profile)
         asyncio.run(scenario(http_port, cdp_port))
     finally:
         server.shutdown()
