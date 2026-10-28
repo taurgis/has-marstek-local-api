@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.11.0
+
+### Minor Changes
+
+- 7c7fbba: Add a Corrections tab to the battery health card that charts and lists each charge-level correction with its kind and signed size, the 30-day counts, the last full charge and what the counting drift means for the runs, with a short explanation behind a disclosure.
+
+### Patch Changes
+
+- 8ff1439: Fix the charge-level correction insight naming the start of the 15-point check (often 85%) as where the correction began; it now says the correction happened on reaching 100%.
+- 87245a5: Add a documentation page that explains, in plain language with technical notes, every way a battery can drop offline: dropouts, brief network resets, full restarts, a switched-off Local API and factory resets.
+- c6e78f7: Fix the Battery health page jumping up the screen when readings refresh or when you switch tabs, run filters, or pages while scrolled down.
+- Change the Restarts tab to list a brief network reset (the battery dropping off the network for a few seconds and running its start-up check without restarting) separately, with a plain explanation, instead of counting it as a restart.
+- d50717e: Fix charge-level corrections being missed on slow solar charges, counted twice after a mid-range jump, or reported as holds on honest batteries that taper near full, and stop calling the drift figure a bound on the capacity error.
+- 7cbe421: Fix the charge-level drift bound under-reporting corrections where the battery holds at 99%, by measuring each correction against the median for its own direction.
+
 ## 1.10.0
 
 ### Minor Changes
