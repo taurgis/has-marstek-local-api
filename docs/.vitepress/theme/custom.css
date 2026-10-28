@@ -125,6 +125,11 @@
   border-radius: 0;
 }
 
+/* Screenshots open full size when tapped (see theme/index.ts). */
+.vp-doc img:not(a img) {
+  cursor: zoom-in;
+}
+
 /* Wide tables scroll inside the page instead of widening it on phones. */
 .vp-doc table {
   display: block;
@@ -142,8 +147,36 @@
 
   .vp-doc th,
   .vp-doc td {
+    min-width: 6.5rem;
     padding: 8px 10px;
   }
+
+  /* The last column usually holds the explanation; keep it readable. */
+  .vp-doc th:last-child,
+  .vp-doc td:last-child {
+    min-width: 11rem;
+  }
+
+  /* Long method names in headings wrap instead of widening the page. */
+  .vp-doc h2 code,
+  .vp-doc h3 code {
+    overflow-wrap: anywhere;
+  }
+
+  .vp-doc h2 > code,
+  .vp-doc h3 > code {
+    font-size: 0.78em;
+  }
+}
+
+/* Screenshots that follow each other get a gap between them. */
+.vp-doc p > img + img,
+.vp-doc p > a + a > img {
+  margin-top: 12px;
+}
+
+.vp-doc .mk-check li > p {
+  margin: 0;
 }
 
 /* Verdict chips used in the support and comparison tables. */
@@ -153,7 +186,7 @@
   display: inline-block;
   padding: 0 8px;
   border-radius: 999px;
-  font-size: 0.85em;
+  font-size: max(0.85em, 12px);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -252,8 +285,8 @@
 }
 
 .mk-proof li {
-  display: flex;
-  align-items: center;
+  display: block;
+  text-align: center;
   margin: 0;
   padding: 4px 12px;
   border: 1px solid var(--vp-c-divider);
@@ -263,6 +296,8 @@
 }
 
 .mk-proof li:has(img) {
+  display: flex;
+  align-items: center;
   padding: 0;
   border: 0;
 }
@@ -294,6 +329,11 @@
   object-fit: cover;
   object-position: top;
   background: var(--vp-c-bg-soft);
+}
+
+/* The automation editor shot is wider than 4:3; show all of it. */
+.vp-doc .mk-gallery img[src*='automation-action'] {
+  object-fit: contain;
 }
 
 .mk-gallery figcaption {
@@ -337,4 +377,92 @@
   border-color: var(--vp-c-brand-1);
   background: var(--vp-c-default-soft);
   color: var(--vp-c-brand-1);
+}
+
+/*
+ * Phones and tablets: the default theme sets the Menu bar in 12px text and
+ * the sidebar and outline rows at 32px. Raise the text and give every
+ * navigation row a 44px tap target (Apple HIG 44pt, WCAG 2.5.5 44px; Android
+ * asks for 48dp). Below 960px is where the theme swaps in the local nav bar.
+ * https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html
+ * https://support.google.com/accessibility/android/answer/7101858
+ */
+@media (max-width: 959px) {
+  /* Menu and On this page: 15px labels on a 48px bar, the whole half tappable. */
+  .VPLocalNav .menu {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    font-size: 15px;
+  }
+
+  .VPLocalNav .menu-icon {
+    font-size: 18px;
+  }
+
+  .VPLocalNavOutlineDropdown {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .VPLocalNavOutlineDropdown > button,
+  .VPLocalNavOutlineDropdown > button .menu-text {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .VPLocalNavOutlineDropdown .items .outline-link {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    font-size: 16px;
+  }
+
+  .VPLocalNavOutlineDropdown .items .top-link {
+    font-size: 16px;
+  }
+
+  /* Sidebar drawer: 16px links on 44px rows, and a 44px collapse toggle. */
+  .VPSidebarItem .item > .link > .text,
+  .VPSidebarItem .item > .text {
+    padding: 10px 0;
+    font-size: 16px;
+  }
+
+  .VPSidebarItem .item > .caret {
+    width: 44px;
+    height: 44px;
+    margin-right: -10px;
+  }
+
+  .VPSidebarItem.level-0 {
+    padding-bottom: 16px;
+  }
+
+  /* Hamburger screen: 16px links and a 44px GitHub icon. */
+  .VPNavScreenMenuLink,
+  .VPNavScreenMenuGroup .button {
+    font-size: 16px !important;
+  }
+
+  .VPNavScreenAppearance .text {
+    font-size: 14px !important;
+  }
+
+  .VPNavScreen .VPSocialLink {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Previous / next page labels, and a full-height edit link. */
+  .VPDocFooter .desc {
+    font-size: 13px;
+  }
+
+  .VPDocFooter .edit-link-button {
+    padding: 6px 0;
+  }
+
+  /* Home hero buttons: 44px tall instead of 40px. */
+  .VPHero .actions .VPButton.medium {
+    line-height: 42px;
+  }
 }
