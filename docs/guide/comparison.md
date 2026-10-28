@@ -105,7 +105,7 @@ Omnibattery replaces the earlier Marstek Venus Energy Manager by the same author
 
 ### AstraMeter
 
-[AstraMeter](https://github.com/tomquist/AstraMeter) (formerly b2500-meter) is not an integration, but it is useful next to one: it pretends to be a Marstek CT meter, so a battery in self-adaptation mode can follow a meter you already have in Home Assistant. This project uses it to test against real firmware.
+[AstraMeter](https://github.com/tomquist/AstraMeter) (formerly b2500-meter) is not an integration, but it is useful next to one: it pretends to be a Marstek CT meter, so a battery in [Auto mode](glossary.md#auto-mode-self-consumption) can follow a meter you already have in Home Assistant. This project uses it to test against real firmware.
 
 ## Which one should I use?
 
