@@ -840,11 +840,114 @@ function focusKey(root) {
   return active.getAttribute("role") === "tabpanel" ? '[role="tabpanel"]' : null;
 }
 
-// Home Assistant's scoped-registry polyfill wraps innerHTML, and the new
-// nodes cannot take focus until a microtask later.
-function redraw(root, html, key = focusKey(root)) {
-  root.innerHTML = html;
-  if (key) queueMicrotask(() => root.querySelector(key)?.focus());
+// A refresh or a tab/filter/page click must not scroll. focus() scrolls its
+// target into view, and dropping the focused control (or the scroll anchor
+// inside a tab panel that just changed height) jumps a phone back up the page.
+function parseFragment(root, html) {
+  // The holder sits in the shadow tree so Home Assistant's scoped-registry
+  // polyfill upgrades ha-card and ha-icon while it parses. hidden keeps the
+  // spare copy out of layout until it is moved or discarded.
+  const holder = document.createElement("div");
+  holder.hidden = true;
+  root.append(holder);
+  try {
+    holder.innerHTML = html;
+    const fragment = document.createDocumentFragment();
+    while (holder.firstChild) fragment.append(holder.firstChild);
+    return fragment;
+  } finally {
+    holder.remove();
+  }
+}
+
+function syncAttrs(current, next) {
+  const seen = new Set();
+  for (const attr of next.attributes) {
+    seen.add(attr.name);
+    if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
+  }
+  for (const attr of [...current.attributes]) {
+    if (!seen.has(attr.name)) current.removeAttribute(attr.name);
+  }
+}
+
+function morphChildren(current, next) {
+  const incoming = [...next.childNodes];
+  for (let index = 0; index < incoming.length; index += 1) {
+    const node = incoming[index];
+    const child = current.childNodes[index];
+    if (!child) {
+      current.append(node);
+    } else if (child.nodeType !== node.nodeType || child.nodeName !== node.nodeName) {
+      child.replaceWith(node);
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      syncAttrs(child, node);
+      morphChildren(child, node);
+    } else if (child.nodeValue !== node.nodeValue) {
+      child.nodeValue = node.nodeValue;
+    }
+  }
+  while (current.childNodes.length > incoming.length) current.lastChild.remove();
+}
+
+// Scroll offsets the reader had before a click. A value of 0 is not worth
+// restoring; the page is already at the top.
+function captureScroll(host) {
+  const saved = [];
+  const remember = (el, top, left, windowed) => {
+    if (top > 0) saved.push({ el, top, left, windowed });
+  };
+  const scrolling = document.scrollingElement || document.documentElement;
+  remember(scrolling, window.scrollY, window.scrollX, true);
+  const seen = new Set();
+  let node = host || null;
+  while (node && !seen.has(node)) {
+    seen.add(node);
+    if (node !== scrolling && node.scrollTop > 0) remember(node, node.scrollTop, node.scrollLeft, false);
+    const parentRoot = node.getRootNode?.();
+    node = node.parentElement || (parentRoot instanceof ShadowRoot ? parentRoot.host : null);
+  }
+  return saved;
+}
+
+function restoreScroll(saved) {
+  for (const item of saved) {
+    if (!item.el.isConnected && !item.windowed) continue;
+    const top = item.windowed ? window.scrollY : item.el.scrollTop;
+    if (top + 1 >= item.top) continue;
+    if (item.windowed) window.scrollTo(item.left, item.top);
+    else {
+      item.el.scrollLeft = item.left;
+      item.el.scrollTop = item.top;
+    }
+  }
+}
+
+// `key` set means the reader pressed that control. Either way, focus must not
+// move the page: the pressed control is already on screen, and scrolling it
+// to the top is the jump people feel after a tab or filter click.
+function redraw(root, html, key) {
+  const selector = key == null ? focusKey(root) : key;
+  const saved = key == null ? null : captureScroll(root.host);
+  const restore = () => {
+    if (saved) restoreScroll(saved);
+  };
+  morphChildren(root, parseFragment(root, html));
+  restore();
+  const active = selector ? root.activeElement : null;
+  if (selector && !(active?.isConnected && active.matches(selector))) {
+    // New nodes from the scoped-registry polyfill cannot take focus until a microtask later.
+    queueMicrotask(() => {
+      root.querySelector(selector)?.focus({ preventScroll: true });
+      restore();
+    });
+  }
+  if (!saved) return;
+  queueMicrotask(restore);
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
+  });
 }
 
 // Shared by both cards: a shadow root, full-width sizing, and a redraw that
@@ -875,8 +978,13 @@ class MarstekCard extends HTMLElement {
     if (!this._hass) return;
     const signature = signatureOf(this._hass, this._packs(), this._view());
     if (!force && signature === this._signature) return;
+    const html = this._html();
     this._signature = signature;
-    redraw(this.shadowRoot, this._html(), focusTarget);
+    // Same words as last time: do not touch the tree, or a focused tab is
+    // rebuilt and the browser scrolls it back into view.
+    if (!force && html === this._drawn) return;
+    this._drawn = html;
+    redraw(this.shadowRoot, html, focusTarget);
   }
 }
 
@@ -951,7 +1059,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
     else if (verb === "more") this._showMore();
   }
 
-  // Focus moves to the first row the press revealed, so reading carries on there.
+  // Focus moves to the first row the press revealed, without scrolling the page.
   _showMore() {
     const first = this._shown;
     this._shown += OUTAGES_STEP;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.0
+
+### Minor Changes
+
+- 7a97757: Add a Restarts sensor and a Restarts tab on the battery health card that tell a device restart apart from a Wi-Fi or network dropout, using the boot self-test a linked smart plug sees when there is one.
+
 ## 1.9.0
 
 ### Minor Changes
