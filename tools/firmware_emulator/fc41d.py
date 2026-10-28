@@ -330,6 +330,9 @@ class FC41D:
         old = self.services.pop(conn_id, None)
         if old and old.transport:
             old.transport.close()
+            # close() frees the port on the next loop pass. HMG-50 reopens its
+            # CT socket without AT+QICLOSE, so bind only after that.
+            await asyncio.sleep(0)
         service = UdpService(conn_id, local_port)
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # No SO_REUSEADDR: a second emulator on the port must fail, not split traffic.

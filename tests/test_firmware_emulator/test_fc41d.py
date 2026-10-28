@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 _EMU = Path(__file__).resolve().parents[2] / "tools" / "firmware_emulator"
 if str(_EMU) not in sys.path:
@@ -121,3 +121,39 @@ def test_reset_line_ignores_a_high_level_while_powered() -> None:
     modem.reset_line(1)
     assert modem.powered is True
     assert writer.data == b""
+
+
+class _Port:
+    """A UDP port that frees on the next loop pass after close, as asyncio does."""
+
+    held: ClassVar[set[int]] = set()
+
+    def __init__(self, *_args: Any) -> None:
+        self.port = 0
+
+    def setsockopt(self, *_args: Any) -> None:
+        pass
+
+    def bind(self, addr: tuple[str, int]) -> None:
+        if addr[1] in self.held:
+            raise OSError(98, "Address already in use")
+        self.port = addr[1]
+        self.held.add(self.port)
+
+    def close(self) -> None:
+        asyncio.get_running_loop().call_soon(self.held.discard, self.port)
+
+
+async def test_reopen_without_close_rebinds_the_same_port(monkeypatch: Any) -> None:
+    """HMG-50 reopens its CT socket with no AT+QICLOSE in between."""
+
+    async def endpoint(_factory: Any, sock: _Port) -> tuple[_Port, None]:
+        return sock, None
+
+    _Port.held.clear()
+    monkeypatch.setattr(fc41d.socket, "socket", _Port)
+    monkeypatch.setattr(asyncio.get_running_loop(), "create_datagram_endpoint", endpoint)
+    modem, writer = _modem()
+    await modem._open_udp(0, 22222, "0.0.0.0")
+    await modem._open_udp(0, 22222, "0.0.0.0")
+    assert writer.data.count(b"+QIOPEN: 0,0") == 2

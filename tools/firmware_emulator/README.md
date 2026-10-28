@@ -21,6 +21,7 @@ while this emulator is the vendor's own implementation, including its quirks
 | CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
+| Marstek cloud (MQTT broker, HTTP servers behind the FC41D) | accepts every connect, publish and upload; `getDateInfo` returns host time; `--no-cloud` fails them | `cloud.py` |
 | FC41D reset line (Control: PE4/PE5) | write hook on `gpioPortE` sends the level to UDP 3466; the modem drops its sockets while low, then boots (`--boot-seconds`, 1) and rejoins (`--rejoin-seconds`, 4) | `run_firmware.py` `MODEM_RESET_HOOK`, `fc41d.py --reset-port` |
 | CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457; inbound frames paced 1 per ms of virtual time | `renode/CanBridge.cs` |
 | BMS and inverter | energy-counted battery (`--packs`, `--capacity`), inverter that follows the MCU's setpoint within the family's AC limits | `can_peers.py --family` |
@@ -36,10 +37,17 @@ would record. `--out` saves the polls; `--replay FILE --seed-wh 1536` reruns the
 published capacity, which is the only way a creep is visible.
 
 Not modelled: RS485, inverter pages 2 and 7 (and 1 and 3 outside Venus D),
-the per-pack BMS PGNs (the firmware only forwards them to the cloud and the
-LEDs; no Open API field reads them) and the cloud (HTTP/MQTT get `OK` and no
-data). Without the cloud, the RTC is the only clock source; see
-[Deviations](#deviations-from-a-real-device).
+and the per-pack BMS PGNs (the firmware only forwards them to the cloud and the
+LEDs; no Open API field reads them).
+
+The Marstek cloud is a stand-in (`cloud.py`, behind `fc41d.py`): MQTT opens,
+connects, subscribes and publishes succeed, `getDateInfo` returns the host's
+local time, data uploads get `{"code":0}` and every other HTTP request gets
+`{}`. Nothing is ever sent down to the battery. So the default emulators behave
+like a battery with working internet. `--no-cloud` makes MQTT and HTTP fail the
+way they do when a firewall blocks the battery, and Control 150 and newer then
+reset the FC41D about every 30 minutes (see
+[Network chip resets](../firmware/ANALYSIS.md#network-chip-resets)).
 
 ## Images
 
@@ -114,7 +122,7 @@ BMS rated energy in CAN 0x355: 1-3000 Wh is HMG-25 (`VenusC`), more is HMG-50
    `--ac-limits DISCHARGE,CHARGE` (W). The last three default per family, taken
    from the catalog device type: VNSA-0 2080 Wh and 1500/1500 W; VNSD-0 2560 Wh
    per pack and 2500/2500 W; everything else 5120 Wh and 800/2500 W (Venus E
-   3.0). Logs land in
+   3.0). `--no-cloud` blocks the stand-in Marstek cloud. Logs land in
    `WORK` (default `/tmp/marstek-fw/`): `fc41d.log`, `can_peers.log`,
    `renode.log`. Keep one work directory per image: the EEPROM layout is the
    firmware's own.
@@ -320,7 +328,8 @@ second try, and the first full poll can take several minutes.
   config flows can need a second attempt, and long requests (a manual schedule)
   can fail every retry. Treat a burst of these as an emulator artefact, not
   firmware behaviour, until a real device shows it.
-- **Clock.** A real unit gets its time from the cloud. The emulated RTC always
+- **Clock.** A real unit gets its time from the cloud, and so does the
+  emulator (the stand-in answers `getDateInfo` with host time). The emulated RTC always
   reads the host's local time (UTC in the container unless `TZ` is set), so
   manual schedules fire on the host's wall clock. `bkp.py` presets the backup
   register that tells the firmware its clock kept running, so it does not rewind
@@ -362,6 +371,15 @@ second try, and the first full poll can take several minutes.
   rejoins from its saved network, and the `AT+QISTATE` checks reopen the Local
   API (connection 3) within seconds and the CT socket (connection 1) about
   75 s after the pulse.
+- Cloud (Control 150 and HMG-50 156 both match these byte for byte):
+  `+QMTOPEN: 0,0`, `+QMTCONN: 0,0,0`, `+QMTSUB: 0,1,0,0`, `+QMTPUB: 0,0,0`,
+  and `+QMTCONN: 0,3` for `AT+QMTCONN?` (Control 150's handler around
+  `0x08010bbc`). HTTP is `AT+QHTTPCFG="url",...`, then `AT+QHTTPGET=60` or
+  `AT+QHTTPPOST=<len>,60,60` (body after `CONNECT`), then `AT+QHTTPREAD=60`
+  until `+QHTTPREAD: 0`. Control uploads about every 5 minutes to
+  `data-upload/v1/venus/<uid>`; with a reply its queue (`upload_cnt`) stays at
+  1. HMG-50 156 also sends `setAcCoupleReporting` 12 times after boot and then
+  stops when the reply is `{}`.
 - HMG-50 (`--dialect hmg50`):
   - The modem is on LPUART1.
   - `AT+QISEND` waits for `CONNECT` instead of `>`.
@@ -448,7 +466,9 @@ The RTC is a BCD calendar with the STM32F4 register layout (TR, DR, ISR with
 INIT/INITF/RSF, WPR 0xCA/0x53). `rtc.py` serves the host's wall clock in the
 Renode process's local time, so pass `TZ` (for example `-e TZ=Europe/Brussels`
 with Docker). A real device sets its clock from the cloud (HTTP `getDateInfo`,
-MQTT "Set local time", BLE), which the emulator cannot do. At boot the firmware
+MQTT "Set local time", BLE). The stand-in cloud answers `getDateInfo` with the
+host's local time as `_YYYY_MM_DD_HH_MM_SS`: the parser (`0x08015b74`) reads
+the digits after the first `_`, validates them and sets the RTC. At boot the firmware
 checks backup register DATA0 (0x40006C04) for 0xA5A5. If the value is missing,
 it rewinds the RTC to the time it last saved in EEPROM (0x160) or to
 2019-11-20. `bkp.py` presets 0xA5A5, as on a device whose clock kept running.
@@ -537,7 +557,7 @@ CT on the shared FC41D channel in two ways
 How the emulator differs from a real unit:
 
 - Virtual time runs at about half speed.
-- Cloud HTTP/MQTT answer `ERROR`, so the firmware keeps retrying.
+- The cloud is a stand-in that accepts everything and sends nothing down.
 - There is no power stage (the ADC reads 0). Battery current stays 0 and
   self-consumption (Auto) moves no power.
 
