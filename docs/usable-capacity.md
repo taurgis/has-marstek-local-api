@@ -311,7 +311,15 @@ the percentage. That reset shows up in three ways:
 
 The estimator records each arrival at 100%. With a published capacity it
 compares the points the percentage moved on the last 15 or more points
-before full with the points the measured watt-hours explain. Once three
+before full with the points the measured watt-hours explain. The size is
+the largest difference between any point of that approach and full, so a
+hold counts from where the reading reached 99. A step mid-range that the
+per-poll check already flagged is not counted again on arrival. A hold must
+also survive the unit's own draw: the reported watts leave out what the unit
+uses itself, and a charge that tapers near full can spend much of its power
+there, so every charging second is allowed some watts of it before the
+difference counts. Runs of polls at one reading are kept as their two ends,
+so a slow solar charge or a long hold still fits the trace. Once three
 charge windows are accepted, it converts those watt-hours with their median
 rather than the published value. The charge median is what the BMS itself
 counts per point, so the difference is the whole correction whichever
@@ -324,11 +332,23 @@ percentage.
 A correction does not rescale or discard the runs before it. A charge
 counter that misses charge and a discharge counter that over-counts both end
 in an upward jump, yet they bias the two direction medians in opposite
-directions, so the jump does not say which way to correct. It does bound the
-error: the corrected points divided by the points the percentage moved since
-the previous full charge. `soc_drift_bound_pct` is that ratio pooled over the
-last eight full charges, published once at least 100 points have moved.
-At 2% or more it caps the confidence at `medium`, at 5% or more at `low`.
+directions, so the jump does not say which way to correct.
+`soc_drift_bound_pct` gives its scale: the corrected points divided by the
+points the percentage moved, pooled over the last eight full charges and
+published once at least 100 points have moved. At 2% or more it caps the
+confidence at `medium`, at 5% or more at `low`.
+
+How close that is to the error depends on which counter drifted:
+
+- **One direction.** The figure is about the error. Simulated packs with
+  a charge or a discharge counter 2 to 8% off land within a point of it.
+- **Both, opposite ways.** The geometric mean cancels most of the error, so
+  the figure warns more than it needs to.
+- **Both, the same way.** A BMS that divides by a stale capacity counts
+  every point too large or too small in both directions. Its count still
+  agrees at full, so nothing is corrected and the figure stays at zero
+  while the estimate is off by the full mismatch. Only a discharge to the
+  cutoff, where the BMS resets to empty, shows it.
 
 Attributes: `soc_corrections` (the newest ten, card only, not recorded),
 `soc_corrections_30d`, `full_charges_30d`, `last_full_charge_at`, and

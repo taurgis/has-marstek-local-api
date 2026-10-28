@@ -24,6 +24,7 @@ from custom_components.marstek.capacity_estimator import (
     UsableCapacityEstimator,
     apply_capacity_estimate,
 )
+from custom_components.marstek.helpers import soc_corrections
 from custom_components.marstek.helpers.soc_corrections import (
     CREEP,
     FULL,
@@ -463,9 +464,89 @@ def test_the_bound_covers_the_error_for_a_hold_as_for_a_jump(miscount: dict[str,
 def test_the_bound_does_not_lean_on_the_efficiency_assumption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The same drift reads the same bound whatever the real efficiency."""
+    """The same drift reads the same bound whatever the real efficiency.
+
+    The standby allowance is a fixed number of watts, not a share of the
+    charge, so it is left out here.
+    """
+    monkeypatch.setattr(soc_corrections, "STANDBY_ALLOWANCE_W", 0.0)
     bounds = []
     for eta in (0.93, 0.89):
         monkeypatch.setattr(sys.modules[__name__], "_ETA", eta)
         bounds.append(_bound_and_error(k_charge=1.06, resync="hold")[0])
     assert bounds[0] == pytest.approx(bounds[1], abs=0.2)
+
+
+def _hold_level(
+    tracker: SocCorrectionTracker, start: float, level: float, polls: int, energy: float
+) -> float:
+    """Sit at ``level`` for ``polls`` polls, charging ``energy`` Wh each."""
+    for _ in range(polls):
+        _segment(tracker, start, level, level, energy=energy, reference=_TRUE)
+        start += _POLL
+    return start
+
+
+def test_a_slow_approach_with_long_flat_stretches_is_still_judged() -> None:
+    """Forty polls a point is 520 polls before full; flat runs keep two ends."""
+    tracker = SocCorrectionTracker()
+    moment = _T0
+    for level in range(80, 92):
+        moment = _hold_level(tracker, moment, float(level), 39, 46.0 / 40.0)
+        _segment(tracker, moment, level, level + 1.0, energy=46.0 / 40.0, reference=_TRUE)
+        moment += _POLL
+    assert len(tracker._trace) < 40
+    event = _segment(tracker, moment, 92.0, 100.0, energy=46.0, jumped=True, reference=_TRUE)
+    assert event is not None
+    assert event.style == JUMP
+    # Seven points from where each level began; up to one more of whole-percent
+    # quantization from where a level ended.
+    assert 7.0 <= event.points <= 8.0
+
+
+def test_a_climb_that_a_flagged_step_began_is_not_counted_twice() -> None:
+    tracker = SocCorrectionTracker()
+    moment = _climb(
+        tracker, _T0, [80.0 + index for index in range(11)], energy=46.0, reference=_TRUE
+    )
+    mid = _segment(tracker, moment, 90.0, 95.0, energy=46.0, jumped=True, reference=_TRUE)
+    assert mid is not None and mid.points == pytest.approx(4.0, abs=0.1)
+    moment = _climb(tracker, moment + _POLL, [95.0, 97.0, 99.0], energy=23.0, reference=_TRUE)
+    event = _segment(tracker, moment, 99.0, 100.0, energy=23.0, reference=_TRUE)
+    assert event is not None
+    assert event.style == JUMP
+    # Five points moved on 69 Wh: 3.5 unexplained, on top of the 4 already stored.
+    assert event.points == pytest.approx(3.5, abs=0.1)
+    assert tracker.to_dict()["throughput"] == 0.0
+
+
+def test_a_hold_counts_from_where_the_reading_reached_99() -> None:
+    """A counter that ran ahead mid-approach and then held is still a hold.
+
+    Over the whole approach the two cancel; from the 99 entry the pack took
+    five points of energy for one point of reading.
+    """
+    tracker = SocCorrectionTracker()
+    levels = [85.0 + index for index in range(15)]
+    moment = _climb(tracker, _T0, levels, energy=46.0 * 10.0 / 14.0, reference=_TRUE)
+    moment = _hold_level(tracker, moment, 99.0, 10, 23.0)
+    event = _segment(tracker, moment, 99.0, 100.0, reference=_TRUE)
+    assert event is not None
+    assert event.style == HOLD
+    assert event.points == pytest.approx(-4.0, abs=0.15)
+
+
+def test_an_honest_taper_that_feeds_the_unit_is_not_a_hold() -> None:
+    """The last five points at 40 W reported, 15 W of it the unit's own draw."""
+    tracker = SocCorrectionTracker()
+    moment = _climb(
+        tracker, _T0, [80.0 + index for index in range(16)], energy=46.0, reference=_TRUE
+    )
+    reported = 40.0 * _POLL / 3600.0
+    polls = math.ceil(46.0 / (25.0 * _POLL / 3600.0))
+    for level in range(95, 100):
+        moment = _hold_level(tracker, moment, float(level), polls - 1, reported)
+        event = _segment(tracker, moment, level, level + 1.0, energy=reported, reference=_TRUE)
+        moment += _POLL
+    assert event is not None
+    assert (event.style, event.points) == (FULL, 0.0)

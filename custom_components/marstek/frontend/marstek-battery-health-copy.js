@@ -29,7 +29,7 @@ export const COPY = {
       `The battery corrected its charge level ${count} ${count === 1 ? "time" : "times"} in 30 days, last on ${when} ${where} (${size}).`,
     atFull: "on reaching 100%",
     fromTo: (from, to) => `from ${from} to ${to}`,
-    driftBound: (bound) => `Runs carry up to about ±${bound} counting drift.`,
+    driftBound: (bound) => `Runs carry about ±${bound} counting drift.`,
     notFull: (when) => `Not fully charged since ${when}. A full charge lets the battery recalibrate its charge level.`,
     fixKind: { up: "Jumped up", creep: "Climbed fast", hold: "Held near full", down: "Dropped" },
     fixWhy: {
@@ -166,7 +166,7 @@ export const COPY = {
       `De batterij corrigeerde haar laadtoestand ${count} keer in 30 dagen, het laatst op ${when} ${where} (${size}).`,
     atFull: "bij het bereiken van 100%",
     fromTo: (from, to) => `van ${from} naar ${to}`,
-    driftBound: (bound) => `Ritten bevatten tot ongeveer ±${bound} telafwijking.`,
+    driftBound: (bound) => `Ritten bevatten ongeveer ±${bound} telafwijking.`,
     notFull: (when) => `Niet volledig geladen sinds ${when}. Een volle lading laat de batterij haar laadtoestand herijken.`,
     fixKind: { up: "Sprong omhoog", creep: "Snel gestegen", hold: "Bleef bijna vol", down: "Gedaald" },
     fixWhy: {

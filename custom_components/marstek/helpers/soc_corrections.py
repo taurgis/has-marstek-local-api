@@ -10,20 +10,26 @@ pack is full and sets its percentage to 100, which can be a jump from 92 or
 The size of that correction is the counting error since the last full charge.
 It cannot be split between charge and discharge: a charge counted short and
 a discharge counted long both end in an upward correction, yet they bias the
-capacity estimate in opposite directions. What it does give is a bound. If
-``j`` points were corrected after ``T`` points of charge and discharge, the
-geometric mean of the two direction medians is off by at most about ``j / T``.
+capacity estimate in opposite directions. What it gives is a scale. If ``j``
+points were corrected after ``T`` points of charge and discharge, ``j / T`` is
+about the error when one direction miscounted, more than it when the two
+miscounted in opposite directions (the geometric mean cancels those), and
+nothing when both counted alike, as with a stale capacity setting: that drift
+never reaches full, and only a discharge to the cutoff shows it.
 
 Every arrival at 100 percent is checked against the energy of its last
-``APPROACH_POINTS`` points. Steps that the existing per-poll check already
-flags as jumps are corrections wherever they happen.
+``APPROACH_POINTS`` points. Its size is the largest unexplained difference
+between any point of that approach and full: the drift the BMS reset, which
+for a hold is the drift where the reading reached 99. Steps that the existing
+per-poll check already flags as jumps are corrections wherever they happen,
+and an arrival does not count them again.
 """
 
 from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import pairwise
 from typing import Any
 
@@ -42,7 +48,15 @@ MIN_CORRECTION_POINTS = 3.0
 MIN_BOUND_THROUGHPUT = 100.0
 BOUND_EVENTS = 8
 MAX_EVENTS = 20
-# Four hours of 30 second polls. An approach longer than that is not judged.
+# Reported watts leave out what the unit draws for itself. A charge that
+# tapers near full can spend a large share on that, so a hold must still show
+# with this much of every charging second spent on the unit. A linked plug
+# measured about 8 W of standby; the mock device draws 15 W. In simulation
+# 20 W cleared honest packs up to that draw and kept holds of 2% and more.
+STANDBY_ALLOWANCE_W = 20.0
+# A run of polls at one reading keeps only its first and last point, so the
+# trace grows with movement, not time. A slow solar charge or a long hold at
+# 99 still fits; an approach of more than this many steps is not judged.
 _MAX_TRACE = 480
 
 JUMP = "jump"
@@ -126,6 +140,10 @@ class _Point:
     # DC watt-hours into the pack since the trace started.
     energy_wh: float
     jumped: bool
+    # Points a mid-range jump on the step to here already stored.
+    recorded: float = 0.0
+    # Seconds spent charging since the trace started.
+    charging_s: float = 0.0
 
 
 class SocCorrectionTracker:
@@ -194,8 +212,13 @@ class SocCorrectionTracker:
         if not self._trace or self._trace[-1].timestamp != start:
             self._trace.clear()
             self._trace.append(_Point(start, soc_before, 0.0, jumped=False))
-        energy = self._trace[-1].energy_wh + energy_in_wh
-        self._trace.append(_Point(end, soc_after, energy, jumped))
+        previous = self._trace[-1]
+        energy = previous.energy_wh + energy_in_wh
+        charging = previous.charging_s + (end - start if energy_in_wh > 0.0 else 0.0)
+        if len(self._trace) >= 2 and self._trace[-2].soc == previous.soc == soc_after:
+            # The middle of a run never bounds an approach: drop it.
+            self._trace.pop()
+        self._trace.append(_Point(end, soc_after, energy, jumped, charging_s=charging))
         moved = soc_after - soc_before
         if soc_before < FULL_SOC <= soc_after:
             return self._arrive(end, reference_wh)
@@ -216,6 +239,8 @@ class SocCorrectionTracker:
         moved = soc_after - soc_before
         explained = _explained(energy_in_wh, reference_wh)
         event = self._append(at, soc_before, soc_after, moved - explained, JUMP)
+        # An arrival whose approach spans this step must not count it again.
+        self._trace[-1] = replace(self._trace[-1], recorded=event.points)
         return Verdict(correction=event)
 
     def _arrive(self, at: float, reference_wh: float | None) -> Verdict:
@@ -235,17 +260,20 @@ class SocCorrectionTracker:
             base = last
         span = trace[trace.index(base) :]
         flagged = any(point.jumped for point in span[1:])
-        moved = arrival.soc - base.soc
         if reference_wh is None:
             # Without a capacity only a flagged step is a measurement.
             if not flagged:
                 return Verdict(correction=self._append(at, base.soc, arrival.soc, 0.0, FULL))
+            recorded = sum(point.recorded for point in span[1:])
             points = sum(
                 later.soc - earlier.soc for earlier, later in pairwise(span) if later.jumped
             )
+            points -= recorded
         else:
-            points = moved - _explained(arrival.energy_wh - base.energy_wh, reference_wh)
-        style = _style(points, flagged)
+            points, recorded = _largest_unexplained(span, reference_wh)
+        # A climb that a mid-range jump began is one correction: the noise
+        # floor applies to the whole of it, the entry stores the rest.
+        style = _style(points + recorded, flagged)
         event = self._append(at, base.soc, arrival.soc, points if style != FULL else 0.0, style)
         return Verdict(correction=event, hold=style == HOLD)
 
@@ -285,6 +313,33 @@ def _explained(energy_in_wh: float, reference_wh: float | None) -> float:
     if reference_wh is None or reference_wh <= 0.0:
         return 0.0
     return energy_in_wh / reference_wh * 100.0
+
+
+def _largest_unexplained(span: list[_Point], reference_wh: float) -> tuple[float, float]:
+    """Return the unexplained points from the point of the approach that differs most.
+
+    The BMS resets the drift it has when the pack reaches full, not the drift
+    at the start of the approach. A hold has the most where the reading
+    reached 99, a creep where it started to climb, a jump on the step before
+    it. Points a mid-range jump already stored after that point are taken
+    out and returned second.
+    """
+    arrival = span[-1]
+    recorded = 0.0
+    largest = (0.0, 0.0)
+    for later, point in pairwise(reversed(span)):
+        recorded += later.recorded
+        moved = arrival.soc - point.soc
+        energy = arrival.energy_wh - point.energy_wh
+        unexplained = moved - _explained(energy, reference_wh)
+        if unexplained < 0.0:
+            # A hold only counts what is left with the unit's own draw stored nowhere.
+            seconds = arrival.charging_s - point.charging_s
+            stored = energy - STANDBY_ALLOWANCE_W * seconds / 3600.0
+            unexplained = min(0.0, moved - _explained(stored, reference_wh))
+        if abs(unexplained) > abs(sum(largest)):
+            largest = (unexplained - recorded, recorded)
+    return largest
 
 
 def _approach_base(trace: list[_Point]) -> _Point | None:
