@@ -18,13 +18,16 @@ while this emulator is the vendor's own implementation, including its quirks
 | Clock tree, flash controller | always-ready register stubs | `renode/rcu.py`, `fmc.py` |
 | RTC (BCD calendar) and backup registers | calendar on the host's wall clock; backup DATA0 preset | `renode/rtc.py`, `bkp.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
-| CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
+| CH395 Ethernet (SPI2) | idle chip, answers 0x00; with `--ethernet` a CH395 with an instant DHCP lease, UDP sockets bridged to host UDP, TCP that fails to connect | `renode/spi2.py`; `--ethernet`: `renode/ch395_spi.py` + `ch395.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
+| Marstek cloud (MQTT broker, HTTP servers behind the FC41D) | accepts every connect, publish and upload; `getDateInfo` returns host time; `--no-cloud` fails them | `cloud.py` |
+| FC41D reset line (Control: PE4/PE5) | write hook on `gpioPortE` sends the level to UDP 3466; the modem drops its sockets while low, then boots (`--boot-seconds`, 1) and rejoins (`--rejoin-seconds`, 4) | `run_firmware.py` `MODEM_RESET_HOOK`, `fc41d.py --reset-port` |
 | CAN0 (BMS + inverter bus) | Renode `STMCAN` on a CAN hub, bridged to TCP 3457; inbound frames paced 1 per ms of virtual time | `renode/CanBridge.cs` |
 | BMS and inverter | energy-counted battery (`--packs`, `--capacity`), inverter that follows the MCU's setpoint within the family's AC limits | `can_peers.py --family` |
 | PV MPPT (Venus A/D) | up to four constant-power channels that charge the battery, day/month/year 0.01 kWh yield counters (persisted next to the EEPROM), MCU on/off | `can_peers.py --pv`, `--pv-energy`, `--pv-state` |
 | EPS socket (Venus A) | constant off-grid load served from the battery | `can_peers.py --offgrid-load` |
+| Venus E mini pack, DCDC and inverter (UART AA links) | energy-counted 2S LFP pack (2009 Wh, `--soc`, `--capacity`) behind a DCDC that reports its voltage, current and temperature, and an inverter that follows the PMU's forced direction and power; the PMU counts SoC and energy itself | `mini_peers.py` |
 | BMS charge counter | reported SoC from a coulomb counter that can miss charge or over-count discharge, and resets at full by a jump, a creep or a hold at 99% (`SocCounter`); honest by default | `can_peers.py --bms-charge-error`, `--bms-discharge-error`, `--bms-resync` (also on `run_firmware.py`) |
 | HMG-50 board (Venus C / E 2.0): STM32G474 map, USART/LPUART FIFO mode, RCC/PWR/FLASH/RTC/HRTIM/ADC/CORDIC stubs, FDCAN | Renode STM32 models + G4 stubs | `renode/hmg50.repl.in`, `STM32G4_USART.cs`, `g4*.py` |
 | CT003 meter | [AstraMeter](https://github.com/tomquist/AstraMeter) reading `can_peers.py`'s grid meter | `astrameter/config.ini` |
@@ -35,10 +38,17 @@ would record. `--out` saves the polls; `--replay FILE --seed-wh 1536` reruns the
 published capacity, which is the only way a creep is visible.
 
 Not modelled: RS485, inverter pages 2 and 7 (and 1 and 3 outside Venus D),
-the per-pack BMS PGNs (the firmware only forwards them to the cloud and the
-LEDs; no Open API field reads them) and the cloud (HTTP/MQTT get `OK` and no
-data). Without the cloud, the RTC is the only clock source; see
-[Deviations](#deviations-from-a-real-device).
+and the per-pack BMS PGNs (the firmware only forwards them to the cloud and the
+LEDs; no Open API field reads them).
+
+The Marstek cloud is a stand-in (`cloud.py`, behind `fc41d.py`): MQTT opens,
+connects, subscribes and publishes succeed, `getDateInfo` returns the host's
+local time, data uploads get `{"code":0}` and every other HTTP request gets
+`{}`. Nothing is ever sent down to the battery. So the default emulators behave
+like a battery with working internet. `--no-cloud` makes MQTT and HTTP fail the
+way they do when a firewall blocks the battery, and Control 150 and newer then
+reset the FC41D about every 30 minutes (see
+[Network chip resets](../firmware/ANALYSIS.md#network-chip-resets)).
 
 ## Images
 
@@ -113,7 +123,7 @@ BMS rated energy in CAN 0x355: 1-3000 Wh is HMG-25 (`VenusC`), more is HMG-50
    `--ac-limits DISCHARGE,CHARGE` (W). The last three default per family, taken
    from the catalog device type: VNSA-0 2080 Wh and 1500/1500 W; VNSD-0 2560 Wh
    per pack and 2500/2500 W; everything else 5120 Wh and 800/2500 W (Venus E
-   3.0). Logs land in
+   3.0). `--no-cloud` blocks the stand-in Marstek cloud. Logs land in
    `WORK` (default `/tmp/marstek-fw/`): `fc41d.log`, `can_peers.log`,
    `renode.log`. Keep one work directory per image: the EEPROM layout is the
    firmware's own.
@@ -164,6 +174,59 @@ example AstraMeter runs on the default Docker bridge (`172.17.0.2`) and polls
 the AP BSSID as `wifi_mac`, and HA rejects a repeated one as
 `already_configured`. Broadcast discovery can't reach a socket bound to one
 address, so add the unit by its IP.
+
+## Ethernet (CH395)
+
+The Control board has a WCH CH395 Ethernet chip on SPI2. By default it sits
+idle and the firmware only uses Wi-Fi. `--ethernet` (Control images only)
+connects it:
+
+```bash
+python3 tools/firmware_emulator/run_firmware.py --firmware VNSE3-0:150 \
+    --ip 172.17.0.3 --gateway 172.17.0.1 \
+    --ethernet --eth-ip 172.28.0.2 --eth-gateway 172.28.0.1
+```
+
+`ch395.py` plays the chip. `renode/ch395_spi.py` forwards each SPI byte to it
+over TCP (`--eth-port`, default 3458), with two bus hooks for chip select
+(PB12) and INT# (PD8). The chip hands out `--eth-ip`, `--eth-gateway`,
+`--eth-netmask` and `--eth-mac` as its DHCP lease the moment the firmware
+enables DHCP. Each UDP socket the firmware opens is a host socket bound to
+`--eth-ip`, plus listeners on the subnet and limited broadcast addresses.
+`--eth-ip auto` (the default) picks the host's address on the route to
+`--eth-gateway`. The log is `WORK/ch395.log`.
+
+Ethernet needs an address of its own. In Docker, attach the container to a
+second network and give the Wi-Fi side the other one:
+
+```bash
+docker create --name fw-eth --network bridge marstek-fw-emulator \
+    --firmware VNSE3-0:150 --gateway 172.17.0.1 \
+    --ethernet --eth-gateway 172.28.0.1
+docker network connect devcontainer_marstek_net fw-eth
+docker start fw-eth
+```
+
+Connect the second network before the start: `--eth-ip auto` is resolved when
+the launcher starts.
+
+Once the chip has its lease, the firmware moves its uplink to Ethernet
+(`0x20001f55` = 2, set by `0x08027c08`). The modem stays associated, but the
+firmware drops its Wi-Fi sockets, so the Local API, the CT003 poll, DNS and
+the cloud all go over the CH395. The Wi-Fi address then stops answering.
+
+The stand-in cloud only answers on Wi-Fi. Over Ethernet the firmware does its
+own DNS, HTTPS and MQTT through CH395 sockets, and `ch395.py` answers no DNS
+query and no TCP connect. So an Ethernet unit behaves like one whose internet
+access is blocked: `[CH395] MQTT init err`, `[HTTP] upload data error`, and
+the upload queue (`0x20001004`) grows by one record about every 5 minutes.
+Control 150 then resets the CH395 every 1800 s of virtual time, as on a real
+unit. In one run (VNSE3-0:150, booted 10:03:43) the first reset came at
+11:05:39, 62 wall-clock minutes later, because virtual time runs at about half
+speed. The firmware logged `CH395 reset!!!` and `[HTTP]ch395 reset!!!!`,
+re-sent `INIT_CH395`, enabled DHCP again and reopened the Local API socket
+0.4 s later. A request every 5 s never went unanswered, because the model
+hands out its lease at once; a real unit takes 5 to 9 s for DHCP.
 
 ## Docker
 
@@ -220,7 +283,7 @@ IPs, each with a unique BLE MAC (`02:e0:00:00:00:<last octet>`), Wi-Fi MAC
 | `fw-venus-d-147`, `-149`, `-1492` | .63-.65 | VNSD-0, four PV channels | `firmware-all` |
 | `fw-venus-e-151`, `fw-venus-d-151` | .70-.71 | VNSE3-0 151, VNSD-0 151 (four PV channels) | `firmware-all` |
 | `fw-venus-a-1491`, `fw-venus-a-151` | .73-.74 | VNSA-0 1491 and 151, PV 420/360 W | `firmware-all` |
-| `fw-venus-e-mini-301` | .75 | VNSEMINI-0 PMU 301 (32-byte header, load `0x08008000`). Modem is USART2. Settings in SPI1 NOR (`renode/spiflash.py`). `mini_peers.py` answers the inverter and DCDC UARTs; `fc41d.py --autojoin --netmask 255.255.255.0 --lan-broadcast`. Opens UDP and answers the Open API itself; replies go to `<a.b.c>.255`. See `tools/firmware/ANALYSIS.md` | `firmware-all` |
+| `fw-venus-e-mini-301` | .75 | VNSEMINI-0 PMU 301 (32-byte header, load `0x08008000`). Modem is USART2. Settings in SPI1 NOR (`renode/spiflash.py`). `mini_peers.py` simulates the pack, DCDC and inverter (`--soc`, `--capacity`); `fc41d.py --autojoin --netmask 255.255.255.0 --lan-broadcast`. Opens UDP and answers the Open API itself; replies go to `<a.b.c>.255`. See `tools/firmware/ANALYSIS.md` | `firmware-all` |
 
 ```bash
 cd .devcontainer
@@ -304,12 +367,33 @@ second try, and the first full poll can take several minutes.
   reaches Home Assistant on the /16 Docker network. On a real LAN that is not
   a /24 the replies are lost. The image also hears its own broadcast replies
   back on port 30000 and drops them (they carry no `method`).
-  `mini_peers.py` answers the inverter (USART4) and DCDC (USART5) links with
-  a fixed pack reading and only drains the UART7 Modbus link; there is no
-  battery behind it, so SoC and power read 0. Two Renode timing gaps are
-  patched for this board only: the link UARTs are clocked at 36 MHz, and a
-  bus hook keeps UART7 TC set (Renode raises TC once per DR write). TIMER6's
-  DMA line is left off because it shares DMA2 request 3 with USART4 RX.
+  `mini_peers.py` plays the inverter (USART4) and DCDC (USART5) around an
+  energy-counted 2S LFP pack and only drains the UART7 Modbus link. Its pack
+  energy is kept in `mini_pack.json` next to the EEPROM. Every reply echoes
+  the polled command, and register writes are echoed back, because the PMU
+  retries a poll or a write until the reply matches. Manual mode drives the
+  inverter through `cmd 0x72` (direction and watts); Passive is not
+  implemented in this image. The PMU computes SoC and the energy totals
+  itself from the DCDC current and the inverter's AC power. Its counter is
+  saved to flash only on its power-down path, so after every boot the
+  launcher asks it to restart SoC from the cell voltage once readings arrive
+  (`0x2001a020` = 1). That lookup is in whole percent and the LFP plateau is
+  flat, so the PMU can start a percent or two away from the pack. Field map
+  and evidence: the `mini_peers.py` docstring. Renode timing is patched for
+  this board only: the link UARTs are clocked at 36 MHz, TIMER6 at 72 MHz
+  (the PMU's millisecond clock; at 10 MHz its SoC and energy ran at 0.14x),
+  SysTick at 144 MHz (its task timers; at 72 MHz the energy totals ran at
+  half rate), and a bus hook keeps UART7 TC set (Renode raises TC once per
+  DR write). TIMER6's DMA line is left off because it shares DMA2 request 3
+  with USART4 RX.
+- **CH395 (`--ethernet`).** The DHCP lease arrives at once, with the PHY
+  already linked at 100 Mbit/s full duplex. Only UDP is bridged: a TCP connect
+  times out after `--tcp-timeout` (3 s), and TCP listen sockets (Modbus TCP on
+  502) never see a client, so the firmware's cloud and debug-log TCP paths
+  just fail. `GET_RECV_LEN` reports one datagram at a time. The PD9 hardware
+  reset is not modelled; `INIT_CH395` resets the socket state instead. The
+  Ethernet address in `Marstek.GetDevice` comes out zero-padded
+  (`172.28.00.02`): the firmware formats it with `%02d`, as a real unit would.
 - **CAN pacing.** Inbound CAN frames are spread 1 ms apart in virtual time.
   With a 10 ms quantum, a burst injected at once overflowed the 3-deep RX FIFO,
   and the lost BMS frames showed up as SoC 0 for minutes at a time.
@@ -319,7 +403,8 @@ second try, and the first full poll can take several minutes.
   config flows can need a second attempt, and long requests (a manual schedule)
   can fail every retry. Treat a burst of these as an emulator artefact, not
   firmware behaviour, until a real device shows it.
-- **Clock.** A real unit gets its time from the cloud. The emulated RTC always
+- **Clock.** A real unit gets its time from the cloud, and so does the
+  emulator (the stand-in answers `getDateInfo` with host time). The emulated RTC always
   reads the host's local time (UTC in the container unless `TZ` is set), so
   manual schedules fire on the host's wall clock. `bkp.py` presets the backup
   register that tells the firmware its clock kept running, so it does not rewind
@@ -354,6 +439,22 @@ second try, and the first full poll can take several minutes.
   then sends `AT+QGETIP=station` and `AT+QICFG="udp/broadcast",1`.
 - EEPROM byte 0 marks an initialised store. The Local API enable flag is at 0x371
   and the port at 0x372 (uint16 LE).
+- Control resets the module itself through `0x0800b224`: it takes the modem
+  mutex, drives PE5 and PE4 low (GPIOE BRR), waits 1 s, sets them high (BSRR)
+  and holds the mutex 2 s more. It then re-runs `AT+QSSLCERT?` and the BLE
+  setup but sends no `AT+QSTAAPINFO` and no `AT+QIOPEN` of its own: the module
+  rejoins from its saved network, and the `AT+QISTATE` checks reopen the Local
+  API (connection 3) within seconds and the CT socket (connection 1) about
+  75 s after the pulse.
+- Cloud (Control 150 and HMG-50 156 both match these byte for byte):
+  `+QMTOPEN: 0,0`, `+QMTCONN: 0,0,0`, `+QMTSUB: 0,1,0,0`, `+QMTPUB: 0,0,0`,
+  and `+QMTCONN: 0,3` for `AT+QMTCONN?` (Control 150's handler around
+  `0x08010bbc`). HTTP is `AT+QHTTPCFG="url",...`, then `AT+QHTTPGET=60` or
+  `AT+QHTTPPOST=<len>,60,60` (body after `CONNECT`), then `AT+QHTTPREAD=60`
+  until `+QHTTPREAD: 0`. Control uploads about every 5 minutes to
+  `data-upload/v1/venus/<uid>`; with a reply its queue (`upload_cnt`) stays at
+  1. HMG-50 156 also sends `setAcCoupleReporting` 12 times after boot and then
+  stops when the reply is `{}`.
 - HMG-50 (`--dialect hmg50`):
   - The modem is on LPUART1.
   - `AT+QISEND` waits for `CONNECT` instead of `>`.
@@ -440,7 +541,9 @@ The RTC is a BCD calendar with the STM32F4 register layout (TR, DR, ISR with
 INIT/INITF/RSF, WPR 0xCA/0x53). `rtc.py` serves the host's wall clock in the
 Renode process's local time, so pass `TZ` (for example `-e TZ=Europe/Brussels`
 with Docker). A real device sets its clock from the cloud (HTTP `getDateInfo`,
-MQTT "Set local time", BLE), which the emulator cannot do. At boot the firmware
+MQTT "Set local time", BLE). The stand-in cloud answers `getDateInfo` with the
+host's local time as `_YYYY_MM_DD_HH_MM_SS`: the parser (`0x08015b74`) reads
+the digits after the first `_`, validates them and sets the RTC. At boot the firmware
 checks backup register DATA0 (0x40006C04) for 0xA5A5. If the value is missing,
 it rewinds the RTC to the time it last saved in EEPROM (0x160) or to
 2019-11-20. `bkp.py` presets 0xA5A5, as on a device whose clock kept running.
@@ -529,7 +632,7 @@ CT on the shared FC41D channel in two ways
 How the emulator differs from a real unit:
 
 - Virtual time runs at about half speed.
-- Cloud HTTP/MQTT answer `ERROR`, so the firmware keeps retrying.
+- The cloud is a stand-in that accepts everything and sends nothing down.
 - There is no power stage (the ADC reads 0). Battery current stays 0 and
   self-consumption (Auto) moves no power.
 

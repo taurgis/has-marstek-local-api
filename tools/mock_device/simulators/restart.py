@@ -16,6 +16,14 @@ draw is gone, then about 2.5 kW of import for 20 s, then nothing until
 standby returns (a user's plug history, 37 times in ten days). The plug
 server shows that in place of the live watts.
 
+A network reset is smaller. Control 150+ resets its own network chip while
+cloud uploads fail (``firmware_quirks.upload_failure_resets``): the device
+answers nothing for a few seconds, its self-use loop commands 0 W until the CT
+data flows again, and the plug shows the same start-up check. The CT data
+comes back last: the firmware reopens the meter socket about 75 s after the
+reset (Renode emulator, Venus E 150), and holds its last setpoint until then.
+Energy totals, the reported CT link and mode stay as they were.
+
 A Wi-Fi drop loses one datagram at random and nothing else, which the
 integration's retransmits recover inside the same poll.
 """
@@ -32,6 +40,9 @@ from ..const import MODE_AUTO, MODE_PASSIVE
 DEFAULT_BOOT_S = 45.0
 DEFAULT_CT_RECONNECT_S = 60.0
 DEFAULT_ENERGY_SAVE_S = 600.0
+DEFAULT_NETWORK_RESET_S = 8.0
+# Seconds from a network reset until CT meter data flows again.
+NETWORK_CT_GAP_S = 75.0
 _TOTAL_KEYS = (
     "total_pv_energy",
     "total_grid_output_energy",
@@ -41,11 +52,15 @@ _TOTAL_KEYS = (
 # A scheduled restart lands within this share of the interval either side, so
 # restarts in a long run do not line up with the poll interval.
 _JITTER = 0.25
+# The firmware's own timer sets the network reset period; only the task's
+# pass time varies.
+_NETWORK_JITTER = 0.05
 
 # (until seconds after the restart, plug watts) for the boot self-test.
 BOOT_PULSE = ((10.0, 0), (15.0, 2550), (30.0, 2200), (40.0, 0))
 
 REBOOTING = "rebooting"
+NETWORK_RESET = "network chip reset"
 WIFI_DROP = "Wi-Fi drop"
 
 
@@ -61,6 +76,8 @@ class RestartSimulator:
         ct_reconnect_s: float = DEFAULT_CT_RECONNECT_S,
         energy_save_s: float = DEFAULT_ENERGY_SAVE_S,
         wifi_drop_rate: float = 0.0,
+        network_reset_every_s: float | None = None,
+        network_reset_s: float = DEFAULT_NETWORK_RESET_S,
         rng: random.Random | None = None,
     ) -> None:
         """Set up the schedule. ``battery`` is None without the simulation."""
@@ -76,15 +93,22 @@ class RestartSimulator:
         self._requested: float | None = None
         self._restarted_at: float | None = None
         self.restarts = 0
+        self._network_every = network_reset_every_s
+        self._network_offline = network_reset_s
+        self._network_down_until = 0.0
+        self._network_requested: float | None = None
+        self._network_reset_at: float | None = None
+        self.network_resets = 0
         now = time.time()
-        self._next_restart = self._schedule(now)
+        self._next_restart = self._schedule(now, self._every)
+        self._next_network_reset = self._schedule(now, network_reset_every_s, _NETWORK_JITTER)
         self._saved_totals = self._totals()
         self._saved_at = now
 
-    def _schedule(self, now: float) -> float | None:
-        if self._every is None:
+    def _schedule(self, now: float, every: float | None, jitter: float = _JITTER) -> float | None:
+        if every is None:
             return None
-        return now + self._every * self._rng.uniform(1 - _JITTER, 1 + _JITTER)
+        return now + every * self._rng.uniform(1 - jitter, 1 + jitter)
 
     def _totals(self) -> dict[str, float]:
         if self._battery is None:
@@ -98,20 +122,30 @@ class RestartSimulator:
         """
         self._requested = time.time()
 
+    def request_network_reset(self) -> None:
+        """Reset the network chip at the next datagram. Safe from a signal handler."""
+        self._network_requested = time.time()
+
     def drop_reason(self, now: float) -> str | None:
         """Return why this datagram goes unanswered, or None to answer it."""
         self._tick(now)
         if now < self._booting_until:
             return REBOOTING
+        if now < self._network_down_until:
+            return NETWORK_RESET
         if self._drop_rate and self._rng.random() < self._drop_rate:
             return WIFI_DROP
         return None
 
     def plug_watts(self, now: float) -> int | None:
-        """Return what the plug shows during the boot self-test, else None."""
-        if self._restarted_at is None:
+        """Return what the plug shows during the start-up check, else None.
+
+        The check follows a restart and a network reset alike.
+        """
+        started = [at for at in (self._restarted_at, self._network_reset_at) if at is not None]
+        if not started:
             return None
-        elapsed = now - self._restarted_at
+        elapsed = now - max(started)
         if elapsed < 0:
             return None
         return next((watts for until, watts in BOOT_PULSE if elapsed < until), None)
@@ -122,6 +156,13 @@ class RestartSimulator:
             self.restart(started)
         elif self._next_restart is not None and now >= self._next_restart:
             self.restart(self._next_restart)
+        if self._network_requested is not None:
+            started, self._network_requested = self._network_requested, None
+            self.network_reset(started)
+        elif self._next_network_reset is not None and now >= self._next_network_reset:
+            self.network_reset(self._next_network_reset)
+        if self._battery is not None and self._network_reset_at is not None:
+            self._battery.ct_stale = now < self._network_reset_at + NETWORK_CT_GAP_S
         if self._ct_back_at is not None and now >= self._ct_back_at:
             self._ct_back_at = None
             if self._battery is not None:
@@ -136,7 +177,7 @@ class RestartSimulator:
         self.restarts += 1
         self._restarted_at = started
         self._booting_until = started + self._boot
-        self._next_restart = self._schedule(started)
+        self._next_restart = self._schedule(started, self._every)
         battery = self._battery
         print(
             f"[{time.strftime('%H:%M:%S')}] Restart #{self.restarts}: silent for "
@@ -156,3 +197,14 @@ class RestartSimulator:
         battery.ct_connected = False
         self._ct_back_at = self._booting_until + self._ct_reconnect
         self._saved_at = self._booting_until
+
+    def network_reset(self, started: float) -> None:
+        """Reset the network chip at *started*: silent for a few seconds, nothing lost."""
+        self.network_resets += 1
+        self._network_reset_at = started
+        self._network_down_until = started + self._network_offline
+        self._next_network_reset = self._schedule(started, self._network_every, _NETWORK_JITTER)
+        print(
+            f"[{time.strftime('%H:%M:%S')}] Network reset #{self.network_resets}: silent for "
+            f"{self._network_offline:.0f}s, no cloud upload went through"
+        )

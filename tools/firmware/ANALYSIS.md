@@ -122,6 +122,74 @@ These do not make a Wi-Fi-only Open API as reliable as a cable. Prefer
 Ethernet for polling. If the AP isolates STA clients or NATs Wi-Fi, unicast
 replies never arrive and retries cannot help.
 
+## Network chip resets
+
+Control 150 (`VNSEE3-0_app_0150_0804_151249.bin`, base `0x08000000`)
+resets its own network chip while cloud uploads keep failing. A user's LAN
+log on Ethernet showed a DHCP Discover and Request, then 5 to 9 s without
+ping, about every 35 minutes; a linked plug showed the start-up check right
+after each.
+
+- **Ethernet.** The HTTP task at `0x08014ecc` reads the unsent-record count
+  (halfword `0x20001004`; records of 0x227 bytes at `0x60000040`). With more
+  than one queued and the 1800 s timer at `0x20001fce` expired
+  (`0x08014f9e`-`0x08014fb8`), and the halfword at `0x2000014c` at 0 (it stayed
+  0 in the emulator; its meaning is not known), it calls `0x08027b04`, which logs
+  `[HTTP]ch395 reset!!!!`, pulses the CH395 reset pin (PD9, `0x08003be4`),
+  re-sends its init commands and logs `CH395 reset!!!`. The CH395 restarts
+  DHCP from Discover.
+- **Wi-Fi.** The same path resets the FC41D every 900 s through `0x0800b224`
+  (PE4/PE5 low for 1 s; logs `[HTTP]fc41d reset!!!!`).
+- **Timer helper `0x0802bce0(stamp, seconds)`.** A zero stamp is set to now
+  and returns 0; once `now - stamp >= seconds` it clears the stamp and returns
+  1. The period is the limit plus the time to the next call, so 1800 s shows
+  up as about 35 minutes.
+- **Neither path resets the MCU.** The software reboot (`0x08027e18`, "system
+  will reboot!") is called from OTA, develop-mode, MQTT `Reset` and two
+  battery-state checks (`0x0802b394` after 3600 s, `0x0802b444`), not from
+  the HTTP task.
+- **Control loop.** The self-use loop (`0x08029c88`) checks the network flag
+  (`0x2001a634`, `g_dev_net_info`) first; with it clear it zeroes the target
+  power and commands 0 W (`0x08005c8c(1, 0)`). While the chip is down the
+  CT meter's UDP packets do not arrive, and the loop then restarts its ramp
+  from 0 W (`0x08029ecc`).
+- **In the emulator.** `run_firmware.py` now feeds PE4/PE5 to `fc41d.py`, so
+  the vendor image resets its modem by itself when no cloud answers. Venus E
+  150 on Wi-Fi, booted at 07:42:47, pulsed the line at +31:05, +34:14,
+  +39:33 and +41:16. Each time the Open API was gone about 10 s (pulse to
+  the Local API socket reopening) and the CT socket came back about 75 s
+  after the pulse. `EM.GetStatus` kept `ct_state: 1` with the last
+  `total_power`, and in Auto the battery held its last output (-200 W)
+  until CT data returned, then regulated again. The 0 W branch above did
+  not show at this outage length: the network flag stays set while the
+  module rejoins. The unsent-record count at `0x20001004` grew by one about
+  every 5 minutes.
+- **With a cloud.** `fc41d.py` now answers MQTT and HTTP through a stand-in
+  cloud (`cloud.py`; `--no-cloud` restores the run above). The same image
+  set its RTC from `getDateInfo`, connected MQTT, and posted an upload about
+  every 5 minutes, each answered `{"code":0}`. `upload_cnt` stayed at 1 and
+  the module was never reset in 46 minutes.
+- **Ethernet in the emulator.** With `run_firmware.py --ethernet` the image
+  moves to the CH395, where `ch395.py` answers no DNS and no TCP, so the
+  uploads fail as above. `upload_cnt` reached 13, the 1800 s stamp at
+  `0x20001fce` was 58, and the reset came when the clock reached 1858:
+  `CH395 reset!!!`, `[HTTP]ch395 reset!!!!`, `INIT_CH395`, DHCP and the
+  Local API socket open again within 0.4 s. That took 62 wall-clock minutes
+  at the emulator's half speed. The stamp was then re-armed at 1858 for the
+  next period.
+
+Open: why the plug sees the start-up check after a chip reset. Nothing in the
+paths above touches the inverter (Micro 116/119, BMS 115 run their own
+`self_check` behind CAN/RS-485). The hardware watchdog at `0x08016f48`
+(IWDG) could turn a stalled reset into a full reboot, but the code does not
+show that. The integration lists a self-test with no other trace and at most
+one missed poll as a **brief network reset** instead of a restart
+(`helpers/restart_detector.py`).
+
+Control 151's changelog lists "Fixed the pre-release server URL error,
+causing data upload failure" and "Optimize the stability of Https upload
+data", which address the trigger.
+
 ## Plugin-side mitigations (cannot patch the MCU)
 
 1. JSON-RPC ids cycle `1..65535` and never emit `0` from the command
@@ -155,6 +223,41 @@ replies never arrive and retries cannot help.
    datagrams).
    ``asyncio.wait`` keeps the pending future alive. Writes, unknown
    firmware, and reset-prone IPs stay at one datagram.
+
+## CH395 Ethernet path (VNSE3-0 150)
+
+Read from the 150 image and confirmed by booting it in Renode against
+`tools/firmware_emulator/ch395.py` (`run_firmware.py --ethernet`). Addresses are
+file offsets + `0x08000000`; the image loads at `0x08004800`, so pointers in
+literal pools are `0x4800` higher.
+
+- **Bus.** SPI2 master, mode 0, 8-bit (`0x08017070`). PB12 is chip select,
+  PD9 reset (low 100 ms, then 50 ms, `0x08003be4`), PD8 INT# (`0x08017334`).
+  One byte goes through `0x0802b564`. A command raises then lowers CS, sends
+  the command byte (`0x08053150`) and its parameters; reads clock out `0xFF`
+  (`0x0805255c`). CS high ends it.
+- **Bring-up.** `Task_ch395` (`0x0802bb50`) calls `0x08027b04`: reset,
+  `INIT_CH395` and poll `GET_CMD_STATUS` while it reads busy (`0x08027bc4`),
+  receive/send buffers for sockets 0-2 and 4-7 (`0x08027d28`), `DHCP_ENABLE`
+  (`0x08027ab8`), then log `CH395 reset!!!` and open the sockets.
+- **Interrupts.** The task polls PD8 (`0x080309e0`). When low, `0x080301c8`
+  reads `GET_GLOB_INT_STATUS_ALL`: bit 2 reads the PHY state, bit 3 the DHCP
+  result and `GET_IP_INF` (into `0x2001abbd`; `0x2001abb8[1]` = 1 marks the IP
+  ready), bits 4-11 go to the socket handler `0x08030534`.
+- **Sockets.** 0: Modbus TCP server on 502. 1: TCP client on 8091 for the debug
+  log. 2: UDP server on 8090 (vendor discovery). 4: CT003 poll, UDP from 22222
+  to broadcast 12345. 5: Local API, UDP server on the Open API port, opened by
+  `0x0802c1d8` once the IP is ready (`UDP Server Start, adv ip(%d)`). 6 and 7:
+  DNS clients on source port 2000 (cloud host lookups). UDP server mode is
+  destination `255.255.255.255`; each received datagram then starts with
+  length (2, LE), port (2, LE) and IP (4), which `0x0802c04c` unpacks before
+  the shared JSON handler.
+- **Uplink choice.** `0x08027c08` sets `0x20001f55` to 2 when the CH395 has an
+  IP, and clears the Wi-Fi socket state. From then on the Local API, CT poll,
+  DNS and cloud traffic use Ethernet only, and the Wi-Fi address stops
+  answering although the module stays associated.
+- **`Marstek.GetDevice` `ip`.** Formatted with `%02d.%02d.%02d.%02d`, so an
+  Ethernet unit reports e.g. `172.28.00.02`. `discovery.py` normalizes that.
 
 ## Mock device
 
@@ -631,7 +734,8 @@ binary waits for, found by disassembly and confirmed on the running image:
    control task sets it when the inverter's command `0x02` reply puts a pack
    voltage above `0xFA0` at `0x2000b780+0x56` and a second reading above
    `0x320` at `+0x58`. `mini_peers.py` answers USART4 (inverter, address
-   `0x81`) and USART5 (DCDC, `0x82`) with the image's own AA frames.
+   `0x81`) and USART5 (DCDC, `0x82`) with the image's own AA frames and a
+   simulated pack behind them (see **Battery** below).
 3. **UART timing.** Renode clocks `STM32_UART` at 8 MHz. The image sets BRR
    for a 36 MHz PCLK1, so at 8 MHz an inverter reply outlasted the next poll
    and the frames merged; the USART4 parser (`0x080259c0`) wants one frame
@@ -692,3 +796,52 @@ coordinator read populated, the mode select offered Auto/AI/Manual/UPS and
 each write was acknowledged, DoD, LED and BLE writes were acknowledged, and a
 Manual slot 5 write carried `manual_set`. Passive and slot 6 were refused by
 the integration before any datagram was sent.
+
+**Battery.** The PMU keeps SoC and the energy totals itself; the peers only
+report what a pack, DCDC and inverter would. Confirmed on the running image
+(RAM reads through the Renode monitor and the frames the PMU sends):
+
+- Replies must carry the polled command. The inverter parser (`0x080259c0`)
+  marks a poll answered only on a matching command, and the inverter
+  sequence (`0x08025b78`: `0x40 0x41 0x43 0x60 0x44 0x45 0x46 0x01 0x02`,
+  then `0x21`) retries and stalls otherwise. A fixed `0x02` reply never got
+  past the register reads.
+- Register writes must be echoed. `0x08025748` compares six register groups
+  and the `cmd 0x72` block (`0x2000b780+0x4b6`, 16 bytes) with the
+  inverter's last echo (`+0x4d6`, written by the `0x72` reply handler
+  `0x080196ec`) and rewrites while they differ. With zero replies the PMU
+  looped on `0x60`/`0x72` and stopped polling `0x02`, so `ongrid_power`
+  froze at the last value.
+- `cmd 0x72` bytes 0-1 are the direction (1 charge, 2 discharge, 0 none)
+  and bytes 2-3 the power in W. Manual `manual_set` 2 at 800 W sent
+  `0002 0320`, `manual_set` 1 at 600 W sent `0001 0258`, Auto sent
+  `0000 0258`.
+- `cmd 0x02` byte 6 (s16) lands at `0x2000b780+0x5c` and is reported as
+  `ongrid_power`. `cmd 0x80` carries the pack voltage, the current (mA,
+  + = charge; the PMU's `0x2001d55c+8` read 86188 mA while the pack
+  delivered 86.2 A), the two cell voltages and the cell temperatures
+  (`bat_temp` 25 from 250).
+- `cmd 0x21` bytes 0-1 come from `0x2000b780+0xaa`, the CT meter power
+  (`0x0801e560`). They stayed 0 with no CT, so the sign under a real meter is
+  not confirmed.
+
+Two clocks had to be fixed for the counters to run at real speed. The PMU's
+millisecond tick (`0x20002e58`, TIMER6 IRQ) assumes a 72 MHz timer clock
+(PSC 1, ARR 35999); at Renode's 10 MHz it ran at 0.139x, and so did SoC and
+the energy totals. SysTick is loaded with 143999 for 1 ms at 144 MHz; at
+72 MHz the 20 ms control task ran every 40 ms and the energy task (one sum
+per 50 runs) counted half. After both: 22016 ticks in 22.05 s, the control
+task every 20.4 ms, 800 W for about 193 s gave `total_grid_output_energy`
+42 (43 Wh expected), 600 W charge for about 162 s gave
+`total_grid_input_energy` 26-27 (27 Wh), and over 120 s of 800 W discharge
+the PMU's SoC fell 1.39 % against the pack's 1.40 %.
+
+On a blank SoC record the PMU starts from the open-circuit voltage about a
+second after boot, before its first DCDC `0x80` poll. It looked up 0 mV and
+started at 43 % whatever the pack held. Its counter is saved to flash
+(`0xF000`) only on the power-down path (`0x0802904c`) or a reboot command,
+so a container restart loses it the same way. `run_firmware.py` therefore
+writes 1 to `0x2001a020` once `0x2001d55c` holds a voltage; the 1 s task
+(`0x0802b2d8`) then restarts SoC from the OCV with real readings. A fresh
+`--soc 60` image read 60.00 %; after a restart at 59.17 % it read 57.99 %,
+since the lookup is in whole percent on a flat LFP plateau.

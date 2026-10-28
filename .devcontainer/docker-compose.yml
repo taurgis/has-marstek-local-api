@@ -92,6 +92,7 @@ services:
   # Mock device 2 - Venus E 3.0, default UDP port 30000
   # Firmware 150 Rev 3.1: SYS + UPS + EM energy; GetMode CT keys are zeros
   # (matches LAN capture of a real Venus E 3.0 / ver 150)
+# Wired with the cloud blocked: resets its Ethernet chip about every 35 min
   mock-marstek-2:
     <<: *default-logging
     build:
@@ -104,7 +105,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.25
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--device", "VenusE 3.0", "--ver", "150", "--ble-mac", "02deadbeef02", "--wifi-mac", "02cafebabe02", "--soc", "52"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.25", "--device", "VenusE 3.0", "--ver", "150", "--ble-mac", "02deadbeef02", "--wifi-mac", "02cafebabe02", "--soc", "52", "--cloud-unreachable", "--uplink", "ethernet"]
 
   # Mock device 3 - Venus A with PV (4 MPPT channels), custom UDP port 30001
   # Firmware 148 or older: solar energy in Wh, channel-1 deciwatt PV; no SYS/UPS
@@ -188,7 +189,7 @@ services:
     networks:
       marstek_net:
         ipv4_address: 172.28.0.27
-    command: ["python", "-m", "mock_device", "--ip", "172.28.0.27", "--port", "30004", "--device", "VenusA", "--ver", "150", "--ble-mac", "02deadbeef07", "--wifi-mac", "02cafebabe07", "--soc", "70", "--pv-channels", "400:45:8.8,310:42:7.4,250:40:6.2,190:38:5.0"]
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.27", "--port", "30004", "--device", "VenusA", "--ver", "150", "--ble-mac", "02deadbeef07", "--wifi-mac", "02cafebabe07", "--soc", "70", "--pv-channels", "400:45:8.8,310:42:7.4,250:40:6.2,190:38:5.0", "--cloud-unreachable"]
 
   # Mock device 8 - Venus E mini, default UDP port 30000
   # Known integer ver below 150: SYS without the 150 gate, no UPS, slots 0–5.
@@ -524,6 +525,7 @@ services:
 
   # Venus A Control 151. Same Open API as 150; src is VNSA-0-<ble>.
   # Emulated on .74. .50-.71 are already emulator addresses.
+  # Cloud blocked: resets its Wi-Fi module about every 20 min.
   mock-marstek-30:
     <<: *default-logging
     build:
@@ -1079,7 +1081,8 @@ services:
   # Venus E mini PMU 301 (VNSEMINI-0). Same GD32F30x board as the other
   # Control images; the loader strips the 32-byte header and loads at
   # 0x08008000. --capacity 2009 is the rated_capacity from issue #86, not a
-  # constant in the image. INV and DCDC are catalogued but not emulated.
+  # constant in the image. mini_peers.py plays the INV and DCDC boards around
+  # a simulated pack that starts at --soc.
   fw-venus-e-mini-301:
     <<: *firmware-emulator
     profiles: ["firmware-all"]

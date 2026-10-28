@@ -6,6 +6,7 @@ import argparse
 
 from .const import DEFAULT_CONFIG, DEFAULT_HOUSE_PV_WP, DEFAULT_PHASE_COUNT, DEFAULT_UDP_PORT
 from .device import DEFAULT_STATUS_INTERVAL, MockMarstekDevice
+from .firmware_quirks import UPLINK_ETHERNET, UPLINK_WIFI
 from .simulators.restart import DEFAULT_BOOT_S, DEFAULT_CT_RECONNECT_S, DEFAULT_ENERGY_SAVE_S
 from .utils import DEFAULT_STATE_DIR
 
@@ -141,6 +142,26 @@ def _add_fault_arguments(parser: argparse.ArgumentParser) -> None:
         default=0.0,
         help="Share of requests lost to Wi-Fi, 0 to 1 (default: 0)",
     )
+    parser.add_argument(
+        "--cloud-unreachable",
+        action="store_true",
+        help=(
+            "Act as if the Marstek cloud is blocked: Control 150+ resets its network chip "
+            "on the firmware's own timer (kill -USR2 resets it now)"
+        ),
+    )
+    parser.add_argument(
+        "--uplink",
+        choices=(UPLINK_WIFI, UPLINK_ETHERNET),
+        default=UPLINK_WIFI,
+        help="Network the device uses; sets the reset period (default: wifi)",
+    )
+    parser.add_argument(
+        "--network-reset-every",
+        type=float,
+        default=None,
+        help="Reset the network chip about every N seconds, whatever the firmware",
+    )
 
 
 def _fault_config(args: argparse.Namespace) -> dict[str, object]:
@@ -153,7 +174,11 @@ def _fault_config(args: argparse.Namespace) -> dict[str, object]:
         raise SystemExit(
             "--boot-seconds, --ct-reconnect-seconds and --energy-save-seconds must be non-negative"
         )
+    if args.network_reset_every is not None and args.network_reset_every <= 0:
+        raise SystemExit("--network-reset-every must be positive")
     config: dict[str, object] = {
+        "cloud_unreachable": args.cloud_unreachable,
+        "uplink": args.uplink,
         "boot_s": args.boot_seconds,
         "ct_reconnect_s": args.ct_reconnect_seconds,
         "energy_save_s": args.energy_save_seconds,
@@ -161,6 +186,8 @@ def _fault_config(args: argparse.Namespace) -> dict[str, object]:
     }
     if args.restart_every is not None:
         config["restart_every_s"] = args.restart_every
+    if args.network_reset_every is not None:
+        config["network_reset_every_s"] = args.network_reset_every
     return config
 
 

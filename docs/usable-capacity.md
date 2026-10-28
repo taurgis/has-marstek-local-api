@@ -52,19 +52,21 @@ The **Capacity** tab is the weekly chart: a line for the weekly estimate, a dot 
 
 ### Restarts
 
-**Restarts** lists the device restarts and network dropouts of the last 30
-days, newest first, under a heading per day (*Today*, *Yesterday*, then the
-date) that counts both kinds for that day. A line above the list gives the
+**Restarts** lists the device restarts, brief network resets and network
+dropouts of the last 30 days, newest first, under a heading per day (*Today*,
+*Yesterday*, then the date) that counts each kind for that day. A line above the list gives the
 30-day totals, or the totals since tracking started while that is less than
 30 days ago. Each row names its kind next to its icon, with its time, and a
 second line says how long the battery was offline and what showed the
 restart: energy totals restored, CT meter disconnected, mode changed, or the
 start-up test at a linked plug. A restart that fell between two polls says
-so instead of an offline time. A dropout row says there was no sign of a
-restart. Ten rows show at first; **Show more** adds ten at a time and moves
+so instead of an offline time. A brief network reset row explains in one
+sentence that the battery dropped off the network for a few seconds and ran
+its start-up check without restarting. A dropout row says there was no sign
+of a restart. Ten rows show at first; **Show more** adds ten at a time and moves
 focus to the first new row. **Download restarts (CSV)** saves `at`, `kind`,
 `offline_s`, `failed_polls`, and `evidence` (trace names separated by `;`).
-How the two kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
+How the kinds are told apart is in [Restarts and dropouts](#restarts-and-dropouts).
 With no outage in 30 days the tab says so; with the **Restarts** sensor
 disabled it says to enable it.
 
@@ -383,7 +385,8 @@ restart from what a boot changes:
   test is not mistaken for one. The integration follows the plug's power
   sensor (the one on the same device as the linked energy sensors) and sends
   nothing to the battery; the test counts at the next good poll, together with
-  any other trace from the same boot.
+  any other trace from the same boot. On its own it is not enough; see
+  [brief network resets](#brief-network-resets).
 - **CT meter lost** and **mode changed**, as reported after resets in
   [#14](https://github.com/taurgis/has-marstek-local-api/issues/14). These
   count only when the device was unreachable in between: while it answers,
@@ -413,6 +416,29 @@ tab lists every trace, so a restart backed only by *CT meter disconnected*
 is worth a second look. An outage still open when Home Assistant restarts or
 the integration reloads is not counted, because the last good poll it is
 measured from is not stored.
+
+### Brief network resets
+
+The plug's self-test also follows something smaller than a restart. Control
+150 resets its own network chip while its cloud uploads keep failing: the
+Ethernet chip about every 35 minutes, the Wi-Fi module about every 15 to 30
+([firmware notes](../tools/firmware/ANALYSIS.md#network-chip-resets)). The
+battery leaves the LAN for 5 to 10 seconds, asks the router for an address
+again, and the plug shows the same start-up check, but its energy totals,
+CT link and mode are untouched. It keeps its last output until the meter
+data returns about a minute later. All the kinds of outage are compared in
+[Why a battery goes offline](firmware-resets.md). Control 151 lists fixes for failing uploads.
+
+So a self-test with no other trace, and at most one failed poll, is listed
+as a **brief network reset** and is not added to the **Restarts** count. A
+full restart keeps the unit away for 30 seconds to a minute; it misses two
+polls or more, or restores its energy totals, and still counts. A full
+restart that misses only one poll and leaves nothing but the self-test is
+listed as a brief network reset. Logs stored before this split are relabelled
+when they load, and the count drops by the entries that changed.
+
+Many brief network resets in a row mean the battery cannot reach the Marstek
+cloud. Check the firewall, DNS filter or VLAN it sits behind.
 
 ## Limits
 

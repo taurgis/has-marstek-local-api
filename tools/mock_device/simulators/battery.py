@@ -203,6 +203,10 @@ class BatterySimulator:
         # CT/P1 meter state
         self.ct_connected = True
         self._measured_grid_power = 0.0
+        # Set after a network chip reset until the CT meter's packets flow
+        # again. The Control firmware keeps its last setpoint meanwhile
+        # (Venus E 150 in the Renode emulator held -200 W for 70 s).
+        self.ct_stale = False
 
         # Energy statistics (accumulated over time, in Wh)
         self.total_pv_energy = 0.0
@@ -469,6 +473,8 @@ class BatterySimulator:
             # No CT means no reference. Real units fall back to idle rather
             # than guessing at the house load.
             return 0
+        if self.ct_stale:
+            return int(self.ongrid_power - self.pv_power)
         if abs(error) <= AUTO_DEADBAND_W:
             desired_ongrid = float(self.ongrid_power)
         else:

@@ -115,6 +115,7 @@ Ranges, firmware gates, and screenshots are in [Options](docs/options.md).
 - [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Options](docs/options.md)
 - [Battery health](docs/usable-capacity.md) · [Energy dashboard](docs/energy_dashboard.md) · [Automations and services](docs/services.md)
 - [Entities](docs/entities.md) · [Repairs](docs/repairs.md) · [Troubleshooting](docs/troubleshooting.md)
+- [Why a battery goes offline](docs/firmware-resets.md): restarts, network resets, and dropouts in plain language
 
 ## Supported devices
 

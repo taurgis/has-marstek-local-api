@@ -25,6 +25,15 @@ restart if a boot trace is present and a dropout otherwise.
 A rollback is a restart even without a failed poll, since a quick reboot can
 fall between two polls. The mode and CT traces count only across an outage:
 while the device is online, a user or a flaky CT changes them on its own.
+
+The plug's self-test alone is not enough. Control 150 resets its Ethernet chip
+(Wi-Fi: its FC41D module) every 30 minutes (15 on Wi-Fi) while its cloud
+upload queue is stuck (``tools/firmware/ANALYSIS.md``); the unit leaves the LAN
+for 5-10 s, asks DHCP for an address again, and the plug shows the same
+self-test, but nothing in the polls changes. A self-test with no other trace
+and at most ``BRIEF_RESET_MAX_FAILED`` failed poll is logged as a brief network
+reset. A full restart keeps the unit away for 30-60 s, so it misses more polls
+or restores its energy totals, and still counts as a restart.
 """
 
 from __future__ import annotations
@@ -46,7 +55,14 @@ RESTART_CARD_ATTRIBUTES = frozenset({"outages"})
 
 RESTART = "restart"
 DROPOUT = "dropout"
-_KINDS = frozenset({RESTART, DROPOUT})
+NETWORK_RESET = "network_reset"
+_KINDS = frozenset({RESTART, DROPOUT, NETWORK_RESET})
+# How the coordinator's log line says what happened.
+LOG_VERBS = {
+    RESTART: "restarted",
+    DROPOUT: "dropped out",
+    NETWORK_RESET: "reset its network connection",
+}
 
 ENERGY_ROLLBACK = "energy_rollback"
 CT_LOST = "ct_lost"
@@ -64,6 +80,18 @@ _LATEST_AT = 4_102_444_800.0  # 2100-01-01
 # A self-test closes up to BRACKET_S after its burst, so it can reach the
 # detector a poll after the recovery that already counted its restart.
 _PULSE_JOIN_S = 120.0
+# A brief network reset is gone 5-10 s, which the retransmits usually bridge;
+# one failed poll is the most it costs. Two failed polls is a minute or more.
+BRIEF_RESET_MAX_FAILED = 1
+
+
+def classify(evidence: tuple[str, ...], failed_polls: int) -> str:
+    """Return what an outage, or a trace between two polls, was."""
+    if not evidence:
+        return DROPOUT
+    if evidence == (BOOT_PULSE,) and failed_polls <= BRIEF_RESET_MAX_FAILED:
+        return NETWORK_RESET
+    return RESTART
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,13 +185,24 @@ class RestartDetector:
         if not isinstance(raw, dict):
             return
         events = raw.get("events")
+        parsed: list[Outage] = []
         if isinstance(events, list):
             parsed = [event for item in events if (event := Outage.from_dict(item))]
-            self._events = sorted(parsed, key=lambda event: event.at)
-            self._trim()
+        # Logs stored before brief network resets had their own kind list them
+        # as restarts; give them their kind and take them off the count.
+        relabelled = 0
+        for index, event in enumerate(parsed):
+            kind = classify(event.evidence, event.failed_polls)
+            if event.kind == RESTART and kind == NETWORK_RESET:
+                parsed[index] = replace(event, kind=kind)
+                relabelled += 1
+        self._events = sorted(parsed, key=lambda event: event.at)
+        self._trim()
         restarts = finite(raw.get("restarts"))
         if restarts is not None and restarts >= 0:
-            self._restarts = int(restarts)
+            self._restarts = max(0, int(restarts) - relabelled)
+        if relabelled:
+            self._dirty = True
         since = finite(raw.get("since"))
         if since is not None and 0 < since < _LATEST_AT:
             self._since = since
@@ -182,9 +221,9 @@ class RestartDetector:
         return self._since
 
     def _trim(self) -> None:
-        """Drop the oldest dropouts first, then the oldest restarts."""
+        """Drop the oldest dropouts and network resets first, then the oldest restarts."""
         while len(self._events) > MAX_EVENTS:
-            index = next((i for i, event in enumerate(self._events) if event.kind == DROPOUT), 0)
+            index = next((i for i, event in enumerate(self._events) if event.kind != RESTART), 0)
             del self._events[index]
 
     @property
@@ -244,7 +283,7 @@ class RestartDetector:
             evidence = (*evidence, BOOT_PULSE)
         if not failed and not evidence:
             return None
-        kind = RESTART if evidence else DROPOUT
+        kind = classify(evidence, failed)
         event = Outage(now, kind, round(max(0.0, now - last_ok), 1), failed, evidence)
         self._events.append(event)
         self._trim()
@@ -256,15 +295,17 @@ class RestartDetector:
     def _join_pulse(self, pulse: float) -> bool:
         """Add a late self-test to the outage the recovery poll already logged.
 
-        A dropout it joins becomes the restart it was.
+        A dropout it joins becomes the restart or network reset it was.
         """
         last = self._events[-1] if self._events else None
         if last is None or abs(last.at - pulse) > _PULSE_JOIN_S:
             return False
         if BOOT_PULSE not in last.evidence:
-            if last.kind == DROPOUT:
+            evidence = (*last.evidence, BOOT_PULSE)
+            kind = classify(evidence, last.failed_polls)
+            if kind == RESTART and last.kind != RESTART:
                 self._restarts += 1
-            self._events[-1] = replace(last, kind=RESTART, evidence=(*last.evidence, BOOT_PULSE))
+            self._events[-1] = replace(last, kind=kind, evidence=evidence)
             self._dirty = True
         return True
 
@@ -282,6 +323,7 @@ def restart_attributes(detector: RestartDetector, now: float) -> dict[str, Any]:
         "outages": [{**event.to_dict(), "at": _iso(event.at)} for event in recent],
         "restarts_30d": sum(1 for event in recent if event.kind == RESTART),
         "dropouts_30d": sum(1 for event in recent if event.kind == DROPOUT),
+        "network_resets_30d": sum(1 for event in recent if event.kind == NETWORK_RESET),
     }
     restarts = [event for event in events if event.kind == RESTART]
     if restarts:

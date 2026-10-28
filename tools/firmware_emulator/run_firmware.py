@@ -53,6 +53,8 @@ UART_PORT = 3456
 CT_PORT = 12345  # CT003 meter protocol (AstraMeter listens here)
 CAN_PORT = 3457
 METER_PORT = 8099
+MODEM_RESET_PORT = 3466  # fc41d.py hears the module reset line here
+CH395_PORT = 3458  # SPI link between renode/ch395_spi.py and ch395.py (--ethernet)
 
 RESC = """\
 mach create "marstek"
@@ -79,6 +81,37 @@ SPI_CS_HOOK = (
     "cs = 1 if (offset == 0x10 and value & 0x10) else "
     "(0 if ((offset == 0x10 and value & 0x100000) or (offset == 0x14 and value & 0x10)) "
     "else -1); machine.SystemBus.WriteDoubleWord(0x400133F0, cs) if cs >= 0 else None"
+    '"'
+)
+
+# The FC41D reset line. Control 150's reset routine (0x0800b224) writes BRR
+# to pull PE5 and PE4 low, waits 1 s and writes BSRR to raise them. The hook
+# sends the level (0 or 1) to fc41d.py, which switches the module off while
+# the line is low, the way the real module loses its Wi-Fi link and sockets.
+MODEM_RESET_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.{port} "'
+    "lvl = 0 if ((offset == 0x14 and value & {mask:#x}) or "
+    "(offset == 0x10 and value & {high:#x})) else "
+    "(1 if (offset == 0x10 and value & {mask:#x}) else -1); "
+    "(lambda s: (s.sendto(str(lvl), ('127.0.0.1', {udp})), s.close()))"
+    "(__import__('socket').socket(2, 2)) if lvl >= 0 else None"
+    '"'
+)
+
+# --ethernet: PB12 is the CH395 chip select (BOP bit 12 raises it, BOP bit 28
+# and BC bit 12 lower it) and PD8 its INT#, polled in GPIOD IDR. The hooks
+# hand the CS level to renode/ch395_spi.py at 0x3F0 and read INT# from 0x3F4.
+CH395_CS_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.gpioPortB "'
+    "cs = 1 if (offset == 0x10 and value & 0x1000) else "
+    "(0 if ((offset == 0x10 and value & 0x10000000) or (offset == 0x14 and value & 0x1000)) "
+    "else -1); machine.SystemBus.WriteDoubleWord(0x40003BF0, cs) if cs >= 0 else None"
+    '"'
+)
+CH395_INT_HOOK = (
+    'sysbus SetHookAfterPeripheralRead sysbus.gpioPortD "'
+    "value = ((value & ~0x100) | ((machine.SystemBus.ReadDoubleWord(0x40003BF4) & 1) << 8)) "
+    "if offset == 8 else value"
     '"'
 )
 
@@ -114,6 +147,8 @@ class Board:
     eeprom_wait: bool = True  # reboot once so a fresh EEPROM is read back
     spi_flash: bool = False  # settings in SPI1 NOR flash (renode/spiflash.py), CS on PA4
     modem_args: tuple[str, ...] = ()  # extra fc41d.py options for this board
+    # (GPIO port, pin mask) of the FC41D reset line, or None where it is unknown.
+    modem_reset: tuple[str, int] | None = None
 
 
 BOARDS = {
@@ -124,6 +159,7 @@ BOARDS = {
         wifi_uart="wifi_uart",
         can="can1",
         uarts=tuple(f"usart{n}" for n in range(1, 6)),
+        modem_reset=("gpioPortE", 0x30),  # PE4/PE5
     ),
     # Same repl. VNSEMINI-0 PMU 301 loads at 0x08008000 (catalog loadAddress).
     # A boot log showed the FC41D AT stream on USART2 (0x40004400, IRQ 38),
@@ -161,6 +197,13 @@ BOARDS = {
     ),
 }
 FLASH_BASE = 0x08000000
+# PMU 301 SoC start (0x0802b2d8). Its 1 s coulomb task reads SoC from the
+# open-circuit voltage when the flash record is blank, or when the halfword at
+# MINI_SOC_REINIT is 1. The blank-record start runs about a second after boot,
+# before the PMU's first DCDC 0x80 poll, so it looks up 0 mV (43 % on the 0 C
+# table). MINI_PACK_MV (0x2001d55c) holds the pack voltage once one arrived.
+MINI_PACK_MV = 0x2001D55C
+MINI_SOC_REINIT = 0x2001A020
 UID_BASE = 0x1FFF7590  # STM32G4 96-bit unique ID
 FLASH_SIZE_REG = 0x1FFF75E0
 
@@ -299,11 +342,13 @@ def _uid_words(ble_mac: str) -> tuple[int, int, int]:
     return 0x00470031, int.from_bytes(mac[:4], "little"), int.from_bytes(mac[4:] + b"PH", "little")
 
 
-def _start_mini_peers(board: Board, work: Path) -> subprocess.Popen[bytes] | None:
+def _start_mini_peers(
+    board: Board, work: Path, pack_args: list[str]
+) -> subprocess.Popen[bytes] | None:
     """Answer the mini PMU's INV, DCDC and Modbus UARTs. Other boards skip this."""
     if not board.link_uarts:
         return None
-    command = [sys.executable, str(HERE / "mini_peers.py")]
+    command = [sys.executable, str(HERE / "mini_peers.py"), *pack_args]
     for name, port in board.link_uarts:
         command += [f"--{name}", str(port)]
     # The child keeps its own copy of the log fd; the parent closes this one.
@@ -312,6 +357,14 @@ def _start_mini_peers(board: Board, work: Path) -> subprocess.Popen[bytes] | Non
         return subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
     finally:
         log.close()
+
+
+def _mini_pack_args(args: argparse.Namespace) -> list[str]:
+    """The simulated pack's start SoC, rating and state file, like ``can_peers``."""
+    pack = ["--soc", str(args.soc), "--state", str(args.eeprom.parent / "mini_pack.json")]
+    if args.capacity:
+        pack += ["--capacity", str(args.capacity)]
+    return pack
 
 
 def _link_lines(board: Board) -> str:
@@ -324,12 +377,36 @@ def _link_lines(board: Board) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _hook_lines(board: Board) -> str:
-    """Bus hooks that stand in for hardware timing. Only PMU 301 needs any."""
+def _hook_lines(board: Board, reset_port: int, ethernet: bool = False) -> str:
+    """Bus hooks that stand in for hardware the emulator has no model of."""
     lines = [SPI_CS_HOOK] if board.spi_flash else []
     if board.link_uarts:
         lines.append(UART7_TC_HOOK)
+    if board.modem_reset:
+        port, mask = board.modem_reset
+        lines.append(MODEM_RESET_HOOK.format(port=port, mask=mask, high=mask << 16, udp=reset_port))
+    if ethernet:
+        lines += [CH395_CS_HOOK, CH395_INT_HOOK]
     return "".join(line + "\n" for line in lines)
+
+
+def _start_ch395(args: argparse.Namespace) -> subprocess.Popen[bytes]:
+    """Start the CH395 model before Renode; its SPI peripheral connects on first use."""
+    gateway = args.eth_gateway or args.gateway
+    ip = _own_ip(gateway) if args.eth_ip == "auto" else args.eth_ip
+    if ip == args.ip:
+        print(f"warning: Ethernet and Wi-Fi share {ip}; one Local API bind will fail", flush=True)
+    command = [
+        sys.executable, str(HERE / "ch395.py"), "--link-port", str(args.eth_port),
+        "--ip", ip, "--gateway", gateway, "--netmask", args.eth_netmask, "--mac", args.eth_mac,
+    ]  # fmt: skip
+    if args.broadcast_to:
+        command += ["--broadcast-to", args.broadcast_to]
+    log = (args.work / "ch395.log").open("ab")
+    try:
+        return subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+    finally:
+        log.close()
 
 
 def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load_base: int) -> Path:
@@ -364,6 +441,16 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         # runs TIMER6 with only UIE set and owns DMA2 channel 3 for USART4 RX,
         # so the shared line would read an empty DR into every inverter frame.
         "@TIMER6_DMA@": "" if board.link_uarts else "    UpdateInterrupt -> dma2@3\n",
+        # PMU 301 counts milliseconds (0x20002e58) on TIMER6 with PSC 1 and
+        # ARR 35999, i.e. a 72 MHz timer clock. At the shared 10 MHz its clock,
+        # coulomb counter and energy totals ran at 0.139x real time.
+        "@TIMER6_CLOCK@": f"    frequency: {72_000_000 if board.link_uarts else 10_000_000}\n",
+        # PMU 301 loads SysTick with 143999 for a 1 ms tick: a 144 MHz core.
+        # Its task timers count those ticks; at 72 MHz the 20 ms control task
+        # ran every 40 ms and the energy totals (50 runs = 1 s) at half rate.
+        "@SYSTICK_CLOCK@": (
+            f"    systickFrequency: {144_000_000 if board.link_uarts else 72_000_000}"
+        ),
     }.items():
         repl = repl.replace(key, value)
     spi1 = renode_dir / "spi2.py"
@@ -373,6 +460,13 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         script = script.replace("@SPI_FLASH@", str(args.eeprom.parent / "spiflash.bin"))
         spi1.write_text(script.replace("@LOCAL_API_PORT@", str(args.local_api_port)))
     repl = repl.replace("@SPI1_SCRIPT@", str(spi1))
+    ethernet = getattr(args, "ethernet", False)
+    spi2 = renode_dir / "spi2.py"
+    if ethernet:
+        spi2 = work / "ch395_spi.py"
+        script = (renode_dir / "ch395_spi.py").read_text()
+        spi2.write_text(script.replace("@CH395_PORT@", str(args.eth_port)))
+    repl = repl.replace("@SPI2_SCRIPT@", str(spi2))
     name = board.repl.removesuffix(".repl.in")
     (work / f"{name}.repl").write_text(repl)
     usarts = "\n".join(f"{u} CreateFileBackend @{work}/{u}.txt true" for u in board.uarts)
@@ -400,7 +494,7 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         wifi_uart=board.wifi_uart,
         can=board.can,
         links=_link_lines(board),
-        hooks=_hook_lines(board),
+        hooks=_hook_lines(board, args.modem_reset_port, ethernet),
         tuning="".join(
             [
                 f'emulation SetGlobalQuantum "{args.quantum}"\n' if args.quantum else "",
@@ -439,6 +533,27 @@ def _rotate_logs(work: Path, max_bytes: int) -> None:
             os.truncate(log, 0)
         except OSError:
             continue
+
+
+def _mini_soc_from_ocv(mon: Monitor, board: Board, timeout: float = 90) -> bool:
+    """Once the PMU reads a pack voltage, have it take SoC from the OCV again.
+
+    The pack's energy survives restarts in ``mini_pack.json``; the PMU's own
+    counter does not (it saves only on its power-down path). Re-reading the
+    OCV on every boot keeps the two in step. Other boards skip this.
+    """
+    if not board.link_uarts:
+        return False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        out = mon.run(f"sysbus ReadDoubleWord {MINI_PACK_MV:#x}", wait=0.5)
+        values = re.findall(r"0x[0-9A-Fa-f]+", out.split("ReadDoubleWord", 1)[-1])
+        if len(values) > 1 and int(values[-1], 16):
+            mon.run(f"sysbus WriteWord {MINI_SOC_REINIT:#x} 1", wait=0.5)
+            return True
+        time.sleep(1)
+    print("No pack voltage from the PMU; its SoC keeps the boot value", flush=True)
+    return False
 
 
 def _boot(mon: Monitor, resc: Path, fc41d_cmd: list[str], log: Path) -> subprocess.Popen[bytes]:
@@ -489,12 +604,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--uart-port", type=int, default=UART_PORT, help="Wi-Fi UART TCP port")
     parser.add_argument("--can-port", type=int, default=CAN_PORT, help="CAN bridge TCP port")
     parser.add_argument(
+        "--modem-reset-port",
+        type=int,
+        default=MODEM_RESET_PORT,
+        help="UDP port on 127.0.0.1 where fc41d.py hears the module reset line",
+    )
+    parser.add_argument(
         "--meter-port", type=int, default=METER_PORT, help="can_peers.py grid meter HTTP port"
     )
     parser.add_argument("--meter-bind", default="127.0.0.1", help="Address the meter HTTP binds")
     parser.add_argument("--bind-ip", default="0.0.0.0", help="Host address the modem sockets bind")
     parser.add_argument(
         "--broadcast-to", default="", help="Send the firmware's LAN broadcasts to this IP instead"
+    )
+    parser.add_argument(
+        "--no-cloud",
+        action="store_true",
+        help="Block the stand-in Marstek cloud (fc41d.py --no-cloud). Control 150 and "
+        "newer then reset the network chip about every 30 minutes",
     )
     parser.add_argument(
         "--bssid", help="AP BSSID the modem reports (default: --wifi-mac, which it becomes)"
@@ -540,6 +667,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--log-max-mb", type=float, default=0, help="Rotate WORK/*.log past this size (0 = never)"
     )
+    eth = parser.add_argument_group("Ethernet (CH395 on SPI2, Control board only)")
+    eth.add_argument("--ethernet", action="store_true", help="Link a CH395 (ch395.py)")
+    eth.add_argument(
+        "--eth-ip", default="auto", help="Address of the Ethernet lease; 'auto' = route to "
+        "--eth-gateway. Must differ from the Wi-Fi --ip: both serve the Local API port",
+    )  # fmt: skip
+    eth.add_argument("--eth-gateway", help="Gateway in the lease (default: --gateway)")
+    eth.add_argument("--eth-netmask", default="255.255.0.0")
+    eth.add_argument("--eth-mac", default="02:ee:00:00:00:03")
+    eth.add_argument("--eth-port", type=int, default=CH395_PORT, help="SPI link TCP port")
     return parser.parse_args(argv)
 
 
@@ -556,6 +693,8 @@ def main() -> int:
             f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)"
         )
     board = BOARDS[_board_for(args)]
+    if args.ethernet and _board_for(args) != "control":
+        raise SystemExit("--ethernet needs the Control board (the CH395 sits on its SPI2)")
     args.work.mkdir(parents=True, exist_ok=True)
     entry = _catalog_entry(args.firmware) if args.firmware else _entry_for_blob(args.blob)
     blob, load_address = _loadable_blob(entry, args.blob, args.work)
@@ -572,6 +711,10 @@ def main() -> int:
         fc41d_cmd += ["--loopback-port", str(CT_PORT)]
     if args.broadcast_to:
         fc41d_cmd += ["--broadcast-to", args.broadcast_to]
+    if board.modem_reset:
+        fc41d_cmd += ["--reset-port", str(args.modem_reset_port)]
+    if args.no_cloud:
+        fc41d_cmd.append("--no-cloud")
     fc41d_cmd += board.modem_args
     peers_cmd = [
         sys.executable, str(HERE / "can_peers.py"), "--port", str(args.can_port),
@@ -602,10 +745,14 @@ def main() -> int:
     modem: subprocess.Popen[bytes] | None = None
     peers: subprocess.Popen[bytes] | None = None
     mini: subprocess.Popen[bytes] | None = None
+    ch395 = _start_ch395(args) if args.ethernet else None
     signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         mon = Monitor(args.monitor_port)
         fresh = board.eeprom_wait and not _eeprom_initialised(args.eeprom)
+        # Start the mini's peers before the PMU boots, so its first INV and
+        # DCDC polls are answered.
+        mini = _start_mini_peers(board, args.work, _mini_pack_args(args))
         modem = _boot(mon, resc, fc41d_cmd, modem_log)
         if fresh:
             print("Fresh EEPROM: waiting for the defaults, then rebooting once", flush=True)
@@ -618,7 +765,7 @@ def main() -> int:
             modem = _boot(mon, resc, fc41d_cmd, modem_log)
         with (args.work / "can_peers.log").open("ab") as out:
             peers = subprocess.Popen(peers_cmd, stdout=out, stderr=subprocess.STDOUT)
-        mini = _start_mini_peers(board, args.work)
+        _mini_soc_from_ocv(mon, board)
         print(
             f"Running {args.blob.name} as {args.ip}. Local API on UDP {args.local_api_port};"
             f" modem log {modem_log}",
@@ -637,7 +784,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        for child in (mini, peers, modem):
+        for child in (mini, peers, modem, ch395):
             if child is not None:
                 child.terminate()
         if renode.poll() is None:
