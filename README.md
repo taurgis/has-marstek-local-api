@@ -3,10 +3,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.10%2B-blue.svg)](https://www.home-assistant.io/)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![Docs](https://img.shields.io/badge/docs-marstek.rhino--inquisitor.com-0f766e.svg)](https://marstek.rhino-inquisitor.com/)
 
 Monitor and control Marstek batteries from Home Assistant over local UDP. Read live state of charge and power, send solar and grid energy to the Energy dashboard, set the operating mode, and drive passive power or manual schedules from automations. Usable capacity and battery health are optional once a pack has been measured. See [Battery health](docs/usable-capacity.md).
 
 This is an independent community project. It is not affiliated with or endorsed by Marstek.
+
+**New to this?** The documentation website at **[marstek.rhino-inquisitor.com](https://marstek.rhino-inquisitor.com/)** has a step-by-step [getting started guide](https://marstek.rhino-inquisitor.com/guide/getting-started), a [supported devices](https://marstek.rhino-inquisitor.com/guide/supported-devices) check, and a [comparison with other integrations](https://marstek.rhino-inquisitor.com/guide/comparison).
 
 ## See it
 
@@ -110,6 +113,7 @@ Ranges, firmware gates, and screenshots are in [Options](docs/options.md).
 
 ## Documentation
 
+- [Documentation website](https://marstek.rhino-inquisitor.com/). The same pages with search, plus beginner guides.
 - [Documentation index](docs/README.md). Every page, grouped by what you are trying to do.
 - [Visual tour](docs/screenshots.md)
 - [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Options](docs/options.md)
@@ -135,16 +139,9 @@ Per-firmware energy scaling, schedule limits, and the Docker test matrix are in 
 
 ## Compared with other community integrations
 
-Last reviewed **2026-09-20**. Activity and release facts were taken from each repository on that date.
+Other ways to connect a Marstek battery include Marstek's own HACS integration ([marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek)) and other Open API integrations, Modbus integrations such as [Omnibattery](https://github.com/ffunes/Omnibattery) (the main option for Venus E 2.0), and [hm2mqtt](https://github.com/tomquist/hm2mqtt) for B2500 and Jupiter. The [comparison on the documentation site](https://marstek.rhino-inquisitor.com/guide/comparison) covers models, features, and activity for each, and which one fits your setup.
 
-| Integration | Transport | Summary | Strengths | Tradeoffs |
-|---|---|---|---|---|
-| **This integration** ([taurgis/has-marstek-local-api](https://github.com/taurgis/has-marstek-local-api)) | Local UDP (Open API Rev 3.1) | Local polling with a scanner that tracks IP and firmware changes, plus battery-health cards. | Per-port UDP sockets, tiered polling, firmware-gated capabilities, device actions, diagnostics and Repairs. | One config entry per device. Custom HACS repository only. |
-| **Marstek Local API** ([jaapp/ha-marstek-local-api](https://github.com/jaapp/ha-marstek-local-api)) | Local UDP (Open API) | Multi-battery integration with a virtual **Marstek System** device that aggregates fleet metrics. | Fleet aggregation under one config entry, wide sensor set, diagnostics. | No commits since **Nov 2025** and still published as a release candidate (`1.2.0.rc7`). |
-| **MarstekEnergy (vendor)** ([marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek)) | Local UDP via `aiomarstek` | Staging copy of the vendor's in-review core integration. | Vendor-authored. Would ship built in if merged. | Core PR [#179635](https://github.com/home-assistant/core/pull/179635) is still open. Sensors only (no mode control or schedules). |
-| **Omnibattery** ([ffunes/Omnibattery](https://github.com/ffunes/Omnibattery)) | Modbus TCP/RTU | Multi-brand battery manager, including Venus E v2, which the Open API does not cover. | Peak shaving and time slots. Actively maintained. | Needs a Modbus bridge on some models. GPL-3.0. |
-
-> **Heads-up on the `marstek` domain**: Home Assistant Core PR [#179635](https://github.com/home-assistant/core/pull/179635) adds `homeassistant/components/marstek`, the same domain this custom component uses. Custom components take precedence over built-in ones, so an installed copy of this integration keeps working if that PR merges. Remove it first if you want to try the built-in one.
+> **Heads-up on the `marstek` domain**: Marstek's own HACS integration uses the same `marstek` domain, so only one of the two can be installed. Home Assistant Core PR [#179635](https://github.com/home-assistant/core/pull/179635) adds `homeassistant/components/marstek` under that domain too. Custom components take precedence over built-in ones, so an installed copy of this integration keeps working if that PR merges. Remove it first if you want to try the built-in one.
 
 ## Automations
 

@@ -1,0 +1,121 @@
+/*
+ * Teal for the brand (energy, without borrowing Marstek's own branding) and
+ * amber for charge. Text-on-background pairs meet WCAG 2.2 AA (4.5:1).
+ * https://vitepress.dev/guide/extending-default-theme#customizing-css
+ */
+:root {
+  --vp-c-brand-1: #0f766e;
+  --vp-c-brand-2: #0d9488;
+  --vp-c-brand-3: #0f766e;
+  --vp-c-brand-soft: rgba(13, 148, 136, 0.14);
+  --mk-charge: #b45309;
+  --mk-line: #94a3b8;
+  --mk-surface: #f8fafc;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #0f766e 30%, #0369a1);
+}
+
+.dark {
+  --vp-c-brand-1: #2dd4bf;
+  --vp-c-brand-2: #5eead4;
+  --vp-c-brand-3: #0f766e;
+  --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
+  --mk-charge: #fbbf24;
+  --mk-line: #64748b;
+  --mk-surface: #1e293b;
+
+  --vp-home-hero-name-background: linear-gradient(120deg, #2dd4bf 30%, #38bdf8);
+}
+
+/* Screenshots: keep them inside the column and give them a frame. */
+.vp-doc img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.vp-doc a > img {
+  border: 0;
+  border-radius: 0;
+}
+
+/* Wide tables scroll inside the page instead of widening it on phones. */
+.vp-doc table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* Verdict chips used in the support and comparison tables. */
+.mk-yes,
+.mk-partial,
+.mk-no {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mk-yes {
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+.mk-partial {
+  background: rgba(217, 119, 6, 0.16);
+  color: #92400e;
+}
+
+.mk-no {
+  background: rgba(220, 38, 38, 0.12);
+  color: #991b1b;
+}
+
+.dark .mk-yes {
+  color: #86efac;
+}
+
+.dark .mk-partial {
+  color: #fcd34d;
+}
+
+.dark .mk-no {
+  color: #fca5a5;
+}
+
+/* Numbered checklist cards on Before you start. */
+.vp-doc .mk-check {
+  list-style: none;
+  padding-left: 0;
+}
+
+.vp-doc .mk-check li {
+  padding: 12px 16px;
+  margin: 8px 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+}
+
+/* Comparison matrix: keep columns readable; the table scrolls if needed. */
+.mk-compare .vp-doc th,
+.mk-compare .vp-doc td {
+  min-width: 7.5rem;
+  overflow-wrap: anywhere;
+}
+
+.mk-compare .vp-doc td:first-child {
+  min-width: 11rem;
+  font-weight: 600;
+}
+
+/* Let the comparison use the width the outline would have taken. */
+@media (min-width: 960px) {
+  .mk-compare .VPDoc .container,
+  .mk-compare .VPDoc .content-container {
+    max-width: 1040px;
+  }
+}

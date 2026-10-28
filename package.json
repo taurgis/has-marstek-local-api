@@ -8,9 +8,13 @@
     "changeset:version": "changeset version && node scripts/sync-release-version.mjs",
     "changeset:pre:enter": "changeset pre enter rc",
     "changeset:pre:exit": "changeset pre exit",
-    "release:tag": "node scripts/create-release-tag.mjs"
+    "release:tag": "node scripts/create-release-tag.mjs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7"
+    "@changesets/cli": "^2.29.7",
+    "vitepress": "^1.6.4"
   }
 }

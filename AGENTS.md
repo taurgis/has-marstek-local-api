@@ -93,6 +93,7 @@ If you add/modify device control:
 | Text/translations | `strings.json`, `translations/en.json` | Keep in sync; use translation keys in entities |
 | Icons | `icons.json` | Icon translations per entity |
 | Local API reference | `docs/marstek_device_openapi.MD` | UDP protocol + method list |
+| Docs website | `docs/.vitepress/`, `docs/guide/` | VitePress site from `docs/`, deployed by `.github/workflows/docs.yaml` to marstek.rhino-inquisitor.com; `npm run docs:build` checks dead links |
 | UDP client library | `pymarstek/` | `MarstekUDPClient`, command builder, data parser, validators. Each unique Open API port binds its own socket (devices reply there, not to an ephemeral source port). |
 | Request validation | `pymarstek/validators.py` | Validates methods, params, power/time ranges before transmission |
 | Poll composition | `pymarstek/device_status.py` | One table of the reads a poll performs, shared by the serial and parallel paths |

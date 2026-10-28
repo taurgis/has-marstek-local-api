@@ -100,6 +100,22 @@ docker compose pull homeassistant
 docker compose up -d homeassistant
 ```
 
+## Documentation site
+
+`docs/` is also the source of the public site at [marstek.rhino-inquisitor.com](https://marstek.rhino-inquisitor.com/), built with [VitePress](https://vitepress.dev/) and deployed to GitHub Pages by `.github/workflows/docs.yaml` on every push to `main` that touches `docs/`. Pull requests that touch `docs/` run the same build, so a dead link fails the check instead of the deploy.
+
+```bash
+npm ci
+npm run docs:dev      # live preview at http://localhost:5173
+npm run docs:build    # the CI build, including the dead-link check
+```
+
+- Every page renders twice: on GitHub and on the site. Use plain relative links (`entities.md`, `../tools/...`). Links that leave `docs/`, and links to `README.md` or `marstek_device_openapi.MD`, are rewritten to GitHub at build time (`docs/.vitepress/config.mts`).
+- Beginner pages that only make sense on the site live in `docs/guide/` and carry their `description` in front matter. Other pages get theirs from `docs/.vitepress/pages.ts`.
+- New pages need a sidebar entry in `docs/.vitepress/config.mts`.
+- Use GitHub alert syntax (`> [!TIP]`) for callouts. It renders on both GitHub and the site; VitePress `:::` containers do not render on GitHub.
+- `guide/comparison.md` carries a review date. Recheck the other projects before you change it.
+
 ## Releases
 
 Release preparation uses Changesets:

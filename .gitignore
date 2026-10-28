@@ -54,3 +54,7 @@ config/
 
 # Docker mount point for the dev-only plug integration (.devcontainer/docker-compose.yml)
 custom_components/mock_energy_plug/
+
+# VitePress docs site
+docs/.vitepress/cache/
+docs/.vitepress/dist/
