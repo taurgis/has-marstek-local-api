@@ -54,6 +54,7 @@ CT_PORT = 12345  # CT003 meter protocol (AstraMeter listens here)
 CAN_PORT = 3457
 METER_PORT = 8099
 MODEM_RESET_PORT = 3466  # fc41d.py hears the module reset line here
+CH395_PORT = 3458  # SPI link between renode/ch395_spi.py and ch395.py (--ethernet)
 
 RESC = """\
 mach create "marstek"
@@ -83,10 +84,6 @@ SPI_CS_HOOK = (
     '"'
 )
 
-# STM32_UART raises TC the moment DR is written and never again. On a real
-# UART TC follows the last stop bit, so PMU 301's DMA TX-complete IRQ clears
-# the stale TC on UART7 and waits for a fresh one before posting the Modbus
-# task. Keeping TC on through SR writes stands in for that later edge.
 # The FC41D reset line. Control 150's reset routine (0x0800b224) writes BRR
 # to pull PE5 and PE4 low, waits 1 s and writes BSRR to raise them. The hook
 # sends the level (0 or 1) to fc41d.py, which switches the module off while
@@ -101,6 +98,27 @@ MODEM_RESET_HOOK = (
     '"'
 )
 
+# --ethernet: PB12 is the CH395 chip select (BOP bit 12 raises it, BOP bit 28
+# and BC bit 12 lower it) and PD8 its INT#, polled in GPIOD IDR. The hooks
+# hand the CS level to renode/ch395_spi.py at 0x3F0 and read INT# from 0x3F4.
+CH395_CS_HOOK = (
+    'sysbus SetHookBeforePeripheralWrite sysbus.gpioPortB "'
+    "cs = 1 if (offset == 0x10 and value & 0x1000) else "
+    "(0 if ((offset == 0x10 and value & 0x10000000) or (offset == 0x14 and value & 0x1000)) "
+    "else -1); machine.SystemBus.WriteDoubleWord(0x40003BF0, cs) if cs >= 0 else None"
+    '"'
+)
+CH395_INT_HOOK = (
+    'sysbus SetHookAfterPeripheralRead sysbus.gpioPortD "'
+    "value = ((value & ~0x100) | ((machine.SystemBus.ReadDoubleWord(0x40003BF4) & 1) << 8)) "
+    "if offset == 8 else value"
+    '"'
+)
+
+# STM32_UART raises TC the moment DR is written and never again. On a real
+# UART TC follows the last stop bit, so PMU 301's DMA TX-complete IRQ clears
+# the stale TC on UART7 and waits for a fresh one before posting the Modbus
+# task. Keeping TC on through SR writes stands in for that later edge.
 UART7_TC_HOOK = (
     'sysbus SetHookBeforePeripheralWrite sysbus.uart7 "'
     "value = (value | 0x40) if offset == 0 else value"
@@ -342,7 +360,7 @@ def _link_lines(board: Board) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _hook_lines(board: Board, reset_port: int) -> str:
+def _hook_lines(board: Board, reset_port: int, ethernet: bool = False) -> str:
     """Bus hooks that stand in for hardware the emulator has no model of."""
     lines = [SPI_CS_HOOK] if board.spi_flash else []
     if board.link_uarts:
@@ -350,7 +368,28 @@ def _hook_lines(board: Board, reset_port: int) -> str:
     if board.modem_reset:
         port, mask = board.modem_reset
         lines.append(MODEM_RESET_HOOK.format(port=port, mask=mask, high=mask << 16, udp=reset_port))
+    if ethernet:
+        lines += [CH395_CS_HOOK, CH395_INT_HOOK]
     return "".join(line + "\n" for line in lines)
+
+
+def _start_ch395(args: argparse.Namespace) -> subprocess.Popen[bytes]:
+    """Start the CH395 model before Renode; its SPI peripheral connects on first use."""
+    gateway = args.eth_gateway or args.gateway
+    ip = _own_ip(gateway) if args.eth_ip == "auto" else args.eth_ip
+    if ip == args.ip:
+        print(f"warning: Ethernet and Wi-Fi share {ip}; one Local API bind will fail", flush=True)
+    command = [
+        sys.executable, str(HERE / "ch395.py"), "--link-port", str(args.eth_port),
+        "--ip", ip, "--gateway", gateway, "--netmask", args.eth_netmask, "--mac", args.eth_mac,
+    ]  # fmt: skip
+    if args.broadcast_to:
+        command += ["--broadcast-to", args.broadcast_to]
+    log = (args.work / "ch395.log").open("ab")
+    try:
+        return subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+    finally:
+        log.close()
 
 
 def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load_base: int) -> Path:
@@ -394,6 +433,13 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         script = script.replace("@SPI_FLASH@", str(args.eeprom.parent / "spiflash.bin"))
         spi1.write_text(script.replace("@LOCAL_API_PORT@", str(args.local_api_port)))
     repl = repl.replace("@SPI1_SCRIPT@", str(spi1))
+    ethernet = getattr(args, "ethernet", False)
+    spi2 = renode_dir / "spi2.py"
+    if ethernet:
+        spi2 = work / "ch395_spi.py"
+        script = (renode_dir / "ch395_spi.py").read_text()
+        spi2.write_text(script.replace("@CH395_PORT@", str(args.eth_port)))
+    repl = repl.replace("@SPI2_SCRIPT@", str(spi2))
     name = board.repl.removesuffix(".repl.in")
     (work / f"{name}.repl").write_text(repl)
     usarts = "\n".join(f"{u} CreateFileBackend @{work}/{u}.txt true" for u in board.uarts)
@@ -421,7 +467,7 @@ def _render(args: argparse.Namespace, work: Path, board: Board, blob: Path, load
         wifi_uart=board.wifi_uart,
         can=board.can,
         links=_link_lines(board),
-        hooks=_hook_lines(board, args.modem_reset_port),
+        hooks=_hook_lines(board, args.modem_reset_port, ethernet),
         tuning="".join(
             [
                 f'emulation SetGlobalQuantum "{args.quantum}"\n' if args.quantum else "",
@@ -573,6 +619,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--log-max-mb", type=float, default=0, help="Rotate WORK/*.log past this size (0 = never)"
     )
+    eth = parser.add_argument_group("Ethernet (CH395 on SPI2, Control board only)")
+    eth.add_argument("--ethernet", action="store_true", help="Link a CH395 (ch395.py)")
+    eth.add_argument(
+        "--eth-ip", default="auto", help="Address of the Ethernet lease; 'auto' = route to "
+        "--eth-gateway. Must differ from the Wi-Fi --ip: both serve the Local API port",
+    )  # fmt: skip
+    eth.add_argument("--eth-gateway", help="Gateway in the lease (default: --gateway)")
+    eth.add_argument("--eth-netmask", default="255.255.0.0")
+    eth.add_argument("--eth-mac", default="02:ee:00:00:00:03")
+    eth.add_argument("--eth-port", type=int, default=CH395_PORT, help="SPI link TCP port")
     return parser.parse_args(argv)
 
 
@@ -589,6 +645,8 @@ def main() -> int:
             f"firmware blob not found: {args.blob} (run tools/firmware/fetch_firmware.py)"
         )
     board = BOARDS[_board_for(args)]
+    if args.ethernet and _board_for(args) != "control":
+        raise SystemExit("--ethernet needs the Control board (the CH395 sits on its SPI2)")
     args.work.mkdir(parents=True, exist_ok=True)
     entry = _catalog_entry(args.firmware) if args.firmware else _entry_for_blob(args.blob)
     blob, load_address = _loadable_blob(entry, args.blob, args.work)
@@ -639,6 +697,7 @@ def main() -> int:
     modem: subprocess.Popen[bytes] | None = None
     peers: subprocess.Popen[bytes] | None = None
     mini: subprocess.Popen[bytes] | None = None
+    ch395 = _start_ch395(args) if args.ethernet else None
     signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         mon = Monitor(args.monitor_port)
@@ -674,7 +733,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        for child in (mini, peers, modem):
+        for child in (mini, peers, modem, ch395):
             if child is not None:
                 child.terminate()
         if renode.poll() is None:

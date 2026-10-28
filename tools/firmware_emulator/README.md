@@ -18,7 +18,7 @@ while this emulator is the vendor's own implementation, including its quirks
 | Clock tree, flash controller | always-ready register stubs | `renode/rcu.py`, `fmc.py` |
 | RTC (BCD calendar) and backup registers | calendar on the host's wall clock; backup DATA0 preset | `renode/rtc.py`, `bkp.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
-| CH395 Ethernet (SPI2) | idle chip, answers 0x00 | `renode/spi2.py` |
+| CH395 Ethernet (SPI2) | idle chip, answers 0x00; with `--ethernet` a CH395 with an instant DHCP lease, UDP sockets bridged to host UDP, TCP that fails to connect | `renode/spi2.py`; `--ethernet`: `renode/ch395_spi.py` + `ch395.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
 | Marstek cloud (MQTT broker, HTTP servers behind the FC41D) | accepts every connect, publish and upload; `getDateInfo` returns host time; `--no-cloud` fails them | `cloud.py` |
@@ -174,6 +174,46 @@ the AP BSSID as `wifi_mac`, and HA rejects a repeated one as
 `already_configured`. Broadcast discovery can't reach a socket bound to one
 address, so add the unit by its IP.
 
+## Ethernet (CH395)
+
+The Control board has a WCH CH395 Ethernet chip on SPI2. By default it sits
+idle and the firmware only uses Wi-Fi. `--ethernet` (Control images only)
+connects it:
+
+```bash
+python3 tools/firmware_emulator/run_firmware.py --firmware VNSE3-0:150 \
+    --ip 172.17.0.3 --gateway 172.17.0.1 \
+    --ethernet --eth-ip 172.28.0.2 --eth-gateway 172.28.0.1
+```
+
+`ch395.py` plays the chip. `renode/ch395_spi.py` forwards each SPI byte to it
+over TCP (`--eth-port`, default 3458), with two bus hooks for chip select
+(PB12) and INT# (PD8). The chip hands out `--eth-ip`, `--eth-gateway`,
+`--eth-netmask` and `--eth-mac` as its DHCP lease the moment the firmware
+enables DHCP. Each UDP socket the firmware opens is a host socket bound to
+`--eth-ip`, plus listeners on the subnet and limited broadcast addresses.
+`--eth-ip auto` (the default) picks the host's address on the route to
+`--eth-gateway`. The log is `WORK/ch395.log`.
+
+Ethernet needs an address of its own. In Docker, attach the container to a
+second network and give the Wi-Fi side the other one:
+
+```bash
+docker create --name fw-eth --network bridge marstek-fw-emulator \
+    --firmware VNSE3-0:150 --gateway 172.17.0.1 \
+    --ethernet --eth-gateway 172.28.0.1
+docker network connect devcontainer_marstek_net fw-eth
+docker start fw-eth
+```
+
+Connect the second network before the start: `--eth-ip auto` is resolved when
+the launcher starts.
+
+Once the chip has its lease, the firmware moves its uplink to Ethernet
+(`0x20001f55` = 2, set by `0x08027c08`). The modem stays associated, but the
+firmware drops its Wi-Fi sockets, so the Local API, the CT003 poll, DNS and
+the cloud all go over the CH395. The Wi-Fi address then stops answering.
+
 ## Docker
 
 `Dockerfile` builds one image for every Venus E 3.0 / A / D image. It installs
@@ -319,6 +359,14 @@ second try, and the first full poll can take several minutes.
   patched for this board only: the link UARTs are clocked at 36 MHz, and a
   bus hook keeps UART7 TC set (Renode raises TC once per DR write). TIMER6's
   DMA line is left off because it shares DMA2 request 3 with USART4 RX.
+- **CH395 (`--ethernet`).** The DHCP lease arrives at once, with the PHY
+  already linked at 100 Mbit/s full duplex. Only UDP is bridged: a TCP connect
+  times out after `--tcp-timeout` (3 s), and TCP listen sockets (Modbus TCP on
+  502) never see a client, so the firmware's cloud and debug-log TCP paths
+  just fail. `GET_RECV_LEN` reports one datagram at a time. The PD9 hardware
+  reset is not modelled; `INIT_CH395` resets the socket state instead. The
+  Ethernet address in `Marstek.GetDevice` comes out zero-padded
+  (`172.28.00.02`): the firmware formats it with `%02d`, as a real unit would.
 - **CAN pacing.** Inbound CAN frames are spread 1 ms apart in virtual time.
   With a 10 ms quantum, a burst injected at once overflowed the 3-deep RX FIFO,
   and the lost BMS frames showed up as SoC 0 for minutes at a time.

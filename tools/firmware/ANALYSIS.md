@@ -210,6 +210,41 @@ data", which address the trigger.
    ``asyncio.wait`` keeps the pending future alive. Writes, unknown
    firmware, and reset-prone IPs stay at one datagram.
 
+## CH395 Ethernet path (VNSE3-0 150)
+
+Read from the 150 image and confirmed by booting it in Renode against
+`tools/firmware_emulator/ch395.py` (`run_firmware.py --ethernet`). Addresses are
+file offsets + `0x08000000`; the image loads at `0x08004800`, so pointers in
+literal pools are `0x4800` higher.
+
+- **Bus.** SPI2 master, mode 0, 8-bit (`0x08017070`). PB12 is chip select,
+  PD9 reset (low 100 ms, then 50 ms, `0x08003be4`), PD8 INT# (`0x08017334`).
+  One byte goes through `0x0802b564`. A command raises then lowers CS, sends
+  the command byte (`0x08053150`) and its parameters; reads clock out `0xFF`
+  (`0x0805255c`). CS high ends it.
+- **Bring-up.** `Task_ch395` (`0x0802bb50`) calls `0x08027b04`: reset,
+  `INIT_CH395` and poll `GET_CMD_STATUS` while it reads busy (`0x08027bc4`),
+  receive/send buffers for sockets 0-2 and 4-7 (`0x08027d28`), `DHCP_ENABLE`
+  (`0x08027ab8`), then log `CH395 reset!!!` and open the sockets.
+- **Interrupts.** The task polls PD8 (`0x080309e0`). When low, `0x080301c8`
+  reads `GET_GLOB_INT_STATUS_ALL`: bit 2 reads the PHY state, bit 3 the DHCP
+  result and `GET_IP_INF` (into `0x2001abbd`; `0x2001abb8[1]` = 1 marks the IP
+  ready), bits 4-11 go to the socket handler `0x08030534`.
+- **Sockets.** 0: Modbus TCP server on 502. 1: TCP client on 8091 for the debug
+  log. 2: UDP server on 8090 (vendor discovery). 4: CT003 poll, UDP from 22222
+  to broadcast 12345. 5: Local API, UDP server on the Open API port, opened by
+  `0x0802c1d8` once the IP is ready (`UDP Server Start, adv ip(%d)`). 6 and 7:
+  DNS clients on source port 2000 (cloud host lookups). UDP server mode is
+  destination `255.255.255.255`; each received datagram then starts with
+  length (2, LE), port (2, LE) and IP (4), which `0x0802c04c` unpacks before
+  the shared JSON handler.
+- **Uplink choice.** `0x08027c08` sets `0x20001f55` to 2 when the CH395 has an
+  IP, and clears the Wi-Fi socket state. From then on the Local API, CT poll,
+  DNS and cloud traffic use Ethernet only, and the Wi-Fi address stops
+  answering although the module stays associated.
+- **`Marstek.GetDevice` `ip`.** Formatted with `%02d.%02d.%02d.%02d`, so an
+  Ethernet unit reports e.g. `172.28.00.02`. `discovery.py` normalizes that.
+
 ## Mock device
 
 `tools/mock_device` now reproduces:

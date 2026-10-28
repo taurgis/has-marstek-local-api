@@ -333,10 +333,12 @@ can2: CAN.STMCAN @ sysbus <0x40006800, +0x400>
     [0-3] -> nvic@[63-66]
     master: can1
 
+// SPI2 (0x40003800): the CH395 Ethernet chip. renode/spi2.py is an idle chip;
+// run_firmware.py --ethernet swaps in renode/ch395_spi.py, which talks to ch395.py.
 spi2: Python.PythonPeripheral @ sysbus 0x40003800
     size: 0x400
     initable: true
-    filename: "@RENODE_DIR@/spi2.py"
+    filename: "@SPI2_SCRIPT@"
 
 // SPI1 (0x40013000). VNSEMINI-0 PMU 301 keeps its settings in a NOR flash
 // here (chip select PA4), so that board gets renode/spiflash.py. The other
