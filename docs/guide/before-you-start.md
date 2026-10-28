@@ -67,7 +67,7 @@ Most home networks need nothing here. Check these if your network is more advanc
 
 ## Is anything else talking to the battery?
 
-Only one program should poll the battery's Open API at a time. If you tried another Marstek integration, a script, or a Node-RED flow, turn it off first. Two programs polling at once doubles the load on fragile firmware, and two programs can't share the same UDP port on the Home Assistant machine.
+Only one program should poll the battery's Open API at a time. If you tried another Marstek integration, a script, or a Node-RED flow, turn it off first. Two programs polling at once doubles the load on fragile firmware, and two programs listening on the same UDP port take each other's replies.
 
 ## Next
 

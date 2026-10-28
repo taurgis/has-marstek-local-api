@@ -27,7 +27,7 @@ Power and charge every 30 seconds, solar every 60 seconds, and diagnostics every
 
 ## Why is a sensor missing?
 
-Most often the battery's firmware doesn't support it, so the integration leaves it out. Solar sensors only exist on Venus A and Venus D. Battery details such as temperature start disabled. See [Entities](../entities.md) and [troubleshooting](../troubleshooting.md#missing-ups-panel-led-bluetooth-advertising-or-depth-of-discharge).
+Most often the battery's firmware doesn't support it, so the integration leaves it out. Solar sensors only exist on Venus A and Venus D. Battery details such as temperature start disabled, and on older, fragile firmware they are left out completely. Venus C below firmware 155 has no grid meter sensors. See [Entities](../entities.md) and [troubleshooting](../troubleshooting.md#missing-ups-panel-led-bluetooth-advertising-or-depth-of-discharge).
 
 ## Why did my battery go unavailable?
 

@@ -89,7 +89,7 @@ A lightweight network protocol. Messages are small and fast, but a lost message 
 
 ## UPS mode
 
-A Marstek operating mode for backup power. Available on firmware 150 and newer.
+A Marstek operating mode for backup power. Available on Venus A, D, and E 3.0 with firmware 150 or newer, and on Venus E mini firmware 301. Not on Venus C.
 
 ## VLAN
 

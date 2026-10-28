@@ -29,7 +29,7 @@ Marstek ships features through firmware updates, and older firmware misbehaves m
 To see your battery's firmware number, open its device page in Home Assistant (**Settings** > **Devices & services** > **Marstek** > your battery). It is listed under **Device info**. Home Assistant shows it the way the battery reports it, so app version 147.6 appears as `1476`.
 
 - **Firmware 150 or newer** on Venus A, D, and E 3.0 unlocks depth of discharge, the panel LED, Bluetooth advertising, and UPS mode.
-- **Firmware below 150** on those models (below 156 on Venus C) is known to switch its Open API off, and sometimes reset its settings, under polling. Home Assistant shows a warning in **Settings** > **System** > **Repairs** for these versions. Update the battery in the Marstek app if you can. See [troubleshooting](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults).
+- **Firmware below 150** on those models is known to switch its Open API off, and sometimes reset its settings, under polling. Venus C below 156 and Venus E mini 145 are treated the same way to be safe. Home Assistant shows a warning in **Settings** > **System** > **Repairs** for these versions. Update the battery in the Marstek app if you can. See [troubleshooting](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults).
 - After a firmware update, the integration notices the new version on its own within about 10 minutes and adds or removes controls. You don't need to remove and re-add the battery.
 
 ### Tested firmware versions
@@ -48,7 +48,7 @@ Missing yours? [Open a firmware coverage issue](https://github.com/taurgis/has-m
 
 Venus C uses a different controller (Marstek calls it HMG-50) than Venus A, D, and E 3.0. On that controller, the Open API and the battery's own link to its grid meter share one Wi-Fi channel. When Home Assistant polls, some meter readings get lost. In **Auto** (self-consumption) mode, enough lost readings make the battery think the meter is gone, and it stops charging from excess solar ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)).
 
-No firmware fixes this so far, 156 included. On Venus E 2.0 firmware 158, one owner reports reliable reads but failing control commands ([#121](https://github.com/taurgis/has-marstek-local-api/issues/121)). If you own a Venus C:
+None of the firmware checked so far (153, 155, 156) fixes this. Firmware 158 hasn't been checked yet. On Venus E 2.0 firmware 158, one owner later got charging, discharging and Auto working from their own script, with commands spaced about 30 seconds apart ([#121](https://github.com/taurgis/has-marstek-local-api/issues/121)). That hasn't been tried with this integration, and it doesn't fix the meter problem. If you own a Venus C:
 
 - Raise the polling intervals under **Configure** > **Polling Intervals**.
 - Read grid power from your meter's own integration (HomeWizard P1, Shelly) instead of from the battery.

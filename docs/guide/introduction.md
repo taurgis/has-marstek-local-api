@@ -24,7 +24,7 @@ Three things follow from that design:
 ## What it does
 
 - Shows battery, grid, and solar readings as Home Assistant sensors.
-- Feeds grid and solar energy totals to the Energy dashboard.
+- Feeds battery and solar energy totals to the Energy dashboard, and grid totals when the CT meter reports them.
 - Switches the operating mode (Auto, AI, and UPS on firmware that supports it).
 - Charges or discharges at a set power for a set time (passive mode).
 - Writes the battery's built-in charge and discharge schedules (manual mode).
@@ -45,7 +45,7 @@ The honest list of rough edges is on [Limitations](limitations.md).
 
 ## Why it is careful
 
-Marstek's Open API is young, and some firmware versions misbehave under load. Some switch the Open API off, or even reset their settings, when they get too many requests ([#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Because of that, the integration:
+Marstek's Open API is young, and some firmware versions misbehave under load. Some switch the Open API off, or even reset their settings, when they get too many requests ([#14](https://github.com/taurgis/has-marstek-local-api/issues/14), [#15](https://github.com/taurgis/has-marstek-local-api/issues/15)). Because of that, the integration:
 
 - sends one request at a time to each battery by default, with a pause between requests,
 - polls slow-changing data (Wi-Fi, battery details) only every 5 minutes, and only when you use those sensors,

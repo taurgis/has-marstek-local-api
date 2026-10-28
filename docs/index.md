@@ -22,7 +22,7 @@ hero:
 features:
   - icon: 🔋
     title: Live battery state
-    details: Charge level, battery power, grid power, and solar on Venus A and Venus D, refreshed every 30 seconds.
+    details: Charge level, battery power, and grid power every 30 seconds, plus solar on Venus A and Venus D every minute.
     link: /entities
     linkText: Every sensor
   - icon: ⚡

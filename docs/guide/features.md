@@ -34,7 +34,7 @@ Copy-paste examples are in [Automations and services](../services.md).
 
 ## Fit into Home Assistant
 
-- **Energy dashboard** sources for grid and solar. [Energy dashboard](../energy_dashboard.md)
+- **Energy dashboard** sources for the battery and solar, and for the grid when the CT meter reports totals. [Energy dashboard](../energy_dashboard.md)
 - **Device actions** in the visual automation editor, no YAML needed.
 - **Repairs**: Home Assistant tells you when the battery is unreachable for a while, or when its firmware is known to be fragile. [Repairs](../repairs.md)
 - **Diagnostics download** with MAC addresses and the configured IP address redacted, for bug reports. [Troubleshooting](../troubleshooting.md#what-to-include-in-a-bug-report)

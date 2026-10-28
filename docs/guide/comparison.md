@@ -110,7 +110,7 @@ Omnibattery replaces the earlier Marstek Venus Energy Manager by the same author
 ## Which one should I use?
 
 - **Venus A, D, E 3.0, or E mini, and you want no extra hardware:** an Open API integration. Pick this one for the widest model support, firmware-aware controls, and battery health. Pick the vendor one if you prefer Marstek's own code.
-- **Venus E 2.0:** a Modbus integration, or hm2mqtt over MQTT. No Open API integration supports it safely. On firmware 158 reads work, but control commands still fail ([#121](https://github.com/taurgis/has-marstek-local-api/issues/121)).
+- **Venus E 2.0:** a Modbus integration, or hm2mqtt over MQTT. No Open API integration supports it safely. On firmware 158, one owner got control working from their own script with commands spaced about 30 seconds apart, but not yet reliably unattended ([#121](https://github.com/taurgis/has-marstek-local-api/issues/121)).
 - **Venus C:** an Open API integration works, but read the [Venus C caveat](supported-devices.md#venus-c-caveat) first.
 - **Venus E mini:** this is the only Open API integration above that lists it. hm2mqtt has beta support over MQTT.
 - **B2500 or Jupiter:** hm2mqtt. There is no local Open API for those.
