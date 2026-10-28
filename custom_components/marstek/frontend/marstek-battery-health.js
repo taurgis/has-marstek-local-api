@@ -840,10 +840,9 @@ function focusKey(root) {
   return active.getAttribute("role") === "tabpanel" ? '[role="tabpanel"]' : null;
 }
 
-// A value refresh must not scroll. focus() scrolls its target into view, and
-// rebuilding the shadow tree drops the focused tab or panel, so the next
-// refresh would jump a phone back up the page. Patch the existing nodes
-// instead, and only move focus when the reader asked for a different control.
+// A refresh or a tab/filter/page click must not scroll. focus() scrolls its
+// target into view, and dropping the focused control (or the scroll anchor
+// inside a tab panel that just changed height) jumps a phone back up the page.
 function parseFragment(root, html) {
   // The holder sits in the shadow tree so Home Assistant's scoped-registry
   // polyfill upgrades ha-card and ha-icon while it parses. hidden keeps the
@@ -891,17 +890,64 @@ function morphChildren(current, next) {
   while (current.childNodes.length > incoming.length) current.lastChild.remove();
 }
 
-// `key` set means the reader moved to that control and it may scroll into view.
-// Omitted, the refresh keeps the focused control without moving the page.
+// Scroll offsets the reader had before a click. A value of 0 is not worth
+// restoring; the page is already at the top.
+function captureScroll(host) {
+  const saved = [];
+  const remember = (el, top, left, windowed) => {
+    if (top > 0) saved.push({ el, top, left, windowed });
+  };
+  const scrolling = document.scrollingElement || document.documentElement;
+  remember(scrolling, window.scrollY, window.scrollX, true);
+  const seen = new Set();
+  let node = host || null;
+  while (node && !seen.has(node)) {
+    seen.add(node);
+    if (node !== scrolling && node.scrollTop > 0) remember(node, node.scrollTop, node.scrollLeft, false);
+    const parentRoot = node.getRootNode?.();
+    node = node.parentElement || (parentRoot instanceof ShadowRoot ? parentRoot.host : null);
+  }
+  return saved;
+}
+
+function restoreScroll(saved) {
+  for (const item of saved) {
+    if (!item.el.isConnected && !item.windowed) continue;
+    const top = item.windowed ? window.scrollY : item.el.scrollTop;
+    if (top + 1 >= item.top) continue;
+    if (item.windowed) window.scrollTo(item.left, item.top);
+    else {
+      item.el.scrollLeft = item.left;
+      item.el.scrollTop = item.top;
+    }
+  }
+}
+
+// `key` set means the reader pressed that control. Either way, focus must not
+// move the page: the pressed control is already on screen, and scrolling it
+// to the top is the jump people feel after a tab or filter click.
 function redraw(root, html, key) {
-  const keep = key == null;
-  const selector = keep ? focusKey(root) : key;
+  const selector = key == null ? focusKey(root) : key;
+  const saved = key == null ? null : captureScroll(root.host);
+  const restore = () => {
+    if (saved) restoreScroll(saved);
+  };
   morphChildren(root, parseFragment(root, html));
-  if (!selector) return;
-  const active = root.activeElement;
-  if (keep && active?.isConnected && active.matches(selector)) return;
-  // New nodes from the scoped-registry polyfill cannot take focus until a microtask later.
-  queueMicrotask(() => root.querySelector(selector)?.focus({ preventScroll: keep }));
+  restore();
+  const active = selector ? root.activeElement : null;
+  if (selector && !(active?.isConnected && active.matches(selector))) {
+    // New nodes from the scoped-registry polyfill cannot take focus until a microtask later.
+    queueMicrotask(() => {
+      root.querySelector(selector)?.focus({ preventScroll: true });
+      restore();
+    });
+  }
+  if (!saved) return;
+  queueMicrotask(restore);
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
+  });
 }
 
 // Shared by both cards: a shadow root, full-width sizing, and a redraw that
@@ -1013,7 +1059,7 @@ class MarstekBatteryHealthCard extends MarstekCard {
     else if (verb === "more") this._showMore();
   }
 
-  // Focus moves to the first row the press revealed, so reading carries on there.
+  // Focus moves to the first row the press revealed, without scrolling the page.
   _showMore() {
     const first = this._shown;
     this._shown += OUTAGES_STEP;

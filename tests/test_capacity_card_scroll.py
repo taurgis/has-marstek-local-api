@@ -38,7 +38,7 @@ def test_refresh_patches_nodes_instead_of_replacing_the_shadow_tree() -> None:
     source = _MODULE.read_text(encoding="utf-8")
     redraw = source[source.index("function redraw") : source.index("class MarstekCard")]
     assert "root.innerHTML" not in redraw
-    assert "preventScroll: keep" in redraw
+    assert "preventScroll: true" in redraw
     assert "function morphChildren" in source
 
 
@@ -94,8 +94,10 @@ class _FrontendHandler(BaseHTTPRequestHandler):
 
 def _page() -> str:
     return """<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>scroll</title>
-<style>html,body{margin:0}#tail{height:2400px}</style></head><body>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scroll</title>
+<style>html,body{margin:0}#head{height:900px}#tail{height:2400px}</style></head><body>
 <script>
 customElements.define("home-assistant", class extends HTMLElement {});
 customElements.define("ha-card", class extends HTMLElement {
@@ -109,7 +111,7 @@ customElements.define("ha-icon", class extends HTMLElement {
   }
 });
 </script>
-<div id="mount"></div><div id="tail"></div>
+<div id="head"></div><div id="mount"></div><div id="tail"></div>
 <script type="module">
 await customElements.whenDefined("marstek-battery-health-card");
 const deviceId = "dev1";
@@ -177,6 +179,26 @@ window.__apply = (power, soc) => {
     sameCard: before === card.shadowRoot.querySelector("ha-card"),
     active: card.shadowRoot.activeElement?.getAttribute("data-tab")
       || card.shadowRoot.activeElement?.getAttribute("role") || null,
+  };
+};
+window.__press = (selector) => {
+  const el = window.__card.shadowRoot.querySelector(selector);
+  if (!el) return { missing: selector };
+  const docTop = window.scrollY + el.getBoundingClientRect().top;
+  // Leave the control in the lower part of the phone, as when the reader
+  // has scrolled down to it. Focusing it must not jump back up.
+  const offset = Math.round(window.innerHeight * 0.72);
+  window.scrollTo(0, Math.max(0, docTop - offset));
+  const before = window.scrollY;
+  el.click();
+  return {
+    before,
+    docTop,
+    offset,
+    head: document.getElementById("head")?.offsetHeight || 0,
+    y: window.scrollY,
+    selected: el.getAttribute("aria-selected"),
+    pressed: el.getAttribute("aria-pressed"),
   };
 };
 window.__ready = true;
@@ -332,14 +354,57 @@ async def _scroll_stays(http_port: int, cdp_port: int) -> None:
         await cdp.close()
 
 
-@pytest.mark.enable_socket
-def test_mobile_scroll_stays_through_hass_updates(tmp_path: Path, socket_enabled: None) -> None:
-    """Live power changes keep window.scrollY put on a 390x844 viewport.
+async def _clicks_keep_scroll(http_port: int, cdp_port: int) -> None:
+    """Tabs, run filters and page buttons must not jump back to the top."""
+    cdp = _Cdp(cdp_port)
+    await cdp.open(f"http://127.0.0.1:{http_port}/")
+    frames = "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    try:
+        for _ in range(50):
+            if await cdp.evaluate("Boolean(window.__ready)"):
+                break
+            await asyncio.sleep(0.05)
+        else:
+            raise AssertionError("the card module did not start")
+        size = await cdp.evaluate("({h: innerHeight, w: innerWidth, dpr: devicePixelRatio})")
+        assert size == {"h": 844, "w": 390, "dpr": 2}, size
 
-    Covers a blurred page, a focused tab, and a focused tab panel. Each one
-    used to jump because the refresh rebuilt the focused control.
-    """
-    del socket_enabled
+        async def press(selector: str) -> tuple[float, float]:
+            pressed = await cdp.evaluate(f"window.__press({json.dumps(selector)})")
+            await cdp.evaluate(frames)
+            after = await cdp.evaluate("window.scrollY")
+            assert isinstance(pressed, dict), selector
+            assert "missing" not in pressed, selector
+            before = float(pressed["before"])
+            assert before > 200, (selector, pressed)
+            assert float(after) > 200, (selector, before, after)
+            assert abs(float(after) - before) < 48, (selector, before, after)
+            return before, float(after)
+
+        for name in ("runs", "energy", "restarts", "capacity"):
+            await press(f'[data-tab="{name}"]')
+            selected = await cdp.evaluate(
+                f"window.__card.shadowRoot.querySelector('[data-tab=\"{name}\"]')"
+                ".getAttribute('aria-selected')"
+            )
+            assert selected == "true", name
+
+        await press('[data-tab="runs"]')
+        await press('[data-action="page-next"]')
+        await press('[data-action="page-prev"]')
+        for name in ("discharge", "charge", "all"):
+            await press(f'[data-action="runs-{name}"]')
+            state = await cdp.evaluate(
+                "window.__card.shadowRoot.querySelector"
+                f"('[data-action=\"runs-{name}\"]').getAttribute('aria-pressed')"
+            )
+            assert state == "true", name
+    finally:
+        await cdp.close()
+
+
+def _run_in_chrome(tmp_path: Path, scenario: Any) -> None:
+    """Launch a phone-sized Chrome and run one scroll scenario."""
     pytest_socket.enable_socket()
     if _chrome_bin() is None:
         pytest.skip("Chrome is not installed")
@@ -350,7 +415,7 @@ def test_mobile_scroll_stays_through_hass_updates(tmp_path: Path, socket_enabled
     chrome = _launch_chrome(cdp_port, profile)
     try:
         _wait_for_chrome(cdp_port)
-        asyncio.run(_scroll_stays(http_port, cdp_port))
+        asyncio.run(scenario(http_port, cdp_port))
     finally:
         server.shutdown()
         chrome.terminate()
@@ -358,3 +423,25 @@ def test_mobile_scroll_stays_through_hass_updates(tmp_path: Path, socket_enabled
             chrome.wait(timeout=5)
         except subprocess.TimeoutExpired:
             chrome.kill()
+
+
+@pytest.mark.enable_socket
+def test_mobile_scroll_stays_through_hass_updates(tmp_path: Path, socket_enabled: None) -> None:
+    """Live power changes keep window.scrollY put on a 390x844 viewport.
+
+    Covers a blurred page, a focused tab, and a focused tab panel. Each one
+    used to jump because the refresh rebuilt the focused control.
+    """
+    del socket_enabled
+    _run_in_chrome(tmp_path, _scroll_stays)
+
+
+@pytest.mark.enable_socket
+def test_mobile_tab_and_filter_clicks_keep_scroll(tmp_path: Path, socket_enabled: None) -> None:
+    """Switching tabs, run filters and pages keeps a phone scrolled down.
+
+    The control is placed at the top of a 390x844 viewport, with a long page
+    above it, then activated. The scroll offset must stay there.
+    """
+    del socket_enabled
+    _run_in_chrome(tmp_path, _clicks_keep_scroll)
