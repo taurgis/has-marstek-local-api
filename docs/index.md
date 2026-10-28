@@ -32,7 +32,7 @@ features:
     linkText: Automations and services
   - icon: 📊
     title: Energy dashboard ready
-    details: Grid import, grid export, and solar totals plug straight into Home Assistant's Energy dashboard.
+    details: Lifetime battery and solar energy counters for Home Assistant's Energy dashboard, plus grid totals from the CT meter when it reports them.
     link: /energy_dashboard
     linkText: Set it up
   - icon: 🩺
@@ -56,7 +56,7 @@ features:
 
 - Free and MIT-licensed
 - No cloud account
-- Tested against Marstek's own firmware in an emulator
+- [Tested against Marstek's own firmware](/development#test-matrix) in an emulator for most versions
 - [![Latest release](https://img.shields.io/github/v/release/taurgis/has-marstek-local-api?label=release&color=0f766e)](https://github.com/taurgis/has-marstek-local-api/releases)
 - [![GitHub stars](https://img.shields.io/github/stars/taurgis/has-marstek-local-api?style=flat&color=0f766e)](https://github.com/taurgis/has-marstek-local-api)
 
@@ -96,7 +96,7 @@ Not sure what some of these words mean? The [glossary](/guide/glossary) explains
 
 1. **Turn on Open API** in the Marstek app. [Before you start](/guide/before-you-start) shows what to check.
 2. **Install the integration** from HACS and restart Home Assistant.
-3. **Add the battery** under **Settings** > **Devices & services**. Most batteries are found automatically.
+3. **Add the battery** under **Settings** > **Devices & services**. Most batteries are found automatically. Venus E mini, and a battery on another network segment (VLAN), are added by IP address.
 
 The [getting started guide](/guide/getting-started) walks through each step with screenshots, then shows you how to add the battery to the Energy dashboard and build a first automation.
 

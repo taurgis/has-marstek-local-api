@@ -109,7 +109,7 @@ correction is found is in
 
 The sidebar page is off until you enable it. The cards themselves stay available from **Add card** either way.
 
-1. Go to **Settings → Devices & services → Marstek**.
+1. Go to **Settings** > **Devices & services** > **Marstek**.
 2. Open the device and choose **Configure**.
 3. Open **Battery health dashboard**.
 4. Turn on **Show Battery health in the sidebar** and submit.
@@ -158,7 +158,7 @@ Use `below: 80` for the Worn band. The card rounds to a whole percent, so the au
 A plug or meter that sits only between this battery and the mains sees energy the battery's own readings miss, including the power it draws to stay awake. HomeWizard Energy Socket and Shelly plugs both work, and so does any meter with two total-energy sensors.
 
 1. On the plug's device page, enable the sensor that counts energy leaving the battery. On a HomeWizard socket that sensor is **Energy export**, and Home Assistant creates it disabled until the socket has exported or you enable it yourself. **Energy import** is the energy going into the battery.
-2. Go to **Settings → Devices & services → Marstek → (device) → Configure**.
+2. Go to **Settings** > **Devices & services** > **Marstek** > your battery > **Configure**.
 3. Open **Energy meter (optional)**.
 4. Set **Energy into the battery** and **Energy out of the battery**. Fill both, or leave both empty. They have to be two different sensors.
 5. Submit.
@@ -220,7 +220,7 @@ Sources, Home Assistant Core 2026.9.3 (the devcontainer image):
   energy converter (`Wh`, `kWh`, and the other `UnitOfEnergy` members).
 - [`DEFAULT_STATISTICS`](https://github.com/home-assistant/core/blob/2026.9.3/homeassistant/components/sensor/recorder.py)
   maps `measurement` to mean, min, and max.
-- [`SensorStateClass.MEASUREMENT`](https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes)
+- [`SensorStateClass.MEASUREMENT`](https://contributors.home-assistant.io/core/entities/sensor/#state-classes)
   is "a measurement in present time".
 - Setting `last_reset` outside `state_class: total` raises
   (`sensor/__init__.py` in that same Core tag).
@@ -236,7 +236,7 @@ Sources, Home Assistant Core 2026.9.3 (the devcontainer image):
 | Operating mode | `ES.GetMode` | Yes, only to discard a window that changes mode. |
 | `bat_cap` | `ES.GetStatus` | Nameplate for state of health, on families where it is the pack size. Not used as the estimate. |
 | `bat_capacity`, `rated_capacity`, temperature, charge flags | `Bat.GetStatus` | No. The call stays off unless a diagnostic entity is enabled, and on some firmwares it is suspected of resetting the device. Those watt-hours are the BMS's own remaining and rated figures, not a measured fade. |
-| Lifetime grid, PV, and load energy | `ES.GetStatus` | No. They count the house and the inverter, not coulombs into the pack. |
+| Lifetime grid, PV, and load energy | `ES.GetStatus` | No. They count energy at the inverter's AC side, including conversion losses, not coulombs into the pack. |
 | Cycle count, cell voltage, BMS state of health | — | Not in the Open API. Not invented. |
 
 Venus E mini reports remaining energy in `bat_cap`, so the integration does not
@@ -407,7 +407,7 @@ window moves it. Confidence counts windows. It is not a calibrated error bar.
 
 Home Assistant writes a state row when attributes change, so attributes that
 move on every poll do not belong on a sensor
-([sensor attributes](https://developers.home-assistant.io/docs/core/entity/sensor/#attributes)).
+([sensor attributes](https://contributors.home-assistant.io/core/entities/sensor/#attributes)).
 These change when a window is accepted.
 
 Each accepted window is stored with its start and end state of charge,
@@ -552,7 +552,7 @@ the Venus E 3.0 measured a round trip of about 83% to 85% and an idle draw of
 Energy Socket, a Shelly plug, or any meter with total energy sensors) sees
 both.
 
-Options → **Energy meter (optional)** links two total energy sensors: energy
+**Configure** > **Energy meter (optional)** links two total energy sensors: energy
 into the battery and energy out of it. On a HomeWizard socket these are
 **Energy import** and **Energy export**. Home Assistant creates the export
 sensor disabled while the socket has never exported, so enable it on the
@@ -696,7 +696,7 @@ actions:
 Use `below: 80` for the Worn band. The card's band rounds to whole percent,
 so the automation can fire a few tenths before the card changes band.
 
-Options → **Battery health dashboard** / **Dashboard batterijgezondheid**
+**Configure** > **Battery health dashboard** / **Dashboard batterijgezondheid**
 adds a sidebar dashboard (`marstek-battery-health`, strategy
 `custom:marstek-battery-health`) titled **Battery health** or
 **Batterijgezondheid**. It places the fleet card across the full width and

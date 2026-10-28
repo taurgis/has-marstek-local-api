@@ -5,7 +5,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Docs](https://img.shields.io/badge/docs-marstek.rhino--inquisitor.com-0f766e.svg)](https://marstek.rhino-inquisitor.com/)
 
-Monitor and control Marstek batteries from Home Assistant over local UDP. Read live state of charge and power, send solar and grid energy to the Energy dashboard, set the operating mode, and drive passive power or manual schedules from automations. Usable capacity and battery health are optional once a pack has been measured. See [Battery health](docs/usable-capacity.md).
+Monitor and control Marstek batteries from Home Assistant over local UDP. Read live state of charge and power, send battery and solar energy to the Energy dashboard, set the operating mode, and drive passive power or manual schedules from automations. Usable capacity and battery health are optional once a pack has been measured. See [Battery health](docs/usable-capacity.md).
 
 This is an independent community project. It is not affiliated with or endorsed by Marstek.
 
@@ -95,7 +95,7 @@ Copy-paste YAML is in [Automations and services](docs/services.md).
 | Marstek app | **Open API** enabled |
 | UDP port | 30000 by default. The port is configurable per device in the Marstek app. Discovery also probes 30001–30004 and 30030 |
 
-> **Warning**: Venus **E2.0** is not compatible. Polling it can disconnect the device from CT003.
+> **Warning**: Venus **E 2.0** is not compatible. Polling it can disconnect the device from CT003.
 
 > **Warning**: **Venus C** shares one Wi-Fi receive channel between the Local API and the device's own meter, so polling can stop Self-consumption (Auto) from charging on excess solar ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). Use slow polling intervals, and read grid power from the meter directly if Auto mode stalls. See [troubleshooting](docs/troubleshooting.md#venus-c-stops-charging-from-excess-solar-in-auto-mode).
 
@@ -171,7 +171,7 @@ These are constraints of the Open API or of this integration's design.
 
 - **Polling only.** The battery pushes nothing. A change made in the Marstek app shows up on the next poll (30 seconds by default for live power).
 - **No authentication.** Open API is plain UDP. Anyone on the same LAN can read and write the battery. The integration has no password to refresh. Its reauth step only updates a changed IP address.
-- **One request at a time per battery.** A batch such as clearing every schedule slot takes one round trip per slot.
+- **One request at a time per battery by default.** A batch such as clearing every schedule slot takes one round trip per slot.
 - **LAN only.** Discovery uses UDP broadcast. A battery on another VLAN needs its IP entered by hand.
 - **Depth of discharge, Bluetooth advertising, and the panel LED cannot be read back.** Home Assistant shows the last value the battery accepted.
 - **Passive and Manual can't be chosen from the mode dropdown.** They show there so the current mode is visible, but both need a power, a duration, or time slots, so set them with services or device actions.

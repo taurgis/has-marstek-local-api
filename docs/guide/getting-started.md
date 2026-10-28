@@ -86,8 +86,9 @@ Readings refresh every 30 seconds. That is normal. The battery doesn't push chan
 ## Step 4: Add it to the Energy dashboard
 
 1. Go to **Settings** > **Dashboards** > **Energy**.
-2. Under **Electricity grid**, add **Total grid input energy** as grid consumption and **Total grid output energy** as return to grid.
-3. On Venus A and Venus D, add **Total solar energy** under **Solar panels**.
+2. Under **Home battery storage**, add **Total grid input energy** as energy going in to the battery and **Total grid output energy** as energy coming out. Despite the word "grid", they count energy through the battery's own AC connection.
+3. Under **Electricity grid**, use your house meter if Home Assistant already has one, for example a P1 meter. If not, and your Marstek CT meter reports them, use **Meter input energy** and **Meter output energy**.
+4. On Venus A and Venus D, solar passes through the battery, so adding **Total solar energy** as well counts it twice. [Energy dashboard](../energy_dashboard.md#venus-a-and-venus-d-solar-and-the-battery-row) explains how to choose.
 
 The Energy dashboard updates once an hour, so give it a while. The values are in watt-hours, which Home Assistant converts for you. Details and the reasoning are on [Energy dashboard](../energy_dashboard.md).
 

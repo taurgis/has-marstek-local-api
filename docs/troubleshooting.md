@@ -6,13 +6,13 @@ Those controls are firmware-profile gated. They are **omitted** when the device 
 
 | Control | When it appears |
 |---|---|
-| Depth of discharge, Bluetooth advertising, Panel LED | Venus A/C/D/E at firmware **`ver >= 150`**; Venus E mini when discovery `ver` is a **known integer** (no 150 minimum) |
-| UPS on the operating-mode select | ES-capable family (including Venus E mini) with **`ver >= 150`** |
+| Depth of discharge, Bluetooth advertising, Panel LED | Venus A/D/E 3.0 at firmware **`ver >= 150`** (never on Venus C / HMG-50); Venus E mini when discovery `ver` is a **known integer** (no 150 minimum) |
+| UPS on the operating-mode select | Venus A/D/E 3.0 or Venus E mini with **`ver >= 150`** (never on Venus C / HMG-50) |
 
 If they are missing:
 
 1. Check the device model on the device page (Venus E mini is not Venus E; it reports `VNSEM-0`).
-2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** → `firmware_profile`).
+2. Check discovery firmware `ver` (`Device version` diagnostic, or **Download diagnostics** > `firmware_profile`).
 3. Unknown or unparseable `ver` stays legacy-safe: no SYS and no UPS.
 4. After a firmware update that crosses a capability or reset-safety gate, reload the entry or wait for the next scanner cycle (including the unicast fallback when broadcast cannot reach the device). **Reconfigure** also refreshes firmware. You do not need to delete and re-add the device.
 
@@ -73,10 +73,11 @@ polled, some builds disable Local API and wipe user settings (Wi-Fi often
 survives). Venus E 3.0 Control **150** is the published fix (“Optimized Local
 API send anomaly on Ethernet”); a user confirmed [#15](https://github.com/taurgis/has-marstek-local-api/issues/15) after updating in the Marstek app (Wi-Fi or Bluetooth if LAN OTA fails).
 
-On firmware the integration treats as reset-prone (known family, Control
-generation below 150, or an unknown model with a Control-like `ver` 100–149):
+On firmware the integration treats as reset-prone (Venus A, D or E 3.0 below
+150, HMG-50 Venus C below 156, a known model with a missing `ver`, or an
+unknown model with a Control-like `ver` 100–149):
 
-1. A **warning** appears in Settings → Repairs (not a fixable flow) as soon
+1. A **warning** appears in **Settings** > **System** > **Repairs** (not a fixable flow) as soon
    as the config entry is set up, even if the first UDP probe still fails.
 2. Parallel API requests stay off even if the option is enabled.
 3. Unicast Open API calls to that device are sent one at a time.
@@ -87,7 +88,7 @@ generation below 150, or an unknown model with a Control-like `ver` 100–149):
    for in-flight unicasts before binding the listen port. Changing IP and
    firmware at the same time updates both in one reload.
 
-Venus E2.0 is not supported. Existing config entries for that model fail
+Venus E 2.0 is not supported. Existing config entries for that model fail
 setup with an error instead of polling.
 
 Do not factory-reset from Home Assistant (`Reset.Factory` is not exposed).
@@ -109,7 +110,7 @@ If the totals still look wrong, compare the grid energy sensors with
 Lifetime energy sensors (`total_grid_*`, `total_pv_energy`, `total_load_energy`,
 and meter `em_*_energy`) are ``total_increasing``. Home Assistant adds every
 upward jump to long-term ``sum`` statistics and does not drop spikes
-([sensor entity](https://developers.home-assistant.io/docs/core/entity/sensor/)).
+([sensor entity](https://contributors.home-assistant.io/core/entities/sensor/)).
 
 The integration therefore ignores readings that cannot be Wh on a home battery
 (negative, non-finite, above 1 GWh, or a single-poll jump above 5 MWh). A later
@@ -117,7 +118,7 @@ sane Open API value replaces a previously stored garbage floor instead of
 keeping it forever ([#70](https://github.com/taurgis/has-marstek-local-api/issues/70)).
 
 Already-recorded statistics are **not** rewritten. Use
-**Settings → Tools → Statistics** to delete the bad points if a spike was stored
+**Developer tools** > **Statistics** to delete the bad points if a spike was stored
 before this guard:
 https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
 
@@ -133,7 +134,7 @@ Home Assistant accumulates; it is **not** a meter reset. A reset is a
 decrease in a `total_increasing` sensor.
 
 If the Energy Dashboard shows a one-time production spike at the upgrade, use
-**Settings → Tools → Statistics** to locate and correct the transition:
+**Developer tools** > **Statistics** to locate and correct the transition:
 https://www.home-assistant.io/docs/tools/dev-tools/#statistics-tab
 
 Firmware **148** (including app labels such as `148.3`) keeps solar energy in
@@ -178,13 +179,13 @@ load or off-grid energy and its exact semantics vary by firmware.
 ## Venus C stops charging from excess solar in Auto mode
 
 That is Control firmware, not a Home Assistant bug, and the integration
-cannot repair it. HMG-50 Control — the firmware behind both Venus C 2.0 and
+cannot repair it. HMG-50 Control — the firmware behind both Venus C and
 Venus E 2.0 — gives the Local API server and the device's **own** UDP meter
 client a single Wi-Fi receive channel. Open API polling competes with the
 meter samples that Self-consumption (Auto) mode regulates on. When enough
 samples are lost the device treats the meter as disconnected and stops
 charging, even with clear grid export. Marstek warns about the same defect on
-Venus E2.0 and CT003.
+Venus E 2.0 and CT003.
 
 Which meter you pair decides whether it shares that socket. A Marstek CT and
 a Shelly are both read over the UDP client; a HomeWizard P1 and an Eco-Tracker
@@ -199,10 +200,10 @@ No HMG-50 build fixes it, **156 included**; its "Optimized OpenApi interface
 stability" note covers the API surface, not the shared channel. What you can
 do:
 
-1. A **warning** appears in Settings → Repairs for every HMG-50 entry.
+1. A **warning** appears in **Settings** > **System** > **Repairs** for every HMG-50 entry.
 2. Parallel API requests and Wi-Fi retransmits stay off on these builds, so
    the integration never puts a second datagram on the meter's channel.
-3. Raise the polling intervals (Configure → **Polling Intervals**). Less traffic means
+3. Raise the polling intervals (**Configure** > **Polling Intervals**). Less traffic means
    fewer lost meter samples; it does not remove the contention.
 4. If Auto mode keeps stalling, read grid power from the meter directly — a
    HomeWizard P1 or Shelly integration rather than through the battery — and
@@ -216,9 +217,9 @@ do:
 Firmware research notes:
 [tools/firmware/HMG50_METER_CHANNEL.md](../tools/firmware/HMG50_METER_CHANNEL.md).
 
-## Venus E2.0
+## Venus E 2.0
 
-Venus **E2.0 is not supported** (HMG-50). Open API GetDevice reports
+Venus **E 2.0 is not supported** (HMG-50). Open API GetDevice reports
 `device: "VenusE"`, which is not Venus E 3.0 (`VenusE 3.0` / `VNSE3-0`).
 Existing config entries fail setup; discovery and manual add abort. Using
 the integration with this model may disconnect the device from CT003 — the
@@ -230,11 +231,11 @@ When reporting an issue, enabling debug logging helps us diagnose UDP communicat
 
 ### Preferred: enable debug logging from the UI (no restart)
 
-1. Go to **Settings → Devices & Services**.
+1. Go to **Settings** > **Devices & services**.
 2. Open the **Marstek** integration.
-3. Open the **⋮** menu → **Enable debug logging**.
+3. Open the **⋮**menu** > ****Enable debug logging**.
 4. Reproduce the problem.
-5. Go back to the Marstek integration menu → **Disable debug logging** and download the log file.
+5. Go back to the Marstek integration menu > **Disable debug logging** and download the log file.
 
 Official Home Assistant docs: https://www.home-assistant.io/docs/configuration/troubleshooting/#enabling-debug-logging
 
@@ -259,6 +260,6 @@ Official Home Assistant docs: https://www.home-assistant.io/integrations/logger/
 - Home Assistant version + Marstek integration version
 - Steps to reproduce
 - Downloaded debug log (or the relevant excerpt around the error/traceback)
-- Downloaded diagnostics (Marstek integration menu → **⋮ → Download diagnostics**)
+- Downloaded diagnostics (Marstek integration menu > **⋮** > **Download diagnostics**)
 
 Note: debug logs may include sensitive details; please only include what’s relevant.

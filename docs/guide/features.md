@@ -11,8 +11,8 @@ Grouped by what you are trying to do. Each item links to the page with the detai
 
 - **State of charge, battery power, and status** (charging, discharging, idle). [Entities](../entities.md)
 - **Grid power** at the meter, in total and per phase, when a CT meter is connected. [Entities](../entities.md)
-- **Solar (PV) power, voltage, and current** per input, on Venus A and Venus D. Venus D reports up to four inputs. [Entities](../entities.md#pv-channel-sensors-pv1-pv4)
-- **Lifetime energy totals** for grid import, grid export, and solar. [Energy dashboard](../energy_dashboard.md)
+- **Solar (PV) power, voltage, and current** per input, on Venus A and Venus D. Venus D reports up to four inputs. [Entities](../entities.md#pv-channel-sensors-pv1-to-pv4)
+- **Lifetime energy totals** for battery charge and discharge, solar, and, when the CT meter reports them, grid import and export. [Energy dashboard](../energy_dashboard.md)
 - **Diagnostics**: a **Restarts** counter that tells real restarts from Wi-Fi dropouts, plus Wi-Fi signal, CT connection, and firmware version sensors you can turn on. [Why a battery goes offline](../firmware-resets.md)
 - **Battery details** such as temperature and remaining capacity. Off by default, because the request behind them has been linked to resets on some firmware. [Entities](../entities.md#diagnostic-sensors-disabled-by-default)
 

@@ -28,7 +28,7 @@ is available, the service call will return an error.
 | Mode | How to set it |
 |------|----------------|
 | Auto, AI | Operating-mode select |
-| UPS | Operating-mode select, only when the firmware profile allows it (`ver >= 150` on ES-capable families, including Venus E mini) |
+| UPS | Operating-mode select, only when the firmware profile allows it (`ver >= 150` on Venus A, D, E 3.0 and Venus E mini; never on Venus C) |
 | Manual, Passive | Parameterized services below (the select does not apply empty defaults) |
 
 `Set.Ver` and factory reset are **not** services, entities, or recommended actions.
@@ -80,7 +80,7 @@ Configure multiple schedules at once (YAML list).
   - Optional per item: `days`, `power`, `enable`
   - `start_time`/`end_time` must be strings in `HH:MM` format
 
-### Example YAML (common patterns)
+### Example YAML
 
 > Replace `YOUR_DEVICE_ID` with the device ID from the device selector in the UI.
 
@@ -124,7 +124,7 @@ data:
       enable: true
 ```
 
-#### 2) Nighttime charging (cheap tariff window)
+#### 2) Charge at night on a cheap tariff
 
 ```yaml
 action: marstek.set_manual_schedules
@@ -214,7 +214,7 @@ Trigger an immediate refresh.
 
 ---
 
-## Device Actions
+## Device actions
 
 The integration provides **device actions** for use in automations. These appear in the automation editor when you select "Device" as the action type and choose your Marstek battery.
 
@@ -247,13 +247,13 @@ All device actions respect the **Enforce 800 W discharge limit** option configur
 ### Technical details
 
 - Actions use **Manual mode** internally with a 24-hour schedule (00:00–23:59, all days)
-- Commands include retry logic (up to 8 attempts) with exponential backoff
+- Commands are retried up to 8 times, waiting about one poll cycle (plus a little random jitter) between attempts
 - Verification confirms the device responded correctly before completing
 - Polling is paused during command execution to avoid UDP traffic conflicts
 
 ---
 
-## Notes on safety & responsiveness
+## Safety and responsiveness
 
 - By default, the integration avoids concurrent UDP bursts; control actions are designed to pause polling while sending commands.
 - If **Parallel API requests** is enabled in [Options](options.md), status polling intentionally uses concurrent requests and may be less stable on Wi-Fi.

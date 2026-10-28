@@ -3,7 +3,7 @@
 ## HACS (recommended)
 
 1. Open **HACS** in Home Assistant.
-2. **Custom repositories** → add this repository as **Integration**.
+2. **Custom repositories**** > **add this repository as**Integration**.
 3. Search for **Marstek** and install.
 4. Restart Home Assistant.
 
@@ -18,7 +18,7 @@
 - Device and HA on the **same LAN segment**
 - **Open API enabled** in the Marstek app
 - UDP **port 30000** reachable
-- Venus **E2.0 is not supported** (may disconnect the device from CT003)
+- Venus **E 2.0 is not supported** (may disconnect the device from CT003)
 
 ## Next
 

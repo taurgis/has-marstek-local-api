@@ -1,3 +1,7 @@
+---
+next: false
+---
+
 # Development
 
 Install and day-to-day use live in the [documentation index](README.md). This page is for working on the integration.
@@ -234,7 +238,7 @@ Firmware images come from Marstek's public update server and community archives;
 
 If your combination is absent from the table above, or shows **Mock only**, please **[open a firmware coverage issue](https://github.com/taurgis/has-marstek-local-api/issues/new?template=firmware_coverage.yml)**. The issue form asks for the following.
 
-1. **Your device model and firmware version.** In Home Assistant, go to **Settings → Devices & services → Marstek** and open the device. The **Device info** card shows the model and **Firmware**. That number is the Open API `ver` this table uses. If the integration is not set up yet, run `python3 tools/query_device.py <device IP> --port <Open API port>` from a checkout of this repository and copy `device` and `ver` from the reply. The Marstek app shows a version too, and it can be written differently: `147.6` in the app is `ver` `1476` here.
+1. **Your device model and firmware version.** In Home Assistant, go to **Settings** > **Devices & services** > **Marstek** and open the device. The **Device info** card shows the model and **Firmware**. That number is the Open API `ver` this table uses. If the integration is not set up yet, run `python3 tools/query_device.py <device IP> --port <Open API port>` from a checkout of this repository and copy `device` and `ver` from the reply. The Marstek app shows a version too, and it can be written differently: `147.6` in the app is `ver` `1476` here.
 2. **What works and what does not.** Say so even if everything looks right. For a mock-only version, one owner confirming the values is what turns our guess into a checked fact.
 3. **Diagnostics (optional).** On the device page, open the ⋮ menu and choose **Download diagnostics**. MAC addresses, IP addresses and the Wi-Fi name are redacted, but check the file before you attach it.
 

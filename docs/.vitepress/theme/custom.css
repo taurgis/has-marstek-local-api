@@ -41,6 +41,19 @@
   --vp-code-color: #5eead4;
 }
 
+/* The default code-language label and tinted callout code fall below 4.5:1. */
+.vp-doc [class*='language-'] > span.lang {
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc .custom-block code {
+  color: #115e59;
+}
+
+.dark .vp-doc .custom-block code {
+  color: var(--vp-c-text-1);
+}
+
 :focus-visible {
   outline: 2px solid var(--vp-c-brand-1);
   outline-offset: 2px;
@@ -196,6 +209,23 @@
 .mk-compare .vp-doc td:first-child {
   min-width: 11rem;
   font-weight: 600;
+}
+
+/* On phones the row labels stay in view while the columns scroll past them. */
+@media (max-width: 767px) {
+  .mk-compare .vp-doc th:first-child,
+  .mk-compare .vp-doc td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 8.5rem;
+    background-color: inherit;
+    box-shadow: 1px 0 0 var(--vp-c-divider);
+  }
+
+  .mk-compare .vp-doc thead th:first-child {
+    background-color: var(--vp-c-bg-soft);
+  }
 }
 
 /* Let the comparison use the width the outline would have taken. */

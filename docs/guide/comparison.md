@@ -10,7 +10,7 @@ description: An honest comparison of Home Assistant integrations for Marstek bat
 There are several ways to get a Marstek battery into Home Assistant. They differ mostly in **how** they talk to the battery, and that decides which batteries they support and what extra hardware you need. This page is written by the maintainers of one of them, so check the links and judge for yourself.
 
 > [!NOTE] Last reviewed 2026-10-28
-> Release and activity facts come from each project's own GitHub page on that date. Projects change quickly. Corrections are welcome as a [pull request](https://github.com/taurgis/has-marstek-local-api/edit/main/docs/guide/comparison.md).
+> Release and activity facts come from each project's own GitHub page on that date. Projects change quickly. Every change to this page is in its [Git history](https://github.com/taurgis/has-marstek-local-api/commits/main/docs/guide/comparison.md). Corrections are welcome as a [pull request](https://github.com/taurgis/has-marstek-local-api/edit/main/docs/guide/comparison.md).
 
 ## First, pick a connection type
 
@@ -35,19 +35,21 @@ All three use the same local interface as this one, so they share its limits: po
 | Manual schedules | <span class="mk-yes">Yes</span> | <span class="mk-partial">Experimental</span> | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
 | Depth of discharge, LED, Bluetooth | <span class="mk-yes">Yes</span>, firmware-gated | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span> | <span class="mk-no">No</span> |
 | Several batteries as one device | <span class="mk-no">No</span> (comparison dashboard) | <span class="mk-no">No</span> | <span class="mk-no">No</span> | <span class="mk-yes">Yes</span> |
-| Battery health estimate | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span> | <span class="mk-no">No</span> | <span class="mk-no">No</span> |
+| Battery health estimate | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span>¹ | <span class="mk-no">No</span>¹ | <span class="mk-no">No</span>¹ |
 | Install | HACS custom | HACS custom | HACS custom | HACS custom |
-| Latest release | [v1.11.0](https://github.com/taurgis/has-marstek-local-api/releases) (2026-10-28) | V0.2.3 (2026-10-27) | None published | 1.2.0.rc7 (2025-11-03) |
-| Recent activity | Active (Oct 2026) | Active | Active (Sept 2026) | No commits since Nov 2025 |
-| License | MIT | MIT | MIT | Not checked |
+| Latest release | [v1.11.0](https://github.com/taurgis/has-marstek-local-api/releases) (2026-10-28) | v0.2.3 (2026-10-27) | None published | 1.2.0.rc7 (2025-11-03) |
+| Recent activity | Active (Oct 2026) | Active | Active (Sept 2026) | No commits since Nov 2025. An active fork exists (below) |
+| License | MIT | MIT | MIT | None (no license file) |
 
 ### What to know about each
 
-**Marstek (vendor).** Published by Marstek's own GitHub organization. It is the staging copy for a [pull request to add Marstek to Home Assistant itself](https://github.com/home-assistant/core/pull/179635). That pull request is still open and, in its current form, adds sensors only. Its HACS version does more, including a factory-reset button, which this integration leaves out on purpose. If it is merged, Marstek support will come with Home Assistant out of the box.
+**Marstek (vendor).** Published by Marstek's own GitHub organization. It is the staging copy for a [pull request to add Marstek to Home Assistant itself](https://github.com/home-assistant/core/pull/179635). That pull request is still a draft and, in its current form, adds sensors only. Its HACS version does more, including a factory-reset button, which this integration leaves out on purpose. If it is merged, Marstek support will come with Home Assistant out of the box.
 
 **yuyuki.** Focused on one model, Venus E, with mode, passive, and schedule control. A good fit if that's all you have and you want a smaller integration.
 
-**jaapp.** The only one that adds several batteries together into a "system" device. It is still a release candidate and has had no commits since November 2025.
+**jaapp.** Adds several batteries together into a "system" device. The original is still a release candidate and has had no commits since November 2025. [Flodesirat's fork](https://github.com/Flodesirat/ha-marstek-local-api) keeps the system device and is actively maintained (GPL-3.0).
+
+¹ [Marstek Capacity Monitor](https://github.com/satscan1/marstek-capacity-monitor), in the HACS default store, measures capacity next to any of these integrations.
 
 **This integration.** The broadest model support (the only one here that lists Venus E mini), firmware-aware controls, a battery health estimate, and tests that run Marstek's own firmware in an emulator. In exchange, it is one entry per battery with no combined system device. See [Limitations](limitations.md).
 
@@ -61,9 +63,9 @@ These need a wired connection, usually an RS485-to-Ethernet adapter, but they do
 ### Omnibattery
 
 - **Repository:** [ffunes/Omnibattery](https://github.com/ffunes/Omnibattery)
-- **Models:** Venus A, D, E v2 and v3, plus batteries from other brands.
-- **What it does:** a full energy manager with zero-export control, time slots, price-based charging, and up to 10 batteries.
-- **Install:** HACS. **License:** GPL-3.0. **Latest release:** 1.5.0 (2026-10-04).
+- **Models:** Venus A, D, E v2 and v3, plus batteries from other brands. Its introduction also mentions Venus C.
+- **What it does:** a full energy manager with zero-export control, time slots, price-based charging, combined system sensors, and up to 10 batteries.
+- **Install:** HACS custom repository. **License:** GPL-3.0. **Latest release:** 1.5.0 (2026-10-04).
 
 ### Marstek Venus Modbus
 
@@ -86,8 +88,8 @@ Omnibattery replaces the earlier Marstek Venus Energy Manager by the same author
 ### hm2mqtt (MQTT)
 
 - **Repository:** [tomquist/hm2mqtt](https://github.com/tomquist/hm2mqtt)
-- **Covers:** B2500, Venus, Jupiter, and CT meters, with sensors and control.
-- **Install:** a Home Assistant add-on or Docker container, not HACS. Venus and Jupiter need the companion hame-relay to stay online in the Marstek app.
+- **Covers:** B2500, Venus A, C, D, E, E mini (beta), Jupiter, and CT meters, with sensors and control.
+- **Install:** a Home Assistant add-on or Docker container, not HACS. Venus and Jupiter keep talking to Marstek's cloud. The companion hame-relay mirrors that data locally using your Marstek account, so this route still depends on the cloud. [marsrelay](https://github.com/tomquist/marsrelay) is a newer offline option.
 
 ### Marstek Cloud
 
@@ -99,20 +101,20 @@ Omnibattery replaces the earlier Marstek Venus Energy Manager by the same author
 
 - **Repository:** [Cappa83/marstek-ble-ha](https://github.com/Cappa83/marstek-ble-ha)
 - **Covers:** CT002 and Venus E 3.0, read-only.
-- **Install:** HACS custom repository.
+- **Install:** HACS default store. **License:** MIT.
 
 ### AstraMeter
 
-[AstraMeter](https://github.com/tomquist/b2500-meter) (the b2500-meter project) is not an integration, but it is useful next to one: it pretends to be a Marstek CT meter, so a battery in self-adaptation mode can follow a meter you already have in Home Assistant. This project uses it to test against real firmware.
+[AstraMeter](https://github.com/tomquist/AstraMeter) (formerly b2500-meter) is not an integration, but it is useful next to one: it pretends to be a Marstek CT meter, so a battery in self-adaptation mode can follow a meter you already have in Home Assistant. This project uses it to test against real firmware.
 
 ## Which one should I use?
 
 - **Venus A, D, E 3.0, or E mini, and you want no extra hardware:** an Open API integration. Pick this one for the widest model support, firmware-aware controls, and battery health. Pick the vendor one if you prefer Marstek's own code.
-- **Venus E 2.0:** a Modbus integration. No Open API integration supports it safely.
+- **Venus E 2.0:** a Modbus integration, or hm2mqtt over MQTT. No Open API integration supports it safely. On firmware 158 reads work, but control commands still fail ([#121](https://github.com/taurgis/has-marstek-local-api/issues/121)).
 - **Venus C:** an Open API integration works, but read the [Venus C caveat](supported-devices.md#venus-c-caveat) first.
 - **Venus E mini:** this is the only Open API integration above that lists it. hm2mqtt has beta support over MQTT.
 - **B2500 or Jupiter:** hm2mqtt. There is no local Open API for those.
 - **You want an automatic energy manager rather than building automations yourself:** Omnibattery.
-- **You want several batteries combined into one device:** jaapp's integration, keeping its inactivity in mind.
+- **You want several batteries combined into one device:** Flodesirat's maintained fork of jaapp's integration, or Omnibattery over Modbus.
 
 Decided on this one? [Check your battery](supported-devices.md), then follow [Getting started](getting-started.md). It takes about 20 minutes.

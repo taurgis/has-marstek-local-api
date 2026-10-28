@@ -2,7 +2,7 @@
 
 ## Add the integration
 
-1. Go to **Settings → Devices & services**.
+1. Go to **Settings** > **Devices & services**.
 2. Click **Add integration**.
 3. Search for **Marstek**.
 4. Select your device from the discovered list and complete setup.
@@ -41,4 +41,4 @@ When the new `ver` unlocks or removes setup-time capabilities (for example Venus
 
 ## Unsupported devices
 
-Venus **E2.0** is not supported.
+Venus **E 2.0** is not supported.

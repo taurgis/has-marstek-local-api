@@ -12,7 +12,7 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 > [!WARNING] Battery detail sensors start disabled
 > The `Bat.GetStatus` API call is suspected to trigger spontaneous device resets on some Marstek firmwares ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The entities that depend on it — Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`) — are therefore **disabled by default on new installations**, and the integration only sends `Bat.GetStatus` while at least one of them is enabled. Enabling any of them resumes the call automatically on Control firmware **150+**.
 >
-> **Reset-prone firmware (Control generation below 150):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, setup or the scanner reloads the config entry so they can be created again (still disabled by default).
+> **Reset-prone firmware (Venus A, D or E 3.0 below 150, Venus C below 156, or an unknown firmware number):** those five entities are **omitted** and `Bat.GetStatus` is never sent, even if they were previously enabled. After a firmware update to 150+, setup or the scanner reloads the config entry so they can be created again (still disabled by default).
 >
 > **Upgrading an existing 150+ install?** Entities that were already registered stay enabled — upgrades never disable entities on firmware that can safely opt in. To stop `Bat.GetStatus` on a 150+ installation, disable the five entities above manually once (device page → entity → ⚙️ → *Enabled* off).
 
@@ -37,6 +37,9 @@ Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.
 | Total grid output energy | `total_grid_output_energy` | Wh | — | Enabled |
 | Total grid input energy | `total_grid_input_energy` | Wh | — | Enabled |
 | Total load energy | `total_load_energy` | Wh | — | Enabled |
+| Battery total capacity | `bat_cap` | Wh | — | Enabled (if reported; not created on Venus E mini, whose firmware reports remaining energy there) |
+| Usable capacity | `battery_usable_capacity` | Wh | — | Enabled. Unknown until enough clean measurements exist; see [Usable capacity](usable-capacity.md). |
+| Battery state of health | `battery_state_of_health` | % | — | Enabled (when the rated capacity is known) |
 
 ### Restarts
 
@@ -53,7 +56,7 @@ dropout, or a brief network reset (listed, not counted). Attributes:
 `tracked_since` (when the log started), and `outages` (every outage of the last 30 days, for the card's Restarts tab;
 kept out of the recorder).
 
-### PV channel sensors (PV1–PV4)
+### PV channel sensors (PV1 to PV4)
 
 Created when the device reports those values (typically Venus A/D with PV channels).
 Values are stored in watts. Channel 1 is deciwatts on observed firmware
@@ -89,7 +92,6 @@ Do not skip the ÷10 ([#57](https://github.com/taurgis/has-marstek-local-api/iss
 | Wi‑Fi gateway | `wifi_sta_gate` | — | Diagnostic | Disabled |
 | Wi‑Fi subnet mask | `wifi_sta_mask` | — | Diagnostic | Disabled |
 | Wi‑Fi DNS | `wifi_sta_dns` | — | Diagnostic | Disabled |
-| Battery total capacity | `bat_cap` | Wh | Diagnostic | Disabled (if supported) |
 | Battery temperature | `bat_temp` | °C | Diagnostic | Disabled |
 | Battery remaining capacity | `bat_capacity` | Wh | Diagnostic | Disabled |
 | Battery rated capacity | `bat_rated_capacity` | Wh | Diagnostic | Disabled |
@@ -99,6 +101,7 @@ Do not skip the ÷10 ([#57](https://github.com/taurgis/has-marstek-local-api/iss
 | BLE MAC | `ble_mac` | — | Diagnostic | Disabled |
 | Wi‑Fi MAC | `wifi_mac` | — | Diagnostic | Disabled |
 | MAC address | `mac` | — | Diagnostic | Disabled |
+| API success rate (overall, and one per request type: ES.GetMode, ES.GetStatus, EM.GetStatus, PV.GetStatus, Wifi.GetStatus, Bat.GetStatus, ES.SetMode) | `api_success_rate_*` | % | Diagnostic | Disabled |
 
 ## Binary sensors (diagnostic, disabled by default)
 
@@ -116,15 +119,16 @@ Do not skip the ÷10 ([#57](https://github.com/taurgis/has-marstek-local-api/iss
 
 | Availability | UPS on the select |
 |---|---|
-| Venus A/C/D/E and Venus E mini with `ver >= 150` | Yes |
+| Venus A, D, E 3.0 and Venus E mini with `ver >= 150` | Yes |
+| Venus C (HMG-50), any firmware | No |
 | Venus E mini with a known `ver` below 150 | No (SYS still appears; UPS does not) |
 | Unknown or unparseable `ver` | No |
 
-> Auto, AI, and UPS (when listed) are selectable directly. Manual and Passive still require extra parameters and are set via services (see [Services](services.md)). `Set.Ver` and factory reset are not operating modes and are not offered here.
+> Auto, AI, and UPS (when listed) are selectable directly. Manual and Passive still require extra parameters and are set via services (see [Services](services.md)). Venus E mini firmware 301 refuses Passive mode. `Set.Ver` and factory reset are not operating modes and are not offered here.
 
 ## Number (configuration)
 
-Created only when the firmware profile reports SYS support. Venus A/C/D/E need firmware `ver >= 150`. Venus E mini needs a known integer `ver` (no 150 gate). Unknown or unparseable firmware omits these controls.
+Created only when the firmware profile reports SYS support. Venus A, D and E 3.0 need firmware `ver >= 150`. Venus C (HMG-50) never gets them. Venus E mini needs a known integer `ver` (no 150 gate). Unknown or unparseable firmware omits these controls.
 
 | Entity name | Key | Unit | Range | Category | Default |
 |---|---|---|---|---|---|

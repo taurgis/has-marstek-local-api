@@ -67,8 +67,14 @@ export default defineConfig({
       // Raw <img src="screenshots/x.png"> is relative on GitHub, but Vue reads
       // a bare path as a package import. Make it explicitly relative.
       md.core.ruler.push('relative_html_img', (state) => {
+        // The first image may be the largest paint, so only later ones are lazy.
+        let seen = 0;
+        const lazy = (html: string) =>
+          html.replace(/<img\b(?![^>]*\sloading=)/gi, (tag) =>
+            seen++ === 0 ? `${tag} decoding="async"` : `${tag} loading="lazy" decoding="async"`,
+          );
         const fix = (html: string) =>
-          html.replace(/(<img\b[^>]*?\ssrc=")(?![a-z]+:|\/|\.)/gi, '$1./');
+          lazy(html.replace(/(<img\b[^>]*?\ssrc=")(?![a-z]+:|\/|\.)/gi, '$1./'));
         for (const token of state.tokens) {
           if (token.type === 'html_block') token.content = fix(token.content);
           for (const child of token.children ?? []) {
@@ -190,7 +196,11 @@ export default defineConfig({
     socialLinks: [{ icon: 'github', link: repoUrl }],
 
     // https://vitepress.dev/reference/default-theme-search
-    search: { provider: 'local' },
+    search: {
+      provider: 'local',
+      // Rank page and section titles above body text.
+      options: { miniSearch: { searchOptions: { boost: { title: 4, text: 2, titles: 1 } } } },
+    },
 
     editLink: {
       pattern: `${repoUrl}/edit/main/docs/:path`,

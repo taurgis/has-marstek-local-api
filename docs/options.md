@@ -1,6 +1,6 @@
 # Options
 
-Open **Settings → Devices & services → Marstek → (device) → Configure**.
+Open **Settings** > **Devices & services** > **Marstek** > your battery > **Configure**.
 
 ## Polling Intervals
 
@@ -34,8 +34,11 @@ inter-request delay.
   to three extra copies, at 0.5 s, 2.5 s and 5 s, while the device stays
   silent; copies past the **Request timeout** are skipped. Ethernet replies
   typically arrive well under 500 ms, so no copy is sent.
-- Ignored on Control firmware the integration treats as reset-prone
-  (generation below 150, including Open API `ver` 1476 / app 147.6). Venus E
+- Ignored on Venus C and other HMG-50 firmware (the Open API shares a Wi-Fi
+  channel with the battery's meter link there), and on firmware the
+  integration treats as reset-prone (Venus A, D and E 3.0 below 150, including
+  Open API `ver` 1476 / app 147.6; HMG-50 below 156; a missing or unknown
+  `ver`). Venus E
   3.0 **150** is the vendor Local API Ethernet fix. Reset-prone devices also
   serialize unicast requests and skip `Bat.GetStatus`.
 
@@ -76,7 +79,7 @@ Charging is always validated against the same per-family maximum (as a negative 
 
 <img src="screenshots/options-battery-health-dashboard.png" alt="Battery health dashboard option with Show Battery health in the sidebar turned on." width="720" />
 
-What the page shows, and how to add the same cards to a dashboard you already have, is the [visual tour](screenshots.md#2-battery-health-sidebar-dashboard).
+What the page shows, and how to add the same cards to a dashboard you already have, is the [visual tour](screenshots.md#battery-health-sidebar-dashboard).
 
 ## Energy meter (optional)
 
