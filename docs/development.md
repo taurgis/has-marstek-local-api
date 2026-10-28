@@ -132,7 +132,7 @@ npm install
 npm run changeset
 ```
 
-The `Changesets` GitHub Action keeps a `Release` PR up to date on `main`. Its version step updates `CHANGELOG.md`, `package.json`, `custom_components/marstek/manifest.json`, and `pyproject.toml`. After that PR is merged, the workflow pushes the matching `v*` tag and the existing release workflow creates the GitHub release.
+The `Changesets` GitHub Action keeps a `Release` PR up to date on `main`. Its version step updates `CHANGELOG.md`, `package.json`, `custom_components/marstek/manifest.json`, and `pyproject.toml`. After that PR is merged, the same workflow pushes the matching `v*` tag and creates the GitHub release from the changelog.
 
 If you are continuing an RC train, enter prerelease mode first:
 
@@ -219,7 +219,7 @@ Firmware images come from Marstek's public update server and community archives;
 
 ### How we test in Docker
 
-- **★ starts by default.** A plain `docker compose up -d` in `.devcontainer/` starts Home Assistant, the four mock-only devices and four emulators: Venus E 150, Venus A 150, Venus D 150 and Venus C 156. The mix of ports 30000, 30002 and 30004 also tests that devices on different Open API ports each get their own socket.
+- **★ starts by default.** A plain `docker compose up -d` in `.devcontainer/` starts Home Assistant, the three mock-only devices and four emulators: Venus E 150, Venus A 150, Venus D 150 and Venus C 156. The mix of ports 30000, 30002 and 30004 also tests that devices on different Open API ports each get their own socket.
 - **Other versions run in batches.** Each emulator needs about half a CPU core and 550 MB of RAM, so start the others by name, a few at a time, then remove them before the next batch:
 
   ```bash

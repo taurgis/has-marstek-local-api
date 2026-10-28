@@ -208,8 +208,9 @@ of charge and power. Its method, from its
 [how-it-works page](https://github.com/satscan1/marstek-capacity-monitor/blob/main/docs/03-how-it-works.md)
 and `calc.py`:
 
-- It integrates **DC** battery power read over Modbus, and refuses AC power
-  sensors because they include conversion losses.
+- It integrates **DC** battery power from any source (ESPHome, Modbus or
+  another integration), and warns when you pick an AC power sensor because
+  AC includes conversion losses.
 - It counts only **full discharges**, from 95% or higher to 15% or lower,
   found as swings with a 3-point hysteresis. It publishes the median of the
   last three in the past year, scaled to the depth-of-discharge band.
@@ -266,15 +267,16 @@ bat_power = pv_power - ongrid_power - offgrid_power
 with the API sign (positive charges). For a Venus E with no PV that is the
 inverter AC port, which is what the estimator integrates. For Venus A and
 Venus D it is an energy balance, so a wrong PV wattage becomes a wrong
-battery wattage. Channel 1 stays deciwatts through firmware 150.9 (issue
+battery wattage. Channel 1 is still deciwatts on every firmware checked so far, including
+150.9 and 151 (issue
 [#57](https://github.com/taurgis/has-marstek-local-api/issues/57)); the
 parser scales it to watts before that balance. A tenfold PV mistake would
 land outside the 15–135 percent nameplate band and be dropped, rather than
 published as capacity.
 
-Lifetime energy is the untrustworthy counter. Venus A at 148 and below
-stores solar energy in Wh; Venus A 149 and every known family at 150 and
-above store it in 0.01 kWh, and EM energy at those generations is 0.1 Wh
+Lifetime energy is the untrustworthy counter. Venus A up to 148 stores
+solar energy in Wh. From Venus A 148.7 and Venus D 149 on, and on every known
+family from 150, it is 0.01 kWh, and EM energy at those generations is 0.1 Wh
 (Open API note, section 4.2, issues
 [#35](https://github.com/taurgis/has-marstek-local-api/issues/35) and
 [#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). Grid

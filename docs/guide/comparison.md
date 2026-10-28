@@ -30,7 +30,7 @@ All three use the same local interface as this one, so they share its limits: po
 |---|---|---|---|---|
 | Repository | [taurgis/has-marstek-local-api](https://github.com/taurgis/has-marstek-local-api) | [marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek) | [yuyuki/hacs_marstek_venus_e](https://github.com/yuyuki/hacs_marstek_venus_e) | [jaapp/ha-marstek-local-api](https://github.com/jaapp/ha-marstek-local-api) |
 | Models | Venus A, C, D, E 3.0, E mini | Venus E 3.0, A, D | Venus E | Venus C, D, E |
-| Mode select | Auto, AI, UPS. Manual and Passive through device actions and services | Auto, AI, Manual, UPS | Auto, AI, Manual, Passive | Buttons for Auto, AI, Manual |
+| Mode select | Auto, AI, and UPS where the firmware allows it. Manual and Passive are shown, but set through device actions and services | Auto, AI, Manual, UPS | Auto, AI, Manual, Passive | Buttons for Auto, AI, Manual |
 | Passive mode | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> (service) | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
 | Manual schedules | <span class="mk-yes">Yes</span> | <span class="mk-partial">Experimental</span> | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
 | Depth of discharge, LED, Bluetooth | <span class="mk-yes">Yes</span>, firmware-gated | <span class="mk-yes">Yes</span> | <span class="mk-no">No</span> | <span class="mk-no">No</span> |
@@ -43,7 +43,7 @@ All three use the same local interface as this one, so they share its limits: po
 
 ### What to know about each
 
-**Marstek (vendor).** Published by Marstek's own GitHub organization. It is the staging copy for a [pull request to add Marstek to Home Assistant itself](https://github.com/home-assistant/core/pull/179635). That pull request is still a draft and, in its current form, adds sensors only. Its HACS version does more, including a factory-reset button, which this integration leaves out on purpose. If it is merged, Marstek support will come with Home Assistant out of the box.
+**Marstek (vendor).** Published by Marstek's own GitHub organization. Marstek also has a [pull request open to add a Marstek integration to Home Assistant itself](https://github.com/home-assistant/core/pull/179635). That pull request is still a draft and, in its current form, adds sensors only. Its HACS version does more, including a factory-reset button, which this integration leaves out on purpose. If it is merged, Marstek support will come with Home Assistant out of the box.
 
 **yuyuki.** Focused on one model, Venus E, with mode, passive, and schedule control. A good fit if that's all you have and you want a smaller integration.
 
@@ -63,8 +63,8 @@ These need a wired connection, usually an RS485-to-Ethernet adapter, but they do
 ### Omnibattery
 
 - **Repository:** [ffunes/Omnibattery](https://github.com/ffunes/Omnibattery)
-- **Models:** Venus A, D, E v2 and v3, plus batteries from other brands. Its introduction also mentions Venus C.
-- **What it does:** a full energy manager with zero-export control, time slots, price-based charging, combined system sensors, and up to 10 batteries.
+- **Models:** Venus A, C (v2/v3), D, E (v2/v3), plus batteries from other brands.
+- **What it does:** a full energy manager with zero-export control, time slots, price-based charging, and up to 10 batteries.
 - **Install:** HACS custom repository. **License:** GPL-3.0. **Latest release:** 1.5.0 (2026-10-04).
 
 ### Marstek Venus Modbus
@@ -101,7 +101,7 @@ Omnibattery replaces the earlier Marstek Venus Energy Manager by the same author
 
 - **Repository:** [Cappa83/marstek-ble-ha](https://github.com/Cappa83/marstek-ble-ha)
 - **Covers:** CT002 and Venus E 3.0, read-only.
-- **Install:** HACS default store. **License:** MIT.
+- **Install:** HACS custom repository. **License:** Apache-2.0.
 
 ### AstraMeter
 

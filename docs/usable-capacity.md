@@ -202,7 +202,7 @@ adds a UDP request.
 the Open API usually omits `bat_power`, and the entity is
 `ongrid_power + offgrid_power - pv_power` (positive discharges). Do not feed
 that entity to a tool that wants DC battery power. Marstek Capacity Monitor
-refuses AC power for this reason; using this entity there counts inverter
+warns when you pick an AC power sensor for this reason; using this entity there counts inverter
 losses as pack energy.
 
 Home Assistant records them as long-term statistics because usable capacity
@@ -254,7 +254,7 @@ plus 150 seconds, which is how long one poll can spend on its own requests
 (six serial reads at the maximum 30 second delay). A missed poll is another
 full interval and still ends the window. Raising the constant to 300 seconds
 instead would let a 30 second poll stitch across a five-minute hole.
-Power below 150 W ends the window. The window starts on the first poll
+Power below 150 W for more than two polls in a row, or a change of direction, ends the window. The window starts on the first poll
 after the reported state of charge changes, not on whatever poll opened it.
 It is accepted on the poll that completes a 20-point move, which is also the
 first poll after a change, so both ends sit the same distance past a step.
@@ -452,11 +452,10 @@ restart from what a boot changes:
   count only when the device was unreachable in between: while it answers,
   a user or a flaky CT changes them on their own.
 
-Late Wi-Fi is not an outage. On firmware that tolerates a repeated read
-(Control 150+, HMG-50 156+) the client sends a read again after 0.5, 2.5 and
-5 seconds, so a reply the Wi-Fi module dropped is recovered inside the same
-poll and never reaches the sensor. Older firmware gets no retransmit, so one
-lost reply there is already a failed poll. A poll that
+Late Wi-Fi is not an outage. On Control 150 and later (Venus A, D, E 3.0
+and Venus E mini) the client sends a read again after 0.5, 2.5 and 5 seconds, so a reply the Wi-Fi module dropped is recovered inside the same
+poll and never reaches the sensor. Older firmware and HMG-50 (Venus C) get no
+retransmit, so one lost reply there is already a failed poll. A poll that
 still gets no reply opens an outage. When the device answers again, the
 outage is a **restart** if a trace above came with it, and a **dropout**
 otherwise. Dropouts with no restart point at the network, and the tab says
@@ -481,7 +480,7 @@ measured from is not stored.
 
 The plug's self-test also follows something smaller than a restart. Control
 150 resets its own network chip while its cloud uploads keep failing: the
-Ethernet chip about every 35 minutes, the Wi-Fi module about every 15 to 30
+Ethernet chip about every 35 minutes, the Wi-Fi module about every 15 minutes
 ([firmware notes](../tools/firmware/ANALYSIS.md#network-chip-resets)). The
 battery leaves the LAN for 5 to 10 seconds, asks the router for an address
 again, and the plug shows the same start-up check, but its energy totals,
@@ -532,9 +531,10 @@ cloud. Check the firewall, DNS filter or VLAN it sits behind.
   watt-hours per 100 points.
 - A poll whose `ES.GetStatus` did not answer is not a sample. `ES.GetMode`
   can still bring a new state of charge while battery power is the previous
-  poll's watts. That pair is a hole: the open window is dropped, and the
-  next fresh poll does not integrate across it. The power sensor still
-  shows the carried watts.
+  poll's watts, so that pair is skipped. The open window stays open, and
+  the next answered poll is measured from the last good one, as long as the
+  gap is still inside the limit above. The power sensor still shows the
+  carried watts.
 - Idle, short cycles, mode changes, and gaps longer than the limit above
   are ignored. A battery that only trickles may take days to publish a number.
 - No extra polling is added. Disabling the two entities in the registry hides
@@ -546,9 +546,8 @@ cloud. Check the firewall, DNS filter or VLAN it sits behind.
 The steps to link a meter are in [Link a smart plug](#link-a-smart-plug). This section is how those numbers are calculated.
 
 The battery reports its own AC power, but not the power it draws to stay
-awake. Marstek specifies above 93.5% efficiency per direction, while tests of
-the Venus E 3.0 measured a round trip of about 83% to 85% and an idle draw of
-5 W to 8 W. A smart plug between the battery and the mains (a HomeWizard
+awake. Owners report a round trip of roughly 83% to 85% and an idle draw of
+a few watts on the Venus E 3.0, below what the spec sheet suggests. A smart plug between the battery and the mains (a HomeWizard
 Energy Socket, a Shelly plug, or any meter with total energy sensors) sees
 both.
 
@@ -580,7 +579,7 @@ How it is measured:
 - The integration remembers the first meter reading at each whole state of
   charge for 30 days. When the pack is back at a remembered level after at
   least one full capacity went in, it publishes the quotient, at most once a
-  day, and only between 50% and 100%.
+  day, and only when the result is between 50% and 100% efficiency.
 - Solar or off-grid power above 20 W reaches the pack without crossing the
   plug, so such a poll starts the measurement again. So does a counter that
   went down or a different pair of sensors.
@@ -629,14 +628,16 @@ device reports (`bat_cap`).
   so the number is the last value written from Home Assistant (88% until
   then). Without that entity (older firmware), the card assumes the
   firmware's default of 88%, so the time still runs to 12% and never to 0%.
-  Four tabs hold the
+  Five tabs hold the
   detail: **Capacity** (weekly estimates with each run as a dot and the
   rating as a dashed line), **Runs** (every kept run, newest first, eight to
   a page, filterable by direction, each with its deviation from the median
   for its direction), and **Energy** (lifetime AC in and out, solar when the
   battery has a solar counter, the backup socket when it has delivered energy,
-  and equivalent full cycles), and **Restarts** (the device restarts and
-  network dropouts of the last 30 days by day, newest first).
+  and equivalent full cycles), **Restarts** (the device restarts and
+  network dropouts of the last 30 days by day, newest first), and
+  **Corrections** (the newest ten times the battery reset its own charge
+  level).
 
   The Capacity tab can download the weekly estimates as a CSV file
   (`week_start`, `usable_wh`, `rated_wh`), and the Runs tab can download
@@ -660,14 +661,14 @@ The health card's visual editor sets the device, a title, whether the tabs
 show, and which tab opens first. The card picker lists both cards by their
 English names in every language; the card text follows your language.
 
-The cards read the `windows`, `history`, and `active_window` attributes of
+The cards read the `windows`, `history`, `active_window` and `soc_corrections` attributes of
 the usable capacity sensor; the state of health sensor leaves them out. They
 change only when a run is accepted, the estimate moves, a new week starts, or
 state of charge moves during a run, so a poll that changes nothing writes no
 new state. `history` holds `week_start` (a unix time) and `usable_wh` for each
 week; the full weekly points stay in the Store file below. `active_window` holds
 the direction, `started_at`, the start and current state of charge, and the
-progress toward the 20-point threshold. The recorder skips all three
+progress toward the 20-point threshold. The recorder skips all four
 attributes, because the cards only need their current value.
 
 Accepted windows stay in `.storage/marstek.usable_capacity.<entry_id>` with
