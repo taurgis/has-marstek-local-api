@@ -339,10 +339,14 @@ API does not have.
    published, because the fixed 0.93 factor does not describe the inverter
    there. End the window when state of charge jumps further than that poll's
    watts can move the nameplate, with a floor of two points and one point of
-   slack. A step equal to that limit stays. Such a step waits one poll: if
-   the next poll is nearer the level before it than the level after it, and
-   within that limit of the earlier level, the step was a glitched reading
-   and is dropped without ending the window; otherwise it ends the window. Over a segment longer than 120 seconds the endpoint watts cannot
+   slack. A step equal to that limit stays. Such a step waits up to two
+   polls: if one of them is nearer the level before it than the level after
+   it, and within that limit of the earlier level, the step was a glitched
+   reading and is dropped without ending the window; if the third poll stays
+   near the new level, it ends the window. A step that lands back near the
+   level before the previous poll is the far side of a spike that rose under
+   the floor: it stays an ordinary move, and the spike's reading is set back
+   to the earlier level. Over a segment longer than 120 seconds the endpoint watts cannot
    bound a load spike between the polls, so a step there ends the window
    without counting as a BMS correction. The gap limit is 180 seconds, or
    the configured fast interval plus 150 seconds when that is longer. A poll

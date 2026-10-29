@@ -382,7 +382,7 @@ def test_a_bms_calibration_jump_is_not_a_window(jump: float) -> None:
     assert estimator.attributes()["active_window"]["start_soc"] == 89.0
     moment, soc, power = samples[-1]
     step = _percent_seconds(rated, 1_250.0, charge=False)
-    for poll in (1, 2):
+    for poll in (1, 2, 3):
         estimator.observe(
             timestamp=moment + poll * step,
             soc=soc - jump,
@@ -390,8 +390,8 @@ def test_a_bms_calibration_jump_is_not_a_window(jump: float) -> None:
             mode="auto",
             rated_wh=rated,
         )
-        # The first poll holds the step; the second at the same level confirms it.
-        assert estimator.soc_unconfirmed is (poll == 1)
+        # Two polls hold the step; the third at the same level confirms it.
+        assert estimator.soc_unconfirmed is (poll < 3)
     assert estimator.windows_accepted == 0
     # The run was dropped. Collecting starts again from the new level.
     active = estimator.attributes()["active_window"]
@@ -405,7 +405,7 @@ def test_a_jump_from_85_to_100_does_not_enter_the_run() -> None:
     assert samples[-1][1] == 85.0
     estimator = _drive(samples, rated)
     moment, _soc, power = samples[-1]
-    for poll in (1, 2):
+    for poll in (1, 2, 3):
         estimator.observe(
             timestamp=moment + poll * 30.0,
             soc=100.0,

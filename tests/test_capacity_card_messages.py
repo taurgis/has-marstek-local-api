@@ -267,14 +267,19 @@ def test_a_real_drop_beyond_the_scatter_is_not_called_steady(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("power", "expected"),
     [
-        (300, "At 300 W, it reaches its 12% floor in about 6\u00a0h\u00a02\u00a0min."),
-        (-1_000, "At 1,000 W, it reaches 100% in about 2\u00a0h\u00a045\u00a0min."),
+        (300, "At 300 W, it reaches its 12% floor in about 5\u00a0h\u00a041\u00a0min."),
+        (100, "At 100 W, it reaches its 12% floor in about 15\u00a0h\u00a015\u00a0min."),
+        (-1_000, "At 1,000 W, it reaches 100% in about 2\u00a0h\u00a049\u00a0min."),
     ],
 )
 def test_runtime_converts_between_the_ac_port_and_the_cells(
     tmp_path: Path, power: float, expected: str
 ) -> None:
-    """Usable capacity is DC energy; the power sensor reads the AC port."""
+    """Usable capacity is DC energy; the power sensor reads the AC port.
+
+    1946 Wh above the floor at 300 W is 1946 / (300 / 0.93 + 20) hours; at
+    100 W the unit's own 20 W is a sixth of the draw.
+    """
     pack = _pack(5_120) | {"power": power, "soc": 50}
     assert expected in _render(tmp_path, "card", [pack])
 

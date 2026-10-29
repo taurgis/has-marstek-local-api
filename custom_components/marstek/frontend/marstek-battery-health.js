@@ -17,6 +17,10 @@ const MEASURED_BANDS = new Set(["good", "fading", "worn"]);
 // The estimator's one-way efficiency (helpers/capacity_energy.py). Usable
 // capacity is stored DC energy; the power sensor reads the AC port.
 const ONE_WAY = 0.93;
+// What the unit spends on itself while it charges or discharges, on top of
+// the one-way loss. It is why a 100 W night load lasts well short of what the
+// watts alone suggest. Part-load tests imply about 5 to 30 W (docs/usable-capacity.md).
+const SELF_DRAW_W = 20;
 const ONE_WAY_METHODS = ["discharge_median", "charge_median"];
 const METHODS = [...ONE_WAY_METHODS, "charge_discharge_geometric_mean"];
 // Counting drift or run scatter this large can hide fade or invent it (the
@@ -518,15 +522,18 @@ function runtimeInsight(hass, model, text) {
   // The pack stops at 100 minus the depth of discharge, never at 0%. The Open
   // API cannot read that setting back, so the number is the last write, or the
   // firmware default without the entity, and the sentence names the floor.
-  // The cells give up more than the AC port delivers and store less than it draws.
+  // The cells give up more than the AC port delivers and store less than it
+  // draws, and the unit's own draw comes out of both.
   if (model.flow === "discharge") {
     const floor = 100 - (model.dod ?? DEFAULT_DOD);
     const left = (model.usable * (model.soc - floor)) / 100;
-    return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / (watts / ONE_WAY))) } : null;
+    const drawn = watts / ONE_WAY + SELF_DRAW_W;
+    return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / drawn)) } : null;
   }
-  if (model.flow === "charge" && model.soc < 100) {
+  const stored = watts * ONE_WAY - SELF_DRAW_W;
+  if (model.flow === "charge" && model.soc < 100 && stored > 0) {
     const room = model.usable - (model.stored ?? 0);
-    return { icon: "mdi:timer-sand", text: text.fills(power, duration(hass, room / (watts * ONE_WAY))) };
+    return { icon: "mdi:timer-sand", text: text.fills(power, duration(hass, room / stored)) };
   }
   return null;
 }

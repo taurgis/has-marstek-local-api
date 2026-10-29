@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import PERCENTAGE, UnitOfEnergy
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
@@ -192,6 +192,31 @@ async def test_successive_polls_publish_and_unload_persists(
     assert saved["windows"][0]["start_soc"] == 79.0
     assert saved["windows"][0]["pv_share"] == 0.0
     assert saved["windows"][0]["mode"] == "auto"
+
+
+async def test_stopping_home_assistant_writes_the_last_poll(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """No run closed, so only the stop listener writes the store."""
+    status = {
+        "battery_soc": 80,
+        "battery_power": 2000.0,
+        "device_mode": "auto",
+        "bat_cap": 5120,
+    }
+    await _setup(hass, mock_config_entry, status)
+    store: Store[dict[str, Any]] = Store(
+        hass, 1, usable_capacity_storage_key(mock_config_entry.entry_id)
+    )
+    assert await store.async_load() is None
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+
+    saved = await store.async_load()
+    assert isinstance(saved, dict)
+    assert saved["last_sample"]["soc"] == 80.0
+    assert saved["last_sample"]["power_w"] == 2000.0
 
 
 async def test_unreadable_capacity_history_is_ignored(

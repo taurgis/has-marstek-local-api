@@ -24,9 +24,11 @@ for a hold is the drift where the reading reached 99. Steps that the existing
 per-poll check already flags as jumps are corrections wherever they happen,
 and an arrival does not count them again.
 
-An arrival whose approach the trace does not cover, after a restart or a run
-of failed polls, is still a full charge. It is counted and moves the last full
-charge, but it is not judged, so it adds nothing to the drift bound.
+An arrival whose approach the trace does not cover, after a long restart or a
+run of failed polls, is still a full charge. It is counted and moves the last
+full charge, but it is not judged, so it adds nothing to the drift bound. The
+part of the trace an arrival can still use is stored, so a restart shorter
+than the gap limit does not break it.
 """
 
 from __future__ import annotations
@@ -158,6 +160,31 @@ class _Point:
     # Seconds spent charging since the trace started.
     charging_s: float = 0.0
 
+    def to_list(self) -> list[float]:
+        """Return the compact JSON form kept in the Store file."""
+        return [
+            self.timestamp,
+            self.soc,
+            round(self.energy_wh, 2),
+            1.0 if self.jumped else 0.0,
+            self.recorded,
+            self.charging_s,
+        ]
+
+    @classmethod
+    def from_list(cls, raw: object) -> _Point | None:
+        """Parse a stored point, or return None when it is not usable."""
+        if not isinstance(raw, list) or len(raw) != 6:
+            return None
+        moment, soc, energy, jumped, recorded, charging = (finite(value) for value in raw)
+        if moment is None or soc is None or energy is None or jumped is None:
+            return None
+        if recorded is None or charging is None or charging < 0.0:
+            return None
+        if not 0.0 <= soc <= FULL_SOC:
+            return None
+        return cls(moment, soc, energy, jumped != 0.0, recorded, charging)
+
 
 class SocCorrectionTracker:
     """Keep the recent trace and the corrections it showed."""
@@ -176,7 +203,7 @@ class SocCorrectionTracker:
 
     @classmethod
     def from_dict(cls, raw: object) -> SocCorrectionTracker:
-        """Restore stored corrections. The trace starts again after a restart.
+        """Restore stored corrections and the stored part of the trace.
 
         A store written before the last full charge was kept on its own takes
         it from the newest stored full charge, and its tracking start from the
@@ -199,14 +226,17 @@ class SocCorrectionTracker:
             tracker._low_since_full = low
         oldest = min((event.at for event in tracker._events), default=None)
         tracker._since = finite(raw.get("since")) or oldest
+        tracker._trace.extend(_restore_trace(raw.get("trace")))
         return tracker
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the corrections and the movement since the last one."""
+        """Return the corrections, the movement since the last one, and the trace tail."""
         payload: dict[str, Any] = {
             "events": [event.to_dict() for event in self._events],
             "throughput": round(self._throughput, 1),
         }
+        if self._trace:
+            payload["trace"] = [point.to_list() for point in _approach_tail(list(self._trace))]
         for key, value in (
             ("last_full_at", self._last_full_at),
             ("low_since_full", self._low_since_full),
@@ -238,6 +268,11 @@ class SocCorrectionTracker:
         The movement count stays: drift keeps growing across a gap.
         """
         self._trace.clear()
+
+    def level_last(self, at: float, soc: float) -> None:
+        """Set the last point's reading after it turned out to be a glitch."""
+        if self._trace and self._trace[-1].timestamp == at:
+            self._trace[-1] = replace(self._trace[-1], soc=soc)
 
     def observe(
         self,
@@ -415,6 +450,32 @@ def _largest_unexplained(span: list[_Point], reference_wh: float) -> tuple[float
         if abs(unexplained) > abs(sum(largest)):
             largest = (unexplained - recorded, recorded)
     return largest
+
+
+def _approach_tail(trace: list[_Point]) -> list[_Point]:
+    """Return the part of the trace a later arrival at 100 percent can use.
+
+    That is everything from the latest point an approach could start on. With
+    no such point, the last one: it links the next poll to the stored trace.
+    """
+    level = FULL_SOC - APPROACH_POINTS
+    for index in range(len(trace) - 1, -1, -1):
+        if trace[index].soc <= level:
+            return trace[index:]
+    return trace[-1:]
+
+
+def _restore_trace(raw: object) -> list[_Point]:
+    """Return a stored trace tail, or nothing when any of it is unusable."""
+    if not isinstance(raw, list):
+        return []
+    points: list[_Point] = []
+    for item in raw[-_MAX_TRACE:]:
+        point = _Point.from_list(item)
+        if point is None or (points and point.timestamp <= points[-1].timestamp):
+            return []
+        points.append(point)
+    return points
 
 
 def _approach_base(trace: list[_Point]) -> _Point | None:

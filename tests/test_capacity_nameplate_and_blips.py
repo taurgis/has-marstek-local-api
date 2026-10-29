@@ -1,4 +1,4 @@
-"""A changed nameplate, a one-poll glitch, and a jump over a long poll gap."""
+"""A changed nameplate, short SoC glitches, and a jump over a long poll gap."""
 
 from __future__ import annotations
 
@@ -127,7 +127,61 @@ def test_a_small_spike_followed_by_an_ordinary_tick_is_dropped() -> None:
     assert estimator.attributes()["soc_corrections"] == []
 
 
-def test_a_real_jump_is_confirmed_on_the_next_poll() -> None:
+def test_a_glitch_repeated_on_the_next_poll_is_dropped() -> None:
+    samples = _exact(_VENUS_E_WH, _POWER_W, 80, soc0=95.0)
+    clean = _drive(samples, _VENUS_E_WH)
+    estimator = UsableCapacityEstimator()
+    held = []
+    for index, (moment, soc, _power) in enumerate(samples):
+        status = _poll(estimator, moment, 0.0 if index in (30, 31) else soc)
+        held.append(status[SOC_UNCONFIRMED_KEY])
+        assert status[SOC_CORRECTED_KEY] is False
+    assert [index for index, flag in enumerate(held) if flag] == [30, 31]
+    # At this spacing the three polls around the glitch exceed the gap limit:
+    # the run is lost, and nothing is recorded.
+    assert estimator.attributes()["soc_corrections"] == []
+    assert estimator.estimate_wh == clean.estimate_wh
+
+
+def test_a_spike_whose_rise_fits_under_the_floor_is_dropped() -> None:
+    """88, 90, 87: the two-point rise passes the floor, so the fall back ends a spike."""
+    estimator = UsableCapacityEstimator()
+    levels = [88.0] * 4 + [90.0] + [87.0] * 3
+    for index, level in enumerate(levels):
+        estimator.observe(
+            timestamp=_T0 + index * 30.0,
+            soc=level,
+            power_w=300.0,
+            mode="auto",
+            rated_wh=_VENUS_E_WH,
+        )
+        assert not estimator.soc_unconfirmed
+    assert estimator.attributes()["soc_corrections"] == []
+
+
+def test_a_spike_inside_a_climb_to_full_is_not_a_creep() -> None:
+    """89, 87, 91 at a point a poll: the dip's reading must not reach the full-charge check."""
+    rated = _VENUS_E_WH
+    step = _percent_seconds(rated, 2_000.0, charge=True)
+    levels = [80.0 + index for index in range(21)] + [100.0] * 3
+    levels[10] = 87.0
+    # Published runs give the check a capacity to measure the climb against.
+    estimator = _published(rated)
+    start = _T0 + 100_000.0
+    for index, level in enumerate(levels):
+        estimator.observe(
+            timestamp=start + index * step,
+            soc=level,
+            power_w=-2_000.0,
+            mode="auto",
+            rated_wh=rated,
+        )
+    attributes = estimator.attributes()
+    assert attributes["soc_corrections"] == []
+    assert attributes["full_charges_checked_30d"] == 1
+
+
+def test_a_real_jump_is_confirmed_after_two_polls() -> None:
     samples = _exact(_VENUS_E_WH, _POWER_W, 40, soc0=95.0)
     estimator = UsableCapacityEstimator()
     flags = []
@@ -135,8 +189,8 @@ def test_a_real_jump_is_confirmed_on_the_next_poll() -> None:
         level = soc - 8.0 if index >= 30 else soc
         status = _poll(estimator, moment, level)
         flags.append((status[SOC_UNCONFIRMED_KEY], status[SOC_CORRECTED_KEY]))
-    assert flags[30] == (True, False)
-    assert flags[31] == (False, True)
+    assert flags[30] == flags[31] == (True, False)
+    assert flags[32] == (False, True)
     jump = estimator.attributes()["soc_corrections"][-1]
     assert jump["style"] == "jump"
     assert jump["from_soc"] == samples[29][1]
@@ -149,7 +203,7 @@ def test_a_step_over_a_long_poll_gap_ends_the_run_without_a_correction() -> None
     assert step > 120.0
     estimator = _drive(_exact(rated, 1_250.0, 14, soc0=90.0), rated)
     moment = _T0 + 14 * step
-    for poll in (1, 2):
+    for poll in (1, 2, 3):
         estimator.observe(
             timestamp=moment + poll * step,
             soc=70.0,

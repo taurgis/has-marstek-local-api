@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -117,8 +118,8 @@ ES_STATUS_FRESH_KEY = "es_status_fresh"
 # True on the poll where the BMS was seen correcting its state of charge. The
 # same percentage before and after that poll is no longer the same energy.
 SOC_CORRECTED_KEY = "battery_soc_corrected"
-# True while a step the watts cannot explain waits one poll for confirmation.
-# That poll's percentage may be a glitch and is not a level to anchor on.
+# True while a step the watts cannot explain waits for confirmation. That
+# poll's percentage may be a glitch and is not a level to anchor on.
 SOC_UNCONFIRMED_KEY = "battery_soc_unconfirmed"
 # One whole-percent step is quantization. A larger step that the watts of
 # that poll cannot explain, plus one point of slack, is a BMS jump.
@@ -128,6 +129,9 @@ _SOC_JUMP_SLACK = 1.0
 # between the polls can move the percentage further than they explain, so
 # such a step ends the window without being recorded as a correction.
 _MAX_JUDGED_SEGMENT_SECONDS = 120.0
+# A glitched reading can repeat on the next poll. A step is a correction only
+# when the reading has not come back within this many polls after it.
+_HOLD_POLLS = 2
 
 
 def gap_limit_seconds(poll_interval: float | None) -> float:
@@ -212,9 +216,9 @@ def _soc_jumped(earlier: _Sample, later: _Sample, rated_wh: float | None) -> boo
 
 
 def _returned(previous: _Sample, pending: _Sample, sample: _Sample, rated_wh: float | None) -> bool:
-    """Return whether ``sample`` came back from a held step to the level before it.
+    """Return whether ``sample`` came back from a step to the level before it.
 
-    Nearer the old level than the held one, within what this poll explains.
+    Nearer the old level than the stepped one, within what this poll explains.
     A three-point spike followed by an ordinary one-point move lands two
     points from the spike, which the step floor alone would call confirmed.
     """
@@ -248,7 +252,8 @@ class UsableCapacityEstimator:
     """Sliding-median usable-capacity estimator.
 
     The open window is not persisted. A restart continues from the accepted
-    windows and starts a new window on the next polls.
+    windows and starts a new window on the next polls. The last poll is kept,
+    so the correction trace continues across a restart within the gap limit.
     """
 
     def __init__(self) -> None:
@@ -262,9 +267,12 @@ class UsableCapacityEstimator:
         # False until the open window starts on a state-of-charge step.
         self._aligned = False
         self._previous: _Sample | None = None
-        # A sample after an unexplained step, held until the next poll shows
-        # whether the reading stayed there. ``_previous`` stays before it.
-        self._pending: _Sample | None = None
+        # Samples after an unexplained step, held until a later poll shows
+        # whether the reading stayed there. ``_previous`` stays before them.
+        self._held: list[_Sample] = []
+        # Where the last folded segment started. A jump back to its level
+        # ends a spike whose first leg fit under the two-point floor.
+        self._prior: _Sample | None = None
         self._rated_wh: float | None = None
         self._rated_candidate: float | None = None
         self._rated_seen = 0
@@ -293,6 +301,16 @@ class UsableCapacityEstimator:
         estimator._history = restore_history(raw.get("history"))
         estimator._history_baseline = [dict(point) for point in estimator._history]
         estimator._corrections = SocCorrectionTracker.from_dict(raw.get("soc_corrections"))
+        last = raw.get("last_sample")
+        if isinstance(last, dict):
+            estimator._previous = estimator._make_sample(
+                last.get("timestamp"),
+                last.get("soc"),
+                last.get("power_w"),
+                last.get("mode"),
+                last.get("pv_w"),
+                last.get("power_derived") is True,
+            )
         rated = finite(raw.get("rated_wh"))
         if rated is not None and rated > 0.0:
             estimator._rated_wh = rated
@@ -307,10 +325,11 @@ class UsableCapacityEstimator:
         self._gap_limit = gap_limit_seconds(poll_interval)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return windows, weekly snapshots and the nameplate for the Store file.
+        """Return windows, weekly snapshots, the nameplate and the last poll.
 
         The nameplate is kept so a module added while Home Assistant was down
-        still starts a new series.
+        still starts a new series. The last poll links the first one after a
+        short restart to the stored correction trace.
         """
         payload: dict[str, Any] = {
             "windows": [window.to_dict() for window in self._windows],
@@ -319,6 +338,8 @@ class UsableCapacityEstimator:
         }
         if self._rated_wh is not None:
             payload["rated_wh"] = self._rated_wh
+        if self._previous is not None:
+            payload["last_sample"] = asdict(self._previous)
         return payload
 
     def consume_dirty(self) -> bool:
@@ -341,7 +362,7 @@ class UsableCapacityEstimator:
     @property
     def soc_unconfirmed(self) -> bool:
         """Return whether the latest percentage waits to be confirmed or dropped."""
-        return self._pending is not None
+        return bool(self._held)
 
     def _capacities(self, direction: str) -> list[float]:
         """Return accepted watt-hours for one direction, oldest first."""
@@ -409,30 +430,43 @@ class UsableCapacityEstimator:
                 self._abort()
                 self._corrections.break_trace()
                 self._previous = None
-                self._pending = None
+                self._prior = None
+                self._held = []
                 return
-            previous = self._previous
-            self._previous = sample
-            if previous is None:
-                return
-            pending, self._pending = self._pending, None
-            if pending is None:
-                self._segment(previous, sample)
-            elif _returned(previous, pending, sample, self._rated_wh):
-                # One poll off and straight back is a glitch, not a correction.
-                self._segment(previous, sample)
-            else:
-                # The reading stayed near the new level: the step was real.
-                self._segment(previous, pending, confirmed=True)
-                self._segment(pending, sample)
+            self._advance(sample)
         finally:
             self._record_history(timestamp)
+
+    def _advance(self, sample: _Sample) -> None:
+        """Fold one good poll in, holding an unexplained step until it settles."""
+        previous = self._previous
+        self._previous = sample
+        if previous is None:
+            return
+        held = self._held
+        if not held:
+            self._segment(previous, sample)
+        elif _returned(previous, held[-1], sample, self._rated_wh):
+            # Off for a poll or two and straight back is a glitch, not a correction.
+            self._held = []
+            self._segment(previous, sample)
+        elif len(held) < _HOLD_POLLS:
+            held.append(sample)
+            self._previous = previous
+        else:
+            # The reading stayed near the new level: the step was real.
+            self._held = []
+            self._segment(previous, held[0], confirmed=True)
+            self._previous = held[0]
+            for later in (*held[1:], sample):
+                self._advance(later)
 
     def _segment(self, previous: _Sample, sample: _Sample, *, confirmed: bool = False) -> None:
         """Fold the stretch between two good polls in.
 
-        A step the watts cannot explain waits one poll unless ``confirmed``.
+        A step the watts cannot explain is held unless ``confirmed``.
         """
+        prior, self._prior = self._prior, None
         elapsed = sample.timestamp - previous.timestamp
         if elapsed <= 0.0:
             return
@@ -442,9 +476,15 @@ class UsableCapacityEstimator:
             return
         jumped = _soc_jumped(previous, sample, self._rated_wh)
         if jumped and not confirmed:
-            self._pending = sample
-            self._previous = previous
-            return
+            if prior is None or not _returned(prior, previous, sample, self._rated_wh):
+                self._prior = prior
+                self._held = [sample]
+                self._previous = previous
+                return
+            # The far side of a spike whose first leg fit under the floor.
+            jumped = False
+            previous = self._level(previous, prior.soc)
+        self._prior = previous
         if jumped and elapsed > _MAX_JUDGED_SEGMENT_SECONDS:
             # Still counted as movement, and as a full charge on reaching 100.
             self._corrections.break_trace()
@@ -464,6 +504,19 @@ class UsableCapacityEstimator:
                 self._start(previous, sample)
             return
         self._extend(previous, sample)
+
+    def _level(self, spike: _Sample, soc: float) -> _Sample:
+        """Put a spike's reading back to the level before it, where it was kept.
+
+        Left in the trace, it would read as a correction on the next arrival
+        at 100 percent. Left at the edge of the open window, it would move
+        that run's end by the size of the spike.
+        """
+        leveled = replace(spike, soc=soc)
+        if self._open and self._open[-1] is spike:
+            self._open[-1] = leveled
+        self._corrections.level_last(spike.timestamp, soc)
+        return leveled
 
     def attributes(self) -> dict[str, Any]:
         """Return extra state attributes for the capacity and health sensors.
@@ -639,7 +692,8 @@ class UsableCapacityEstimator:
         if abs(rated - current) > RATED_CHANGE_FRACTION * current:
             self._windows = []
             self._abort()
-            self._pending = None
+            self._held = []
+            self._prior = None
             self._corrections.break_trace()
 
     def _median_attributes(self) -> dict[str, Any]:
@@ -676,7 +730,7 @@ class UsableCapacityEstimator:
 
     def _make_sample(
         self,
-        timestamp: float,
+        timestamp: float | None,
         soc: float | None,
         power_w: float | None,
         mode: str | None,

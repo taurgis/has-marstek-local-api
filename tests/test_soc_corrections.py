@@ -8,6 +8,7 @@ hold at 99.
 
 from __future__ import annotations
 
+import json
 import math
 import statistics
 import sys
@@ -202,16 +203,18 @@ def test_a_flagged_step_mid_range_is_a_jump_and_resets_the_movement_count() -> N
     moved = tracker.to_dict()["throughput"]
     assert moved > 0.0
     pack.counted += 10.0
-    pack.poll(-1_500.0)
-    # One poll is held: it may be a glitch. The next at the new level confirms it.
-    assert _corrections(pack) == []
-    assert pack.estimator.soc_unconfirmed
+    # Two polls are held: either may be a glitch. A third at the new level confirms it.
+    for _ in range(2):
+        pack.poll(-1_500.0)
+        assert _corrections(pack) == []
+        assert pack.estimator.soc_unconfirmed
     pack.poll(-1_500.0)
     event = _corrections(pack)[-1]
     assert event.style == JUMP
     assert event.points == pytest.approx(10.0, abs=1.5)
     assert event.throughput == pytest.approx(moved)
-    assert tracker.to_dict()["throughput"] == 0.0
+    # Only the two polls after the jump have moved since.
+    assert tracker.to_dict()["throughput"] <= 2.0
     assert pack.corrected_polls == 1
 
 
@@ -373,6 +376,57 @@ def test_corrections_survive_a_restart_and_junk_is_ignored() -> None:
     assert tracker.to_dict()["throughput"] == 0.0
     assert SocCorrectionTracker.from_dict("nope").events == []
     assert UsableCapacityEstimator.from_dict({"windows": []})._corrections.events == []
+
+
+@pytest.mark.parametrize(("polls_down", "judged"), [(3, True), (20, False)])
+def test_a_short_restart_keeps_the_climb_to_full(polls_down: int, judged: bool) -> None:
+    """The stored last poll and trace tail link the first poll after a short restart.
+
+    Three polls down is 120 seconds between the polls either side of the
+    restart, inside the 180 second gap limit. Twenty is ten minutes: that
+    climb is not covered, and the full charge is counted without a verdict.
+    """
+    pack = _Pack(soc=50.0)
+    while pack.shown < 92.0:
+        pack.poll(-2_000.0)
+    stored = json.loads(json.dumps(pack.estimator.to_dict()))
+    assert stored["soc_corrections"]["trace"][0][1] <= 85.0
+    # The pack keeps charging while Home Assistant is down.
+    pack.estimator = UsableCapacityEstimator()
+    for _ in range(polls_down):
+        pack.poll(-2_000.0)
+    pack.estimator = UsableCapacityEstimator.from_dict(stored)
+    pack.charge_to_full()
+    full = [event for event in _corrections(pack) if event.to_soc == 100.0]
+    assert full[-1].judged is judged
+    assert full[-1].points == 0.0
+
+
+def test_the_stored_trace_is_the_usable_tail_and_junk_restores_none() -> None:
+    tracker = SocCorrectionTracker()
+    _climb(tracker, _T0, [80.0, 84.0, 86.0, 90.0], energy=100.0)
+    tail = tracker.to_dict()["trace"]
+    assert [point[1] for point in tail] == [84.0, 86.0, 90.0]
+    restored = SocCorrectionTracker.from_dict(tracker.to_dict())
+    assert restored.to_dict()["trace"] == tail
+
+    tracker = SocCorrectionTracker()
+    _climb(tracker, _T0, [90.0, 92.0, 95.0], energy=100.0)
+    assert [point[1] for point in tracker.to_dict()["trace"]] == [95.0]
+
+    junk_traces = (
+        [tail[0], "x"],
+        [tail[1], tail[0]],
+        [[1, 2, 3]],
+        [[1, 120, 0, 0, 0, 0]],
+        [[1, 50, "x", 0, 0, 0]],
+        [[1, 50, 0, 0, 0, -1]],
+        "x",
+    )
+    for junk in junk_traces:
+        assert "trace" not in SocCorrectionTracker.from_dict({"trace": junk}).to_dict()
+    estimator = UsableCapacityEstimator.from_dict({"last_sample": {"timestamp": "x", "soc": 50}})
+    assert "last_sample" not in estimator.to_dict()
 
 
 def test_only_the_newest_entries_are_kept() -> None:
