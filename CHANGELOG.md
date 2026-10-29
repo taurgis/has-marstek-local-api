@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.12.0
+
+### Minor Changes
+
+- f08b499: Add the reasons behind the usable-capacity confidence to the sensor (`confidence_limits`, `run_scatter_pct`, `windows_used`) and the card footer, and lower the confidence when runs disagree, come from one direction only, ran at very different charge and discharge power, were mostly solar-charged, or the charge level drifts.
+- f08b499: Add the estimation method and each week's nameplate to the weekly capacity CSV download.
+
+### Patch Changes
+
+- 6c91ddc: Change the battery health card's Restarts tab to show eight rows a page with Newer and Older buttons, like the Runs tab, so the card keeps its height on a dashboard instead of growing with each "Show more" press.
+- f08b499: Change the battery health card to keep the band on Measuring until charge and discharge runs both back the estimate, label a one-direction figure as a first estimate with progress per direction, show Uncertain under large counting drift or run scatter, show no band without a rating, and show a faded part only when it exceeds the run scatter.
+- f08b499: Fix the counting-drift figure leaving out a correction the card still named, and replace drift figures above 30% with a plain warning.
+- f08b499: Fix the fleet card's totals and capacity share not saying when some batteries are still measuring, and compare round trips only between batteries of the same model with at least a 5-point gap.
+- f08b499: Fix full charges going uncounted when polls were lost on the way to 100%, keep a brief Home Assistant restart from leaving them unchecked, show how many of them could be checked, and warn when a battery has not been fully charged since tracking began.
+- f08b499: Fix the implied round-trip efficiency appearing after a single charge and discharge run; it now needs three runs in each direction, and the card hides values outside 50 to 100%.
+- f08b499: Fix an added expansion module reading as a worn battery for weeks: a nameplate change of more than 10% now starts a new usable-capacity series, and a new nameplate counts only after three polls in a row report it.
+- f08b499: Fix the battery health card overstating time to empty and understating time to full by leaving out the conversion loss between the battery and the AC side and the unit's own draw.
+- f08b499: Fix state-of-charge glitches of one or two polls, small spikes, and steps over poll gaps longer than two minutes being recorded as charge-level corrections and inflating the counting-drift figure.
+- f08b499: Fix the capacity trend comparing weeks calculated with a different method or for a different nameplate, which could hide real fade or report a change that did not happen.
+- f08b499: Fix the battery health docs on self-consumption, counting drift and the 0.93 conversion factor, and document the confidence checks, the nameplate reset and the glitch filter.
+- b66af3b: Fix documentation claims that did not match the integration, including option labels and defaults, which sensors each model gets, the reset-prone firmware list, and retake the options and device page screenshots on integration 1.11.0.
+- 005ba6f: Add documentation answers on Modbus, zero grid import, peak shaving and energy statistics after firmware updates, and correct the Venus E mini notes.
+- e7eb1b3: Improve the documentation site on phones with larger menu text, 44 px navigation tap targets, readable tables, and screenshots that open full size when tapped.
+- 2af654f: Rewrite the documentation in plain language for non-technical readers, with technical detail moved into collapsible sections.
+- 0103e58: Add a documentation website at marstek.rhino-inquisitor.com with a beginner's getting started guide, a supported devices check, limitations, a FAQ, a glossary, and a comparison with other Marstek integrations, and point the integration's Documentation link there.
+- 3c7f04f: Fix docs that listed depth of discharge, LED, Bluetooth and UPS controls for Venus C, and list the full set of firmware treated as reset-prone.
+- d596476: Fix the automation and logger YAML examples in the docs, which were indented with tabs and failed when pasted into Home Assistant, and correct doc claims about the mode dropdown, Venus E mini controls, and HMG-50 retransmits.
+- 3c7f04f: Fix the Energy dashboard guide, which put the battery's own "Total grid input/output energy" counters on the grid rows; they belong under Home battery storage.
+- 005ba6f: Fix diagnostics downloads that included the battery's Wi-Fi network name, IP address, gateway, subnet mask and DNS server.
+
 ## 1.11.0
 
 ### Minor Changes
