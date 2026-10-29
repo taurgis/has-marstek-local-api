@@ -13,6 +13,16 @@ const DOCS = "https://github.com/taurgis/has-marstek-local-api/blob/main/docs/us
 // Health bands. They describe fade, not a warranty: the Open API carries no warranty terms.
 const GOOD_HEALTH = 90;
 const WORN_HEALTH = 80;
+const MEASURED_BANDS = new Set(["good", "fading", "worn"]);
+// The estimator's one-way efficiency (helpers/capacity_energy.py). Usable
+// capacity is stored DC energy; the power sensor reads the AC port.
+const ONE_WAY = 0.93;
+const ONE_WAY_METHODS = ["discharge_median", "charge_median"];
+const METHODS = [...ONE_WAY_METHODS, "charge_discharge_geometric_mean"];
+// Counting drift this large can hide fade (the low cap in
+// helpers/capacity_confidence.py).
+const UNCERTAIN_DRIFT = 5;
+const MIN_FLEET_RTE_GAP = 5;
 const MIN_TREND_DAYS = 28;
 const DAY_S = 86400;
 
@@ -48,7 +58,8 @@ const STYLES = RESTART_STYLES + CORRECTION_STYLES + `
   .band.good { color: var(--success-color, #43a047); }
   .band.fading { color: var(--warning-color, #ffa600); }
   .band.worn { color: var(--error-color, #db4437); }
-  .band.measuring { color: var(--secondary-text-color); }
+  .band.measuring, .band.uncertain, .band.unrated { color: var(--secondary-text-color); }
+  .lead-wrap { display: flex; flex-direction: column; gap: 4px; }
   .cap { display: flex; flex-direction: column; gap: 6px; }
   .cell { position: relative; display: flex; height: 22px; border-radius: 6px; overflow: hidden;
     box-shadow: inset 0 0 0 1.5px var(--secondary-text-color); background: var(--card-background-color, transparent); }
@@ -318,15 +329,38 @@ function rteOf(raw) {
   return value == null ? null : value <= 1.5 ? value * 100 : value;
 }
 
-function bandOf(health, confidence) {
-  if (health == null || confidence === "collecting") return "measuring";
+function bandOf(model) {
+  // A one-way median still leans on the assumed efficiency, so it earns no band yet.
+  if (model.usable == null || model.confidence === "collecting" || model.single) return "measuring";
+  if (model.health == null) return "unrated";
+  if (model.bound != null && model.bound >= UNCERTAIN_DRIFT) return "uncertain";
   // Round as the label does, so "80%" never sits next to "Worn".
-  const shown = Math.round(health);
+  const shown = Math.round(model.health);
   if (shown >= GOOD_HEALTH) return "good";
   return shown >= WORN_HEALTH ? "fading" : "worn";
 }
 
-const BAND_ICON = { good: "mdi:heart-pulse", fading: "mdi:trending-down", worn: "mdi:alert-outline", measuring: "mdi:progress-clock" };
+const BAND_ICON = {
+  good: "mdi:heart-pulse",
+  fading: "mdi:trending-down",
+  worn: "mdi:alert-outline",
+  measuring: "mdi:progress-clock",
+  uncertain: "mdi:help-circle-outline",
+  unrated: "mdi:battery-outline",
+};
+
+// Fade is drawn only when it is measured: a band, both directions, and a gap
+// to the rating larger than the runs' own scatter.
+function fadedOf(model) {
+  if (model.rated == null || !MEASURED_BANDS.has(model.band)) return null;
+  const gap = model.rated - model.usable;
+  return gap > (Math.max(model.scatter ?? 0, 1) / 100) * model.rated ? gap : null;
+}
+
+function plausibleRte(raw) {
+  const value = rteOf(raw);
+  return value != null && value >= 50 && value <= 100 ? value : null;
+}
 
 function flowOf(model) {
   if (model.status === "charging" || (model.power != null && model.power < -20)) return "charge";
@@ -343,12 +377,19 @@ function readModel(hass, pack) {
   const soc = reported == null ? null : clamp(reported, 0, 100);
   // A linked energy meter measures the round trip; the battery's own figure is implied.
   const metered = rteOf(attrs.plug_round_trip_efficiency);
+  const method = METHODS.includes(attrs.efficiency_correction) ? attrs.efficiency_correction : null;
   const model = {
     pack,
     name: deviceName(hass, pack.deviceId),
+    // Round trips compare within one model: each family has its own inverter.
+    kind: hass.devices?.[pack.deviceId]?.model || (rated == null ? "" : String(Math.round(rated))),
     attrs,
     usable,
     rated,
+    method,
+    single: ONE_WAY_METHODS.includes(method),
+    bound: finite(attrs.soc_drift_bound_pct),
+    scatter: finite(attrs.run_scatter_pct),
     health: numberOf(hass, pack.entities.soh) ?? finite(attrs.state_of_health),
     soc,
     power: numberOf(hass, pack.entities.power),
@@ -356,7 +397,7 @@ function readModel(hass, pack) {
     dod: numberOf(hass, pack.entities.dod),
     status: stateOf(hass, pack.entities.status)?.state || null,
     stored: usable != null && soc != null ? (usable * soc) / 100 : null,
-    rte: metered ?? rteOf(attrs.implied_round_trip_efficiency),
+    rte: metered ?? plausibleRte(attrs.implied_round_trip_efficiency),
     rteMetered: metered != null,
     standby: finite(attrs.plug_standby_w),
     restarts: stateOf(hass, pack.entities.restarts)?.attributes || null,
@@ -370,7 +411,8 @@ function readModel(hass, pack) {
     load: numberOf(hass, pack.entities.load),
   };
   model.flow = flowOf(model);
-  model.band = bandOf(model.health, model.confidence);
+  model.band = bandOf(model);
+  model.faded = fadedOf(model);
   return model;
 }
 
@@ -380,7 +422,7 @@ function capacityCell(model, scaleWh) {
   const full = scaleWh || model.rated || model.usable || 1;
   const usable = model.usable ?? 0;
   const stored = clamp(model.stored ?? 0, 0, usable);
-  const faded = model.rated != null ? Math.max(0, model.rated - usable) : 0;
+  const faded = model.faded ?? 0;
   const width = (wh) => `${clamp((wh / full) * 100, 0, 100).toFixed(2)}%`;
   return `<span class="seg stored" style="width:${width(stored)}"></span>`
     + `<span class="seg room" style="width:${width(usable - stored)}"></span>`
@@ -396,44 +438,71 @@ function flowHtml(hass, model, text) {
 // --- health card ---------------------------------------------------------
 
 function bandHtml(model, text) {
+  // Without a rating the headline already says so; the header stays clean.
+  if (model.band === "unrated") return "";
   return `<span class="band ${model.band}"><ha-icon icon="${BAND_ICON[model.band]}"></ha-icon>${esc(text.band[model.band])}</span>`;
 }
 
+// Runs so far in each direction, towards the three a first estimate needs.
+function progressHtml(model, text) {
+  if (!model.windows.length) return "";
+  const count = (direction) => Math.min(3, model.windows.filter((item) => item.direction === direction).length);
+  return `<p class="muted num">${esc(text.headlineProgress(count("discharge"), count("charge")))}</p>`;
+}
+
 function headlineHtml(hass, model, text) {
-  if (model.usable == null) return `<p class="lead">${esc(text.headlineWait)}</p>`;
+  if (model.usable == null) return `<div class="lead-wrap"><p class="lead">${esc(text.headlineWait)}</p>${progressHtml(model, text)}</div>`;
   const usable = `<strong class="num">${esc(kwh(hass, model.usable))}</strong>`;
-  // A reading just over the rating is estimate noise, so it is not shown as 101%.
+  const rated = kwh(hass, model.rated);
+  // Only a value at or over the rating reads "at least"; just under it keeps a
+  // decimal, so 99.6% is never rounded up to a full rating.
+  const share = pct(hass, model.health, Math.round(model.health) >= 100 ? 1 : 0);
   const words = model.rated == null || model.health == null ? text.headlineNoRating("§")
-    : Math.round(model.health) >= 100 ? text.headlineFull("§", kwh(hass, model.rated))
-      : text.headline("§", pct(hass, model.health), kwh(hass, model.rated));
+    : model.single ? text.headlineOneWay("§", share, rated, text.runWord[model.method.replace("_median", "")])
+      : model.usable >= model.rated ? text.headlineFull("§", rated)
+        : text.headline("§", share, rated);
   const sentence = esc(words).replace("§", usable);
   return `<p class="lead">${sentence}</p>`;
 }
 
 function capacityHtml(hass, model, text) {
   if (model.usable == null) return "";
-  const faded = model.rated != null ? Math.max(0, model.rated - model.usable) : null;
+  const faded = model.faded;
   const label = text.barLabel(energy(hass, model.stored), kwh(hass, model.usable), kwh(hass, model.rated));
   const keys = [
     model.stored == null ? "" : `<li><i class="key stored"></i>${esc(text.stored(energy(hass, model.stored)))}</li>`,
     model.stored == null ? "" : `<li><i class="key room"></i>${esc(text.usableEmpty(energy(hass, model.usable - model.stored)))}</li>`,
     faded ? `<li><i class="key faded"></i>${esc(text.faded(energy(hass, faded)))}</li>` : "",
   ].join("");
-  return `<div class="cap"><div class="cell" role="img" aria-label="${esc(label)}">${capacityCell(model)}</div><ul class="keys num">${keys}</ul></div>`;
+  // With no fade to draw, the bar is the measured capacity itself.
+  const cell = capacityCell(model, faded == null ? model.usable : null);
+  return `<div class="cap"><div class="cell" role="img" aria-label="${esc(label)}">${cell}</div><ul class="keys num">${keys}</ul></div>`;
+}
+
+// A change of method or of pack is a step in the series, not fade: the trend
+// compares only weeks measured the way the newest one was, of the same pack.
+function trendWeeks(model) {
+  const weeks = model.history.filter((point) => finite(point.usable_wh) != null && finite(point.week_start) != null);
+  const latest = weeks.at(-1);
+  const rated = finite(latest?.rated_wh);
+  return weeks.filter((point) => (latest.method == null || point.method === latest.method)
+    && (rated == null || finite(point.rated_wh) == null || Math.abs(point.rated_wh - rated) <= 0.1 * rated));
 }
 
 function trendInsight(hass, model, text) {
-  const weeks = model.history.filter((point) => finite(point.usable_wh) != null && finite(point.week_start) != null);
-  if (weeks.length < 2 || model.rated == null) return null;
+  const weeks = trendWeeks(model);
+  const rated = finite(weeks.at(-1)?.rated_wh) ?? model.rated;
+  if (weeks.length < 2 || rated == null) return null;
   const first = weeks[0];
   const last = weeks[weeks.length - 1];
   const days = (last.week_start - first.week_start) / DAY_S;
   if (days < MIN_TREND_DAYS) return null;
   const delta = last.usable_wh - first.usable_wh;
-  const spread = finite(model.attrs.spread_wh) ?? 0;
+  // Half the runs lie within the scatter of their median, so a smaller move is noise.
+  const noise = (Math.max(model.scatter ?? 0, 1) / 100) * last.usable_wh;
   const span = duration(hass, days * 24);
-  if (Math.abs(delta) <= spread / 2) return { icon: "mdi:chart-line-variant", text: text.steady(span) };
-  const deltaPoints = (delta / model.rated) * 100;
+  if (Math.abs(delta) <= noise) return { icon: "mdi:chart-line-variant", text: text.steady(span) };
+  const deltaPoints = (delta / rated) * 100;
   const sign = delta < 0 ? "−" : "+";
   return {
     icon: delta < 0 ? "mdi:trending-down" : "mdi:trending-up",
@@ -448,14 +517,15 @@ function runtimeInsight(hass, model, text) {
   // The pack stops at 100 minus the depth of discharge, never at 0%. The Open
   // API cannot read that setting back, so the number is the last write, or the
   // firmware default without the entity, and the sentence names the floor.
+  // The cells give up more than the AC port delivers and store less than it draws.
   if (model.flow === "discharge") {
     const floor = 100 - (model.dod ?? DEFAULT_DOD);
     const left = (model.usable * (model.soc - floor)) / 100;
-    return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / watts)) } : null;
+    return left > 0 ? { icon: "mdi:timer-sand", text: text.empties(power, pct(hass, floor), duration(hass, left / (watts / ONE_WAY))) } : null;
   }
   if (model.flow === "charge" && model.soc < 100) {
     const room = model.usable - (model.stored ?? 0);
-    return { icon: "mdi:timer-sand", text: text.fills(power, duration(hass, room / watts)) };
+    return { icon: "mdi:timer-sand", text: text.fills(power, duration(hass, room / (watts * ONE_WAY))) };
   }
   return null;
 }
@@ -464,6 +534,8 @@ function runtimeInsight(hass, model, text) {
 // measured before it carried that much counting drift; long without a full
 // charge, the drift has nowhere to reset.
 const STALE_FULL_DAYS = 14;
+// Past this the drift figure is noise from a glitch, not a usable bound.
+const MAX_SHOWN_DRIFT = 30;
 
 function correctionInsight(hass, model, text) {
   const latest = (model.attrs.soc_corrections || []).at(-1);
@@ -475,23 +547,30 @@ function correctionInsight(hass, model, text) {
     const [from, to] = [finite(latest.from_soc), finite(latest.to_soc)];
     const where = to == null || to >= 100 ? text.atFull : text.fromTo(pct(hass, from), pct(hass, to));
     const jump = text.correction(count, day(hass, latest.at), where, points(hass, finite(latest.points) ?? 0));
-    return { icon: "mdi:battery-sync-outline", text: bound == null ? jump : `${jump} ${text.driftBound(pct(hass, bound, 1))}` };
+    const drift = bound == null ? "" : bound > MAX_SHOWN_DRIFT ? text.driftLarge : text.driftBound(pct(hass, bound, 1));
+    return { icon: "mdi:battery-sync-outline", text: drift ? `${jump} ${drift}` : jump };
   }
+  const stale = (date) => date && Date.now() - date.getTime() > STALE_FULL_DAYS * 86400e3;
   const full = toDate(model.attrs.last_full_charge_at);
-  if (full && Date.now() - full.getTime() > STALE_FULL_DAYS * 86400e3) {
-    return { icon: "mdi:battery-clock-outline", text: text.notFull(day(hass, full)) };
-  }
+  if (stale(full)) return { icon: "mdi:battery-clock-outline", text: text.notFull(day(hass, full)) };
+  // A pack that never reached 100% since tracking began needs the tip most.
+  const since = toDate(model.attrs.soc_tracking_since);
+  if (!full && stale(since)) return { icon: "mdi:battery-clock-outline", text: text.notFullSince(day(hass, since)) };
   return null;
 }
 
+// The runs behind the published number: one direction's median, or both.
+function contributingRuns(model) {
+  if (model.single) return model.windows.filter((item) => `${item.direction}_median` === model.method);
+  return model.method ? model.windows : [];
+}
+
 function insightsHtml(hass, model, text) {
-  const runs = model.windows.length;
+  const used = contributingRuns(model);
   const items = [];
-  if (runs) {
-    const since = day(hass, Math.min(...model.windows.map((item) => finite(item.closed_at) ?? Infinity)));
-    const spread = finite(model.attrs.spread_wh);
-    const half = spread != null && model.usable ? pct(hass, (spread / 2 / model.usable) * 100, 1) : "";
-    items.push({ icon: "mdi:counter", text: text.agree(runs, since, half) });
+  if (used.length) {
+    const since = day(hass, Math.min(...used.map((item) => finite(item.closed_at) ?? Infinity)));
+    items.push({ icon: "mdi:counter", text: text.agree(used.length, since, model.scatter == null ? "" : pct(hass, model.scatter, 1)) });
   }
   items.push(trendInsight(hass, model, text));
   items.push(correctionInsight(hass, model, text));
@@ -556,7 +635,8 @@ function capacityChart(hass, model, text, width = 360) {
       <li><svg viewBox="0 0 16 8"><line class="swatch-line" x1="0" x2="16" y1="4" y2="4"/></svg>${esc(text.weekly)}</li>
       <li><svg viewBox="0 0 16 8"><circle class="swatch-run" cx="8" cy="4" r="2.5"/></svg>${esc(text.runDots)}</li>
       ${model.rated == null ? "" : `<li><svg viewBox="0 0 16 8"><line class="swatch-rating" x1="0" x2="16" y1="4" y2="4"/></svg>${esc(text.rating)}</li>`}
-    </ul>`;
+    </ul>
+    <p class="muted">${esc(text.capacityNote)}</p>`;
 }
 
 // Rounded first, so a run 0.04 % under the median reads 0,0 % and not −0,0 %.
@@ -648,13 +728,16 @@ function healthCardHtml(hass, config, tab, cardId, view) {
   if (!pack) return `<style>${STYLES}</style><ha-card><p class="muted">${esc(text.pickDevice)}</p></ha-card>`;
   const model = readModel(hass, pack);
   const tabs = config.show_tabs === false ? "" : tabsHtml(hass, model, text, tab, cardId, view);
+  // What holds the confidence label down, in the estimator's own order.
+  const limits = Array.isArray(model.attrs.confidence_limits) ? model.attrs.confidence_limits : [];
+  const why = limits.map((key) => text.limits[key]).filter(Boolean).join(", ");
   return `<style>${STYLES}</style><ha-card>
     <div class="top"><ha-icon icon="mdi:battery-heart-variant"></ha-icon><div class="title-wrap"><h2 class="name">${esc(config.title || model.name)}</h2>${flowHtml(hass, model, text)}</div>${bandHtml(model, text)}</div>
     ${headlineHtml(hass, model, text)}
     ${capacityHtml(hass, model, text)}
     ${insightsHtml(hass, model, text)}
     ${tabs}
-    <div class="foot"><p class="muted">${esc(text.source(text.confidence[model.confidence] || model.confidence))}</p>
+    <div class="foot"><p class="muted">${esc(text.source(text.confidence[model.confidence] || model.confidence, why))}</p>
       <button class="link" type="button" data-action="device"><ha-icon icon="mdi:cog-outline"></ha-icon>${esc(text.device)}</button></div>
   </ha-card>`;
 }
@@ -666,29 +749,43 @@ function sum(values) {
   return known.length ? known.reduce((total, value) => total + value, 0) : null;
 }
 
+// Compare like with like: metered round trips include standby, implied ones do
+// not, and each model has its own inverter. An implied figure carries a few
+// points of error of its own, so a smaller gap is not worth a line.
+function rteGap(models) {
+  const groups = new Map();
+  for (const model of models.filter((item) => item.rte != null)) {
+    const key = `${model.kind}|${model.rteMetered}`;
+    groups.set(key, [...(groups.get(key) || []), model]);
+  }
+  let widest = null;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const best = Math.max(...group.map((model) => model.rte));
+    const worst = group.reduce((a, b) => (b.rte < a.rte ? b : a));
+    const gap = best - worst.rte;
+    if (gap >= MIN_FLEET_RTE_GAP && gap > (widest?.points ?? 0)) widest = { name: worst.name, points: gap };
+  }
+  return widest;
+}
+
 function fleetInsights(hass, models, text) {
   const out = [];
   const usable = sum(models.map((model) => model.usable));
   const measured = models.filter((model) => model.usable != null);
   if (measured.length > 1 && usable) {
     const biggest = measured.reduce((a, b) => (b.usable > a.usable ? b : a));
-    out.push({ icon: "mdi:chart-pie-outline", text: text.fleetShare(biggest.name, pct(hass, (biggest.usable / usable) * 100)) });
+    const of = measured.length < models.length ? text.ofTotal(measured.length, models.length) : "";
+    out.push({ icon: "mdi:chart-pie-outline", text: text.fleetShare(biggest.name, pct(hass, (biggest.usable / usable) * 100), of) });
   }
-  const healthy = models.filter((model) => model.health != null);
+  const healthy = models.filter((model) => MEASURED_BANDS.has(model.band));
   // Name the most faded pack only when it has left the Healthy band.
   const weakest = healthy.length > 1 ? healthy.reduce((a, b) => (b.health < a.health ? b : a)) : null;
   if (weakest && weakest.band !== "good") {
     out.push({ icon: BAND_ICON[weakest.band], text: text.fleetWeakest(weakest.name, pct(hass, weakest.health, 1)) });
   }
-  // Compare like with like: metered round trips include standby, implied ones do not.
-  const rated = models.filter((model) => model.rte != null);
-  const metered = rated.filter((model) => model.rteMetered);
-  const efficient = metered.length > 1 ? metered : rated.filter((model) => !model.rteMetered);
-  if (efficient.length > 1) {
-    const best = Math.max(...efficient.map((model) => model.rte));
-    const worst = efficient.reduce((a, b) => (b.rte < a.rte ? b : a));
-    if (best - worst.rte >= 1) out.push({ icon: "mdi:swap-vertical", text: text.fleetRte(worst.name, points(hass, best - worst.rte)) });
-  }
+  const gap = rteGap(models);
+  if (gap) out.push({ icon: "mdi:swap-vertical", text: text.fleetRte(gap.name, points(hass, gap.points)) });
   const charged = models.filter((model) => model.soc != null);
   if (charged.length > 1) {
     const lowest = charged.reduce((a, b) => (b.soc < a.soc ? b : a));
@@ -699,7 +796,7 @@ function fleetInsights(hass, models, text) {
 }
 
 function fleetRow(hass, model, text, scale) {
-  const health = model.health == null ? text.band.measuring : text.health(pct(hass, model.health));
+  const health = MEASURED_BANDS.has(model.band) ? text.health(pct(hass, model.health)) : text.band[model.band];
   const label = `${model.name}: ${text.barLabel(energy(hass, model.stored), kwh(hass, model.usable), kwh(hass, model.rated))}`;
   const watts = model.power == null || model.flow === "idle" ? "" : `${fmt(hass, Math.abs(model.power))} W`;
   const status = [text.flow[model.flow], watts, model.soc == null ? "" : pct(hass, model.soc)].filter(Boolean).join(" · ");
@@ -737,10 +834,15 @@ function fleetCardHtml(hass) {
   const stored = sum(models.map((model) => model.stored));
   const power = sum(models.map((model) => model.power));
   const flow = power == null ? "idle" : power > 20 ? "discharge" : power < -20 ? "charge" : "idle";
-  const scale = Math.max(...models.map((model) => model.rated ?? model.usable ?? 0)) || 1;
+  const scale = Math.max(...models.map((model) => Math.max(model.rated ?? 0, model.usable ?? 0))) || 1;
+  // A pack still measuring is missing from a sum, so a partial one says how many it covers.
+  const covers = (key) => {
+    const count = models.filter((model) => model[key] != null).length;
+    return count && count < models.length ? ` · ${text.ofTotal(count, models.length)}` : "";
+  };
   const stats = [
-    [kwh(hass, usable), text.fleetUsable],
-    [kwh(hass, stored), text.fleetStored(usable && stored != null ? pct(hass, (stored / usable) * 100) : "—")],
+    [kwh(hass, usable), `${text.fleetUsable}${covers("usable")}`],
+    [kwh(hass, stored), `${text.fleetStored(usable && stored != null ? pct(hass, (stored / usable) * 100) : "—")}${covers("stored")}`],
     [power == null ? "—" : `${fmt(hass, Math.abs(power))} W`, `${text.fleetPower} · ${text.flow[flow].toLowerCase()}`],
     plugStat(hass, models, text),
   ].filter(Boolean).map(([value, label]) => `<div><dt>${esc(label)}</dt><dd class="num">${esc(value)}</dd></div>`).join("");
@@ -770,7 +872,7 @@ function openMoreInfo(host, entityId) {
 // fixed word, so no cell can start a spreadsheet formula and none needs quotes.
 // Keyed by the tab that offers the download.
 const CSV_COLUMNS = {
-  capacity: ["week_start", "usable_wh", "rated_wh"],
+  capacity: ["week_start", "usable_wh", "rated_wh", "method"],
   runs: ["closed_at", "direction", "start_soc", "end_soc", "soc_delta", "capacity_wh", "duration_s", "average_power_w", "pv_share"],
   restarts: ["at", "kind", "offline_s", "failed_polls", "evidence"],
   corrections: ["at", "style", "from_soc", "to_soc", "points", "throughput"],
@@ -779,6 +881,7 @@ const CSV_COLUMNS = {
 function csvCell(row, column) {
   if (column === "closed_at" || column === "week_start") return toDate(row[column])?.toISOString() ?? "";
   if (column === "direction") return row.direction === "charge" ? "charge" : "discharge";
+  if (column === "method") return METHODS.includes(row.method) ? row.method : "";
   if (column === "at") return row.date.toISOString();
   if (column === "style") return ["jump", "creep", "hold"].includes(row.style) ? row.style : "";
   if (column === "kind") return ["restart", "network_reset"].includes(row.kind) ? row.kind : "dropout";
@@ -788,7 +891,8 @@ function csvCell(row, column) {
 }
 
 const CSV_ROWS = {
-  capacity: (model) => model.history.map((point) => ({ ...point, rated_wh: model.rated })),
+  // Weeks keep the rating they were measured against; older ones take today's.
+  capacity: (model) => model.history.map((point) => ({ ...point, rated_wh: finite(point.rated_wh) ?? model.rated })),
   runs: (model) => model.windows,
   restarts: (model) => outagesOf(model.restarts).reverse(),
   corrections: (model) => correctionsOf(model.attrs).reverse(),

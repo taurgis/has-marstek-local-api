@@ -23,6 +23,10 @@ between any point of that approach and full: the drift the BMS reset, which
 for a hold is the drift where the reading reached 99. Steps that the existing
 per-poll check already flags as jumps are corrections wherever they happen,
 and an arrival does not count them again.
+
+An arrival whose approach the trace does not cover, after a restart or a run
+of failed polls, is still a full charge. It is counted and moves the last full
+charge, but it is not judged, so it adds nothing to the drift bound.
 """
 
 from __future__ import annotations
@@ -43,11 +47,14 @@ APPROACH_POINTS = 15.0
 # Whole-percent readings put up to a point of quantization on each end of the
 # approach. Less than this is not a correction.
 MIN_CORRECTION_POINTS = 3.0
-# The bound pools the latest entries. Below this much movement in total, one
-# missed point of quantization alone would read as a large drift.
+# The bound pools the latest entries, and every entry of the last 30 days the
+# card counts. Below this much movement in total, one missed point of
+# quantization alone would read as a large drift.
 MIN_BOUND_THROUGHPUT = 100.0
 BOUND_EVENTS = 8
-MAX_EVENTS = 20
+RECENT_SECONDS = 30 * 86_400
+# A pack that reaches full every day, plus its corrections, inside 30 days.
+MAX_EVENTS = 60
 # Reported watts leave out what the unit draws for itself. A charge that
 # tapers near full can spend a large share on that, so a hold must still show
 # with this much of every charging second spent on the unit. A linked plug
@@ -82,6 +89,8 @@ class SocCorrection:
     points: float
     style: str
     throughput: float | None
+    # False for a full charge whose approach the trace did not cover.
+    judged: bool = True
 
     @property
     def corrected(self) -> bool:
@@ -90,7 +99,7 @@ class SocCorrection:
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON form stored across restarts and shown on the card."""
-        return {
+        payload: dict[str, Any] = {
             "at": self.at,
             "from_soc": self.from_soc,
             "to_soc": self.to_soc,
@@ -98,6 +107,9 @@ class SocCorrection:
             "style": self.style,
             "throughput": self.throughput,
         }
+        if not self.judged:
+            payload["judged"] = False
+        return payload
 
     @classmethod
     def from_dict(cls, raw: object) -> SocCorrection | None:
@@ -114,7 +126,8 @@ class SocCorrection:
         throughput = finite(raw.get("throughput"))
         if throughput is not None and throughput < 0.0:
             throughput = None
-        return cls(at, before, after, points, str(raw["style"]), throughput)
+        judged = raw.get("judged") is not False
+        return cls(at, before, after, points, str(raw["style"]), throughput, judged)
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,10 +167,21 @@ class SocCorrectionTracker:
         self._events: list[SocCorrection] = []
         self._throughput = 0.0
         self._trace: deque[_Point] = deque(maxlen=_MAX_TRACE)
+        # Every arrival at 100 percent, including a top-off from 99.
+        self._last_full_at: float | None = None
+        # The lowest reading since that arrival. A shallow dip is a top-off.
+        self._low_since_full: float | None = None
+        # When the tracker first saw a poll, for "never full since".
+        self._since: float | None = None
 
     @classmethod
     def from_dict(cls, raw: object) -> SocCorrectionTracker:
-        """Restore stored corrections. The trace starts again after a restart."""
+        """Restore stored corrections. The trace starts again after a restart.
+
+        A store written before the last full charge was kept on its own takes
+        it from the newest stored full charge, and its tracking start from the
+        oldest entry.
+        """
         tracker = cls()
         if not isinstance(raw, dict):
             return tracker
@@ -168,14 +192,39 @@ class SocCorrectionTracker:
         throughput = finite(raw.get("throughput"))
         if throughput is not None and throughput >= 0.0:
             tracker._throughput = throughput
+        fulls = [event.at for event in tracker._events if event.to_soc >= FULL_SOC]
+        tracker._last_full_at = finite(raw.get("last_full_at")) or max(fulls, default=None)
+        low = finite(raw.get("low_since_full"))
+        if low is not None and 0.0 <= low <= FULL_SOC:
+            tracker._low_since_full = low
+        oldest = min((event.at for event in tracker._events), default=None)
+        tracker._since = finite(raw.get("since")) or oldest
         return tracker
 
     def to_dict(self) -> dict[str, Any]:
         """Return the corrections and the movement since the last one."""
-        return {
+        payload: dict[str, Any] = {
             "events": [event.to_dict() for event in self._events],
             "throughput": round(self._throughput, 1),
         }
+        for key, value in (
+            ("last_full_at", self._last_full_at),
+            ("low_since_full", self._low_since_full),
+            ("since", self._since),
+        ):
+            if value is not None:
+                payload[key] = value
+        return payload
+
+    @property
+    def last_full_at(self) -> float | None:
+        """Return when the reading last reached 100 percent."""
+        return self._last_full_at
+
+    @property
+    def since(self) -> float | None:
+        """Return when tracking began."""
+        return self._since
 
     @property
     def events(self) -> list[SocCorrection]:
@@ -209,6 +258,11 @@ class SocCorrectionTracker:
         median of windows in the segment's direction, or the published value
         until that direction has one. Without it only flagged jumps are measured.
         """
+        if self._since is None:
+            self._since = start
+        low = min(soc_before, soc_after)
+        if self._low_since_full is None or low < self._low_since_full:
+            self._low_since_full = low
         if not self._trace or self._trace[-1].timestamp != start:
             self._trace.clear()
             self._trace.append(_Point(start, soc_before, 0.0, jumped=False))
@@ -251,10 +305,17 @@ class SocCorrectionTracker:
         # Every judged arrival starts the next approach from here.
         self._trace.clear()
         self._trace.append(_Point(arrival.timestamp, arrival.soc, 0.0, jumped=False))
+        low = self._low_since_full
+        self._last_full_at = at
+        self._low_since_full = arrival.soc
         if base is None:
             last = trace[-2]
             if not arrival.jumped:
-                # A top-off from 99, or an approach the trace does not cover.
+                if low is None or low <= FULL_SOC - APPROACH_POINTS:
+                    # A full charge the trace does not cover: counted, not judged.
+                    event = self._append(at, last.soc, arrival.soc, 0.0, FULL, judged=False)
+                    return Verdict(correction=event)
+                # A top-off from just below full.
                 self._throughput += arrival.soc - last.soc
                 return _NO_VERDICT
             base = last
@@ -278,29 +339,43 @@ class SocCorrectionTracker:
         return Verdict(correction=event, hold=style == HOLD)
 
     def _append(
-        self, at: float, before: float, after: float, points: float, style: str
+        self,
+        at: float,
+        before: float,
+        after: float,
+        points: float,
+        style: str,
+        *,
+        judged: bool = True,
     ) -> SocCorrection:
         """Store one entry and start counting movement again."""
         # Rounded as stored, so a restart restores the same entry.
         event = SocCorrection(
-            at, before, after, round(points, 1), style, round(self._throughput, 1)
+            at, before, after, round(points, 1), style, round(self._throughput, 1), judged
         )
         self._events.append(event)
         del self._events[:-MAX_EVENTS]
         self._throughput = 0.0
         return event
 
-    def bound_pct(self) -> float | None:
+    def bound_pct(self, now: float | None = None) -> float | None:
         """Return how far drift could move the published capacity, in percent.
 
-        Corrected points over movement, pooled across the latest entries that
-        know their movement. A full charge under ``MIN_CORRECTION_POINTS``
-        adds its movement and no points. Pooling keeps a run of small
-        corrections from reading as zero, as a median of per-charge ratios
-        would when most charges stay under the threshold.
+        Corrected points over movement, pooled across the judged entries that
+        know their movement: the latest ``BOUND_EVENTS``, and with ``now``
+        every one of the last 30 days, so a correction the card names is
+        never left out. A full charge under ``MIN_CORRECTION_POINTS`` adds
+        its movement and no points. Pooling keeps a run of small corrections
+        from reading as zero, as a median of per-charge ratios would when
+        most charges stay under the threshold.
         """
-        known = [event for event in self._events if event.throughput is not None]
-        recent = known[-BOUND_EVENTS:]
+        known = [event for event in self._events if event.throughput is not None and event.judged]
+        first = len(known) - BOUND_EVENTS
+        recent = [
+            event
+            for index, event in enumerate(known)
+            if index >= first or (now is not None and now - event.at <= RECENT_SECONDS)
+        ]
         moved = sum(event.throughput or 0.0 for event in recent)
         if moved < MIN_BOUND_THROUGHPUT:
             return None
@@ -365,7 +440,6 @@ def _style(points: float, flagged: bool) -> str:
 _MEDIUM_BOUND_PCT = 2.0
 _LOW_BOUND_PCT = 5.0
 _CONFIDENCE_ORDER = ("low", "medium", "high")
-_RECENT_SECONDS = 30 * 86_400
 _CARD_EVENTS = 10
 
 
@@ -391,6 +465,8 @@ def correction_attributes(
     """Return the sensor attributes that describe full charges and corrections.
 
     ``now`` is the latest poll's time. The 30-day counts are left out without it.
+    ``full_charges_checked_30d`` is how many of those full charges had an
+    approach the trace covered; only those could show a correction.
     """
     events = tracker.events
     corrected = [event for event in events if event.corrected]
@@ -400,13 +476,16 @@ def correction_attributes(
         ],
     }
     if now is not None:
-        recent = [event for event in events if now - event.at <= _RECENT_SECONDS]
+        recent = [event for event in events if now - event.at <= RECENT_SECONDS]
+        fulls = [event for event in recent if event.to_soc >= FULL_SOC]
         attrs["soc_corrections_30d"] = sum(1 for event in recent if event.corrected)
-        attrs["full_charges_30d"] = sum(1 for event in recent if event.to_soc >= FULL_SOC)
-    fulls = [event for event in events if event.to_soc >= FULL_SOC]
-    if fulls:
-        attrs["last_full_charge_at"] = iso(fulls[-1].at)
-    bound = tracker.bound_pct()
+        attrs["full_charges_30d"] = len(fulls)
+        attrs["full_charges_checked_30d"] = sum(1 for event in fulls if event.judged)
+    if tracker.last_full_at is not None:
+        attrs["last_full_charge_at"] = iso(tracker.last_full_at)
+    if tracker.since is not None:
+        attrs["soc_tracking_since"] = iso(tracker.since)
+    bound = tracker.bound_pct(now)
     if bound is not None:
         attrs["soc_drift_bound_pct"] = bound
     return attrs

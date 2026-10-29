@@ -23,6 +23,8 @@ const STYLES = ["jump", "creep", "hold"];
 const KINDS = ["up", "creep", "hold", "down"];
 const KIND_ICON = { up: "mdi:arrow-up-bold", creep: "mdi:trending-up", hold: "mdi:pause", down: "mdi:arrow-down-bold" };
 const STALE_FULL_DAYS = 14;
+// Past this the drift figure is noise from a glitch, not a usable bound.
+const MAX_SHOWN_DRIFT = 30;
 // Bars share one scale with room for a modest correction, so three small
 // ones do not fill the strip.
 const MIN_SCALE_POINTS = 5;
@@ -105,18 +107,25 @@ function stripHtml(items, text, { fmt, day }) {
     <p class="muted" aria-hidden="true">${esc(text.fixAxis)}</p></div>`;
 }
 
+// Only a full charge with a covered approach can be judged; the count of
+// those is shown when it falls short of all full charges.
 function summaryOf(attrs, text, { fmt, day, now }) {
   const counts = [];
   const fixes = finite(attrs.soc_corrections_30d);
   const fulls = finite(attrs.full_charges_30d);
-  if (fixes != null && fulls != null) counts.push(text.fixSummary(Math.round(fixes), Math.round(fulls)));
+  const checked = finite(attrs.full_charges_checked_30d);
+  if (fixes != null && fulls != null) counts.push(text.fixSummary(Math.round(fixes), Math.round(fulls), checked == null ? null : Math.round(checked)));
+  const valid = (date) => !Number.isNaN(date.getTime());
   const full = new Date(attrs.last_full_charge_at);
-  const stale = !Number.isNaN(full.getTime()) && now - full >= STALE_FULL_DAYS * 86400e3;
-  if (!Number.isNaN(full.getTime()) && !stale) counts.push(text.lastFull(day(full)));
+  const stale = valid(full) && now - full >= STALE_FULL_DAYS * 86400e3;
+  if (valid(full) && !stale) counts.push(text.lastFull(day(full)));
   const lines = [counts.join(" · ")];
   if (stale) lines.push(text.notFull(day(full)));
+  const since = new Date(attrs.soc_tracking_since);
+  if (!valid(full) && valid(since) && now - since >= STALE_FULL_DAYS * 86400e3) lines.push(text.notFullSince(day(since)));
   const bound = finite(attrs.soc_drift_bound_pct);
-  if (bound != null) lines.push(text.fixBound(`${fmt(bound, 1)}%`, bound >= 5 ? "low" : bound >= 2 ? "medium" : null));
+  if (bound != null && bound > MAX_SHOWN_DRIFT) lines.push(text.fixBoundLarge);
+  else if (bound != null) lines.push(text.fixBound(`${fmt(bound, 1)}%`, bound >= 5 ? "low" : bound >= 2 ? "medium" : null));
   return lines.filter(Boolean);
 }
 

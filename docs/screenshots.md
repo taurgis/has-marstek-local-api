@@ -59,7 +59,7 @@ The helper text on that toggle is the whole contract: the page compares every Ma
 
 The bars share one kWh scale, so a longer bar is a larger battery. A line under the bars calls out a wide gap in state of charge.
 
-Each battery card has a band: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), or **Measuring**. Venus E on the screenshot holds **4.86 kWh**, **95%** of its **5.12 kWh** rating, with the weekly chart on the **Capacity** tab. What each insight sentence means is on the [Battery health](usable-capacity.md#what-the-dashboard-shows) page.
+Each battery card has a band: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), **Measuring** until charge and discharge runs both back the estimate, or **Uncertain** while the charge-level drift is 5% or more. Venus E on the screenshot holds **4.86 kWh**, **95%** of its **5.12 kWh** rating, with the weekly chart on the **Capacity** tab. What each insight sentence means is on the [Battery health](usable-capacity.md#what-the-dashboard-shows) page.
 
 On a phone the same page stacks the totals in two columns and stacks the cards.
 
@@ -96,7 +96,7 @@ The picker keeps the English card names in every language. The words on the card
 
 ### Why the card says Still measuring
 
-A first estimate needs three runs in one direction. Each run has to move the state of charge by 20 points, all charging or all discharging. The card shows progress on the open run, for example "3 of 20 points so far." The plain-language version is [Why does my card say Still measuring?](usable-capacity.md#why-does-my-card-say-still-measuring).
+A first estimate needs three runs in one direction. Each run has to move the state of charge by 20 points, all charging or all discharging. The card counts the runs so far in each direction and shows progress on the open run, for example "3 of 20 points so far." The band stays on **Measuring** until both directions have three runs. The plain-language version is [Why does my card say Still measuring?](usable-capacity.md#why-does-my-card-say-still-measuring).
 
 ## Link a smart plug
 
