@@ -211,6 +211,17 @@ def _soc_jumped(earlier: _Sample, later: _Sample, rated_wh: float | None) -> boo
     return abs(later.soc - earlier.soc) > _soc_step_limit(earlier, later, rated_wh)
 
 
+def _returned(previous: _Sample, pending: _Sample, sample: _Sample, rated_wh: float | None) -> bool:
+    """Return whether ``sample`` came back from a held step to the level before it.
+
+    Nearer the old level than the held one, within what this poll explains.
+    A three-point spike followed by an ordinary one-point move lands two
+    points from the spike, which the step floor alone would call confirmed.
+    """
+    back = abs(sample.soc - previous.soc)
+    return back < abs(sample.soc - pending.soc) and not _soc_jumped(previous, sample, rated_wh)
+
+
 def _power_sign(power_w: float) -> int:
     """Return +1, -1, or 0 from the sign of a watt reading."""
     if power_w > 0.0:
@@ -407,9 +418,7 @@ class UsableCapacityEstimator:
             pending, self._pending = self._pending, None
             if pending is None:
                 self._segment(previous, sample)
-            elif _soc_jumped(pending, sample, self._rated_wh) and not _soc_jumped(
-                previous, sample, self._rated_wh
-            ):
+            elif _returned(previous, pending, sample, self._rated_wh):
                 # One poll off and straight back is a glitch, not a correction.
                 self._segment(previous, sample)
             else:

@@ -59,7 +59,7 @@ The helper text on that toggle is the whole contract: the page compares every Ma
 
 The bars share one kWh scale, so a longer bar is a larger battery. A line under the bars calls out a wide gap in state of charge.
 
-Each battery card has a band: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), **Measuring** until charge and discharge runs both back the estimate, or **Uncertain** while the charge-level drift is 5% or more. Venus E on the screenshot holds **4.86 kWh**, **95%** of its **5.12 kWh** rating, with the weekly chart on the **Capacity** tab. What each insight sentence means is on the [Battery health](usable-capacity.md#what-the-dashboard-shows) page.
+Each battery card has a band: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), **Measuring** until charge and discharge runs both back the estimate, or **Uncertain** while the charge-level drift is 5% or more or the runs disagree by 10% or more. Venus E on the screenshot holds **4.86 kWh**, **95%** of its **5.12 kWh** rating, with the weekly chart on the **Capacity** tab. What each insight sentence means is on the [Battery health](usable-capacity.md#what-the-dashboard-shows) page.
 
 On a phone the same page stacks the totals in two columns and stacks the cards.
 

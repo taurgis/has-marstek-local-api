@@ -188,6 +188,17 @@ def test_large_counting_drift_withholds_the_band(tmp_path: Path) -> None:
     assert "low confidence: charge-level drift" in html
 
 
+def test_runs_that_disagree_widely_withhold_the_band(tmp_path: Path) -> None:
+    """A non-linear charge level put a full-health pack at 89% with 15% scatter."""
+    pack = _pack(4_560, run_scatter_pct=14.7, confidence="low")
+    pack["attrs"]["confidence_limits"] = ["run_scatter"]
+    html = _render(tmp_path, "card", [pack])
+    assert "Uncertain" in _header(html)
+    assert "Fading" not in html
+    assert "faded</li>" not in html
+    assert "low confidence: runs disagree" in html
+
+
 def test_a_pack_without_a_rating_has_no_band(tmp_path: Path) -> None:
     """A Venus E mini publishes no nameplate; that is not 'measuring'."""
     pack = _pack(2_150, rated_capacity_wh=None)

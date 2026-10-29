@@ -340,9 +340,9 @@ API does not have.
    there. End the window when state of charge jumps further than that poll's
    watts can move the nameplate, with a floor of two points and one point of
    slack. A step equal to that limit stays. Such a step waits one poll: if
-   the next poll returns near the level before it, the step was a glitched
-   reading and is dropped without ending the window; otherwise it ends the
-   window. Over a segment longer than 120 seconds the endpoint watts cannot
+   the next poll is nearer the level before it than the level after it, and
+   within that limit of the earlier level, the step was a glitched reading
+   and is dropped without ending the window; otherwise it ends the window. Over a segment longer than 120 seconds the endpoint watts cannot
    bound a load spike between the polls, so a step there ends the window
    without counting as a BMS correction. The gap limit is 180 seconds, or
    the configured fast interval plus 150 seconds when that is longer. A poll

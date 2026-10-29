@@ -19,9 +19,10 @@ const MEASURED_BANDS = new Set(["good", "fading", "worn"]);
 const ONE_WAY = 0.93;
 const ONE_WAY_METHODS = ["discharge_median", "charge_median"];
 const METHODS = [...ONE_WAY_METHODS, "charge_discharge_geometric_mean"];
-// Counting drift this large can hide fade (the low cap in
-// helpers/capacity_confidence.py).
+// Counting drift or run scatter this large can hide fade or invent it (the
+// low caps in helpers/capacity_confidence.py).
 const UNCERTAIN_DRIFT = 5;
+const UNCERTAIN_SCATTER = 10;
 const MIN_FLEET_RTE_GAP = 5;
 const MIN_TREND_DAYS = 28;
 const DAY_S = 86400;
@@ -333,7 +334,7 @@ function bandOf(model) {
   // A one-way median still leans on the assumed efficiency, so it earns no band yet.
   if (model.usable == null || model.confidence === "collecting" || model.single) return "measuring";
   if (model.health == null) return "unrated";
-  if (model.bound != null && model.bound >= UNCERTAIN_DRIFT) return "uncertain";
+  if ((model.bound ?? 0) >= UNCERTAIN_DRIFT || (model.scatter ?? 0) >= UNCERTAIN_SCATTER) return "uncertain";
   // Round as the label does, so "80%" never sits next to "Worn".
   const shown = Math.round(model.health);
   if (shown >= GOOD_HEALTH) return "good";

@@ -111,6 +111,22 @@ def test_a_one_poll_glitch_is_dropped_and_the_run_continues() -> None:
     assert estimator.attributes()["soc_corrections"] == []
 
 
+def test_a_small_spike_followed_by_an_ordinary_tick_is_dropped() -> None:
+    """89, 86, 88: the reading came back nearer 89, so 86 was the glitch."""
+    estimator = UsableCapacityEstimator()
+    levels = [89.0] * 4 + [86.0] + [88.0] * 3
+    for index, level in enumerate(levels):
+        estimator.observe(
+            timestamp=_T0 + index * 30.0,
+            soc=level,
+            power_w=300.0,
+            mode="auto",
+            rated_wh=_VENUS_E_WH,
+        )
+    assert not estimator.soc_unconfirmed
+    assert estimator.attributes()["soc_corrections"] == []
+
+
 def test_a_real_jump_is_confirmed_on_the_next_poll() -> None:
     samples = _exact(_VENUS_E_WH, _POWER_W, 40, soc0=95.0)
     estimator = UsableCapacityEstimator()
