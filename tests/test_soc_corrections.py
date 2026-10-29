@@ -8,6 +8,7 @@ hold at 99.
 
 from __future__ import annotations
 
+import json
 import math
 import statistics
 import sys
@@ -202,12 +203,18 @@ def test_a_flagged_step_mid_range_is_a_jump_and_resets_the_movement_count() -> N
     moved = tracker.to_dict()["throughput"]
     assert moved > 0.0
     pack.counted += 10.0
+    # Two polls are held: either may be a glitch. A third at the new level confirms it.
+    for _ in range(2):
+        pack.poll(-1_500.0)
+        assert _corrections(pack) == []
+        assert pack.estimator.soc_unconfirmed
     pack.poll(-1_500.0)
     event = _corrections(pack)[-1]
     assert event.style == JUMP
     assert event.points == pytest.approx(10.0, abs=1.5)
     assert event.throughput == pytest.approx(moved)
-    assert tracker.to_dict()["throughput"] == 0.0
+    # Only the two polls after the jump have moved since.
+    assert tracker.to_dict()["throughput"] <= 2.0
     assert pack.corrected_polls == 1
 
 
@@ -256,14 +263,26 @@ def test_without_a_capacity_only_a_flagged_step_is_measured() -> None:
     assert (event.style, event.points) == (FULL, 0.0)
 
 
-def test_a_top_off_from_99_and_an_uncovered_approach_are_not_entries() -> None:
+def test_a_top_off_is_not_an_entry_and_an_uncovered_full_charge_is_unjudged() -> None:
+    """A dip of a few points is a top-off. A full charge from 70% the trace missed
+    still happened: it is counted, but it measures nothing and stays out of the bound.
+    """
     tracker = SocCorrectionTracker()
     assert _segment(tracker, _T0, 99.0, 100.0, energy=46.0, reference=4_600.0) is None
+    assert tracker.last_full_at == _T0 + 30
     _climb(tracker, _T0, [70.0, 80.0, 90.0], energy=460.0)
     tracker.break_trace()
-    assert _segment(tracker, _T0 + 600, 99.0, 100.0, energy=46.0, reference=4_600.0) is None
-    assert tracker.events == []
-    assert tracker.to_dict()["throughput"] == 22.0
+    event = _segment(tracker, _T0 + 600, 99.0, 100.0, energy=46.0, reference=4_600.0)
+    assert event is not None
+    assert (event.style, event.points, event.judged) == (FULL, 0.0, False)
+    assert event.throughput == 21.0
+    assert not event.corrected
+    assert tracker.last_full_at == _T0 + 630
+    assert tracker.to_dict()["throughput"] == 0.0
+    assert tracker.bound_pct(_T0 + 630) is None
+    restored = SocCorrectionTracker.from_dict(tracker.to_dict())
+    assert restored.events[0].judged is False
+    assert restored.last_full_at == _T0 + 630
 
 
 def test_a_jump_right_after_a_gap_is_still_measured_on_its_own_step() -> None:
@@ -357,6 +376,57 @@ def test_corrections_survive_a_restart_and_junk_is_ignored() -> None:
     assert tracker.to_dict()["throughput"] == 0.0
     assert SocCorrectionTracker.from_dict("nope").events == []
     assert UsableCapacityEstimator.from_dict({"windows": []})._corrections.events == []
+
+
+@pytest.mark.parametrize(("polls_down", "judged"), [(3, True), (20, False)])
+def test_a_short_restart_keeps_the_climb_to_full(polls_down: int, judged: bool) -> None:
+    """The stored last poll and trace tail link the first poll after a short restart.
+
+    Three polls down is 120 seconds between the polls either side of the
+    restart, inside the 180 second gap limit. Twenty is ten minutes: that
+    climb is not covered, and the full charge is counted without a verdict.
+    """
+    pack = _Pack(soc=50.0)
+    while pack.shown < 92.0:
+        pack.poll(-2_000.0)
+    stored = json.loads(json.dumps(pack.estimator.to_dict()))
+    assert stored["soc_corrections"]["trace"][0][1] <= 85.0
+    # The pack keeps charging while Home Assistant is down.
+    pack.estimator = UsableCapacityEstimator()
+    for _ in range(polls_down):
+        pack.poll(-2_000.0)
+    pack.estimator = UsableCapacityEstimator.from_dict(stored)
+    pack.charge_to_full()
+    full = [event for event in _corrections(pack) if event.to_soc == 100.0]
+    assert full[-1].judged is judged
+    assert full[-1].points == 0.0
+
+
+def test_the_stored_trace_is_the_usable_tail_and_junk_restores_none() -> None:
+    tracker = SocCorrectionTracker()
+    _climb(tracker, _T0, [80.0, 84.0, 86.0, 90.0], energy=100.0)
+    tail = tracker.to_dict()["trace"]
+    assert [point[1] for point in tail] == [84.0, 86.0, 90.0]
+    restored = SocCorrectionTracker.from_dict(tracker.to_dict())
+    assert restored.to_dict()["trace"] == tail
+
+    tracker = SocCorrectionTracker()
+    _climb(tracker, _T0, [90.0, 92.0, 95.0], energy=100.0)
+    assert [point[1] for point in tracker.to_dict()["trace"]] == [95.0]
+
+    junk_traces = (
+        [tail[0], "x"],
+        [tail[1], tail[0]],
+        [[1, 2, 3]],
+        [[1, 120, 0, 0, 0, 0]],
+        [[1, 50, "x", 0, 0, 0]],
+        [[1, 50, 0, 0, 0, -1]],
+        "x",
+    )
+    for junk in junk_traces:
+        assert "trace" not in SocCorrectionTracker.from_dict({"trace": junk}).to_dict()
+    estimator = UsableCapacityEstimator.from_dict({"last_sample": {"timestamp": "x", "soc": 50}})
+    assert "last_sample" not in estimator.to_dict()
 
 
 def test_only_the_newest_entries_are_kept() -> None:
@@ -550,3 +620,63 @@ def test_an_honest_taper_that_feeds_the_unit_is_not_a_hold() -> None:
         moment += _POLL
     assert event is not None
     assert (event.style, event.points) == (FULL, 0.0)
+
+
+def test_an_older_store_takes_the_last_full_charge_and_start_from_its_entries() -> None:
+    day = 86_400.0
+    entries = [
+        {"at": _T0, "from_soc": 85, "to_soc": 100, "points": 0, "style": FULL},
+        {"at": _T0 + 5 * day, "from_soc": 60, "to_soc": 52, "points": -6, "style": JUMP},
+    ]
+    tracker = SocCorrectionTracker.from_dict({"events": entries, "low_since_full": 140})
+    assert tracker.last_full_at == _T0
+    assert tracker.since == _T0
+    assert "low_since_full" not in tracker.to_dict()
+    stored = {"events": entries, "last_full_at": _T0 + 9 * day, "since": _T0 - day}
+    restored = SocCorrectionTracker.from_dict({**stored, "low_since_full": 30})
+    assert (restored.last_full_at, restored.since) == (_T0 + 9 * day, _T0 - day)
+    assert restored.to_dict()["low_since_full"] == 30.0
+
+
+def test_tracking_starts_on_the_first_poll_and_a_top_off_is_a_full_charge() -> None:
+    tracker = SocCorrectionTracker()
+    assert (tracker.since, tracker.last_full_at) == (None, None)
+    _climb(tracker, _T0, [97.0, 98.0, 99.0, 100.0], energy=46.0)
+    assert tracker.since == _T0
+    assert tracker.last_full_at == _T0 + 2 * _POLL + _POLL
+    assert tracker.events == []
+    attrs = correction_attributes(tracker, _T0 + 600.0, _iso)
+    assert attrs["soc_tracking_since"] == _iso(_T0)
+    assert attrs["last_full_charge_at"] == _iso(_T0 + 3 * _POLL)
+    assert attrs["full_charges_30d"] == 0
+
+
+def test_only_judged_full_charges_are_checked() -> None:
+    day = 86_400.0
+    full = {"from_soc": 85, "to_soc": 100, "points": 0, "style": FULL, "throughput": 50}
+    tracker = SocCorrectionTracker.from_dict(
+        {
+            "events": [
+                {**full, "at": _T0},
+                {**full, "at": _T0 + day, "judged": False},
+                {**full, "at": _T0 + 2 * day},
+            ]
+        }
+    )
+    attrs = correction_attributes(tracker, _T0 + 3 * day, _iso)
+    assert (attrs["full_charges_30d"], attrs["full_charges_checked_30d"]) == (3, 2)
+    assert tracker.to_dict()["events"][1]["judged"] is False
+    assert "judged" not in tracker.to_dict()["events"][0]
+
+
+def test_the_bound_keeps_every_correction_the_card_names() -> None:
+    """Eight newer clean charges must not push a correction of this month out."""
+    day = 86_400.0
+    jump = {"from_soc": 90, "to_soc": 100, "points": 6, "style": JUMP, "throughput": 100}
+    clean = {"from_soc": 85, "to_soc": 100, "points": 0, "style": FULL, "throughput": 100}
+    events = [{**jump, "at": _T0}] + [{**clean, "at": _T0 + (i + 1) * day} for i in range(8)]
+    tracker = SocCorrectionTracker.from_dict({"events": events})
+    assert tracker.bound_pct() == 0.0
+    # Six corrected points over nine charges of 100 points moved.
+    assert tracker.bound_pct(_T0 + 10 * day) == pytest.approx(6.0 / 900.0 * 100.0, abs=0.05)
+    assert tracker.bound_pct(_T0 + 40 * day) == 0.0

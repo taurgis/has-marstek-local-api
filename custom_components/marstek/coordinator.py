@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.const import CONF_HOST, CONF_PORT, EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -559,6 +559,20 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self._capacity_loaded:
             return
         await self._capacity_store.async_save(self._store_payload())
+
+    @callback
+    def async_save_on_stop(self) -> CALLBACK_TYPE:
+        """Write the capacity store as Home Assistant stops.
+
+        A delayed save only follows a run or a correction, so the stored last
+        poll can be hours old. Written at stop, it lets the first poll after
+        a short restart continue the climb toward the next full charge.
+        """
+
+        async def _save(_event: Event) -> None:
+            await self.async_save_capacity_estimate()
+
+        return self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _save)
 
     def clear_openapi_reset_mark(self) -> None:
         """Drop this device's reset-prone UDP flag, including stale IPs."""

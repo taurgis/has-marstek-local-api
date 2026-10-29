@@ -67,9 +67,14 @@ The Open API does not give the state-of-charge error variance or the power
 error variance that the weighting needs, and a recursive update would let one
 bad window pull the value. A median of complete windows is the robust version
 we can justify from the samples we have. The spread of those windows is
-reported as `spread_wh`. That is the range of the accepted samples, not a
-confidence interval. A confidence interval would pretend we know the noise
-variances Plett's estimator requires.
+reported twice, each direction against its own median and the larger
+direction kept. `run_scatter_pct` is the median absolute deviation as a
+percentage of the median: half the windows lie within it. `spread_wh` is the
+full range relative to the median, times the published value. Neither counts
+the gap between the charge and discharge medians, which in the geometric mean
+is an efficiency offset rather than disagreement. Both are observed spreads,
+not confidence intervals. A confidence interval would pretend we know the
+noise variances Plett's estimator requires.
 
 ### Round-trip efficiency
 
@@ -93,10 +98,14 @@ The ratio of those medians is the round trip the assumption implies:
 
 With `η_assumed` at 0.93 on both paths, equal medians mean a round trip of
 0.865, which is `0.93²`. The sensor exposes that as
-`implied_round_trip_efficiency`. It is not a measured efficiency. A different
-real charge and discharge efficiency leaves `sqrt(η_discharge / η_charge)`
-on the geometric mean, and a steady self-consumption on the AC port biases
-both medians in the same direction, so the ratio does not remove it.
+`implied_round_trip_efficiency`, once each direction has three windows. It is
+not a measured efficiency. A different real charge and discharge efficiency
+leaves `sqrt(η_discharge / η_charge)` on the geometric mean. A steady
+self-consumption that the reported watts leave out pulls the two medians
+apart instead: discharge reads low, charge reads high. At equal power the two
+cancel in the geometric mean, and at unequal power a residual remains (see
+[Expected error](#expected-error-stated-as-a-bound-rather-than-a-calibration)).
+The implied round trip carries both errors.
 
 Until one direction has three windows, nothing is published. A single
 direction still uses the fixed one-way factor 0.93 from the mock pack model.
@@ -188,7 +197,8 @@ A window outside 300–30,000 Wh, or outside 15–135 percent of the nameplate
 when one is known, is dropped. Inside that band the median is the outlier
 rule. A sigma clip around the current estimate would also clip a real step
 down in capacity, which is the trend the sensor exists to show. The observed
-range of the windows that remain is `spread_wh`.
+range of the windows that remain, within each direction, is `spread_wh`, and
+a wide scatter lowers the confidence instead of dropping windows.
 
 ## What other products do
 
@@ -329,7 +339,16 @@ API does not have.
    published, because the fixed 0.93 factor does not describe the inverter
    there. End the window when state of charge jumps further than that poll's
    watts can move the nameplate, with a floor of two points and one point of
-   slack. A step equal to that limit stays. The gap limit is 180 seconds, or
+   slack. A step equal to that limit stays. Such a step waits up to two
+   polls: if one of them is nearer the level before it than the level after
+   it, and within that limit of the earlier level, the step was a glitched
+   reading and is dropped without ending the window; if the third poll stays
+   near the new level, it ends the window. A step that lands back near the
+   level before the previous poll is the far side of a spike that rose under
+   the floor: it stays an ordinary move, and the spike's reading is set back
+   to the earlier level. Over a segment longer than 120 seconds the endpoint watts cannot
+   bound a load spike between the polls, so a step there ends the window
+   without counting as a BMS correction. The gap limit is 180 seconds, or
    the configured fast interval plus 150 seconds when that is longer. A poll
    that did not get `ES.GetStatus` is a hole, not a sample, and it does not
    discard the open window. The next fresh sample is still subject to the
@@ -347,8 +366,22 @@ API does not have.
    geometric mean of the two direction medians.
 6. Publish state of health only against a real nameplate. Stay unknown until
    step 4 has something to publish. Store each window's end points, average
-   power, duration, mode, and PV share. Expose the two medians and the
-   implied round trip as sensor attributes.
+   power, duration, mode, and PV share. Expose the two medians, and the
+   implied round trip once each direction has three windows, as sensor
+   attributes.
+7. Use a new nameplate only after three polls in a row report it. A change
+   of more than 10 percent is a different pack, such as an added expansion
+   module: clear the windows and start again, because runs of the old pack
+   would read as wear on the new one. Tag each weekly point with its
+   nameplate and method so a trend compares like with like.
+8. Label confidence from the number of windows behind the published value
+   (under 6 low, under 12 medium, otherwise high), then lower it for each
+   known way that count overstates it: one direction only, a median absolute
+   deviation of 5 or 10 percent within a direction, charge and discharge
+   power 4 or 6 times apart, mostly PV-charged charge windows, and counting
+   drift of 2 or 5 percent. Name the checks that lowered it in
+   `confidence_limits`. The thresholds come from a simulation campaign; they
+   are not a calibrated error bar.
 
 ## Expected error, stated as a bound rather than a calibration
 
@@ -367,21 +400,39 @@ a DC meter. No real device was available for this change.
 - **Efficiency, one direction only.** The absolute watt-hours scale by
   `η_true / 0.93` on discharge and by `0.93 / η_true` on charge. A real
   one-way efficiency of 0.90 instead of 0.93 is about a 3 percent bias. A
-  larger miss is a larger bias. This has not been measured on Marstek
-  hardware. Victron's 99 percent figure is coulombic efficiency at a DC
-  shunt, not this AC port.
+  larger miss is a larger bias. The integration has not measured it on
+  Marstek hardware. Independent tests of the Venus E 3.0 report round trips
+  of about 80 to 85 percent
+  ([heise](https://www.heise.de/bestenlisten/testbericht/speicher-fuer-grosse-bkws-und-kleine-pv-anlagen-marstek-venus-e-30-im-test/8c0rrwh),
+  [technikblog.ch](https://technikblog.ch/2026/03/marstek-venus-e-3-0-roundtrip-effizienz-gemessen-so-effizient-ist-der-speicher-wirklich/),
+  [energienerds](https://energienerds.de/testbericht-ac-speicher-marstek-venus-e-3-0/),
+  [techtest.org](https://techtest.org/marstek-venus-e-gen-3-0-test-ac-batteriespeicher-mit-512-kwh-im-test-1000e-fuer-512-kwh/)),
+  about 0.88 to 0.92 one way with standby included; Marstek states only a
+  maximum with no load condition. Victron's 99 percent figure is coulombic
+  efficiency at a DC shunt, not this AC port.
 - **Efficiency, both directions.** The geometric mean cancels a factor shared
   by both directions. If the two real one-way efficiencies differ, the
   residual factor is the square root of their ratio. A few percent of
   difference between charge and discharge leaves a residual of about half
   that, in relative terms. The two medians are `discharge_median_wh` and
   `charge_median_wh`. `implied_round_trip_efficiency` is the round trip
-  those medians imply under the 0.93 assumption. A steady self-consumption
-  on the AC port is not removed by the ratio.
+  those medians imply under the 0.93 assumption. Inverters lose more at
+  low power, so charging at 2500 W and discharging at 300 W left 2 to 3
+  percent on a typical inverter curve and about 5 percent on a poor one in
+  simulation; that power ratio lowers confidence.
+- **Self-consumption.** The unit's own draw is not in the reported watts. It
+  makes discharge windows read low and charge windows read high. 15 W at
+  800 W both ways gave -1.6 and +2.0 percent, and -0.2 percent after the
+  geometric mean. At unequal power a residual remains: about -1.5 percent
+  charging at 2500 W and discharging at 300 W, about +2.6 percent the other
+  way round. The implied round trip carries both biases.
 - **PV on Venus A and D.** Derating the whole derived battery reading used to
   multiply PV watt-hours by 0.93. The factor now applies only to the AC port.
   A device `bat_power` is unchanged. `pv_share` on each stored window is the
-  fraction of the battery-power integral that PV covered.
+  fraction of the battery-power integral that PV covered. PV watts enter
+  with no conversion loss, so a PV reading error passes straight into charge
+  windows: 5 percent high gave about +4 percent. Mostly PV-charged charge
+  windows cap confidence at medium.
 - **BMS state of charge.** This can dominate the arithmetic. If the
   percentage does not move when the pack has faded, the sensor will not
   move either. The sensor measures "watt-hours per reported state-of-charge
@@ -408,7 +459,11 @@ a DC meter. No real device was available for this change.
   100%. The integration's own parser and estimator, fed those polls,
   recorded the jump at 7 points, the hold at -5.9 points and an honest full
   charge as none. A creep went unrecorded there because no capacity was
-  published yet; replayed with one, it read 7.1 points.
+  published yet; replayed with one, it read 7.1 points. All of this assumes
+  the counter resyncs at full. A charge counter that over-counts and stops
+  charging at its own 100% never does: the bound stays at 0.0%, the
+  estimate reads 2 to 3% low, and the implied round trip 3 to 5 points high.
+  At a bound of 5% or more the card shows the band as Uncertain.
 - **Temperature and rate.** Not corrected. Cold weather and very high power
   make a session read low. Peukert is not applied.
 - **Not a nameplate test.** A lab capacity is a full charge and discharge at
