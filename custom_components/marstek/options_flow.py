@@ -46,6 +46,7 @@ from .const import (
     device_default_socket_limit,
 )
 from .helpers.flow_schemas import (
+    as_flow_schema,
     build_battery_schema,
     build_dashboard_schema,
     build_network_schema,
@@ -76,7 +77,9 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             errors["base"] = error
             # An emptied meter field must stay empty when the form comes back.
             values = {**values, CONF_PLUG_ENERGY_IN: None, CONF_PLUG_ENERGY_OUT: None, **flat_data}
-        return self.async_show_form(step_id="init", data_schema=self._schema(values), errors=errors)
+        return self.async_show_form(
+            step_id="init", data_schema=as_flow_schema(self._schema(values)), errors=errors
+        )
 
     def _schema(self, values: dict[str, Any]) -> vol.Schema:
         """Build the sectioned form from stored or just-submitted values."""
@@ -131,7 +134,9 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
         # Only polling is open by default; the rest are occasional settings.
         return vol.Schema(
             {
-                vol.Required(key): section(schema, {"collapsed": key != "polling_settings"})
+                vol.Required(key): section(
+                    as_flow_schema(schema), {"collapsed": key != "polling_settings"}
+                )
                 for key, schema in sections.items()
             }
         )

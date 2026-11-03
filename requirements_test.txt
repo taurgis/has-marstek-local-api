@@ -1,8 +1,9 @@
-# pytest-homeassistant-custom-component 0.13.365 is the latest harness that
-# pins Home Assistant Core (homeassistant==2026.9.2). The Docker image is
-# 2026.9.3; both require Python >=3.14.2. Do not pin pytest/asyncio/syrupy
+# pytest-homeassistant-custom-component 0.13.375 is the latest harness that
+# pins a stable Home Assistant Core (homeassistant==2026.10.4). The Docker
+# image matches that release. Both require Python >=3.14.2. 2026.11 is still
+# a beta, so it is not the CI pin. Do not pin pytest/asyncio/syrupy
 # separately — this package pins those to match Core.
-pytest-homeassistant-custom-component==0.13.365
+pytest-homeassistant-custom-component==0.13.375
 # Pinned, not floating: ``ruff format`` output changes between releases, so
 # an unpinned ruff means CI and a local checkout can disagree about what
 # formatted code is. Keep this in step with requirements_quality.txt.

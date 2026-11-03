@@ -17,7 +17,7 @@ This page is for contributors: people who change the integration's code, tests o
 ## Running tests
 
 Pytest uses `pytest-homeassistant-custom-component`, which tracks current
-Home Assistant Core and requires **Python 3.14.2+** (Core 2026.9). The
+Home Assistant Core and requires **Python 3.14.2+** (Core 2026.10.4). The
 integration itself still supports Home Assistant **2025.10+**.
 
 From repo root:
@@ -96,7 +96,7 @@ ignore_names`. Prefer a documented entry there over a blanket `# noqa`.
 
 ## Devcontainer Home Assistant image
 
-`.devcontainer/docker-compose.yml` pins `ghcr.io/home-assistant/home-assistant:2026.9.3`. After changing the tag:
+`.devcontainer/docker-compose.yml` pins `ghcr.io/home-assistant/home-assistant:2026.10.4`. After changing the tag:
 
 ```
 cd .devcontainer

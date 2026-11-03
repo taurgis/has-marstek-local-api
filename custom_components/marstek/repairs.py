@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import voluptuous as vol
-from homeassistant import data_entry_flow
 from homeassistant.components.repairs import RepairsFlow
+from homeassistant.components.repairs.models import RepairsFlowResult
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -21,6 +21,7 @@ from .helpers.flow_helpers import (
     identity_macs_from_mapping,
     metadata_from_device_info,
 )
+from .helpers.flow_schemas import as_flow_schema
 from .helpers.udp_clients import (
     bind_port_for_host,
     discovery_lock,
@@ -32,9 +33,7 @@ from .helpers.udp_clients import (
 class CannotConnectRepairFlow(RepairsFlow):
     """Handler for cannot connect repair flow."""
 
-    async def async_step_init(
-        self, user_input: dict[str, str] | None = None
-    ) -> data_entry_flow.FlowResult:
+    async def async_step_init(self, user_input: dict[str, str] | None = None) -> RepairsFlowResult:
         """Handle the first step of the repair flow."""
         # Get entry_id from the issue data (set by RepairsFlowManager)
         entry_id_raw = self.data.get("entry_id") if self.data else None
@@ -106,14 +105,16 @@ class CannotConnectRepairFlow(RepairsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): cv.string,
-                    vol.Required(
-                        CONF_PORT,
-                        default=entry.data.get(CONF_PORT, DEFAULT_UDP_PORT),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
-                }
+            data_schema=as_flow_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): cv.string,
+                        vol.Required(
+                            CONF_PORT,
+                            default=entry.data.get(CONF_PORT, DEFAULT_UDP_PORT),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                    }
+                )
             ),
             errors=errors,
             description_placeholders={

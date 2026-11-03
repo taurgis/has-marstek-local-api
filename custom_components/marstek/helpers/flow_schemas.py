@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import voluptuous as vol
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import CONF_HOST, CONF_PORT
@@ -33,10 +35,24 @@ from ..const import (
     CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
 )
+
+if TYPE_CHECKING:
+    import probatio
+
 from .battery_automation import BATTERY_LOW_SOC_MAX, BATTERY_LOW_SOC_MIN
 
 # Voluptuous validators are stateless, so one instance serves every schema.
 _PORT_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
+
+
+def as_flow_schema(schema: vol.Schema) -> probatio.Schema:
+    """Present a Voluptuous schema as the Probatio type Home Assistant 2026.10 annotates.
+
+    Forms still validate with Voluptuous. Core's flow and service signatures
+    name Probatio schemas, which is what ``mypy --strict`` checks.
+    https://developers.home-assistant.io/blog/2026/09/30/probatio-validation-engine/
+    """
+    return cast("probatio.Schema", schema)
 
 
 def build_manual_entry_schema(default_port: int) -> vol.Schema:

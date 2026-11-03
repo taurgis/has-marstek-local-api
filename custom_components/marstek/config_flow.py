@@ -35,6 +35,7 @@ from .helpers.flow_helpers import (
     split_devices_by_configured,
 )
 from .helpers.flow_schemas import (
+    as_flow_schema,
     build_host_port_schema,
     build_manual_entry_schema,
 )
@@ -150,7 +151,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({vol.Required("device"): vol.In(device_options)}),
+            data_schema=as_flow_schema(
+                vol.Schema({vol.Required("device"): vol.In(device_options)})
+            ),
             description_placeholders={"already_configured": already_configured_text},
         )
 
@@ -200,7 +203,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="manual",
-            data_schema=build_manual_entry_schema(form_port),
+            data_schema=as_flow_schema(build_manual_entry_schema(form_port)),
             errors=errors,
         )
 
@@ -342,7 +345,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=build_host_port_schema(default_host=form_host, default_port=form_port),
+            data_schema=as_flow_schema(
+                build_host_port_schema(default_host=form_host, default_port=form_port)
+            ),
             errors=errors,
             description_placeholders={"host": self._discovered_ip},
         )
@@ -378,12 +383,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_HOST, default=str(reauth_entry.data.get(CONF_HOST, ""))
-                    ): cv.string
-                }
+            data_schema=as_flow_schema(
+                vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_HOST, default=str(reauth_entry.data.get(CONF_HOST, ""))
+                        ): cv.string
+                    }
+                )
             ),
             errors=errors,
             description_placeholders={"host": str(reauth_entry.data.get(CONF_HOST, ""))},
@@ -424,7 +431,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure_confirm",
-            data_schema=build_host_port_schema(default_host=form_host, default_port=form_port),
+            data_schema=as_flow_schema(
+                build_host_port_schema(default_host=form_host, default_port=form_port)
+            ),
             errors=errors,
             description_placeholders={"host": str(reconfigure_entry.data.get(CONF_HOST, ""))},
         )
