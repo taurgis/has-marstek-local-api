@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.0
+
+### Minor Changes
+
+- 0db1b43: Add Battery low and Charging sensors so Home Assistant battery automations can target a Marstek battery.
+- 10d37b4: Add depth of discharge, the panel LED and Bluetooth advertising on Venus C firmware 158 and 158.1, and add Venus E 2.0 with an experimental-support warning. Every add path asks you to confirm first. Ignoring that warning stays ignored across a reload and a restart.
+
 ## 1.12.0
 
 ### Minor Changes
