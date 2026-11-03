@@ -11,6 +11,8 @@ import pytest
 from custom_components.marstek.const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+    CONF_BATTERY_LOW_SOC,
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
@@ -79,6 +81,10 @@ class TestOptionsFlowSections:
             CONF_REQUEST_DELAY,
             CONF_REQUEST_TIMEOUT,
             CONF_FAILURE_THRESHOLD,
+        ],
+        "battery_settings": [
+            CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+            CONF_BATTERY_LOW_SOC,
         ],
         "power_settings": [
             CONF_ACTION_CHARGE_POWER,

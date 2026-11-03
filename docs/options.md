@@ -78,6 +78,15 @@ Charging is always validated against the same per-family maximum (as a negative 
 
 <img src="screenshots/device-settings-power.png" alt="Power Settings" width="560" />
 
+## Battery low
+
+**Battery low** is the sensor Home Assistant uses for **Battery is low** and **Battery became low**.
+
+- **Follow the discharge cutoff** (default **on**): the sensor turns on 5 percentage points above the floor where discharging stops. That floor is 100% minus the **Depth of discharge** number (a depth of discharge of 88 means the floor is 12%, so the sensor turns on at 17%). Devices without that number use 15%.
+- **Fixed level** (5–80%, default 15%): used only when follow-cutoff is off.
+
+Once the sensor is on, it stays on until the state of charge rises another 5 percentage points. **Charging** is not configured here. It follows battery power and turns on at −50 W or below.
+
 ## Battery health dashboard
 
 **Show Battery health in the sidebar** adds a **Battery health** page (Dutch: **Batterijgezondheid**) that compares every Marstek battery. The cards are available from **Add card** whether this is on or off. The option starts off. Turning it off again hides the sidebar entry and leaves the dashboard in place. Reload the browser if the sidebar entry does not appear after you submit.

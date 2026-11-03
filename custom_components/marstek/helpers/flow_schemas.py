@@ -18,6 +18,8 @@ from homeassistant.helpers.selector import (
 from ..const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+    CONF_BATTERY_LOW_SOC,
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
@@ -31,6 +33,7 @@ from ..const import (
     CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
 )
+from .battery_automation import BATTERY_LOW_SOC_MAX, BATTERY_LOW_SOC_MIN
 
 # Voluptuous validators are stateless, so one instance serves every schema.
 _PORT_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
@@ -200,6 +203,30 @@ def build_power_schema(
                 CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
                 default=current_clamp_negative_offgrid_power,
             ): BooleanSelector(),
+        }
+    )
+
+
+def build_battery_schema(*, follow_cutoff: bool, low_soc: int) -> vol.Schema:
+    """Build the battery-low threshold schema."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+                default=follow_cutoff,
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_BATTERY_LOW_SOC,
+                default=low_soc,
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=BATTERY_LOW_SOC_MIN,
+                    max=BATTERY_LOW_SOC_MAX,
+                    step=1,
+                    unit_of_measurement="%",
+                    mode=NumberSelectorMode.BOX,
+                )
+            ),
         }
     )
 

@@ -18,6 +18,22 @@
   },
   "entity": {
     "sensor": {
+      "battery_level": {
+        "default": "mdi:battery",
+        "range": {
+          "0": "mdi:battery-outline",
+          "10": "mdi:battery-10",
+          "20": "mdi:battery-20",
+          "30": "mdi:battery-30",
+          "40": "mdi:battery-40",
+          "50": "mdi:battery-50",
+          "60": "mdi:battery-60",
+          "70": "mdi:battery-70",
+          "80": "mdi:battery-80",
+          "90": "mdi:battery-90",
+          "100": "mdi:battery"
+        }
+      },
       "battery_power": {
         "default": "mdi:battery-charging"
       },
@@ -191,6 +207,20 @@
       }
     },
     "binary_sensor": {
+      "battery_low": {
+        "default": "mdi:battery",
+        "state": {
+          "on": "mdi:battery-alert",
+          "off": "mdi:battery"
+        }
+      },
+      "battery_charging": {
+        "default": "mdi:battery",
+        "state": {
+          "on": "mdi:battery-charging",
+          "off": "mdi:battery"
+        }
+      },
       "ct_connection": {
         "default": "mdi:connection"
       },

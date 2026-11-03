@@ -263,7 +263,7 @@ has-marstek-local-api/
 │   ├── scanner.py             # Background IP/firmware change detection
 │   ├── diagnostics.py         # Downloadable diagnostics
 │   ├── repairs.py             # Repair issues and fix flows
-│   ├── binary_sensor.py       # CT/permission binary sensors
+│   ├── binary_sensor.py       # Battery low, charging, CT, permissions
 │   ├── number.py              # Depth of discharge
 │   ├── select.py              # Operating mode select entity
 │   ├── sensor.py              # All sensor entities

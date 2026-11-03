@@ -11,6 +11,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.marstek.const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+    CONF_BATTERY_LOW_SOC,
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
@@ -25,6 +27,8 @@ from custom_components.marstek.const import (
     CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
+    DEFAULT_BATTERY_LOW_FOLLOW_CUTOFF,
+    DEFAULT_BATTERY_LOW_SOC,
     DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_FAILURE_THRESHOLD,
     DEFAULT_PARALLEL_API_REQUESTS,
@@ -59,6 +63,10 @@ def _options_user_input(
             CONF_REQUEST_DELAY: request_delay,
             CONF_REQUEST_TIMEOUT: DEFAULT_REQUEST_TIMEOUT,
             CONF_FAILURE_THRESHOLD: DEFAULT_FAILURE_THRESHOLD,
+        },
+        "battery_settings": {
+            CONF_BATTERY_LOW_FOLLOW_CUTOFF: DEFAULT_BATTERY_LOW_FOLLOW_CUTOFF,
+            CONF_BATTERY_LOW_SOC: DEFAULT_BATTERY_LOW_SOC,
         },
         "power_settings": {
             CONF_ACTION_CHARGE_POWER: DEFAULT_ACTION_CHARGE_POWER,
@@ -97,6 +105,8 @@ async def test_options_flow_creates_entry(
     assert result["data"][CONF_POLL_INTERVAL_FAST] == DEFAULT_POLL_INTERVAL_FAST
     assert result["data"][CONF_SOCKET_LIMIT] is False
     assert result["data"][CONF_CLAMP_NEGATIVE_OFFGRID_POWER] is False
+    assert result["data"][CONF_BATTERY_LOW_FOLLOW_CUTOFF] is True
+    assert result["data"][CONF_BATTERY_LOW_SOC] == DEFAULT_BATTERY_LOW_SOC
 
 
 async def test_options_flow_socket_limit_default_by_model(
@@ -318,3 +328,25 @@ async def test_options_flow_rejects_an_incomplete_or_doubled_meter(
     result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "plug_meter_same_entity"}
+
+
+async def test_options_flow_stores_battery_low_level(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A fixed low-battery level is stored when the discharge cutoff is not followed."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    user_input = _options_user_input()
+    user_input["battery_settings"] = {
+        CONF_BATTERY_LOW_FOLLOW_CUTOFF: False,
+        CONF_BATTERY_LOW_SOC: 12,
+    }
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input)
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_BATTERY_LOW_FOLLOW_CUTOFF] is False
+    assert result["data"][CONF_BATTERY_LOW_SOC] == 12

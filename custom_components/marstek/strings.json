@@ -139,6 +139,18 @@
               "show_capacity_dashboard": "Adds a Battery health dashboard that compares every Marstek battery. Off by default. Turn it off again to hide the sidebar entry without deleting the dashboard."
             }
           },
+          "battery_settings": {
+            "name": "Battery low",
+            "description": "When the Battery low sensor turns on. Charging uses battery power and is not set here.",
+            "data": {
+              "battery_low_follow_cutoff": "Follow the discharge cutoff",
+              "battery_low_soc": "Fixed level"
+            },
+            "data_description": {
+              "battery_low_follow_cutoff": "On: Battery low turns on 5 percentage points above the discharge floor (100% minus the depth of discharge). Devices without that setting use 15%. Off: use the fixed level below. Once on, it stays on until the level rises another 5 percentage points.",
+              "battery_low_soc": "State of charge at which Battery low turns on when Follow the discharge cutoff is off."
+            }
+          },
           "plug_meter_settings": {
             "name": "Energy meter (optional)",
             "description": "Link a smart plug or meter that sits between this battery and the mains, such as a HomeWizard Energy Socket or a Shelly plug. Its counters measure the battery's real round-trip efficiency and its standby draw, and the cards show the plug's live power. Leave both fields empty to use only the battery's own readings.",
@@ -364,6 +376,12 @@
       }
     },
     "binary_sensor": {
+      "battery_low": {
+        "name": "Battery low"
+      },
+      "battery_charging": {
+        "name": "Charging"
+      },
       "ct_connection": {
         "name": "CT connection",
         "state": {

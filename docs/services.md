@@ -23,6 +23,81 @@ Services are registered when Home Assistant starts and remain available even if
 no Marstek devices are currently loaded. If no matching device or config entry
 is available, the service call will return an error.
 
+## Battery automations
+
+Home Assistant 2026.4 and newer has [battery triggers and conditions](https://www.home-assistant.io/integrations/battery/). They list an entity only when its device class matches:
+
+| You pick | Entity | Device class |
+|---|---|---|
+| Battery is low, became low, no longer low | **Battery low** | `binary_sensor` / `battery` |
+| Battery is charging, started charging, stopped charging | **Charging** | `binary_sensor` / `battery_charging` |
+| Battery level, level changed, level crossed a threshold | **Battery level** | `sensor` / `battery`, unit % |
+
+**Battery power**, on-grid power, off-grid power, PV power, and the meter power sensors already use device class `power`, so they show up under [Power](https://www.home-assistant.io/integrations/power/) (**Power value**, **Power changed**, **Power crossed threshold**). The lifetime energy totals are the [Energy dashboard](energy_dashboard.md) sources. Battery temperature (disabled by default) uses device class `temperature`.
+
+Replace `<battery>` with the entity-id prefix from the device name, for example `venus_e_3_0`.
+
+Notify when the pack becomes low, but only if it is not already charging:
+
+```yaml
+triggers:
+  - trigger: battery.became_low
+    target:
+      entity_id: binary_sensor.<battery>_battery_low
+conditions:
+  - condition: battery.is_not_charging
+    target:
+      entity_id: binary_sensor.<battery>_charging
+actions:
+  - action: notify.persistent_notification
+    data:
+      title: Marstek
+      message: The battery is low and not charging.
+```
+
+Start a charge when the level drops under 20%:
+
+```yaml
+triggers:
+  - trigger: battery.level_crossed_threshold
+    target:
+      entity_id: sensor.<battery>_battery_level
+    options:
+      threshold:
+        type: below
+        value:
+          number: 20
+          unit_of_measurement: "%"
+actions:
+  - action: marstek.set_passive_mode
+    data:
+      device_id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+      power: -1500
+      duration: 3600
+```
+
+A condition that the level is still under 30% while charging has started:
+
+```yaml
+triggers:
+  - trigger: battery.started_charging
+    target:
+      entity_id: binary_sensor.<battery>_charging
+conditions:
+  - condition: battery.is_level
+    target:
+      entity_id: sensor.<battery>_battery_level
+    options:
+      threshold:
+        type: below
+        value:
+          number: 30
+          unit_of_measurement: "%"
+  - condition: battery.is_low
+    target:
+      entity_id: binary_sensor.<battery>_battery_low
+```
+
 ## How modes are set
 
 | Mode | How to set it |

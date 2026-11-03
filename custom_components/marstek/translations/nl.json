@@ -139,6 +139,18 @@
               "show_capacity_dashboard": "Voegt een dashboard Batterijgezondheid toe dat elke Marstek-batterij vergelijkt. Standaard uit. Zet het weer uit om het zijbalkitem te verbergen zonder het dashboard te verwijderen."
             }
           },
+          "battery_settings": {
+            "name": "Batterij laag",
+            "description": "Wanneer de sensor Batterij laag aan gaat. Laden volgt het batterijvermogen en stel je hier niet in.",
+            "data": {
+              "battery_low_follow_cutoff": "Volg de ontlaadgrens",
+              "battery_low_soc": "Vast niveau"
+            },
+            "data_description": {
+              "battery_low_follow_cutoff": "Aan: Batterij laag gaat aan 5 procentpunt boven de ontlaadgrens (100% min de ontlaaddiepte). Zonder die instelling is de grens 15%. Uit: gebruik het vaste niveau hieronder. Eenmaal aan blijft de sensor aan tot het niveau nog 5 procentpunt stijgt.",
+              "battery_low_soc": "Laadniveau waarbij Batterij laag aan gaat als Volg de ontlaadgrens uit staat."
+            }
+          },
           "plug_meter_settings": {
             "name": "Energiemeter (optioneel)",
             "description": "Koppel een slimme stekker of meter tussen deze batterij en het net, zoals een HomeWizard Energy Socket of een Shelly-stekker. De tellers meten het echte rendement heen en terug en het stand-byverbruik van de batterij, en de kaarten tonen het actuele vermogen aan de stekker. Laat beide velden leeg om alleen de metingen van de batterij zelf te gebruiken.",
@@ -364,6 +376,12 @@
       }
     },
     "binary_sensor": {
+      "battery_low": {
+        "name": "Batterij laag"
+      },
+      "battery_charging": {
+        "name": "Laden"
+      },
       "ct_connection": {
         "name": "CT-verbinding",
         "state": {
