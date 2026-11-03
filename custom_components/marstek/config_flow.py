@@ -55,6 +55,12 @@ _LOGGER = logging.getLogger(__name__)
 _MANUAL_DEVICE_OPTION = "__manual__"
 
 
+def _device_is_venus_e2(device_info: dict[str, Any]) -> bool:
+    """Return True when GetDevice named a Venus E 2.0."""
+    device_type = device_info.get("device_type")
+    return is_venus_e2(device_type if isinstance(device_type, str) else None)
+
+
 def _stored_host_is_answering(entry: config_entries.ConfigEntry) -> bool:
     """Return True when *entry* is loaded and its last poll succeeded.
 
@@ -196,6 +202,9 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # not turn the user's manual entry into an abort.
                     await self.async_set_unique_id(formatted_unique_id, raise_on_progress=False)
                     self._abort_if_identity_configured()
+                    if _device_is_venus_e2(device_info):
+                        self._remember_confirm_target(host, port, device_info)
+                        return await self.async_step_confirm_venus_e2()
 
                     return self.async_create_entry(
                         title=format_device_name(device_info),
@@ -378,6 +387,14 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return "confirm_venus_e2"
         return "confirm"
 
+    def _remember_confirm_target(self, host: str, port: int, device_info: dict[str, Any]) -> None:
+        """Keep the address and model the Venus E 2.0 confirm step will re-check."""
+        self._discovered_ip = host
+        self._discovered_port = port
+        self._discovered_metadata = metadata_from_device_info(
+            self._device_info_with_lease_mac(host, device_info)
+        )
+
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
     ) -> config_entries.ConfigFlowResult:
@@ -486,13 +503,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(formatted_unique_id, raise_on_progress=False)
         self._abort_if_identity_configured()
 
+        host = str(device["ip"])
+        port = int(device.get("port", DEFAULT_UDP_PORT))
+        if _device_is_venus_e2(device):
+            self._remember_confirm_target(host, port, device)
+            return await self.async_step_confirm_venus_e2()
+
         return self.async_create_entry(
             title=format_device_name(device),
-            data=build_entry_data(
-                device["ip"],
-                int(device.get("port", DEFAULT_UDP_PORT)),
-                device,
-            ),
+            data=build_entry_data(host, port, device),
         )
 
     async def _discover_devices_with_retry(

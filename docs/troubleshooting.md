@@ -125,7 +125,7 @@ The integration treats these firmware versions as reset-prone:
 
 On those versions it shows a **warning** in **Settings** > **System** > [**Repairs**](guide/glossary.md#repairs) as soon as the battery is set up, even if the first connection attempt still fails. The warning has no fix button; it is there to tell you to update. The integration also sends less traffic to the battery, as listed in the technical details.
 
-Venus E 2.0 is supported with a separate dismissible repair warning: support is experimental and community-tested. The battery is still HMG-50, so the meter-channel warning applies as well.
+Venus E 2.0 is supported with a separate repair warning you can ignore: support is experimental and community-tested. The battery is still HMG-50, so the meter-channel warning applies as well.
 
 <details class="details custom-block">
 <summary>Technical details</summary>
@@ -270,7 +270,9 @@ Firmware research notes: [tools/firmware/HMG50_METER_CHANNEL.md](../tools/firmwa
 
 ## Venus E 2.0
 
-Venus **E 2.0 is not supported** ([HMG-50](guide/glossary.md#hmg-50)). Existing config entries fail setup, and discovery and manual add stop with an error. Using the integration with this model may disconnect the device from its CT003 meter, because of the shared meter channel described in the section above.
+Venus E 2.0 ([HMG-50](guide/glossary.md#hmg-50)) can be added. Support is experimental and community-tested. Every add path (the discovery list, a typed IP address, DHCP, and the background scanner) stops on a confirmation step that explains this before the battery is created. Home Assistant then shows a repair warning you can ignore. Ignoring it stays ignored across a reload and a restart. Removing the battery, or the battery no longer reporting as Venus E 2.0, clears the warning.
+
+The battery uses the same controller as Venus C, so the shared meter channel in the section above still applies. Depth of discharge, Panel LED, and Bluetooth advertising appear from firmware 158. UPS is not offered: firmware 158 accepts the command and then reports Manual.
 
 <details class="details custom-block">
 <summary>Technical details</summary>

@@ -15,6 +15,7 @@ from custom_components.marstek.const import (
 )
 from tests.conftest import (
     patch_discovery,
+    patch_manual_connection,
 )
 
 from ._helpers import (
@@ -258,6 +259,14 @@ async def test_user_flow_filters_unsupported_venus_e2(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], user_input={"device": "0"}
     )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm_venus_e2"
+    assert result["description_placeholders"]["host"] == "1.2.3.4"
+
+    with patch_manual_connection(device_info=devices[0]):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "1.2.3.4", "port": 30000}
+        )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"]["device_type"] == device_type
 

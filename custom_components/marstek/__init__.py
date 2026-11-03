@@ -97,9 +97,6 @@ def _venus_e2_issue_id(entry: ConfigEntry) -> str:
     return f"venus_e2_experimental_{entry.entry_id}"
 
 
-_VENUS_E2_LOGGED = "venus_e2_logged"
-
-
 def _sync_meter_channel_issue(
     hass: HomeAssistant, entry: ConfigEntry, profile: FirmwareProfile
 ) -> None:
@@ -137,6 +134,10 @@ def _sync_venus_e2_issue(hass: HomeAssistant, entry: ConfigEntry, profile: Firmw
             issue_registry.async_delete(DOMAIN, issue_id)
         return
 
+    # Recreating an existing row keeps dismissed_version. Deleting the row on
+    # unload would clear Ignore, so the warning is removed only when the
+    # battery is no longer a Venus E 2.0, or when the entry itself is removed.
+    already_present = issue_registry.async_get_issue(DOMAIN, issue_id) is not None
     firmware = str(profile.firmware_version) if profile.firmware_version is not None else "unknown"
     ir.async_create_issue(
         hass,
@@ -149,10 +150,8 @@ def _sync_venus_e2_issue(hass: HomeAssistant, entry: ConfigEntry, profile: Firmw
         translation_placeholders={"firmware": firmware},
         learn_more_url="https://github.com/taurgis/has-marstek-local-api/issues/121",
     )
-    logged: set[str] = hass.data.setdefault(_VENUS_E2_LOGGED, set())
-    if entry.entry_id in logged:
+    if already_present:
         return
-    logged.add(entry.entry_id)
     _LOGGER.warning(
         "Venus E 2.0 at %s firmware %s is supported experimentally. "
         "Open API polling can interrupt this battery's own meter",
@@ -230,14 +229,15 @@ def _clear_meter_channel_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 def _clear_venus_e2_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Clear the Venus E 2.0 experimental-support warning if present."""
+    """Clear the Venus E 2.0 experimental-support warning if present.
+
+    Call this when the entry is removed. A reload must leave the row in place
+    so an ignored warning stays ignored.
+    """
     issue_registry = ir.async_get(hass)
     issue_id = _venus_e2_issue_id(entry)
     if issue_registry.async_get_issue(DOMAIN, issue_id):
         issue_registry.async_delete(DOMAIN, issue_id)
-    logged = hass.data.get(_VENUS_E2_LOGGED)
-    if isinstance(logged, set):
-        logged.discard(entry.entry_id)
 
 
 def _async_remove_unsupported_capability_entities(
@@ -690,11 +690,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     else:
         _clear_entry_reset_prone_flag(hass, entry)
 
-    # Clear any repair issues tied to this entry
+    # Connection and firmware warnings are recreated on the next setup. The
+    # Venus E 2.0 warning stays so Ignore survives a reload.
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
     _clear_meter_channel_issue(hass, entry)
-    _clear_venus_e2_issue(hass, entry)
 
     await _async_release_entry_resources(hass, entry)
     # A reload, such as an options save, sets the entry up again at once, so

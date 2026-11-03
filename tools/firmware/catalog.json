@@ -426,7 +426,7 @@
         "reset": "0x08002ab1"
       },
       "source": "https://github.com/rweijnen/marstek-firmware-archive/tree/main/firmwares/HMG-50/Control/1581",
-      "remark": "Beta labeled 158.1. Open API ver 1581 folds to Control generation 158 (same SYS/UPS gate as 158). Same vector table, command names and single +QIURC: \"recv\",3 meter channel as 158. See HMG50_METER_CHANNEL.md (issue #82)."
+      "remark": "Beta labeled 158.1. Open API ver 1581 folds to Control generation 158 (same SYS gate as 158; UPS stays off because GetMode reports Manual). Same vector table, command names and single +QIURC: \"recv\",3 meter channel as 158. See HMG50_METER_CHANNEL.md (issue #82)."
     },
     {
       "deviceType": "VNSEMINI-0",

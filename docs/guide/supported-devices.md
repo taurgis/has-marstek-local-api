@@ -62,7 +62,7 @@ If you own a Venus C:
 - If Auto mode keeps stalling, poll less, or stop polling the battery for a while. That is the only reliable fix known today.
 - Looking at other integrations? Most of the Modbus ones (they use a wired connection) in the [comparison](comparison.md) don't list Venus C. hm2mqtt does, over MQTT.
 
-Venus E 2.0 uses the same controller board. The integration adds it and shows a dismissible repair warning that support is experimental. The controls match Venus C on the same firmware: depth of discharge, the panel LED, and Bluetooth advertising from 158, and not before. UPS is not one of them.
+Venus E 2.0 uses the same controller board. The integration adds it and shows a repair warning that support is experimental. You can ignore that warning. The controls match Venus C on the same firmware: depth of discharge, Panel LED, and Bluetooth advertising from 158, and not before. UPS is not one of them.
 
 ## Venus E mini notes
 

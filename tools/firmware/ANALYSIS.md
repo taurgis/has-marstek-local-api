@@ -295,8 +295,9 @@ image with `Marstek.GetDevice`. Strings in that binary (and 154–156):
 | SKU | `HMG-50` / `HMG-25` / `HMG-1` | `VNSE3-0` |
 
 Matching only `Venus E2.0` / `VNSE2-0` would accept a real E2 as Venus E 3.x.
-The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as unsupported.
-Venus E 3.x requires `VenusE 3.0` / `VNSE3`.
+The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as Venus E 2.0
+(experimental support, with a repair warning). Venus E 3.x requires
+`VenusE 3.0` / `VNSE3`.
 
 HMG-50 Control **153** Open API methods in the binary recv list:
 `Marstek.GetDevice`, `ES.GetMode`, `ES.SetMode`, `Wifi.SetConfig`,
@@ -312,14 +313,15 @@ include both `VenusE` / `VenusE-%s` and `VenusC` / `VenusC-%s`.
 Issue [#60](https://github.com/taurgis/has-marstek-local-api/issues/60) is
 HMG-50 reporting `device: "VenusC"` and omitting GetDevice result MACs. The
 firmware profile treats Venus C and bare `VenusE` (Venus E 2.0) as HMG-50
-Control: no SYS/UPS until generation **158**, EM server from **155**,
-reset-prone until **156**. Venus E 2.0 is set up with an experimental warning.
+Control: no SYS until generation **158**, and no UPS on this board (158
+accepts `ups_cfg` and then reports Manual). EM server from **155**,
+reset-prone below **156**. Venus E 2.0 is set up with an experimental warning.
 
 Docker mocks:
 
 - `172.28.0.26` Venus C 153 (issue #60)
 - `172.28.0.42` / `.43` Venus C 155 / 156
-- `172.28.0.29` / `.44` / `.45` unsupported `VenusE` 153 / 155 / 156
+- `172.28.0.29` / `.44` / `.45` experimental `VenusE` 153 / 155 / 156
 
 ## What 151 changed versus 150
 

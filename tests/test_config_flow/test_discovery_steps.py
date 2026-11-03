@@ -486,6 +486,15 @@ async def test_integration_discovery_confirms_venus_e2(
     assert result["step_id"] == "confirm_venus_e2"
     assert result["description_placeholders"]["host"] == "172.28.0.29"
 
+    with patch_manual_connection(device_info={**discovery_info, "wifi_mac": "11:22:33:44:55:66"}):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"host": "172.28.0.29", "port": 30000},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_type"] == device_type
+
 
 async def test_integration_discovery_wifi_only_does_not_move_ble_entry(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry

@@ -12,7 +12,7 @@ Not every battery gets every entity. Solar inputs, UPS mode and the depth of dis
 > [!WARNING] Battery detail sensors start disabled
 > Reading battery details is suspected to make some Marstek firmware restart by itself ([issue #14](https://github.com/taurgis/has-marstek-local-api/issues/14)). The five entities that need that reading are therefore **disabled by default on new installations**: Battery temperature, Battery remaining capacity, Battery rated capacity, Charge permission and Discharge permission. The integration only asks the battery for these details while at least one of them is enabled. On firmware **150** or newer, enabling any of them starts those requests again.
 >
-> **Firmware that can reset the Open API (Venus A, D, E 3.0 or Venus E mini below 150, Venus C below 156, or an unknown firmware number):** those five entities are not created at all, even if you enabled them before, and the battery is never asked for these details. See [Repairs](repairs.md#firmware-can-reset-open-api). After a firmware update to 150 or newer, they come back (still disabled by default).
+> **Firmware that can reset the Open API (Venus A, D, E 3.0 or Venus E mini below 150, Venus C or Venus E 2.0 below 156, or an unknown firmware number):** those five entities are not created at all, even if you enabled them before, and the battery is never asked for these details. See [Repairs](repairs.md#firmware-can-reset-open-api). After a firmware update to 150 or newer, they come back (still disabled by default).
 >
 > **Upgrading an existing install on firmware 150 or newer?** Entities that were already registered stay enabled; upgrades never disable entities on firmware that can safely use them. To stop the battery detail requests, disable the five entities above once by hand (device page → entity → ⚙️ → *Enabled* off).
 
@@ -184,13 +184,13 @@ This control, and the two switches below, only appear on supported firmware. Ven
 
 | Entity name | Key | Unit | Range | Category | Default |
 |---|---|---|---|---|---|
-| Depth of discharge | `depth_of_discharge` | % | 30–88, step 1 | Config | Enabled (if supported). Starts at 88 when nothing valid was restored. |
+| Depth of discharge | `depth_of_discharge` | % | 30–88, step 1 | Config | Enabled (if supported). Shows 88 until a value this Home Assistant has written is restored. |
 
-The battery can't report its current depth of discharge back to Home Assistant. Home Assistant shows the last value it successfully set. If you change it in the Marstek app or with another tool, Home Assistant does not see that change.
+The battery can't report its current depth of discharge back to Home Assistant. 88 is the firmware default, shown only before this Home Assistant has a saved write. After a write the battery accepts, a reload or a restart restores that value (`RestoreNumber`). A change made in the Marstek app or with another tool is not visible here. The control is marked assumed, because the number was not read from the battery.
 
 ## Switch (configuration)
 
-Same firmware and model availability as depth of discharge. Like depth of discharge, the battery can't report these settings back, so Home Assistant shows the last value it successfully set. Until you set a switch once, it shows `unknown`.
+Same firmware and model availability as depth of discharge. The battery can't report these settings back. Until you set a switch once, it shows `unknown` with an assumed state. Inventing on or off would hide that the battery was never asked. After a write the battery accepts, a reload or a restart restores that on or off state (`RestoreEntity`).
 
 | Entity name | Key | Category | Notes |
 |---|---|---|---|

@@ -122,6 +122,8 @@ class FirmwareProfile:
 
         Capability gates recreate SYS/UPS/PV entities. Reset-prone also
         recreates (or removes) Bat.GetStatus entities and the Open API warning.
+        ``venus_e2`` recreates the experimental-support repair when a stored
+        entry moves between Venus E 2.0 and another family.
 
         The scales and the EM/schedule gates matter for the same reason: the
         coordinator, the parser and the services all read the profile captured
@@ -131,6 +133,7 @@ class FirmwareProfile:
         """
         return (
             *self.setup_capability_signature,
+            self.venus_e2,
             self.openapi_reset_prone,
             self.pv_energy_scale,
             self.pv_channel_1_power_scale,

@@ -828,13 +828,22 @@ class Campaign:
         flow_id = _flow_id(started)
         step = _flow_step(started)
         current = started
-        if step == "user" and flow_id:
+        if step in {"user", "user_venus_e2"} and flow_id:
             current = await ha_cdp.cmd_flow_next(
                 self.cdp, self.page, flow_id, {"device": MANUAL_DEVICE_OPTION}
             )
             flow_id = _flow_id(current) or flow_id
             step = _flow_step(current)
         if step == "manual" and flow_id:
+            current = await ha_cdp.cmd_flow_next(
+                self.cdp,
+                self.page,
+                flow_id,
+                {"host": host, "port": port},
+            )
+            flow_id = _flow_id(current) or flow_id
+            step = _flow_step(current)
+        if step == "confirm_venus_e2" and flow_id:
             current = await ha_cdp.cmd_flow_next(
                 self.cdp,
                 self.page,

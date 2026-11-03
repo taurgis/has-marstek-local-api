@@ -8,7 +8,7 @@
       "invalid_discovery_info": "Invalid discovery information received from the device",
       "reauth_successful": "Device reconnected successfully",
       "reconfigure_successful": "Device reconfigured successfully",
-      "unsupported_device": "Venus E2.0 is not supported by this integration"
+      "unsupported_device": "Venus E 2.0 support is experimental. Confirm the device to add it."
     },
     "error": {
       "cannot_connect": "Unable to connect to the device",
@@ -16,7 +16,7 @@
       "invalid_discovery_info": "Invalid discovery information received from the device",
       "unique_id_mismatch": "The device at this address does not match the discovered device",
       "all_devices_configured": "All discovered devices are already configured. Enter an IP address manually or ensure additional devices are on the network.",
-      "unsupported_device": "Venus E2.0 is not supported by this integration"
+      "unsupported_device": "Venus E 2.0 support is experimental. Confirm the device to add it."
     },
     "step": {
       "user": {
@@ -36,12 +36,12 @@
         "data_description": {
           "device": "Choose the Marstek device you want to add"
         },
-        "description": "Select your Marstek energy storage device from the options below. A device that reports as VenusE is a Venus E 2.0. Support for that model is experimental and community-tested. Home Assistant still adds it, then shows a repair warning. Open API polling can interrupt the battery's own meter.{already_configured}",
+        "description": "Select your Marstek energy storage device from the options below. A device that reports as VenusE is a Venus E 2.0. Support for that model is experimental and community-tested. Choosing one asks you to confirm before Home Assistant adds it, and then shows a repair warning you can ignore. Open API polling can interrupt the battery's own meter.{already_configured}",
         "title": "Marstek Energy Storage"
       },
       "manual": {
         "title": "Manual device setup",
-        "description": "No devices were discovered automatically. Enter the IP address of your Marstek device manually. Make sure the device has Open API enabled in the Marstek app. A battery that reports as VenusE (Venus E 2.0) can be added. Support for that model is experimental and community-tested, and Home Assistant shows a repair warning after setup.",
+        "description": "No devices were discovered automatically. Enter the IP address of your Marstek device manually. Make sure the device has Open API enabled in the Marstek app. A battery that reports as VenusE (Venus E 2.0) asks you to confirm before it is added. Support for that model is experimental and community-tested, and Home Assistant shows a repair warning you can ignore.",
         "data": {
           "host": "IP address",
           "port": "Port"
@@ -65,7 +65,7 @@
       },
       "confirm_venus_e2": {
         "title": "Confirm Venus E 2.0",
-        "description": "A Venus E 2.0 was discovered at {host}. It reports as VenusE. Support is experimental and community-tested: Open API polling can interrupt the battery's own meter and stop self-consumption charging. You can still add it. Home Assistant shows a repair warning you can dismiss. Confirm the address or adjust it before adding.",
+        "description": "A Venus E 2.0 was discovered at {host}. It reports as VenusE. Support is experimental and community-tested: Open API polling can interrupt the battery's own meter and stop self-consumption charging. You can still add it. Home Assistant shows a repair warning you can ignore. Confirm the address or adjust it before adding.",
         "data": {
           "host": "IP address",
           "port": "Port"
@@ -598,7 +598,7 @@
       "message": "Invalid setting: {error}"
     },
     "unsupported_device": {
-      "message": "Venus E2.0 is not supported by this integration"
+      "message": "Venus E 2.0 support is experimental. Confirm the device to add it."
     },
     "setup_cannot_connect": {
       "message": "Unable to connect to the Marstek device at {host} ({error}). Home Assistant will retry, and the scanner updates the address automatically if the device moved."
@@ -632,7 +632,7 @@
           "cannot_connect": "Unable to connect to the device",
           "invalid_discovery_info": "Invalid discovery information received from the device",
           "unique_id_mismatch": "The device at this address is a different device",
-          "unsupported_device": "Venus E2.0 is not supported by this integration"
+          "unsupported_device": "Venus E 2.0 support is experimental. Confirm the device to add it."
         },
         "abort": {
           "entry_not_found": "The configuration entry was not found.",
@@ -646,7 +646,7 @@
     },
     "venus_e2_experimental": {
       "title": "Venus E 2.0 support is experimental",
-      "description": "This battery reports firmware {firmware} and identifies as Venus E 2.0 (VenusE on the HMG-50 controller, the same board as Venus C). Support is experimental and community-tested. Depth of discharge, the panel LED and Bluetooth advertising are available from firmware 158; older firmware does not serve those commands. UPS is not offered. Open API polling still shares one Wi-Fi channel with the battery's own meter, so self-consumption charging can stall. You can dismiss this warning."
+      "description": "This battery reports firmware {firmware} and identifies as Venus E 2.0 (VenusE on the HMG-50 controller, the same board as Venus C). Support is experimental and community-tested. Depth of discharge, Panel LED, and Bluetooth advertising are available from firmware 158; older firmware does not serve those commands. UPS is not offered. Open API polling still shares one Wi-Fi channel with the battery's own meter, so self-consumption charging can stall. You can ignore this warning."
     },
     "shared_meter_udp_channel": {
       "title": "Marstek Open API can interrupt this device's own meter",

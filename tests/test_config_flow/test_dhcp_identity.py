@@ -349,6 +349,17 @@ async def test_dhcp_venus_e2_is_offered_for_setup(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "confirm_venus_e2"
 
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=_device(device_type="VenusE")),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": _HOST, "port": 30000}
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_type"] == "VenusE"
+
 
 async def test_dhcp_probe_skips_an_answer_without_a_mac(hass: HomeAssistant) -> None:
     """A GetDevice reply with no MAC is not a battery, so the lease stays unconfirmed."""

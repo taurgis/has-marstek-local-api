@@ -280,6 +280,15 @@ async def test_manual_flow_adds_venus_e2(hass: HomeAssistant, device_type: str) 
             result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
         )
 
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm_venus_e2"
+    assert result["description_placeholders"]["host"] == "192.168.1.100"
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"]["device_type"] == device_type
 

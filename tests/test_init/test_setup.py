@@ -221,6 +221,57 @@ async def test_existing_venus_e2_entry_sets_up_with_a_warning(
     assert len(warnings) == 1
 
 
+async def test_venus_e2_ignore_survives_reload_and_unload(
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ignoring the Venus E 2.0 warning stays ignored across reload and unload."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aa:bb:cc:dd:ee:ff",
+        data={
+            "host": "1.2.3.4",
+            "ble_mac": "AA:BB:CC:DD:EE:FF",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_type": "VenusE",
+            "version": 156,
+            "wifi_name": "marstek",
+            "wifi_mac": "11:22:33:44:55:66",
+        },
+    )
+    entry.add_to_hass(hass)
+    client = create_mock_client(
+        status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
+    )
+    issue_id = f"venus_e2_experimental_{entry.entry_id}"
+    with (
+        patch_marstek_integration(client=client),
+        caplog.at_level(logging.WARNING, logger="custom_components.marstek"),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        ir.async_ignore_issue(hass, DOMAIN, issue_id, True)
+        ignored = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+        assert ignored is not None
+        dismissed = ignored.dismissed_version
+        assert dismissed is not None
+        caplog.clear()
+
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    kept = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert kept is not None
+    assert kept.dismissed_version == dismissed
+    assert [record for record in caplog.records if "experimentally" in record.message] == []
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
 async def test_remove_entry_cleans_stale_device(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:

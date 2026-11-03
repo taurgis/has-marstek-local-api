@@ -129,17 +129,17 @@ Capabilities depend on the model and the firmware version. A feature the battery
 |--------|--------|-------|
 | Venus A | Supported, with solar | SYS and UPS from firmware 150 |
 | Venus D | Supported, with solar | SYS and UPS from firmware 150 |
-| Venus C | Supported, with a caveat | No SYS/UPS. Polling can stall Auto-mode charging on the shared Wi-Fi channel ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)) |
+| Venus C | Supported, with a caveat | Depth of discharge, Panel LED, and Bluetooth advertising from firmware 158. UPS is not offered. Polling can stall Auto-mode charging on the shared Wi-Fi channel ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)) |
 | Venus E 3.0 | Supported | SYS and UPS from firmware 150. Ten manual schedule slots (0–9) |
 | Venus E mini | Supported | Reports `VNSEM-0`. Six manual schedule slots (0–5). Add it by IP |
-| Venus E 2.0 | Not compatible | Can disconnect the device from its meter |
+| Venus E 2.0 | Experimental | Same gates as Venus C. Setup asks you to confirm, then shows a repair warning you can ignore |
 | Other Open API devices | May work, untested | Treated as an unknown model, with the safest feature set |
 
 Per-firmware energy scaling, schedule limits, and the Docker test matrix are in [Development](docs/development.md#test-matrix). If your model or firmware is missing, [open a firmware coverage issue](https://github.com/taurgis/has-marstek-local-api/issues/new?template=firmware_coverage.yml).
 
 ## Compared with other community integrations
 
-Other ways to connect a Marstek battery include Marstek's own HACS integration ([marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek)) and other Open API integrations, Modbus integrations such as [Omnibattery](https://github.com/ffunes/Omnibattery) (the main option for Venus E 2.0), and [hm2mqtt](https://github.com/tomquist/hm2mqtt) for B2500 and Jupiter. The [comparison on the documentation site](https://marstek.rhino-inquisitor.com/guide/comparison) covers models, features, and activity for each, and which one fits your setup.
+Other ways to connect a Marstek battery include Marstek's own HACS integration ([marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek)) and other Open API integrations, Modbus integrations such as [Omnibattery](https://github.com/ffunes/Omnibattery) (a wired option when Open API polling is a poor fit for Venus E 2.0), and [hm2mqtt](https://github.com/tomquist/hm2mqtt) for B2500 and Jupiter. The [comparison on the documentation site](https://marstek.rhino-inquisitor.com/guide/comparison) covers models, features, and activity for each, and which one fits your setup.
 
 > **Heads-up on the `marstek` domain**: Marstek's own HACS integration uses the same `marstek` domain, so only one of the two can be installed. Home Assistant Core PR [#179635](https://github.com/home-assistant/core/pull/179635) adds `homeassistant/components/marstek` under that domain too. Custom components take precedence over built-in ones, so an installed copy of this integration keeps working if that PR merges. Remove it first if you want to try the built-in one.
 
@@ -177,7 +177,7 @@ These are constraints of the Open API or of this integration's design.
 - **Passive and Manual can't be chosen from the mode dropdown.** They show there so the current mode is visible, but both need a power, a duration, or time slots, so set them with services or device actions.
 - **One device per config entry.** Several batteries are several entries. The fleet card is the on-screen comparison.
 - **Venus E 2.0 support is experimental.** The battery can be added. Home Assistant shows a repair warning. It uses the same feature gates as Venus C.
-- **Features the firmware lacks are omitted.** SYS and UPS need firmware 150 or newer on Venus A, D, and E 3.0, and firmware 158 or newer on Venus C and Venus E 2.0. PV sensors exist on Venus A and Venus D.
+- **Features the firmware lacks are omitted.** Depth of discharge, Bluetooth advertising, the panel LED, and UPS need firmware 150 or newer on Venus A, D, and E 3.0. On Venus C and Venus E 2.0 those three controls need firmware 158 or newer, and UPS is not offered. PV sensors exist on Venus A and Venus D.
 - **Battery-detail entities start off.** See [Entities](docs/entities.md).
 - **Energy totals stay monotonic.** When firmware reports a lower lifetime total than a moment ago, the integration keeps the last plausible value. A genuine counter reset on the device needs a statistics correction in Home Assistant.
 
