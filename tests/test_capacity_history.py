@@ -11,7 +11,11 @@ from custom_components.marstek.capacity_estimator import (
     UsableCapacityEstimator,
     apply_capacity_estimate,
 )
-from custom_components.marstek.helpers.capacity_history import MAX_HISTORY_POINTS
+from custom_components.marstek.helpers.capacity_history import (
+    MAX_HISTORY_POINTS,
+    card_history,
+    fold_weekly_history,
+)
 
 _ONE_WAY = 0.93
 _TRUE_WH = 4600.0
@@ -198,9 +202,11 @@ def test_weekly_history_records_capacity_energy_and_restores() -> None:
     assert history[1]["total_load_energy"] == 900.0
     assert history[0]["period"] != history[1]["period"]
     # The sensor attribute keeps only what the cards draw.
+    # The nameplate and method let the card compare only like weeks.
+    tags = {"rated_wh": round(_RATED_WH), "method": "discharge_median"}
     assert estimator.attributes()["history"] == [
-        {"week_start": 1_699_833_600.0, "usable_wh": 4600},
-        {"week_start": 1_699_833_600.0 + _WEEK, "usable_wh": 4600},
+        {"week_start": 1_699_833_600.0, "usable_wh": 4600, **tags},
+        {"week_start": 1_699_833_600.0 + _WEEK, "usable_wh": 4600, **tags},
     ]
 
     restored = UsableCapacityEstimator.from_dict(estimator.to_dict())
@@ -236,3 +242,28 @@ def test_history_keeps_the_newest_three_years() -> None:
     assert len(history) == MAX_HISTORY_POINTS
     assert history[-1]["usable_wh"] == 4000 + MAX_HISTORY_POINTS + 19
     assert history[0]["usable_wh"] == 4000 + 20
+
+
+def test_the_nameplate_and_method_label_a_week_but_never_make_one() -> None:
+    history: list[dict[str, object]] = []
+    tags = {"rated_wh": 5_120.4, "method": "charge_discharge_geometric_mean"}
+    assert not fold_weekly_history(
+        history, [], timestamp=_T0, measures={"usable_wh": None}, tags=tags
+    )
+    assert history == []
+
+    assert fold_weekly_history(history, [], timestamp=_T0, measures={"usable_wh": 4_600}, tags=tags)
+    baseline = [dict(point) for point in history]
+    assert history[0]["rated_wh"] == 5_120
+    assert card_history(history)[0]["method"] == "charge_discharge_geometric_mean"
+    # Another efficiency treatment is a change worth writing, like a new value.
+    changed = {**tags, "method": "discharge_median"}
+    assert fold_weekly_history(
+        history, baseline, timestamp=_T0 + 60, measures={"usable_wh": 4_600}, tags=changed
+    )
+
+    junk = {"rated_wh": -1, "method": "guess"}
+    assert fold_weekly_history(history, [], timestamp=_T0, measures={"usable_wh": 1}, tags=junk)
+    assert "rated_wh" not in history[0]
+    assert "method" not in history[0]
+    assert set(card_history(history)[0]) == {"week_start", "usable_wh"}

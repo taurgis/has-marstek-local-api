@@ -45,9 +45,8 @@ def test_one_direction_is_not_pooled_with_a_short_other_direction() -> None:
     assert restored.attributes()["spread_wh"] == 0
     assert restored.attributes()["discharge_median_wh"] == 4600
     assert restored.attributes()["charge_median_wh"] == 4000
-    assert restored.attributes()["implied_round_trip_efficiency"] == round(
-        _ONE_WAY**2 * 4600.0 / 4000.0, 3
-    )
+    # Two runs are not a median to divide by: the round trip waits for three.
+    assert "implied_round_trip_efficiency" not in restored.attributes()
     assert "start_soc" not in restored.to_dict()["windows"][0]
 
 
@@ -60,9 +59,7 @@ def test_two_windows_each_way_stay_unknown() -> None:
     assert restored.windows_accepted == 4
     assert restored.estimate_wh is None
     assert restored.attributes()["efficiency_correction"] == "assumed_one_way"
-    assert restored.attributes()["implied_round_trip_efficiency"] == round(
-        _ONE_WAY**2 * 4600.0 / 4000.0, 3
-    )
+    assert "implied_round_trip_efficiency" not in restored.attributes()
 
 
 def test_a_legacy_window_round_trips_without_invented_detail() -> None:

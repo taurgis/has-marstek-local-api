@@ -7,7 +7,7 @@ description: Install the Marstek integration with HACS, add your battery to Home
 
 By the end of this page your battery will show up in Home Assistant, feed the Energy dashboard, and run a first automation. Plan on about 20 minutes, including one Home Assistant restart.
 
-Before you begin, go through [Before you start](before-you-start.md). Most setup problems come from Open API being off.
+Before you begin, go through [Before you start](before-you-start.md). Most setup problems come from Open API being off. Open API is the battery's local connection, and you switch it on in the Marstek app.
 
 ## Step 1: Install the integration
 
@@ -58,7 +58,7 @@ Home Assistant may already have found it. Then it shows up as **Discovered** at 
 
 <img src="../screenshots/device-discovery.png" alt="Home Assistant shows a Marstek battery discovered on the local network." width="340" />
 
-**Battery not in the list?** Choose **Enter IP/port manually**. If Home Assistant found nothing at all, it shows that form straight away. Type the battery's IP address and the port from the Marstek app (usually 30000). Discovery fails on VLANs and some mesh Wi-Fi systems, so typing the address is normal and works the same way afterwards.
+**Battery not in the list?** Choose **Enter IP/port manually**. If Home Assistant found nothing at all, it shows that form straight away. Type the battery's IP address and the port from the Marstek app (usually 30000). The automatic search doesn't work across separate networks (VLANs) or on some mesh Wi-Fi systems. Typing the address is normal in those cases, and the battery works the same way afterwards.
 
 Still nothing? Open [troubleshooting: device not discovered](../troubleshooting.md#device-not-discovered).
 
@@ -76,17 +76,25 @@ What you are looking at:
 - **Battery level** is the state of charge, in percent.
 - **Battery power** is how fast the battery charges or discharges, in watts.
 - **Operating mode** is a dropdown. **Auto** is self-consumption: the battery follows your grid meter to keep grid import near zero.
-- **Total power** is the power at your grid meter, when a CT meter is connected. **Phase A/B/C power** split it per phase. Venus C below firmware 155 doesn't have these.
+- **Total power** is the power at your grid meter, when a CT meter is connected. The CT meter is the clamp-on meter at your fuse box. **Phase A/B/C power** split it per phase. Venus C below firmware 155 doesn't have these.
 - Solar (**PV**) sensors appear on Venus A and Venus D.
 
-Some diagnostic sensors, such as **Battery temperature**, start disabled on purpose. The request behind them has been linked to battery resets on some firmware. To turn one on later, open it from the **Diagnostic** section of the device page (select the **+ … entities** link first if they are hidden), select the gear icon, switch on **Enabled**, and select **Update**. On firmware older than 150 (Venus C: 156) the battery detail sensors are left out entirely; update the battery firmware first. [Entities](../entities.md) lists every sensor.
+Some diagnostic sensors, such as **Battery temperature**, start disabled on purpose. To fill them, Home Assistant has to ask the battery for extra data, and that request has been linked to battery resets on some firmware.
 
-Readings refresh every 30 seconds. That is normal. The battery doesn't push changes by itself.
+If you want one of them later:
+
+1. Open it from the **Diagnostic** section of the device page. If they are hidden, select the **+ … entities** link first.
+2. Select the gear icon.
+3. Switch on **Enabled**, and select **Update**.
+
+On firmware older than 150 (Venus C: 156) the battery detail sensors are left out entirely. Update the battery firmware first. [Entities](../entities.md) lists every sensor. Home Assistant calls each sensor or control an *entity*.
+
+Readings refresh every 30 seconds. That is normal. The battery doesn't send changes by itself, so Home Assistant asks for them on a timer.
 
 ## Step 4: Add it to the Energy dashboard
 
 1. Go to **Settings** > **Dashboards** > **Energy**.
-2. Under **Home battery storage**, add **Total grid input energy** as energy going in to the battery and **Total grid output energy** as energy coming out. Despite the word "grid", they count energy through the battery's own AC connection.
+2. Under **Home battery storage**, add **Total grid input energy** as energy going in to the battery and **Total grid output energy** as energy coming out. Despite the word "grid", they count energy through the battery's own AC connection (its mains plug or cable).
 3. Under **Electricity grid**, use your house meter if Home Assistant already has one, for example a P1 meter. If not, and your Marstek CT meter reports them, use **Meter input energy** and **Meter output energy**.
 4. On Venus A and Venus D, solar passes through the battery, so adding **Total solar energy** as well counts it twice. [Energy dashboard](../energy_dashboard.md#venus-a-and-venus-d-solar-and-the-battery-row) explains how to choose.
 
@@ -99,12 +107,12 @@ The Energy dashboard updates once an hour, so give it a while. The values are in
 
 A common first automation charges the battery while power is cheap. This one charges at 1500 W from 02:00 for one hour every night, then hands control back to the battery's **Auto** mode.
 
-The simplest tool for this is **passive mode**. It tells the battery "charge (or discharge) at this power for this many seconds". When the time runs out, passive mode ends. Marstek doesn't document what the battery does next, so the automation switches it back to **Auto** to be sure.
+The most direct tool for this is **passive mode**. It tells the battery "charge (or discharge) at this power for this many seconds". When the time runs out, passive mode ends. Marstek doesn't document what the battery does next, so the automation switches it back to **Auto** to be sure.
 
 At 1500 W, one hour adds about 1.5 kWh. Change `duration` to charge more or less.
 
 1. Go to **Settings** > **Automations & scenes** and select **Create automation** > **Create new automation**.
-2. Select the three-dot menu > **Edit in YAML** and paste:
+2. Select the three-dot menu > **Edit in YAML** and paste the text below. YAML is the text format Home Assistant uses for automations. You only paste it once; step 3 switches back to the visual editor.
 
    ```yaml
    alias: Charge the battery at night
@@ -125,7 +133,7 @@ At 1500 W, one hour adds about 1.5 kWh. Change `duration` to charge more or less
          option: auto  # the stored value is lowercase
    ```
 
-3. Select **Edit in visual editor**. On the **Set passive mode** action, pick your battery. Home Assistant fills in its device ID, a long internal code you never type yourself. On the last action, pick your battery's **Operating mode** entity.
+3. Select **Edit in visual editor**. On the **Set passive mode** action, pick your battery. Home Assistant fills in its device ID, a long internal code you never type yourself. On the last action, pick your battery's **Operating mode** entity (the dropdown you saw on the device page).
 4. Check that no `REPLACE_ME` is left, then save.
 
 The next morning, open the battery's **Battery power** history. You should see it charging from 02:00 to 03:00, and **Operating mode** back on **Auto**.
@@ -148,13 +156,13 @@ More recipes, including weekly schedules for time-of-use tariffs, are in [Automa
 
 The battery is in Home Assistant, on the Energy dashboard, and under automation control. Good next steps:
 
-- Tune polling and default power under **Configure** on the battery. See [Options](../options.md).
+- Tune how often Home Assistant asks for data (polling) and the default power under **Configure** on the battery. See [Options](../options.md).
 - Turn on the [Battery health](../usable-capacity.md) dashboard to track capacity over time.
 - Read [Limitations](limitations.md) so nothing surprises you later.
 
 ## If something goes wrong later
 
-- **Entities show as unavailable.** Usually Wi-Fi or a battery restart. The integration keeps the last values until three polls in a row fail. [Why a battery goes offline](../firmware-resets.md) helps you tell the cases apart.
+- **Entities show as unavailable.** Usually Wi-Fi or a battery restart. The integration keeps showing the last values until three update attempts in a row fail. [Why a battery goes offline](../firmware-resets.md) helps you tell the cases apart.
 - **A warning appears under Settings > System > Repairs.** Open it. Most warnings explain one thing to do, such as updating the battery firmware. See [Repairs](../repairs.md).
 - **The battery stopped answering after you changed something in the app.** Check that Open API is still on. Some firmware switches it off. See [troubleshooting](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults).
 - **Updating.** HACS shows an update when a new release is out. Install it and restart Home Assistant. After a battery firmware update you don't need to do anything: the integration picks up the new version within about 10 minutes.

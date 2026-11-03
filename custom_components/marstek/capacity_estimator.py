@@ -21,6 +21,10 @@ one-way efficiency that is the same in both directions and leaves the square
 root of the ratio of the two real efficiencies. Each direction keeps its own
 newest windows. Until a median exists the sensors stay unknown.
 
+The nameplate must hold for a few polls before it replaces the stored one.
+A change of more than a tenth is different hardware, such as an expansion
+module, so the runs of the old pack are dropped and a new series starts.
+
 Reported battery power is an AC quantity. Where it was derived from
 ``pv_power - ongrid_power - offgrid_power``, PV watts stay on the DC bus and
 only the AC port is run through the one-way efficiency. A device ``bat_power``
@@ -31,19 +35,27 @@ from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
-from itertools import pairwise
 from typing import Any
 
-from .helpers.capacity_fields import (
-    MAX_ABS_POWER_W,
-    finite,
-    optional_duration,
-    optional_power,
-    optional_share,
-    optional_soc,
+from .helpers.capacity_confidence import (
+    GEOMETRIC_MEAN,
+    assess,
+    run_scatter_pct,
 )
+from .helpers.capacity_confidence import spread_wh as run_spread_wh
+from .helpers.capacity_energy import (
+    CHARGE_EFFICIENCY,
+    DISCHARGE_EFFICIENCY,
+    average_power_w,
+    dc_energy_wh,
+    pv_share,
+    sample_pv,
+    segment_power,
+)
+from .helpers.capacity_energy import Sample as _Sample
+from .helpers.capacity_fields import MAX_ABS_POWER_W, finite
 from .helpers.capacity_history import (
     card_history,
     empty_lifetime,
@@ -51,24 +63,19 @@ from .helpers.capacity_history import (
     lifetime_totals,
     restore_history,
 )
+from .helpers.capacity_window import (
+    ABS_MAX_CAPACITY_WH,
+    ABS_MIN_CAPACITY_WH,
+    MIN_SOC_DELTA,
+    CapacityWindow,
+    mode_text,
+    window_from_dict,
+)
 from .helpers.soc_corrections import (
     SocCorrectionTracker,
-    cap_confidence,
     correction_attributes,
 )
 
-# Reported battery power is the AC-side quantity the integration already
-# publishes (device ``bat_power`` when present, otherwise
-# ``pv_power - ongrid_power - offgrid_power``). Nameplate ``bat_cap`` is DC
-# watt-hours. These one-way factors convert the AC integral into an estimate
-# of stored energy so a charge window and a discharge window agree.
-# They match the mock pack model (tools/mock_device/const.py). They are not a
-# measurement from Marstek hardware; a different real efficiency shifts the
-# absolute watt-hours and shows up as spread between charge and discharge.
-CHARGE_EFFICIENCY = 0.93
-DISCHARGE_EFFICIENCY = 0.93
-
-MIN_SOC_DELTA = 20.0
 MIN_SAMPLES = 4
 MIN_POWER_W = 150.0
 # Same-sign segments below ``MIN_POWER_W`` are pauses, not a new direction.
@@ -88,10 +95,13 @@ MIN_WINDOWS = 3
 # Newest windows kept for each direction. A single shared cap let one long
 # session evict the other direction and drop the geometric mean.
 MAX_WINDOWS = 21
-ABS_MIN_CAPACITY_WH = 300.0
-ABS_MAX_CAPACITY_WH = 30_000.0
 RATED_MIN_FRACTION = 0.15
 RATED_MAX_FRACTION = 1.35
+# A new nameplate counts once this many polls in a row report it, so one
+# glitched ``bat_cap`` neither moves the health percentage nor resets runs.
+RATED_CONFIRM_POLLS = 3
+# A larger change is a different pack, such as an added expansion module.
+RATED_CHANGE_FRACTION = 0.10
 
 CAPACITY_DATA_KEY = "battery_usable_capacity"
 SOH_DATA_KEY = "battery_state_of_health"
@@ -108,10 +118,20 @@ ES_STATUS_FRESH_KEY = "es_status_fresh"
 # True on the poll where the BMS was seen correcting its state of charge. The
 # same percentage before and after that poll is no longer the same energy.
 SOC_CORRECTED_KEY = "battery_soc_corrected"
+# True while a step the watts cannot explain waits for confirmation. That
+# poll's percentage may be a glitch and is not a level to anchor on.
+SOC_UNCONFIRMED_KEY = "battery_soc_unconfirmed"
 # One whole-percent step is quantization. A larger step that the watts of
 # that poll cannot explain, plus one point of slack, is a BMS jump.
 _SOC_JUMP_FLOOR = 2.0
 _SOC_JUMP_SLACK = 1.0
+# The endpoint watts bound a short segment. Over a longer one a load spike
+# between the polls can move the percentage further than they explain, so
+# such a step ends the window without being recorded as a correction.
+_MAX_JUDGED_SEGMENT_SECONDS = 120.0
+# A glitched reading can repeat on the next poll. A step is a correction only
+# when the reading has not come back within this many polls after it.
+_HOLD_POLLS = 2
 
 
 def gap_limit_seconds(poll_interval: float | None) -> float:
@@ -150,177 +170,11 @@ def _plausible(capacity_wh: float, rated_wh: float | None) -> bool:
     return low <= capacity_wh <= high
 
 
-@dataclass(frozen=True, slots=True)
-class _Sample:
-    """One poll used by the open window."""
-
-    timestamp: float
-    soc: float
-    power_w: float
-    mode: str | None
-    pv_w: float = 0.0
-    power_derived: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class _Window:
-    """One accepted capacity observation.
-
-    Windows saved before the detail fields existed load without them. A
-    missing field stays unknown; it is not invented on the way back out.
-    """
-
-    capacity_wh: float
-    direction: str
-    soc_delta: float
-    closed_at: float
-    start_soc: float | None = None
-    end_soc: float | None = None
-    average_power_w: float | None = None
-    duration_s: float | None = None
-    mode: str | None = None
-    pv_share: float | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return the JSON form stored across restarts."""
-        payload: dict[str, Any] = {
-            "capacity_wh": self.capacity_wh,
-            "direction": self.direction,
-            "soc_delta": self.soc_delta,
-            "closed_at": self.closed_at,
-        }
-        if self.start_soc is not None:
-            payload["start_soc"] = self.start_soc
-        if self.end_soc is not None:
-            payload["end_soc"] = self.end_soc
-        if self.average_power_w is not None:
-            payload["average_power_w"] = self.average_power_w
-        if self.duration_s is not None:
-            payload["duration_s"] = self.duration_s
-        if self.mode is not None:
-            payload["mode"] = self.mode
-        if self.pv_share is not None:
-            payload["pv_share"] = self.pv_share
-        return payload
-
-
-def _window_from_dict(raw: object) -> _Window | None:
-    """Parse one persisted window, or return None when it is not usable.
-
-    Detail fields added later are optional. A store written by an older
-    version still contributes its capacity to the median.
-    """
-    if not isinstance(raw, dict):
-        return None
-    capacity = finite(raw.get("capacity_wh"))
-    soc_delta = finite(raw.get("soc_delta"))
-    closed_at = finite(raw.get("closed_at"))
-    direction = raw.get("direction")
-    if capacity is None or soc_delta is None or closed_at is None:
-        return None
-    if direction not in ("charge", "discharge"):
-        return None
-    if not _plausible(capacity, None):
-        return None
-    if abs(soc_delta) < MIN_SOC_DELTA:
-        return None
-    return _Window(
-        capacity_wh=capacity,
-        direction=direction,
-        soc_delta=soc_delta,
-        closed_at=closed_at,
-        start_soc=optional_soc(raw, "start_soc"),
-        end_soc=optional_soc(raw, "end_soc"),
-        average_power_w=optional_power(raw),
-        duration_s=optional_duration(raw),
-        mode=_mode_text(raw.get("mode")) if "mode" in raw else None,
-        pv_share=optional_share(raw),
-    )
-
-
-def _mode_text(mode: str | None) -> str | None:
-    """Normalize a mode name. Empty and non-strings carry no mode information."""
-    if not isinstance(mode, str):
-        return None
-    text = mode.strip().casefold()
-    return text or None
-
-
 def _direction(power_w: float) -> int:
     """Return +1 discharge, -1 charge, or 0 when power is idle or absurd."""
     if abs(power_w) < MIN_POWER_W or abs(power_w) > MAX_ABS_POWER_W:
         return 0
     return 1 if power_w > 0 else -1
-
-
-def _segment_power(earlier: _Sample, later: _Sample) -> float:
-    """Return the trapezoidal average reported watts between two polls."""
-    return (earlier.power_w + later.power_w) / 2.0
-
-
-def _segment_dc_power(earlier: _Sample, later: _Sample) -> float:
-    """Return DC watts between two polls, positive when the pack discharges.
-
-    Discharge puts more DC energy into the AC port than the port delivers, so
-    that port's watts are divided by the discharge efficiency. Charge stores
-    less than the port draws, so those watts are multiplied by the charge
-    efficiency.
-
-    A derived reading is ``battery_power = ongrid + offgrid - pv`` in the
-    Home Assistant sign. PV is charging power on the battery side of the
-    inverter (Open API ``pv_power``), so only ``battery_power + pv_power``
-    is the AC port. A device ``bat_power`` is left on the whole-reading path.
-    """
-    battery = _segment_power(earlier, later)
-    if not (earlier.power_derived and later.power_derived):
-        if battery >= 0.0:
-            return battery / DISCHARGE_EFFICIENCY
-        return battery * CHARGE_EFFICIENCY
-    pv = max((earlier.pv_w + later.pv_w) / 2.0, 0.0)
-    ac = battery + pv
-    if ac >= 0.0:
-        return ac / DISCHARGE_EFFICIENCY - pv
-    return ac * CHARGE_EFFICIENCY - pv
-
-
-def _dc_energy_wh(samples: list[_Sample]) -> float:
-    """Integrate DC watts over the window. Positive energy leaves the pack."""
-    energy = 0.0
-    for earlier, later in pairwise(samples):
-        hours = (later.timestamp - earlier.timestamp) / 3600.0
-        energy += _segment_dc_power(earlier, later) * hours
-    return energy
-
-
-def _pv_share(samples: list[_Sample]) -> float:
-    """Return how much of the absolute battery-power integral PV wattage covers.
-
-    0 means no PV, or a device ``bat_power`` that this correction does not
-    split. 1 means PV watts were at least the battery watts across the window.
-    """
-    pv_wh = 0.0
-    battery_wh = 0.0
-    for earlier, later in pairwise(samples):
-        hours = (later.timestamp - earlier.timestamp) / 3600.0
-        battery_wh += abs(_segment_power(earlier, later)) * hours
-        if earlier.power_derived and later.power_derived:
-            pv = max((earlier.pv_w + later.pv_w) / 2.0, 0.0)
-            pv_wh += pv * hours
-    if battery_wh <= 0.0:
-        return 0.0
-    return min(1.0, pv_wh / battery_wh)
-
-
-def _average_power_w(samples: list[_Sample]) -> float:
-    """Return the trapezoidal mean of reported battery power, signed."""
-    duration = samples[-1].timestamp - samples[0].timestamp
-    if duration <= 0.0:
-        return 0.0
-    apparent_wh = 0.0
-    for earlier, later in pairwise(samples):
-        hours = (later.timestamp - earlier.timestamp) / 3600.0
-        apparent_wh += _segment_power(earlier, later) * hours
-    return apparent_wh / (duration / 3600.0)
 
 
 def _soc_step_limit(earlier: _Sample, later: _Sample, rated_wh: float | None) -> float:
@@ -361,6 +215,17 @@ def _soc_jumped(earlier: _Sample, later: _Sample, rated_wh: float | None) -> boo
     return abs(later.soc - earlier.soc) > _soc_step_limit(earlier, later, rated_wh)
 
 
+def _returned(previous: _Sample, pending: _Sample, sample: _Sample, rated_wh: float | None) -> bool:
+    """Return whether ``sample`` came back from a step to the level before it.
+
+    Nearer the old level than the stepped one, within what this poll explains.
+    A three-point spike followed by an ordinary one-point move lands two
+    points from the spike, which the step floor alone would call confirmed.
+    """
+    back = abs(sample.soc - previous.soc)
+    return back < abs(sample.soc - pending.soc) and not _soc_jumped(previous, sample, rated_wh)
+
+
 def _power_sign(power_w: float) -> int:
     """Return +1, -1, or 0 from the sign of a watt reading."""
     if power_w > 0.0:
@@ -383,32 +248,17 @@ def _low_power_pause(segment_w: float, later_w: float, open_direction: int) -> b
     return sign == 0 or sign == open_direction
 
 
-def _sample_pv(pv_w: float | None, power_derived: bool) -> float | None:
-    """Return PV watts to store, or None when a derived poll's PV is unusable.
-
-    Missing PV is zero. A device ``bat_power`` does not use PV, so a bad PV
-    reading must not reject that poll. Negative PV is not generation.
-    """
-    if not power_derived:
-        return 0.0
-    if pv_w is None:
-        return 0.0
-    number = finite(pv_w)
-    if number is None or number > MAX_ABS_POWER_W:
-        return None
-    return max(0.0, number)
-
-
 class UsableCapacityEstimator:
     """Sliding-median usable-capacity estimator.
 
     The open window is not persisted. A restart continues from the accepted
-    windows and starts a new window on the next polls.
+    windows and starts a new window on the next polls. The last poll is kept,
+    so the correction trace continues across a restart within the gap limit.
     """
 
     def __init__(self) -> None:
         """Start with no evidence."""
-        self._windows: list[_Window] = []
+        self._windows: list[CapacityWindow] = []
         self._open: list[_Sample] = []
         self._open_direction = 0
         # Consecutive same-sign segments below ``MIN_POWER_W`` inside the
@@ -417,7 +267,15 @@ class UsableCapacityEstimator:
         # False until the open window starts on a state-of-charge step.
         self._aligned = False
         self._previous: _Sample | None = None
+        # Samples after an unexplained step, held until a later poll shows
+        # whether the reading stayed there. ``_previous`` stays before them.
+        self._held: list[_Sample] = []
+        # Where the last folded segment started. A jump back to its level
+        # ends a spike whose first leg fit under the two-point floor.
+        self._prior: _Sample | None = None
         self._rated_wh: float | None = None
+        self._rated_candidate: float | None = None
+        self._rated_seen = 0
         self._dirty = False
         self._gap_limit = MAX_GAP_SECONDS
         self._history: list[dict[str, Any]] = []
@@ -436,13 +294,26 @@ class UsableCapacityEstimator:
         windows = raw.get("windows")
         if isinstance(windows, list):
             restored = [
-                window for item in windows if (window := _window_from_dict(item)) is not None
+                window for item in windows if (window := window_from_dict(item)) is not None
             ]
             estimator._windows = restored
             estimator._trim_windows()
         estimator._history = restore_history(raw.get("history"))
         estimator._history_baseline = [dict(point) for point in estimator._history]
         estimator._corrections = SocCorrectionTracker.from_dict(raw.get("soc_corrections"))
+        last = raw.get("last_sample")
+        if isinstance(last, dict):
+            estimator._previous = estimator._make_sample(
+                last.get("timestamp"),
+                last.get("soc"),
+                last.get("power_w"),
+                last.get("mode"),
+                last.get("pv_w"),
+                last.get("power_derived") is True,
+            )
+        rated = finite(raw.get("rated_wh"))
+        if rated is not None and rated > 0.0:
+            estimator._rated_wh = rated
         return estimator
 
     def set_poll_interval(self, poll_interval: float) -> None:
@@ -454,12 +325,22 @@ class UsableCapacityEstimator:
         self._gap_limit = gap_limit_seconds(poll_interval)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return windows and weekly snapshots for the Store file."""
-        return {
+        """Return windows, weekly snapshots, the nameplate and the last poll.
+
+        The nameplate is kept so a module added while Home Assistant was down
+        still starts a new series. The last poll links the first one after a
+        short restart to the stored correction trace.
+        """
+        payload: dict[str, Any] = {
             "windows": [window.to_dict() for window in self._windows],
             "history": [dict(point) for point in self._history],
             "soc_corrections": self._corrections.to_dict(),
         }
+        if self._rated_wh is not None:
+            payload["rated_wh"] = self._rated_wh
+        if self._previous is not None:
+            payload["last_sample"] = asdict(self._previous)
+        return payload
 
     def consume_dirty(self) -> bool:
         """Return whether accepted windows changed since the last call."""
@@ -478,6 +359,11 @@ class UsableCapacityEstimator:
         """Return how many windows are in the median."""
         return len(self._windows)
 
+    @property
+    def soc_unconfirmed(self) -> bool:
+        """Return whether the latest percentage waits to be confirmed or dropped."""
+        return bool(self._held)
+
     def _capacities(self, direction: str) -> list[float]:
         """Return accepted watt-hours for one direction, oldest first."""
         return [window.capacity_wh for window in self._windows if window.direction == direction]
@@ -494,7 +380,7 @@ class UsableCapacityEstimator:
         charge = self._capacities("charge")
         if len(discharge) >= MIN_WINDOWS and len(charge) >= MIN_WINDOWS:
             value = math.sqrt(statistics.median(discharge) * statistics.median(charge))
-            return value, "charge_discharge_geometric_mean"
+            return value, GEOMETRIC_MEAN
         if len(discharge) >= MIN_WINDOWS:
             return statistics.median(discharge), "discharge_median"
         if len(charge) >= MIN_WINDOWS:
@@ -544,53 +430,132 @@ class UsableCapacityEstimator:
                 self._abort()
                 self._corrections.break_trace()
                 self._previous = None
+                self._prior = None
+                self._held = []
                 return
-            previous = self._previous
-            self._previous = sample
-            if previous is None:
-                return
-            elapsed = sample.timestamp - previous.timestamp
-            if elapsed <= 0.0:
-                return
-            if elapsed > self._gap_limit:
-                self._corrections.break_trace()
-                self._abort()
-                return
-            jumped = _soc_jumped(previous, sample, self._rated_wh)
-            # A hold ends on the step that reaches 100 percent. The open window
-            # then holds charge the reading never showed, so it is dropped.
-            if self._track_correction(previous, sample, jumped) or jumped:
-                self._abort()
-                return
-            if self._conflicts(previous, sample):
-                self._close_open()
-                # A device bat_power and a derived balance are different measurements.
-                # The segment between them is not part of either window.
-                if previous.power_derived == sample.power_derived:
-                    self._start(previous, sample)
-                return
-            self._extend(previous, sample)
+            self._advance(sample)
         finally:
             self._record_history(timestamp)
 
+    def _advance(self, sample: _Sample) -> None:
+        """Fold one good poll in, holding an unexplained step until it settles."""
+        previous = self._previous
+        self._previous = sample
+        if previous is None:
+            return
+        held = self._held
+        if not held:
+            self._segment(previous, sample)
+        elif _returned(previous, held[-1], sample, self._rated_wh):
+            # Off for a poll or two and straight back is a glitch, not a correction.
+            self._held = []
+            self._segment(previous, sample)
+        elif len(held) < _HOLD_POLLS:
+            held.append(sample)
+            self._previous = previous
+        else:
+            # The reading stayed near the new level: the step was real.
+            self._held = []
+            self._segment(previous, held[0], confirmed=True)
+            self._previous = held[0]
+            for later in (*held[1:], sample):
+                self._advance(later)
+
+    def _segment(self, previous: _Sample, sample: _Sample, *, confirmed: bool = False) -> None:
+        """Fold the stretch between two good polls in.
+
+        A step the watts cannot explain is held unless ``confirmed``.
+        """
+        prior, self._prior = self._prior, None
+        elapsed = sample.timestamp - previous.timestamp
+        if elapsed <= 0.0:
+            return
+        if elapsed > self._gap_limit:
+            self._corrections.break_trace()
+            self._abort()
+            return
+        jumped = _soc_jumped(previous, sample, self._rated_wh)
+        if jumped and not confirmed:
+            if prior is None or not _returned(prior, previous, sample, self._rated_wh):
+                self._prior = prior
+                self._held = [sample]
+                self._previous = previous
+                return
+            # The far side of a spike whose first leg fit under the floor.
+            jumped = False
+            previous = self._level(previous, prior.soc)
+        self._prior = previous
+        if jumped and elapsed > _MAX_JUDGED_SEGMENT_SECONDS:
+            # Still counted as movement, and as a full charge on reaching 100.
+            self._corrections.break_trace()
+            self._track_correction(previous, sample, jumped=False)
+            self._abort()
+            return
+        # A hold ends on the step that reaches 100 percent. The open window
+        # then holds charge the reading never showed, so it is dropped.
+        if self._track_correction(previous, sample, jumped) or jumped:
+            self._abort()
+            return
+        if self._conflicts(previous, sample):
+            self._close_open()
+            # A device bat_power and a derived balance are different measurements.
+            # The segment between them is not part of either window.
+            if previous.power_derived == sample.power_derived:
+                self._start(previous, sample)
+            return
+        self._extend(previous, sample)
+
+    def _level(self, spike: _Sample, soc: float) -> _Sample:
+        """Put a spike's reading back to the level before it, where it was kept.
+
+        Left in the trace, it would read as a correction on the next arrival
+        at 100 percent. Left at the edge of the open window, it would move
+        that run's end by the size of the spike.
+        """
+        leveled = replace(spike, soc=soc)
+        if self._open and self._open[-1] is spike:
+            self._open[-1] = leveled
+        self._corrections.level_last(spike.timestamp, soc)
+        return leveled
+
     def attributes(self) -> dict[str, Any]:
-        """Return extra state attributes for the capacity and health sensors."""
+        """Return extra state attributes for the capacity and health sensors.
+
+        ``spread_wh`` is the larger range within one direction, scaled to the
+        published value; ``run_scatter_pct`` is the larger median deviation.
+        Neither counts the gap between the charge and discharge medians.
+        """
         count = len(self._windows)
         value, correction = self._published()
+        used = self._contributing(correction)
+        medians = self._median_attributes()
+        now = self._previous.timestamp if self._previous is not None else None
+        confidence, limits = assess(
+            used,
+            correction,
+            medians.get("implied_round_trip_efficiency"),
+            self._corrections.bound_pct(now),
+        )
         attrs: dict[str, Any] = {
             "method": _METHOD,
             "windows_accepted": count,
-            "confidence": self._confidence(),
+            "windows_used": len(used),
+            "confidence": confidence,
+            "confidence_limits": limits,
             "min_soc_delta": MIN_SOC_DELTA,
             "efficiency_one_way": CHARGE_EFFICIENCY,
             "efficiency_correction": correction,
         }
-        attrs.update(self._median_attributes())
+        attrs.update(medians)
         attrs["windows"] = [window.to_dict() for window in self._windows]
         attrs["active_window"] = self._active_window()
-        contributing = self._contributing_capacities(correction)
-        if value is not None and contributing:
-            attrs["spread_wh"] = round(max(contributing) - min(contributing))
+        if value is not None and used:
+            spread = run_spread_wh(used, value)
+            if spread is not None:
+                attrs["spread_wh"] = round(spread)
+            scatter = run_scatter_pct(used)
+            if scatter is not None:
+                attrs["run_scatter_pct"] = round(scatter, 1)
         if self._rated_wh is not None:
             attrs["rated_capacity_wh"] = round(self._rated_wh)
         health = self.state_of_health
@@ -602,13 +567,12 @@ class UsableCapacityEstimator:
             attrs["last_window_capacity_wh"] = round(latest.capacity_wh)
             attrs["last_window_at"] = _iso_timestamp(latest.closed_at)
         attrs["history"] = card_history(self._history)
-        now = self._previous.timestamp if self._previous is not None else None
         attrs.update(correction_attributes(self._corrections, now, _iso_timestamp))
         return attrs
 
     def _track_correction(self, previous: _Sample, sample: _Sample, jumped: bool) -> bool:
         """Pass one segment to the correction tracker; True when it ended a hold."""
-        energy_in = -_dc_energy_wh([previous, sample])
+        energy_in = -dc_energy_wh([previous, sample])
         verdict = self._corrections.observe(
             start=previous.timestamp,
             end=sample.timestamp,
@@ -676,6 +640,7 @@ class UsableCapacityEstimator:
         cycles = None
         if rated is not None and rated > 0.0 and exported is not None:
             cycles = exported / rated
+        value, correction = self._published()
         changed = fold_weekly_history(
             self._history,
             self._history_baseline,
@@ -688,6 +653,8 @@ class UsableCapacityEstimator:
                 "equivalent_cycles": cycles,
                 **self._lifetime,
             },
+            # The trend compares only weeks of one pack and one method.
+            tags={"rated_wh": rated, "method": correction if value is not None else None},
         )
         if not changed:
             return
@@ -695,10 +662,39 @@ class UsableCapacityEstimator:
         self._history_baseline = [dict(point) for point in self._history]
 
     def _remember_rated(self, rated_wh: float | None) -> None:
-        """Keep the latest positive nameplate. A missing poll does not clear it."""
+        """Keep the nameplate. A different one counts after a few polls in a row.
+
+        A missing poll does not clear it. A change of more than a tenth drops
+        the runs, which measured the old pack and would otherwise stay inside
+        the plausible band of the new one.
+        """
         rated = finite(rated_wh)
-        if rated is not None and rated > 0.0:
+        if rated is None or rated <= 0.0:
+            return
+        current = self._rated_wh
+        if current is None:
             self._rated_wh = rated
+            return
+        if rated == current:
+            self._rated_candidate = None
+            self._rated_seen = 0
+            return
+        if rated != self._rated_candidate:
+            self._rated_candidate = rated
+            self._rated_seen = 0
+        self._rated_seen += 1
+        if self._rated_seen < RATED_CONFIRM_POLLS:
+            return
+        self._rated_candidate = None
+        self._rated_seen = 0
+        self._rated_wh = rated
+        self._dirty = True
+        if abs(rated - current) > RATED_CHANGE_FRACTION * current:
+            self._windows = []
+            self._abort()
+            self._held = []
+            self._prior = None
+            self._corrections.break_trace()
 
     def _median_attributes(self) -> dict[str, Any]:
         """Return direction medians and the round-trip efficiency they imply.
@@ -716,25 +712,25 @@ class UsableCapacityEstimator:
             attrs["discharge_median_wh"] = round(statistics.median(discharge))
         if charge:
             attrs["charge_median_wh"] = round(statistics.median(charge))
-        if discharge and charge:
+        # One run per direction is too thin a base for a round trip.
+        if len(discharge) >= MIN_WINDOWS and len(charge) >= MIN_WINDOWS:
             ratio = statistics.median(discharge) / statistics.median(charge)
             efficiency = CHARGE_EFFICIENCY * DISCHARGE_EFFICIENCY * ratio
             attrs["implied_round_trip_efficiency"] = round(efficiency, 3)
         return attrs
 
-    def _contributing_capacities(self, correction: str) -> list[float]:
+    def _contributing(self, correction: str) -> list[CapacityWindow]:
         """Return the windows that actually entered the published number."""
-        if correction == "charge_discharge_geometric_mean":
-            return [window.capacity_wh for window in self._windows]
-        if correction == "discharge_median":
-            return self._capacities("discharge")
-        if correction == "charge_median":
-            return self._capacities("charge")
+        if correction == GEOMETRIC_MEAN:
+            return list(self._windows)
+        if correction in ("discharge_median", "charge_median"):
+            direction = correction.removesuffix("_median")
+            return [window for window in self._windows if window.direction == direction]
         return []
 
     def _make_sample(
         self,
-        timestamp: float,
+        timestamp: float | None,
         soc: float | None,
         power_w: float | None,
         mode: str | None,
@@ -746,7 +742,7 @@ class UsableCapacityEstimator:
         level = finite(soc)
         power = finite(power_w)
         derived = power_derived is True
-        pv = _sample_pv(pv_w, derived)
+        pv = sample_pv(pv_w, derived)
         if moment is None or level is None or power is None or pv is None:
             return None
         if not 0.0 <= level <= 100.0 or abs(power) > MAX_ABS_POWER_W:
@@ -755,7 +751,7 @@ class UsableCapacityEstimator:
             timestamp=moment,
             soc=level,
             power_w=power,
-            mode=_mode_text(mode),
+            mode=mode_text(mode),
             pv_w=pv,
             power_derived=derived,
         )
@@ -768,7 +764,7 @@ class UsableCapacityEstimator:
             return True
         if _mode_changed(self._open[0].mode, sample.mode):
             return True
-        segment = _segment_power(previous, sample)
+        segment = segment_power(previous, sample)
         direction = _direction(segment)
         if self._open_direction == 0:
             self._low_power_segments = 0
@@ -792,7 +788,7 @@ class UsableCapacityEstimator:
         is also the first poll after a change, so both ends sit the same
         distance past a step.
         """
-        direction = _direction(_segment_power(previous, sample))
+        direction = _direction(segment_power(previous, sample))
         if direction == 0:
             return
         self._open_direction = direction
@@ -810,7 +806,7 @@ class UsableCapacityEstimator:
             return
         self._open.append(sample)
         if self._open_direction == 0:
-            self._open_direction = _direction(_segment_power(previous, sample))
+            self._open_direction = _direction(segment_power(previous, sample))
         if len(self._open) > MAX_WINDOW_SAMPLES:
             self._abort()
             return
@@ -828,7 +824,7 @@ class UsableCapacityEstimator:
         window = self._measure(self._open, self._open_direction)
         if window is None:
             return
-        if not isinstance(window, _Window):
+        if not isinstance(window, CapacityWindow):
             self._abort()
             return
         self._windows.append(window)
@@ -858,7 +854,7 @@ class UsableCapacityEstimator:
 
     def _trim_windows(self) -> None:
         """Keep the newest ``MAX_WINDOWS`` of each direction, in time order."""
-        kept: list[_Window] = []
+        kept: list[CapacityWindow] = []
         remaining = {"discharge": MAX_WINDOWS, "charge": MAX_WINDOWS}
         for window in reversed(self._windows):
             left = remaining.get(window.direction, 0)
@@ -869,7 +865,9 @@ class UsableCapacityEstimator:
         kept.reverse()
         self._windows = kept
 
-    def _measure(self, samples: list[_Sample], direction: int) -> _Window | _RejectWindow | None:
+    def _measure(
+        self, samples: list[_Sample], direction: int
+    ) -> CapacityWindow | _RejectWindow | None:
         """Return a window, None to keep collecting, or reject it."""
         soc_delta = samples[-1].soc - samples[0].soc
         moved = -soc_delta if direction > 0 else soc_delta
@@ -878,9 +876,9 @@ class UsableCapacityEstimator:
         # Brief dips are bridged above. A window that is still under 150 W
         # on average spent its energy where 0.93 does not describe the
         # inverter, so it is not a capacity observation.
-        if abs(_average_power_w(samples)) < MIN_POWER_W:
+        if abs(average_power_w(samples)) < MIN_POWER_W:
             return _REJECT
-        energy = _dc_energy_wh(samples)
+        energy = dc_energy_wh(samples)
         # Discharge must remove state of charge; charge must add it.
         if direction > 0 and (soc_delta >= 0.0 or energy <= 0.0):
             return _REJECT
@@ -889,26 +887,18 @@ class UsableCapacityEstimator:
         capacity = abs(energy) / (abs(soc_delta) / 100.0)
         if not _plausible(capacity, self._rated_wh):
             return _REJECT
-        return _Window(
+        return CapacityWindow(
             capacity_wh=capacity,
             direction="discharge" if direction > 0 else "charge",
             soc_delta=abs(soc_delta),
             closed_at=samples[-1].timestamp,
             start_soc=samples[0].soc,
             end_soc=samples[-1].soc,
-            average_power_w=_average_power_w(samples),
+            average_power_w=average_power_w(samples),
             duration_s=samples[-1].timestamp - samples[0].timestamp,
             mode=samples[0].mode,
-            pv_share=_pv_share(samples),
+            pv_share=pv_share(samples),
         )
-
-    def _confidence(self) -> str:
-        """Return a coarse label. It is not a calibrated error bar."""
-        count = len(self._windows)
-        if count < MIN_WINDOWS:
-            return "collecting"
-        label = "low" if count < 6 else "medium" if count < 12 else "high"
-        return cap_confidence(label, self._corrections.bound_pct())
 
 
 def _iso_timestamp(moment: float) -> str:
@@ -969,6 +959,7 @@ def apply_capacity_estimate(
             power_derived=status.get(BATTERY_POWER_DERIVED_KEY) is True,
         )
     status[SOC_CORRECTED_KEY] = estimator.consume_correction()
+    status[SOC_UNCONFIRMED_KEY] = estimator.soc_unconfirmed
     status[CAPACITY_DATA_KEY] = estimator.estimate_wh
     status[SOH_DATA_KEY] = estimator.state_of_health
     status[CAPACITY_ATTR_KEY] = estimator.attributes()

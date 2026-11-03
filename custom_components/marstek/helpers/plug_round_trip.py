@@ -49,6 +49,7 @@ from ..capacity_estimator import (
     CAPACITY_DATA_KEY,
     ES_STATUS_FRESH_KEY,
     SOC_CORRECTED_KEY,
+    SOC_UNCONFIRMED_KEY,
 )
 from ..const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
 
@@ -296,12 +297,14 @@ def apply_plug_round_trip(
     must go in before a quotient counts.
     """
     fresh = status.get(ES_STATUS_FRESH_KEY, True) is not False
+    # A step the estimator holds for confirmation may be a glitch: no level to anchor.
+    soc_known = fresh and status.get(SOC_UNCONFIRMED_KEY) is not True
     energy_in_id, energy_out_id = plug.meter
     capacity = _finite_or_none(status.get(CAPACITY_DATA_KEY))
     bypass = [_finite_or_none(status.get(key)) for key in ("pv_power", "offgrid_power")]
     plug.observe(
         timestamp=timestamp,
-        soc=_finite_or_none(status.get("battery_soc")) if fresh else None,
+        soc=_finite_or_none(status.get("battery_soc")) if soc_known else None,
         energy_in_wh=energy_wh(hass, energy_in_id),
         energy_out_wh=energy_wh(hass, energy_out_id),
         capacity_wh=capacity if capacity is not None else _finite_or_none(status.get("bat_cap")),

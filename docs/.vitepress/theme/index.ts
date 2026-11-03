@@ -24,5 +24,13 @@ export default {
       toggle?.click();
       toggle?.focus();
     });
+    // Desktop screenshots shrink to a few pixels of text on a phone; a tap
+    // opens the image at full size, where the browser can zoom it.
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement) || target.closest('a')) return;
+      if (!target.closest('.vp-doc')) return;
+      window.open(target.src, '_blank', 'noopener');
+    });
   },
 } satisfies Theme;

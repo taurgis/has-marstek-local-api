@@ -191,7 +191,12 @@ def test_geometric_mean_cancels_a_shared_efficiency_error() -> None:
 
     assert estimator.estimate_wh == pytest.approx(_TRUE_WH, rel=0.01)
     assert estimator.attributes()["efficiency_correction"] == "charge_discharge_geometric_mean"
-    assert estimator.attributes()["spread_wh"] > 0
+    # The runs agree within each direction. The gap between the two medians is
+    # the efficiency error, which the implied round trip reports instead.
+    assert estimator.attributes()["spread_wh"] == 0
+    assert (
+        estimator.attributes()["charge_median_wh"] > estimator.attributes()["discharge_median_wh"]
+    )
     # eta^2 * C_d / C_c recovers the true round trip when both paths use 0.93.
     assert estimator.attributes()["implied_round_trip_efficiency"] == pytest.approx(
         true_eta**2, abs=0.01

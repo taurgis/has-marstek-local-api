@@ -576,6 +576,7 @@ async def _async_setup_entry_with_client(
     )
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    entry.async_on_unload(coordinator.async_save_on_stop())
     if (stop_boot_tests := coordinator.async_track_plug_boot_tests()) is not None:
         entry.async_on_unload(stop_boot_tests)
 

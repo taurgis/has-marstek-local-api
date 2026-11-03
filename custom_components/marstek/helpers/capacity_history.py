@@ -3,10 +3,15 @@
 The rolling window list is capped. These points stay in the same Store file,
 one per ISO week, so a pack's watt-hours and round-trip efficiency can be
 compared across months and years. The open window is not part of this history.
+
+Each point also notes the nameplate and the efficiency treatment it was
+published under. They are labels, not measurements: a week with only a
+nameplate is not a point, and the card compares only weeks that share them.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,7 +26,13 @@ ENERGY_FIELDS: tuple[str, ...] = (
 )
 
 _WH_FIELDS: tuple[str, ...] = ("usable_wh", "discharge_median_wh", "charge_median_wh")
-_CAPACITY_FIELDS: tuple[str, ...] = (*_WH_FIELDS, "implied_round_trip_efficiency")
+_TAG_FIELDS: tuple[str, ...] = ("rated_wh", "method")
+_METHODS = frozenset({"discharge_median", "charge_median", "charge_discharge_geometric_mean"})
+_CAPACITY_FIELDS: tuple[str, ...] = (
+    *_WH_FIELDS,
+    "implied_round_trip_efficiency",
+    *_TAG_FIELDS,
+)
 
 
 def iso_week_period(timestamp: float) -> str | None:
@@ -48,19 +59,23 @@ def restore_history(raw: object) -> list[dict[str, Any]]:
     return points[-MAX_HISTORY_POINTS:]
 
 
-def card_history(points: list[dict[str, Any]]) -> list[dict[str, float | int]]:
+def card_history(points: list[dict[str, Any]]) -> list[dict[str, float | int | str]]:
     """Return the weekly usable watt-hours the cards draw, keyed by week start.
 
     The stored points also carry lifetime counters and a ``recorded_at`` that
     move every few minutes. Leaving them out keeps the sensor attribute small
-    and unchanged until the estimate itself changes or a new week begins.
+    and unchanged until the estimate itself changes or a new week begins. The
+    nameplate and method ride along so the card can skip weeks of another
+    pack or another efficiency treatment.
     """
-    weeks: list[dict[str, float | int]] = []
+    weeks: list[dict[str, float | int | str]] = []
     for point in points:
         usable = point.get("usable_wh")
         start = _week_start(point.get("period"))
         if isinstance(usable, int) and start is not None:
-            weeks.append({"week_start": start, "usable_wh": usable})
+            week: dict[str, float | int | str] = {"week_start": start, "usable_wh": usable}
+            week.update({key: point[key] for key in _TAG_FIELDS if key in point})
+            weeks.append(week)
     return weeks
 
 
@@ -100,6 +115,7 @@ def fold_weekly_history(
     *,
     timestamp: float,
     measures: dict[str, float | None],
+    tags: Mapping[str, float | str | None] | None = None,
 ) -> bool:
     """Update this ISO week's point. Return whether the Store should catch up.
 
@@ -108,12 +124,13 @@ def fold_weekly_history(
     current values; unknown values are None. The in-memory point always takes
     the latest numbers. Disk is asked to follow when the week is new, when a
     capacity field changes, or when a lifetime counter has moved by at least
-    50 Wh since the last write.
+    50 Wh since the last write. ``tags`` carries the nameplate and the
+    efficiency treatment; they are stored with a point but never make one.
     """
     period = iso_week_period(timestamp)
     if period is None:
         return False
-    point = _point(period, timestamp, month_key(timestamp), measures)
+    point = _point(period, timestamp, month_key(timestamp), {**measures, **(tags or {})})
     if point is None:
         return False
     for index, existing in enumerate(history):
@@ -143,7 +160,7 @@ def _point_from_dict(raw: object) -> dict[str, Any] | None:
 
 
 def _point(
-    period: str, recorded_at: float, month: str, fields: dict[str, Any]
+    period: str, recorded_at: float, month: str, fields: Mapping[str, Any]
 ) -> dict[str, Any] | None:
     """Return one weekly point, or None when no measured field is usable.
 
@@ -168,7 +185,25 @@ def _point(
             measured[key] = round(energy, 1)
     if not measured:
         return None
-    return {"period": period, "recorded_at": recorded_at, "month": month, **measured}
+    return {
+        "period": period,
+        "recorded_at": recorded_at,
+        "month": month,
+        **measured,
+        **_tags(fields),
+    }
+
+
+def _tags(fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the nameplate and method labels that are usable."""
+    tags: dict[str, Any] = {}
+    rated = _optional_number(fields.get("rated_wh"))
+    if rated is not None and rated > 0.0:
+        tags["rated_wh"] = round(rated)
+    method = fields.get("method")
+    if method in _METHODS:
+        tags["method"] = method
+    return tags
 
 
 def _optional_number(value: object) -> float | None:

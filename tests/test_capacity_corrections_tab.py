@@ -161,3 +161,39 @@ def test_the_card_offers_the_tab_and_its_csv() -> None:
     assert '"restarts", "corrections"]' in source
     assert "corrections: (hass, model, text) => correctionsTab(hass, model, text)" in source
     assert 'corrections: ["at", "style", "from_soc", "to_soc", "points", "throughput"]' in source
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("en", "1 correction in 6 full charges (4 checked), last 30 days"),
+        ("nl", "1 correctie bij 6 volle ladingen (4 gecontroleerd), laatste 30 dagen"),
+    ],
+)
+def test_full_charges_that_could_not_be_judged_are_counted_apart(
+    tmp_path: Path, language: str, expected: str
+) -> None:
+    """A full charge without a covered approach counts, but is not checked."""
+    attrs = {"soc_corrections": [], "soc_corrections_30d": 1, "full_charges_30d": 6}
+    assert expected in _tab(tmp_path, {**attrs, "full_charges_checked_30d": 4}, language)
+    every = _tab(tmp_path, {**attrs, "full_charges_checked_30d": 6}, language)
+    assert "checked" not in every
+    assert "gecontroleerd" not in every
+
+
+def test_a_drift_bound_past_thirty_percent_is_not_printed(tmp_path: Path) -> None:
+    """A bound that large comes from a glitch; its digits would mislead."""
+    html = _tab(tmp_path, {"soc_corrections": [], "soc_drift_bound_pct": 237.7})
+    assert "more than ±30%, so confidence is at most low" in html
+    assert "237" not in html
+
+
+@pytest.mark.parametrize(("since", "shown"), [("2026-10-10T08:00:00+00:00", True), (_NOW, False)])
+def test_a_pack_never_full_since_tracking_began_is_named(
+    tmp_path: Path, since: str, shown: bool
+) -> None:
+    """Two weeks of tracking without one full charge earns the same tip."""
+    html = _tab(tmp_path, {"soc_corrections": [], "soc_tracking_since": since})
+    assert ("Not fully charged since tracking began on day(10)." in html) is shown
+    with_full = {"soc_corrections": [], "soc_tracking_since": since, "last_full_charge_at": _NOW}
+    assert "tracking began" not in _tab(tmp_path, with_full)

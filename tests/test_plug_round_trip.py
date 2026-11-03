@@ -10,6 +10,7 @@ from custom_components.marstek.capacity_estimator import (
     CAPACITY_DATA_KEY,
     ES_STATUS_FRESH_KEY,
     SOC_CORRECTED_KEY,
+    SOC_UNCONFIRMED_KEY,
 )
 from custom_components.marstek.const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
 from custom_components.marstek.helpers.plug_round_trip import (
@@ -308,5 +309,9 @@ async def test_apply_restarts_on_solar_and_skips_stale_polls(hass: HomeAssistant
     apply_plug_round_trip(plug, hass, status, _T0 + 180)
     apply_plug_round_trip(plug, hass, {**status, "battery_soc": 48}, _T0 + 240)
     apply_plug_round_trip(plug, hass, {**status, SOC_CORRECTED_KEY: True}, _T0 + 300)
+    assert list(plug.to_dict()["anchors"]) == ["40"]
+    # A percentage the estimator holds for confirmation is not a level to anchor.
+    held = {**status, "battery_soc": 90, SOC_UNCONFIRMED_KEY: True}
+    apply_plug_round_trip(plug, hass, held, _T0 + 360)
     assert list(plug.to_dict()["anchors"]) == ["40"]
     assert status[CAPACITY_ATTR_KEY] == {"plug_energy_entities": list(_METER)}
