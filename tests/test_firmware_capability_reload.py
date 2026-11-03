@@ -464,3 +464,65 @@ async def test_scanner_reloads_when_reset_prone_clears_without_capability_change
         assert (
             issue_registry.async_get_issue(DOMAIN, f"openapi_reset_prone_{entry.entry_id}") is None
         )
+
+
+@pytest.mark.parametrize("device_type", ["VenusC", "VenusE"])
+async def test_scanner_hmg50_156_to_158_adds_sys_without_ups(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """HMG-50 156 to 158 adds depth of discharge and the two switches, not UPS."""
+    entry = _config_entry(version=156, device_type=device_type)
+    async with _loaded_entry(hass, entry):
+        _assert_sys_entities(hass, present=False)
+        assert MODE_UPS not in _operating_mode_options(hass)
+
+        async with _count_reloads(hass) as reload_ids:
+            await _scan_devices(
+                hass,
+                [_discovered_device(device_type=device_type, version=158, firmware="158")],
+            )
+
+        assert reload_ids == [entry.entry_id]
+        _assert_sw_version(hass, entry, 158)
+        _assert_sys_entities(hass, present=True)
+        assert MODE_UPS not in _operating_mode_options(hass)
+
+
+@pytest.mark.parametrize("device_type", ["VenusC", "VenusE"])
+async def test_scanner_hmg50_158_to_156_removes_sys(hass: HomeAssistant, device_type: str) -> None:
+    """HMG-50 158 to 156 removes the SYS controls and still does not offer UPS."""
+    entry = _config_entry(version=158, device_type=device_type)
+    async with _loaded_entry(hass, entry):
+        _assert_sys_entities(hass, present=True)
+        assert MODE_UPS not in _operating_mode_options(hass)
+
+        async with _count_reloads(hass) as reload_ids:
+            await _scan_devices(
+                hass,
+                [_discovered_device(device_type=device_type, version=156, firmware="156")],
+            )
+
+        assert reload_ids == [entry.entry_id]
+        _assert_sw_version(hass, entry, 156)
+        _assert_sys_entities(hass, present=False)
+        assert MODE_UPS not in _operating_mode_options(hass)
+
+
+async def test_scanner_venus_e2_to_venus_c_removes_experimental_issue(
+    hass: HomeAssistant,
+) -> None:
+    """A stored Venus E 2.0 that later reports Venus C drops the experimental warning."""
+    entry = _config_entry(version=156, device_type="VenusE")
+    async with _loaded_entry(hass, entry):
+        issue_id = f"venus_e2_experimental_{entry.entry_id}"
+        assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+
+        async with _count_reloads(hass) as reload_ids:
+            await _scan_devices(
+                hass,
+                [_discovered_device(device_type="VenusC", version=156, firmware="156")],
+            )
+
+        assert reload_ids == [entry.entry_id]
+        assert entry.data["device_type"] == "VenusC"
+        assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None

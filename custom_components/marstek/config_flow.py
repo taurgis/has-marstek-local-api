@@ -18,7 +18,7 @@ from . import MarstekConfigEntry
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .device_info import format_device_name
 from .discovery import discover_devices, get_device_info
-from .firmware_profile import is_unsupported_venus_e2
+from .firmware_profile import is_venus_e2
 from .helpers.broadcast import async_broadcast_addresses
 from .helpers.flow_helpers import (
     async_apply_entry_update,
@@ -53,6 +53,12 @@ from .options_flow import MarstekOptionsFlow
 _LOGGER = logging.getLogger(__name__)
 
 _MANUAL_DEVICE_OPTION = "__manual__"
+
+
+def _device_is_venus_e2(device_info: dict[str, Any]) -> bool:
+    """Return True when GetDevice named a Venus E 2.0."""
+    device_type = device_info.get("device_type")
+    return is_venus_e2(device_type if isinstance(device_type, str) else None)
 
 
 def _stored_host_is_answering(entry: config_entries.ConfigEntry) -> bool:
@@ -117,11 +123,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.error("Device discovery failed: %s", err)
             return await self.async_step_manual(errors={"base": "discovery_failed"})
 
-        devices = [
-            device
-            for device in discovered
-            if not is_unsupported_venus_e2(device.get("device_type"))
-        ]
+        devices = list(discovered)
         if not devices:
             # No devices found, offer manual entry
             return await self.async_step_manual()
@@ -149,13 +151,20 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # This is a common pattern in HA integrations for this type of dynamic content.
         already_configured_text = format_already_configured_text(already_configured_names)
 
+        venus_e2_listed = any(is_venus_e2(device.get("device_type")) for device in devices)
         return self.async_show_form(
-            step_id="user",
+            step_id="user_venus_e2" if venus_e2_listed else "user",
             data_schema=as_flow_schema(
                 vol.Schema({vol.Required("device"): vol.In(device_options)})
             ),
             description_placeholders={"already_configured": already_configured_text},
         )
+
+    async def async_step_user_venus_e2(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Redisplay the device list when it includes a Venus E 2.0."""
+        return await self.async_step_user(user_input)
 
     async def async_step_manual(
         self,
@@ -187,14 +196,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
                 elif not (formatted_unique_id := get_unique_id_from_device_info(device_info)):
                     errors["base"] = "invalid_discovery_info"
-                elif is_unsupported_venus_e2(device_info.get("device_type")):
-                    errors["base"] = "unsupported_device"
                 else:
                     self._discovered_identity_macs = identity_macs_from_mapping(device_info)
                     # Same as a picked device: an open discovery flow must
                     # not turn the user's manual entry into an abort.
                     await self.async_set_unique_id(formatted_unique_id, raise_on_progress=False)
                     self._abort_if_identity_configured()
+                    if _device_is_venus_e2(device_info):
+                        self._remember_confirm_target(host, port, device_info)
+                        return await self.async_step_confirm_venus_e2()
 
                     return self.async_create_entry(
                         title=format_device_name(device_info),
@@ -246,9 +256,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not self._async_current_entries(include_ignore=False) and self._ignore_has_mac(mac):
             return await self._async_handle_discovery_with_unique_id()
 
-        device, unsupported = await self._async_probe_dhcp_lease(discovery_info.ip, mac)
-        if unsupported:
-            return self.async_abort(reason="unsupported_device")
+        device, _unsupported = await self._async_probe_dhcp_lease(discovery_info.ip, mac)
         if device is not None:
             await self._async_bind_lease_to_device(device, mac)
         return await self._async_handle_discovery_with_unique_id()
@@ -265,9 +273,6 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if preferred_unique_id is None or not discovered_ip:
             return self.async_abort(reason="invalid_discovery_info")
-
-        if is_unsupported_venus_e2(discovery_info.get("device_type")):
-            return self.async_abort(reason="unsupported_device")
 
         await self.async_set_unique_id(preferred_unique_id)
         self._discovered_ip = discovered_ip
@@ -300,6 +305,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             port = int(user_input.get(CONF_PORT, DEFAULT_UDP_PORT))
             form_host = host
             form_port = port
+            showed_venus_e2_note = self._confirm_step_id() == "confirm_venus_e2"
 
             try:
                 device_info = await self._async_get_device_info(host, port)
@@ -310,8 +316,6 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     formatted_unique_id = get_unique_id_from_device_info(device_info)
                     if not formatted_unique_id:
                         errors["base"] = "invalid_discovery_info"
-                    elif is_unsupported_venus_e2(device_info.get("device_type")):
-                        errors["base"] = "unsupported_device"
                     else:
                         device_macs = identity_macs_from_mapping(device_info)
                         reported_macs = identity_macs_from_mapping(
@@ -329,6 +333,24 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             await self.async_set_unique_id(formatted_unique_id)
                             self._abort_if_identity_configured()
 
+                            device_type = device_info.get("device_type")
+                            if (
+                                is_venus_e2(device_type if isinstance(device_type, str) else None)
+                                and not showed_venus_e2_note
+                            ):
+                                self._discovered_ip = host
+                                self._discovered_port = port
+                                self._discovered_metadata = metadata_from_device_info(
+                                    self._device_info_with_lease_mac(host, device_info)
+                                )
+                                return self.async_show_form(
+                                    step_id="confirm_venus_e2",
+                                    data_schema=as_flow_schema(
+                                        build_host_port_schema(default_host=host, default_port=port)
+                                    ),
+                                    description_placeholders={"host": host},
+                                )
+
                             return self.async_create_entry(
                                 title=f"Marstek {device_info.get('device_type', 'Device')}",
                                 data=build_entry_data(
@@ -344,12 +366,33 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_discovery_info"
 
         return self.async_show_form(
-            step_id="confirm",
+            step_id=self._confirm_step_id(),
             data_schema=as_flow_schema(
                 build_host_port_schema(default_host=form_host, default_port=form_port)
             ),
             errors=errors,
             description_placeholders={"host": self._discovered_ip},
+        )
+
+    async def async_step_confirm_venus_e2(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Confirm a discovered Venus E 2.0, with the experimental-support note."""
+        return await self.async_step_confirm(user_input)
+
+    def _confirm_step_id(self) -> str:
+        """Use the Venus E 2.0 confirm copy when discovery already named that model."""
+        device_type = (self._discovered_metadata or {}).get("device_type")
+        if is_venus_e2(device_type if isinstance(device_type, str) else None):
+            return "confirm_venus_e2"
+        return "confirm"
+
+    def _remember_confirm_target(self, host: str, port: int, device_info: dict[str, Any]) -> None:
+        """Keep the address and model the Venus E 2.0 confirm step will re-check."""
+        self._discovered_ip = host
+        self._discovered_port = port
+        self._discovered_metadata = metadata_from_device_info(
+            self._device_info_with_lease_mac(host, device_info)
         )
 
     async def async_step_reauth(
@@ -453,8 +496,6 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not formatted_unique_id:
             return await self.async_step_manual(errors={"base": "invalid_discovery_info"})
 
-        # No Venus E2 check here: the discovery sweep in async_step_user already
-        # drops those before they reach self.discovered_devices.
         self._discovered_identity_macs = identity_macs_from_mapping(device)
         # The scanner has usually opened a discovery flow for this device
         # already. The user picked it here, so finish this flow; creating the
@@ -462,13 +503,15 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(formatted_unique_id, raise_on_progress=False)
         self._abort_if_identity_configured()
 
+        host = str(device["ip"])
+        port = int(device.get("port", DEFAULT_UDP_PORT))
+        if _device_is_venus_e2(device):
+            self._remember_confirm_target(host, port, device)
+            return await self.async_step_confirm_venus_e2()
+
         return self.async_create_entry(
             title=format_device_name(device),
-            data=build_entry_data(
-                device["ip"],
-                int(device.get("port", DEFAULT_UDP_PORT)),
-                device,
-            ),
+            data=build_entry_data(host, port, device),
         )
 
     async def _discover_devices_with_retry(
@@ -643,18 +686,12 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         returned immediately. Otherwise later configured ports are tried, and
         a hit that matches an existing entry wins over an unrelated listener.
         A lease MAC equal to the answered BSSID is the access point, not the
-        battery. The second item is True when every answer was Venus E2.
+        battery. The second item stays False; Venus E 2.0 is offered for setup.
         """
         first_other: dict[str, Any] | None = None
-        saw_unsupported = False
-        saw_answer = False
         for port in self._dhcp_probe_ports():
             device = await self._async_query_lease_port(ip, port)
             if device is None:
-                continue
-            saw_answer = True
-            if is_unsupported_venus_e2(device.get("device_type")):
-                saw_unsupported = True
                 continue
             if self._lease_is_access_point(device, dhcp_mac):
                 continue
@@ -667,7 +704,7 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 first_other = device
         if first_other is not None:
             return first_other, False
-        return None, saw_unsupported and saw_answer
+        return None, False
 
     async def _async_query_lease_port(self, ip: str, port: int) -> dict[str, Any] | None:
         """GetDevice for a DHCP probe; a miss is None, not a raised error."""

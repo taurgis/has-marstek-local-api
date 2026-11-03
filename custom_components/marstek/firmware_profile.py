@@ -17,6 +17,7 @@ class DeviceFamily(StrEnum):
     VENUS_C = "Venus C"
     VENUS_D = "Venus D"
     VENUS_E = "Venus E"
+    VENUS_E2 = "Venus E 2.0"
     VENUS_E_MINI = "Venus E mini"
     UNKNOWN = "Unknown"
 
@@ -38,14 +39,16 @@ _VENUS_A_SCALED_PV_ENERGY_MIN = 1487
 # warning (mis-parsed Venus). Placeholders such as ``version: 3`` do not.
 _UNKNOWN_CONTROL_GENERATION_MIN = 100
 # HMG-50 Control starts at generation 153. The community archives hold
-# 153 / 155 / 156 and the 153 strings also cover 154, so this is a floor
-# rather than a list: an unarchived 154, or a future 157, is still HMG-50
-# and must not fall through to the regular Venus C profile. The same
-# binaries can GetDevice as ``VenusE`` (unsupported E 2.x) or ``VenusC``
-# (issue #60). Recv-list and OTA notes are shared.
+# 153 / 155 / 156 / 158 / 158.1 and the 153 strings also cover 154, so the
+# identity floor is not a membership list: an unarchived 154 or 157 is still
+# HMG-50 and must not fall through to the regular Venus C profile. The same
+# binaries GetDevice as ``VenusE`` (Venus E 2.0) or ``VenusC`` (issue #60).
+# Recv-list and OTA notes are shared. 158 adds DOD.SET, Led.Ctrl, Ble.Adv
+# and UPS; 157 is unarchived and keeps the 156 recv list.
 _HMG50_CONTROL_MIN_GENERATION = 153
 _HMG50_EM_SERVER_GENERATION = 155
 _HMG50_OPENAPI_STABLE_GENERATION = 156
+_HMG50_SYS_GENERATION = 158
 # VNSEMINI-0 PMU 301 compares the ES.SetMode mode with Auto, AI, Manual and
 # UPS only; the string "Passive" is not in the image. Anything else gets a
 # parse error with JSON-RPC id 0 (issue #104), which no pending request
@@ -60,12 +63,13 @@ _VNSEM_NO_PASSIVE_VERSION = 301
 # (``+QIOPEN: 3,0`` next to ``UDP server open!``) -- and drains it with
 # buffered ``AT+QIRD``. VNSE3-0 / VNSA-0 / VNSD-0 carry a generic
 # ``+QIURC: "recv",%d,`` parser and, from Control generation 149, a second
-# hard-coded channel (``+QIURC: "recv",11``). No HMG-50 build has it, 156
-# included, so this is not something a firmware update has cleared.
-# Venus E 2.x / HMG-50 is not Venus E 3.x. HMG-50 Control 153+ Open API
-# GetDevice reports ``device: "VenusE"`` (src ``VenusE-%s``), not
-# ``Venus E2.0`` / ``VNSE2``. Bare ``VenusE`` without 3.x must not unlock
-# the VNSE3-0 family. VNSE3-0 reports ``VenusE 3.0``.
+# hard-coded channel (``+QIURC: "recv",11``). No HMG-50 build has it, 158
+# and 158.1 included, so this is not something a firmware update has cleared.
+# Venus E 2.x is not Venus E 3.x. HMG-50 Control 153+ Open API GetDevice
+# reports ``device: "VenusE"`` (src ``VenusE-%s``) or ``VenusC``. Bare
+# ``VenusE`` without 3.x must not unlock the VNSE3-0 family. VNSE3-0
+# reports ``VenusE 3.0``. Venus E 2.0 is set up on that HMG-50 profile,
+# with an experimental-support warning.
 _VENUS_E2_PATTERN = re.compile(
     r"^(?:"
     r"venus\s*e\s*2(?:\.\d+)?(?:\s|$)|"
@@ -118,6 +122,8 @@ class FirmwareProfile:
 
         Capability gates recreate SYS/UPS/PV entities. Reset-prone also
         recreates (or removes) Bat.GetStatus entities and the Open API warning.
+        ``venus_e2`` recreates the experimental-support repair when a stored
+        entry moves between Venus E 2.0 and another family.
 
         The scales and the EM/schedule gates matter for the same reason: the
         coordinator, the parser and the services all read the profile captured
@@ -127,6 +133,7 @@ class FirmwareProfile:
         """
         return (
             *self.setup_capability_signature,
+            self.venus_e2,
             self.openapi_reset_prone,
             self.pv_energy_scale,
             self.pv_channel_1_power_scale,
@@ -152,8 +159,8 @@ class FirmwareProfile:
         family stays conservative. Unknown model names with a Control-like
         generation below 150 are also treated as reset-prone.
 
-        HMG-50 Control (Venus C 153/155/156 and bare ``VenusE`` at those
-        generations) publishes an Open API stability fix at **156**, not 150.
+        HMG-50 Control (Venus C and Venus E 2.0) publishes an Open API
+        stability fix at **156**, not 150.
         """
         generation = self.control_generation
         if self.hmg50_control:
@@ -197,6 +204,11 @@ class FirmwareProfile:
         ``bat_capacity`` (remaining) and below its ``rated_capacity`` 2009.
         """
         return self.family is DeviceFamily.VENUS_E_MINI
+
+    @property
+    def venus_e2(self) -> bool:
+        """Return whether this device is Venus E 2.0 on the HMG-50 board."""
+        return self.family is DeviceFamily.VENUS_E2
 
     @property
     def shared_meter_udp_channel(self) -> bool:
@@ -257,8 +269,13 @@ _FAMILY_PATTERNS: tuple[tuple[DeviceFamily, re.Pattern[str]], ...] = (
 )
 
 
-def is_unsupported_venus_e2(device_type: str | None) -> bool:
-    """Return True for Venus E 2.x / HMG-50 names this integration does not support."""
+def is_venus_e2(device_type: str | None) -> bool:
+    """Return True for Venus E 2.x names, including bare ``VenusE`` and ``HMG-*``.
+
+    These are the HMG-50 identities that are not ``VenusC``. Venus E 3.x
+    (``VenusE 3.0``, ``VNSE3-0``) does not match. Setup is allowed; the
+    integration warns that support is experimental.
+    """
     if not isinstance(device_type, str):
         return False
     normalized = " ".join(re.sub(r"[-_]+", " ", device_type.strip()).split())
@@ -269,8 +286,8 @@ def _normalize_family(device_type: str | None) -> DeviceFamily:
     """Normalize a discovery model name to a supported family."""
     if not isinstance(device_type, str):
         return DeviceFamily.UNKNOWN
-    if is_unsupported_venus_e2(device_type):
-        return DeviceFamily.UNKNOWN
+    if is_venus_e2(device_type):
+        return DeviceFamily.VENUS_E2
     normalized = " ".join(re.sub(r"[-_]+", " ", device_type.strip()).split())
     for family, pattern in _FAMILY_PATTERNS:
         if pattern.match(normalized):
@@ -337,14 +354,29 @@ def _is_hmg50_control_image(
 ) -> bool:
     """Return whether this discovery runs an HMG-50 Control image.
 
-    Generation is a floor, not a membership test: 154 is unarchived but
-    shares the 153 strings, and a future 157 keeps the same recv list.
-    Falling through to the regular Venus C profile would hand those builds
-    the SYS/UPS entities HMG-50 does not serve.
+    Venus C uses a generation floor: 154 is unarchived but shares the 153
+    strings, and 157 keeps the 156 recv list. Falling through to the regular
+    Venus C profile would hand those builds SYS/UPS early. A Venus E 2.0
+    name is that same board at every reported version.
     """
+    if family is DeviceFamily.VENUS_E2 or is_venus_e2(device_type):
+        return True
     if generation is None or generation < _HMG50_CONTROL_MIN_GENERATION:
         return False
-    return family is DeviceFamily.VENUS_C or is_unsupported_venus_e2(device_type)
+    return family is DeviceFamily.VENUS_C
+
+
+def _hmg50_sys_enabled(hmg50_control: bool, generation: int | None) -> bool:
+    """Return whether this HMG-50 image serves DOD, LED and Bluetooth writes.
+
+    Control 158 is the first archived image whose command table contains
+    ``DOD.SET``, ``Led.Ctrl`` and ``Ble.Adv``. Open API ``ver`` 1581 (app
+    158.1) folds to generation 158. Builds below that, including unarchived
+    157, keep the 156 recv list. ``ups_cfg`` is present too, but
+    ``ES.GetMode`` reports ``Manual`` after a successful set, so UPS is not
+    included here.
+    """
+    return hmg50_control and generation is not None and generation >= _HMG50_SYS_GENERATION
 
 
 def resolve_firmware_profile_from_metadata(data: Mapping[str, Any]) -> FirmwareProfile:
@@ -366,12 +398,17 @@ def resolve_firmware_profile(
     known_family = family in _KNOWN_FAMILIES
     regular_family = family in _REGULAR_FAMILIES
     hmg50_control = _is_hmg50_control_image(device_type, family, generation)
-    # HMG-50 Control has no Open API SYS/UPS in 153/155/156 (recv list is
-    # GetDevice, ES.*, BLE, Wifi, Bat, PV stub, and EM from 155). Do not
-    # unlock SYS from string presence in VNSE3-0 147-149 either: HA keeps
-    # the Rev 3.1 ``ver >= 150`` gate (PDF + issue #15).
-    supports_sys = (regular_family and firmware_150 and not hmg50_control) or (
-        family is DeviceFamily.VENUS_E_MINI and firmware_known
+    # HMG-50 Control 153/155/156 have no Open API SYS (recv list is
+    # GetDevice, ES.*, BLE, Wifi, Bat, PV stub, and EM from 155). 158 adds
+    # DOD.SET, Led.Ctrl and Ble.Adv. Do not unlock SYS from string presence
+    # in VNSE3-0 147-149 either: HA keeps the Rev 3.1 ``ver >= 150`` gate
+    # (PDF + issue #15). UPS stays off on HMG-50: 158 accepts ups_cfg and
+    # ES.GetMode then reports Manual.
+    hmg50_sys = _hmg50_sys_enabled(hmg50_control, generation)
+    supports_sys = (
+        hmg50_sys
+        or (regular_family and firmware_150 and not hmg50_control)
+        or (family is DeviceFamily.VENUS_E_MINI and firmware_known)
     )
     supports_ups = (
         (regular_family or family is DeviceFamily.VENUS_E_MINI)
@@ -394,6 +431,10 @@ def resolve_firmware_profile(
     #   Venus E 150 (LAN capture / #34): SYS/UPS; GetMode CT keys zeros.
     #   Venus C 153 (#60): HMG-50 reporting VenusC; no SYS/UPS; GetDevice
     #   may omit result MACs; EM.GetStatus is meter-client only until 155.
+    #   Venus C / Venus E 2.0 158: DOD.SET, Led.Ctrl, Ble.Adv. ups_cfg is
+    #   accepted and ES.GetMode then reports Manual, so UPS stays off.
+    #   Open API ver 1581 folds to that generation. The shared meter channel
+    #   is still the single ``+QIURC: "recv",3`` path.
     #   Venus A 148.7 (1487) and Venus D 149/149.2 (firmware emulator audit):
     #   total_pv_energy is the MPPT year counter in 0.01 kWh, like 149+.
     #   Venus A 1491 (app 149.1) folds to generation 149, so this branch
@@ -407,7 +448,7 @@ def resolve_firmware_profile(
             and _VENUS_A_SCALED_PV_ENERGY_MIN <= firmware_version < 1490
         )
     )
-    if is_unsupported_venus_e2(device_type) or (family is DeviceFamily.VENUS_C and hmg50_control):
+    if family is DeviceFamily.VENUS_E2 or (family is DeviceFamily.VENUS_C and hmg50_control):
         supports_em_status = generation is not None and generation >= _HMG50_EM_SERVER_GENERATION
     else:
         supports_em_status = known_family

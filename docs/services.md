@@ -69,7 +69,7 @@ The battery's [operating mode](guide/glossary.md#auto-mode-self-consumption) dec
 | Mode | How to set it |
 |------|----------------|
 | Auto, AI | **Operating mode** select on the device page, or in an automation |
-| UPS | **Operating mode** select, only when your model and firmware support it (firmware 150 or newer on Venus A, D, E 3.0 and Venus E mini; never on [HMG-50](guide/glossary.md#hmg-50) firmware, which is every Venus C firmware seen so far) |
+| UPS | **Operating mode** select, only when your model and firmware support it (firmware 150 or newer on Venus A, D, E 3.0 and Venus E mini; not on Venus C or Venus E 2.0 / [HMG-50](guide/glossary.md#hmg-50), where firmware 158 reports Manual after the command) |
 | Manual, Passive | The services below, because they need a power and a time (picking them in the select does not apply empty defaults) |
 
 A factory reset and changing the firmware version (`Set.Ver`) are **not** services, entities, or recommended actions.

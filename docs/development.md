@@ -211,8 +211,11 @@ This table is which device and firmware combinations we test, and how. The tests
 | Venus C | `VenusC` | 153 | Real firmware | `fw-venus-c-153` (`172.28.0.67`) |
 | | | 155 | Real firmware | `fw-venus-c-155` (`172.28.0.68`) |
 | | | 156 | Real firmware | `fw-venus-c-156` (`172.28.0.66`) ★ |
-| Venus E 2.0 (not compatible) | `VenusE` | 153, 155 | Real firmware: the same HMG-50 image, run as Venus C | `fw-venus-c-153`, `fw-venus-c-155` |
+| | | 158 | Real firmware | `fw-venus-c-158` (`172.28.0.76`) |
+| | | 1581 (app 158.1) | Real firmware | `fw-venus-c-1581` (`172.28.0.77`) |
+| Venus E 2.0 (experimental) | `VenusE` | 153, 155 | Real firmware: the same HMG-50 image, run as Venus C | `fw-venus-c-153`, `fw-venus-c-155` |
 | | | 156 | Real firmware | `fw-venus-e2-156` (`172.28.0.69`) |
+| | | 158, 1581 | Real firmware: the same HMG-50 image as Venus C | `fw-venus-c-158`, `fw-venus-c-1581` |
 | Venus E mini | `Venus E mini` | 145 | Mock only | `mock-marstek-8` (`172.28.0.28`) ★ |
 | | `VNSEM-0` | 301 | Real firmware (PMU), answering the Open API in Renode. Reads and UDP rules follow [#86](https://github.com/taurgis/has-marstek-local-api/issues/86); replies go to `<a.b.c>.255`. Any `time_num` is acknowledged. Unknown methods stay silent. Passive `ES.SetMode` is a parse error with JSON-RPC id 0 and data 401, which matches [#104](https://github.com/taurgis/has-marstek-local-api/issues/104). A six-field Manual payload without `manual_set` leaves displayed power unset; `manual_set` 0-2 with unsigned `power` is documentation-based, not a capture | `fw-venus-e-mini-301` (`172.28.0.75`) |
 | Unknown family | `VenusE Pro` | 1508 | Real firmware (a test build Marstek published under Venus A) | `fw-venus-a-1508` (`172.28.0.61`) |
@@ -232,7 +235,7 @@ Firmware images come from Marstek's public update server and community archives;
   docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venus-d-149
   ```
 
-  `--profile firmware-all` defines all 25 emulators, but running them all at once needs a large machine. On a 4-CPU machine, run at most four at a time.
+  `--profile firmware-all` defines all 27 emulators, but running them all at once needs a large machine. On a 4-CPU machine, run at most four at a time.
 - **Venus C and Venus E 2.0 get their own batch.** They drop many requests by design ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)), and that loss should be read as the firmware's shared meter channel, separate from machine load.
 - **Automated tests never need Docker.** `pytest` uses the same firmware profiles against in-process mocks.
 

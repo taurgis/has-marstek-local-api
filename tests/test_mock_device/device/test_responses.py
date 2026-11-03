@@ -8,7 +8,7 @@ from mock_device import MockMarstekDevice
 
 from custom_components.marstek.firmware_profile import (
     DeviceFamily,
-    is_unsupported_venus_e2,
+    is_venus_e2,
     resolve_firmware_profile,
 )
 from custom_components.marstek.pymarstek.data_parser import (
@@ -456,8 +456,8 @@ class TestDeviceDiscovery:
         assert response["src"] == "VenusE-02deadbeef09"
         assert response["result"]["device"] == "VenusE"
         assert response["result"]["ver"] == 153
-        assert is_unsupported_venus_e2(response["result"]["device"]) is True
-        assert device.profile.family is DeviceFamily.UNKNOWN
+        assert is_venus_e2(response["result"]["device"]) is True
+        assert device.profile.family is DeviceFamily.VENUS_E2
         assert device.profile.supports_ups is False
         assert device.profile.supports_sys_dod is False
         assert response["result"]["ble_mac"] == "02deadbeef09"
@@ -496,6 +496,38 @@ class TestDeviceDiscovery:
         assert "result" in em
         assert "error" not in em
         assert em["src"] == "VenusE-02deadbeef09"
+
+    def test_hmg50_158_stores_sys_writes_and_refuses_ups(self) -> None:
+        """Venus C 158 stores DOD, LED and Bluetooth. UPS stays unsupported."""
+        device = MockMarstekDevice(
+            port=30005,
+            simulate=False,
+            device_config={"device": "VenusC", "ver": 158, "ble_mac": "02deadbeef1f"},
+        )
+
+        dod = device.build_response(1, "DOD.SET", {"value": 70})
+        led = device.build_response(2, "Led.Ctrl", {"state": 0})
+        ble = device.build_response(3, "Ble.Adv", {"enable": 1})
+        ups = device.build_response(
+            4,
+            "ES.SetMode",
+            {"id": 0, "config": {"mode": "UPS", "ups_cfg": {"enable": 1}}},
+        )
+        legacy = MockMarstekDevice(
+            port=30006,
+            simulate=False,
+            device_config={"device": "VenusC", "ver": 156, "ble_mac": "02deadbeef17"},
+        )
+        hidden = legacy.build_response(5, "DOD.SET", {"value": 70})
+
+        assert dod is not None and dod["result"]["set_result"] is True
+        assert led is not None and led["result"]["set_result"] is True
+        assert ble is not None and ble["result"]["set_result"] is True
+        assert device.dod_value == 70
+        assert device.led_state == 0
+        assert device.ble_advertising == 1
+        assert ups is not None and ups["error"]["code"] == -32601
+        assert hidden is not None and hidden["error"]["code"] == -32601
 
     def test_venus_a_147_getmode_includes_zero_ct_keys(self) -> None:
         """Issue #11: Venus A 147 GetMode includes CT/energy keys as zeros."""

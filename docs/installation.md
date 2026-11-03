@@ -25,7 +25,7 @@ Use this only if you don't run HACS. You will have to repeat it by hand for ever
 - **Open API turned on** in the Marstek app. The [Open API](guide/glossary.md#open-api-local-api) is the local interface the integration talks to. It is off by default.
 - Home Assistant can reach the battery over your network on the Open API port, **30000** unless you changed it in the Marstek app. The integration uses [UDP](guide/glossary.md#udp) on that [port](guide/glossary.md#port).
 - For automatic discovery, the battery and Home Assistant are on the **same network**. If the battery sits on a separate [VLAN](guide/glossary.md#vlan), add it by IP address and allow UDP traffic on its port in your router or firewall.
-- Your battery is not a Venus **E 2.0**. That model is **not supported**: polling can disconnect it from its CT003 meter.
+- A Venus **E 2.0** can be added. Support is experimental: polling can still disconnect it from its CT003 meter, and Home Assistant shows a repair warning.
 
 ## Next
 

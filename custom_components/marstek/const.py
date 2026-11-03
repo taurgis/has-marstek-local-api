@@ -226,6 +226,7 @@ _FAMILY_POWER_LIMITS: Final[dict[DeviceFamily, int]] = {
     DeviceFamily.VENUS_C: 2500,
     DeviceFamily.VENUS_D: 2200,
     DeviceFamily.VENUS_E: 2500,
+    DeviceFamily.VENUS_E2: 2500,
     DeviceFamily.VENUS_E_MINI: 2500,
 }
 
@@ -234,6 +235,7 @@ _FAMILY_SOCKET_LIMIT_DEFAULTS: Final[frozenset[DeviceFamily]] = frozenset(
         DeviceFamily.VENUS_C,
         DeviceFamily.VENUS_D,
         DeviceFamily.VENUS_E,
+        DeviceFamily.VENUS_E2,
         DeviceFamily.VENUS_E_MINI,
     }
 )

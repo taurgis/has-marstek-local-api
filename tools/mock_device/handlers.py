@@ -174,7 +174,11 @@ def handle_es_get_mode(
         "bat_soc": state["soc"],
     }
     if profile.supports_em_energy:
-        if profile.family in {DeviceFamily.VENUS_E, DeviceFamily.VENUS_C}:
+        if profile.family in {
+            DeviceFamily.VENUS_E,
+            DeviceFamily.VENUS_E2,
+            DeviceFamily.VENUS_C,
+        }:
             result.update(_unpopulated_getmode_meter_template())
         else:
             result.update(

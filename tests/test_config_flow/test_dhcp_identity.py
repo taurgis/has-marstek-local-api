@@ -336,8 +336,8 @@ async def test_known_dhcp_mac_updates_without_another_probe(hass: HomeAssistant)
     assert updated.data["port"] == 30000
 
 
-async def test_dhcp_unsupported_device_aborts(hass: HomeAssistant) -> None:
-    """Venus E 2.0 answering the lease is refused instead of offered for setup."""
+async def test_dhcp_venus_e2_is_offered_for_setup(hass: HomeAssistant) -> None:
+    """Venus E 2.0 answering the lease is offered, with the experimental note."""
     with patch(
         "custom_components.marstek.config_flow.get_device_info",
         new=AsyncMock(return_value=_device(device_type="VenusE")),
@@ -346,8 +346,19 @@ async def test_dhcp_unsupported_device_aborts(hass: HomeAssistant) -> None:
             DOMAIN, context={"source": "dhcp"}, data=_dhcp()
         )
 
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "unsupported_device"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "confirm_venus_e2"
+
+    with patch(
+        "custom_components.marstek.config_flow.get_device_info",
+        new=AsyncMock(return_value=_device(device_type="VenusE")),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": _HOST, "port": 30000}
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_type"] == "VenusE"
 
 
 async def test_dhcp_probe_skips_an_answer_without_a_mac(hass: HomeAssistant) -> None:

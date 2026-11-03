@@ -61,6 +61,6 @@ When the new `ver` unlocks or removes setup-time capabilities (for example Venus
 
 </details>
 
-## Unsupported devices
+## Venus E 2.0
 
-Venus **E 2.0** is not supported.
+Venus E 2.0 can be added. Support is experimental. Home Assistant asks you to confirm before creating the entry, then shows a repair warning you can ignore. It uses the same feature gates as Venus C: depth of discharge, Panel LED, and Bluetooth advertising from firmware 158, and no UPS mode. See [Troubleshooting](troubleshooting.md#venus-e-20).

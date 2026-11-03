@@ -208,6 +208,11 @@ class MockMarstekDevice:
         # rather than printed individually.
         self.verbose = verbose
         self.status_interval = status_interval
+        # DOD, Bluetooth advertising and the panel LED are write-only on the
+        # wire. Remember the last accepted values so a test can see the write.
+        self.dod_value: int | None = None
+        self.ble_advertising: int | None = None
+        self.led_state: int | None = None
         self._status_thread: threading.Thread | None = None
         self._dropped: Counter[str] = Counter()
         self._last_drop_sender = "unknown"
@@ -769,11 +774,25 @@ class MockMarstekDevice:
         if method in sys_supported:
             if not sys_supported[method]:
                 return handle_method_not_found(request_id, src)
+            self._remember_sys_write(method, params)
             return handle_sys_write(request_id, src)
 
         # Control firmware replies JSON-RPC -32601 ("unknow method" in
         # HMG-50 / VNSE3-0 strings) instead of dropping the datagram.
         return handle_method_not_found(request_id, src)
+
+    def _remember_sys_write(self, method: str, params: dict[str, Any]) -> None:
+        """Store the last accepted DOD, Bluetooth and LED write."""
+        if method == CMD_DOD_SET and isinstance(params.get("value"), int):
+            self.dod_value = params["value"]
+        elif method == CMD_BLE_ADV and isinstance(params.get("enable"), int):
+            self.ble_advertising = params["enable"]
+        elif method == CMD_LED_CTRL and isinstance(params.get("state"), int):
+            self.led_state = params["state"]
+        print(
+            f"[SYS] {method} dod={self.dod_value} ble={self.ble_advertising} led={self.led_state}",
+            flush=True,
+        )
 
     def _es_set_mode_response(
         self, request_id: int, src: str, params: dict[str, Any]

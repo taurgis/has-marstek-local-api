@@ -257,8 +257,8 @@ async def test_manual_flow_value_error(hass: HomeAssistant) -> None:
     "device_type",
     ["Venus E2.0", "VenusE", "HMG-50"],
 )
-async def test_manual_flow_rejects_venus_e2(hass: HomeAssistant, device_type: str) -> None:
-    """HMG-50 Open API names are not a supported family."""
+async def test_manual_flow_adds_venus_e2(hass: HomeAssistant, device_type: str) -> None:
+    """Venus E 2.0 manual setup creates the entry instead of refusing it."""
     device_info = {
         "ip": "192.168.1.100",
         "ble_mac": "AA:BB:CC:DD:EE:FF",
@@ -281,8 +281,16 @@ async def test_manual_flow_rejects_venus_e2(hass: HomeAssistant, device_type: st
         )
 
     assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "manual"
-    assert result["errors"] == {"base": "unsupported_device"}
+    assert result["step_id"] == "confirm_venus_e2"
+    assert result["description_placeholders"]["host"] == "192.168.1.100"
+
+    with patch_manual_connection(device_info=device_info):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "192.168.1.100", "port": 30000}
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_type"] == device_type
 
 
 def test_manual_entry_schema_rejects_invalid_port() -> None:

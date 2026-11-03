@@ -15,6 +15,7 @@ from custom_components.marstek.const import (
 )
 from tests.conftest import (
     patch_discovery,
+    patch_manual_connection,
 )
 
 from ._helpers import (
@@ -234,7 +235,7 @@ async def test_user_flow_connection_error_redirects_to_manual(
 async def test_user_flow_filters_unsupported_venus_e2(
     hass: HomeAssistant, device_type: str
 ) -> None:
-    """Discovery lists omit HMG-50 / Venus E2 so it cannot be added as Venus E."""
+    """A discovered Venus E 2.0 stays on the list, with the experimental note."""
     devices = [
         {
             "ip": "1.2.3.4",
@@ -253,7 +254,21 @@ async def test_user_flow_filters_unsupported_venus_e2(
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "manual"
+    assert result["step_id"] == "user_venus_e2"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={"device": "0"}
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm_venus_e2"
+    assert result["description_placeholders"]["host"] == "1.2.3.4"
+
+    with patch_manual_connection(device_info=devices[0]):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"host": "1.2.3.4", "port": 30000}
+        )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_type"] == device_type
 
 
 async def test_already_configured_unique_id(

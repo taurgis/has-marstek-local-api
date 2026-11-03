@@ -27,8 +27,8 @@ Marstek offers no way to read depth of discharge, Bluetooth advertising, the pan
 **Venus C can stop charging from solar.**
 On Venus C, polling competes with the battery's own grid-meter link for one Wi-Fi channel. In Auto mode this can stop charging from excess solar. No firmware fixes it yet. See the [Venus C caveat](supported-devices.md#venus-c-caveat).
 
-**Venus E 2.0 is not supported.**
-It runs the same controller as Venus C, and polling it can disconnect it from its CT meter.
+**Venus E 2.0 support is experimental.**
+It runs the same controller as Venus C, and polling it can disconnect it from its CT meter. The integration adds it and shows a repair warning you can ignore.
 
 **Venus E mini firmware 301 is limited.**
 The firmware refuses [Passive mode](glossary.md#passive-mode). Discovery can't find it, so add it by IP address. Its replies only reach Home Assistant on a normal home network with mask `255.255.255.0` (a [/24](glossary.md#subnet-24), the usual router default). Manual schedules with a power value work since integration 1.3.2. See [Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).

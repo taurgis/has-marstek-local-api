@@ -295,8 +295,9 @@ image with `Marstek.GetDevice`. Strings in that binary (and 154–156):
 | SKU | `HMG-50` / `HMG-25` / `HMG-1` | `VNSE3-0` |
 
 Matching only `Venus E2.0` / `VNSE2-0` would accept a real E2 as Venus E 3.x.
-The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as unsupported.
-Venus E 3.x requires `VenusE 3.0` / `VNSE3`.
+The integration treats bare `VenusE`, `HMG-50`, and `VNSE2` as Venus E 2.0
+(experimental support, with a repair warning). Venus E 3.x requires
+`VenusE 3.0` / `VNSE3`.
 
 HMG-50 Control **153** Open API methods in the binary recv list:
 `Marstek.GetDevice`, `ES.GetMode`, `ES.SetMode`, `Wifi.SetConfig`,
@@ -305,20 +306,22 @@ HMG-50 Control **153** Open API methods in the binary recv list:
 on 153 (`{"id":%d,"method":"EM.GetStatus"...}`). Control **155** adds the
 Open API **server** method `EM.GetStatus` to that recv list. Control **156**
 OTA is “Improved OpenAPI interface stability”. None of 153/155/156 contain
-`DOD.SET` / `Ble.Adv` / `Led.Ctrl`. GetDevice identity strings include both
-`VenusE` / `VenusE-%s` and `VenusC` / `VenusC-%s`.
+`DOD.SET` / `Ble.Adv` / `Led.Ctrl`. Control **158** and beta **158.1**
+(`ver` 1581) add those methods plus `ups_cfg`. GetDevice identity strings
+include both `VenusE` / `VenusE-%s` and `VenusC` / `VenusC-%s`.
 
 Issue [#60](https://github.com/taurgis/has-marstek-local-api/issues/60) is
 HMG-50 reporting `device: "VenusC"` and omitting GetDevice result MACs. The
-firmware profile therefore treats Venus C **153/155/156** as HMG-50 Control:
-no SYS/UPS, EM server from **155**, reset-prone until **156**. Bare
-`VenusE` at those generations stays an unsupported E 2.x identity.
+firmware profile treats Venus C and bare `VenusE` (Venus E 2.0) as HMG-50
+Control: no SYS until generation **158**, and no UPS on this board (158
+accepts `ups_cfg` and then reports Manual). EM server from **155**,
+reset-prone below **156**. Venus E 2.0 is set up with an experimental warning.
 
 Docker mocks:
 
 - `172.28.0.26` Venus C 153 (issue #60)
 - `172.28.0.42` / `.43` Venus C 155 / 156
-- `172.28.0.29` / `.44` / `.45` unsupported `VenusE` 153 / 155 / 156
+- `172.28.0.29` / `.44` / `.45` experimental `VenusE` 153 / 155 / 156
 
 ## What 151 changed versus 150
 
@@ -487,7 +490,7 @@ Blobs stay local-only.
 | VNSE3-0 | 144, 147, 1476, 148, 149, 150, 151 | 144–151 | 1476 is app 147.6. SYS/UPS at 150. Live 150 `PV.GetStatus` is `-32601`. |
 | VNSA-0 | 148, 1487, 149, 1491, 150, 1508, 1509, 151 | 148–151 | 1487→148, 1491→149, 1508/1509→150. 1491 is the V149 Alternate rebuild. 1508 banners `VEPRO-0` / `VenusE Pro` (unknown family). |
 | VNSD-0 | 147, 149, 1492, 150, 151 | 147–151 | 1492→149. Venus D 149 and 1492 report solar energy in 0.01 kWh (`×10`), like Venus A 149. |
-| HMG-50 | 153, 155, 156 | 153–156 | No SYS. EM server from 155. Open API stable at 156. |
+| HMG-50 | 153, 155, 156, 158, 1581 | 153–158 | No SYS until 158. 1581 folds to 158. EM server from 155. Open API stable at 156. Shared meter channel remains. |
 
 String presence of `DOD.SET` / `Ble.Adv` / `Led.Ctrl` on VNSE3-0 **147–149**
 and VNSA-0 **148** does **not** unlock Home Assistant SYS entities. The

@@ -393,6 +393,42 @@
       "remark": "Optimized Open API interface stability. Same GetDevice identity as 153 (VenusE / VenusC / HMG-50). Still no SYS/UPS. Single hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3) shared by the Local API server and the UDP meter client (Marstek CT or Shelly; HomeWizard P1 and Eco-Tracker are read over the module's HTTP client instead); no generic recv parser and no second channel (recv,11) as on VNSE3-0/VNSA-0/VNSD-0 149+. See HMG50_METER_CHANNEL.md (issue #82)."
     },
     {
+      "deviceType": "HMG-50",
+      "firmwareType": "Control",
+      "version": 158,
+      "controlGeneration": 158,
+      "filename": "ac_app_0158_0228_2_102913.bin",
+      "size": 243712,
+      "sha256": "1b20c4a224d3311030912c06d9f95c7026c7a475967476be87908b6154fc6682",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260228/ac_app_0158_0228_2_102913.bin",
+      "buildStamp": "Feb 28 2026 10:25:57",
+      "banner": "HMG-50 v158",
+      "vectorTable": {
+        "sp": "0x200171e8",
+        "reset": "0x08002ab1"
+      },
+      "source": "https://github.com/rweijnen/marstek-firmware-archive/tree/main/firmwares/HMG-50/Control/158",
+      "remark": "Vendor note: API adds UPS, Bluetooth lock, DoD and panel LED switch. Command table adds DOD.SET, Led.Ctrl and Ble.Adv. Emulator: those three answer set_result, and Ble.Adv 1 starts advertising (0 stops). ES.SetMode with ups_cfg returns set_result true and ES.GetMode then reports the string Manual, not UPS. Same GetDevice identity as 156 (VenusE / VenusC). Reset vector matches 156 (0x08002ab1); SP is 0x200171e8. Still one hard-coded Wi-Fi receive channel (+QIURC: \"recv\",3). See HMG50_METER_CHANNEL.md (issue #82)."
+    },
+    {
+      "deviceType": "HMG-50",
+      "firmwareType": "Control",
+      "version": 1581,
+      "controlGeneration": 158,
+      "filename": "ac_app_1581_0228_1_164255.bin",
+      "size": 243712,
+      "sha256": "97a8fdb4d3264038ea3a02a402e7ca15177066be40cc2025473541e774abf137",
+      "url": "https://static-eu.marstekenergy.com/uploads/ota/20260228/ac_app_1581_0228_1_164255.bin",
+      "buildStamp": "Feb 28 2026 16:41:57",
+      "banner": "HMG-50 v158.1",
+      "vectorTable": {
+        "sp": "0x200171e8",
+        "reset": "0x08002ab1"
+      },
+      "source": "https://github.com/rweijnen/marstek-firmware-archive/tree/main/firmwares/HMG-50/Control/1581",
+      "remark": "Beta labeled 158.1. Open API ver 1581 folds to Control generation 158 (same SYS gate as 158; UPS stays off because GetMode reports Manual). Same vector table, command names and single +QIURC: \"recv\",3 meter channel as 158. See HMG50_METER_CHANNEL.md (issue #82)."
+    },
+    {
       "deviceType": "VNSEMINI-0",
       "firmwareType": "Control",
       "mcuType": "control",

@@ -87,7 +87,7 @@ def _load_firmware_profile_module() -> Any:
 
 _firmware_profile = _load_firmware_profile_module()
 DeviceFamily = _firmware_profile.DeviceFamily
-is_unsupported_venus_e2 = _firmware_profile.is_unsupported_venus_e2
+is_venus_e2 = _firmware_profile.is_venus_e2
 resolve_firmware_profile = _firmware_profile.resolve_firmware_profile
 
 
@@ -128,8 +128,8 @@ class Check:
 
 def setup_expectation(device: str, ver: int) -> str:
     """Return how config flow should treat this mock."""
-    if is_unsupported_venus_e2(device):
-        return "reject_unsupported"
+    if is_venus_e2(device):
+        return "add_experimental"
     profile = resolve_firmware_profile(device, ver)
     if profile.family is DeviceFamily.UNKNOWN:
         return "add_unknown"
@@ -828,13 +828,22 @@ class Campaign:
         flow_id = _flow_id(started)
         step = _flow_step(started)
         current = started
-        if step == "user" and flow_id:
+        if step in {"user", "user_venus_e2"} and flow_id:
             current = await ha_cdp.cmd_flow_next(
                 self.cdp, self.page, flow_id, {"device": MANUAL_DEVICE_OPTION}
             )
             flow_id = _flow_id(current) or flow_id
             step = _flow_step(current)
         if step == "manual" and flow_id:
+            current = await ha_cdp.cmd_flow_next(
+                self.cdp,
+                self.page,
+                flow_id,
+                {"host": host, "port": port},
+            )
+            flow_id = _flow_id(current) or flow_id
+            step = _flow_step(current)
+        if step == "confirm_venus_e2" and flow_id:
             current = await ha_cdp.cmd_flow_next(
                 self.cdp,
                 self.page,

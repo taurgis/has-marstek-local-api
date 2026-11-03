@@ -14,9 +14,19 @@
           "device": "Kies het Marstek-apparaat dat je wilt toevoegen"
         }
       },
+      "user_venus_e2": {
+        "title": "Marstek energieopslag",
+        "description": "Selecteer hieronder je Marstek-energieopslagapparaat. Een apparaat dat zich als VenusE meldt is een Venus E 2.0. Ondersteuning voor dat model is experimenteel en door de community getest. Als je het kiest, vraagt Home Assistant om bevestiging voordat het wordt toegevoegd, en toont daarna een reparatiewaarschuwing die je kunt negeren. Open API-verzoeken kunnen de eigen meter van de batterij onderbreken.{already_configured}",
+        "data": {
+          "device": "Selecteer apparaat"
+        },
+        "data_description": {
+          "device": "Kies het Marstek-apparaat dat je wilt toevoegen"
+        }
+      },
       "manual": {
         "title": "Apparaat handmatig instellen",
-        "description": "Er zijn geen apparaten automatisch gevonden. Voer handmatig het IP-adres van je Marstek-apparaat in. Zorg dat Open API is ingeschakeld in de Marstek-app.",
+        "description": "Er zijn geen apparaten automatisch gevonden. Voer handmatig het IP-adres van je Marstek-apparaat in. Zorg dat Open API is ingeschakeld in de Marstek-app. Een batterij die zich als VenusE (Venus E 2.0) meldt vraagt om bevestiging voordat die wordt toegevoegd. Ondersteuning voor dat model is experimenteel en door de community getest, en Home Assistant toont een reparatiewaarschuwing die je kunt negeren.",
         "data": {
           "host": "IP-adres",
           "port": "Poort"
@@ -29,6 +39,18 @@
       "confirm": {
         "title": "Apparaat bevestigen",
         "description": "Er is een Marstek-apparaat gevonden op {host}. Bevestig het adres of pas het aan voordat je het toevoegt.",
+        "data": {
+          "host": "IP-adres",
+          "port": "Poort"
+        },
+        "data_description": {
+          "host": "IP-adres van je Marstek-apparaat",
+          "port": "UDP-poort (standaard: 30000)"
+        }
+      },
+      "confirm_venus_e2": {
+        "title": "Venus E 2.0 bevestigen",
+        "description": "Er is een Venus E 2.0 gevonden op {host}. Het apparaat meldt zich als VenusE. Ondersteuning is experimenteel en door de community getest: Open API-verzoeken kunnen de eigen meter van de batterij onderbreken en laden op overtollige zonne-energie stoppen. Je kunt het apparaat toch toevoegen. Home Assistant toont een reparatiewaarschuwing die je kunt negeren. Bevestig het adres of pas het aan voordat je het toevoegt.",
         "data": {
           "host": "IP-adres",
           "port": "Poort"
@@ -67,14 +89,14 @@
       "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
       "unique_id_mismatch": "Het apparaat op dit adres komt niet overeen met het gevonden apparaat",
       "all_devices_configured": "Alle gevonden apparaten zijn al geconfigureerd. Voer handmatig een IP-adres in of zorg dat er meer apparaten op het netwerk zijn.",
-      "unsupported_device": "Venus E2.0 wordt niet ondersteund door deze integratie"
+      "unsupported_device": "Ondersteuning voor Venus E 2.0 is experimenteel. Bevestig het apparaat om het toe te voegen."
     },
     "abort": {
       "already_configured": "Apparaat is al geconfigureerd",
       "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
       "reauth_successful": "Apparaat is opnieuw verbonden",
       "reconfigure_successful": "Apparaat is opnieuw geconfigureerd",
-      "unsupported_device": "Venus E2.0 wordt niet ondersteund door deze integratie"
+      "unsupported_device": "Ondersteuning voor Venus E 2.0 is experimenteel. Bevestig het apparaat om het toe te voegen."
     }
   },
   "options": {
@@ -576,7 +598,7 @@
       "message": "Ongeldige instelling: {error}"
     },
     "unsupported_device": {
-      "message": "Venus E2.0 wordt niet ondersteund door deze integratie"
+      "message": "Ondersteuning voor Venus E 2.0 is experimenteel. Bevestig het apparaat om het toe te voegen."
     },
     "setup_cannot_connect": {
       "message": "Kan geen verbinding maken met het Marstek-apparaat op {host} ({error}). Home Assistant probeert het opnieuw en de scanner werkt het adres automatisch bij als het apparaat is verplaatst."
@@ -610,7 +632,7 @@
           "cannot_connect": "Kan geen verbinding maken met het apparaat",
           "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
           "unique_id_mismatch": "Het apparaat op dit adres is een ander apparaat",
-          "unsupported_device": "Venus E2.0 wordt niet ondersteund door deze integratie"
+          "unsupported_device": "Ondersteuning voor Venus E 2.0 is experimenteel. Bevestig het apparaat om het toe te voegen."
         },
         "abort": {
           "entry_not_found": "De configuratie is niet gevonden.",
@@ -621,6 +643,10 @@
     "openapi_reset_prone": {
       "title": "Marstek-firmware kan Open API resetten",
       "description": "Dit {family}-apparaat meldt firmware {firmware}. Control-versies onder 150 kunnen de Local API uitschakelen en instellingen wissen wanneer ze via UDP worden bevraagd. Batterijdetailverzoeken (Bat.GetStatus) worden niet verstuurd, parallelle verzoeken blijven uit, en je kunt het beste updaten naar Control-firmware 150 of nieuwer. Herlaad deze integratie of gebruik Opnieuw configureren nadat de firmware is bijgewerkt: de integratie vraagt het apparaat dan direct op en slaat de nieuwe versie op, ook als broadcast-detectie het apparaat niet bereikt. Je hoeft het apparaat niet te verwijderen."
+    },
+    "venus_e2_experimental": {
+      "title": "Ondersteuning voor Venus E 2.0 is experimenteel",
+      "description": "Deze batterij meldt firmware {firmware} en is een Venus E 2.0 (VenusE op de HMG-50-controller, hetzelfde bord als Venus C). Ondersteuning is experimenteel en door de community getest. Ontlaaddiepte, Paneel-led en Bluetooth-zichtbaarheid zijn beschikbaar vanaf firmware 158; oudere firmware biedt die commando's niet. UPS wordt niet aangeboden. Open API-verzoeken delen nog steeds één wifi-kanaal met de eigen meter van de batterij, waardoor laden op eigen verbruik kan stilvallen. Je kunt deze waarschuwing negeren."
     },
     "shared_meter_udp_channel": {
       "title": "Marstek Open API kan de eigen meter van dit apparaat verstoren",

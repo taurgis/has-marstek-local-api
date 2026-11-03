@@ -397,6 +397,12 @@ def test_select_current_option_normalizes_open_api_auto() -> None:
 @pytest.mark.parametrize(
     ("device_type", "version", "expect_ups", "expect_passive"),
     [
+        ("VenusC", 156, False, True),
+        ("VenusC", 158, False, True),
+        ("VenusC", 1581, False, True),
+        ("VenusE", 156, False, True),
+        ("VenusE", 158, False, True),
+        ("VenusE", 1581, False, True),
         ("VenusE 3.0", 145, False, True),
         ("VenusE 3.0", 150, True, True),
         ("Venus E mini", 150, True, True),

@@ -14,7 +14,7 @@ from custom_components.marstek.firmware_profile import (
     DeviceFamily,
     extract_discovery_version,
     firmware_profile_diagnostics,
-    is_unsupported_venus_e2,
+    is_venus_e2,
     resolve_firmware_profile,
     resolve_firmware_profile_from_metadata,
 )
@@ -36,15 +36,15 @@ from custom_components.marstek.firmware_profile import (
         ("VNSEM-0", DeviceFamily.VENUS_E_MINI, False, 5),
         ("vnsem 0", DeviceFamily.VENUS_E_MINI, False, 5),
         ("vnse3 0", DeviceFamily.VENUS_E, False, 9),
-        ("VNSE2-0", DeviceFamily.UNKNOWN, False, 9),
-        ("Venus E2.0", DeviceFamily.UNKNOWN, False, 9),
-        ("VenusE2.0", DeviceFamily.UNKNOWN, False, 9),
-        ("Venus E2", DeviceFamily.UNKNOWN, False, 9),
-        ("VenusE", DeviceFamily.UNKNOWN, False, 9),
-        ("Venus E", DeviceFamily.UNKNOWN, False, 9),
-        ("HMG-50", DeviceFamily.UNKNOWN, False, 9),
-        ("HMG-25", DeviceFamily.UNKNOWN, False, 9),
-        ("HMG-1", DeviceFamily.UNKNOWN, False, 9),
+        ("VNSE2-0", DeviceFamily.VENUS_E2, False, 9),
+        ("Venus E2.0", DeviceFamily.VENUS_E2, False, 9),
+        ("VenusE2.0", DeviceFamily.VENUS_E2, False, 9),
+        ("Venus E2", DeviceFamily.VENUS_E2, False, 9),
+        ("VenusE", DeviceFamily.VENUS_E2, False, 9),
+        ("Venus E", DeviceFamily.VENUS_E2, False, 9),
+        ("HMG-50", DeviceFamily.VENUS_E2, False, 9),
+        ("HMG-25", DeviceFamily.VENUS_E2, False, 9),
+        ("HMG-1", DeviceFamily.VENUS_E2, False, 9),
         ("Some Energy Device", DeviceFamily.UNKNOWN, False, 9),
     ],
 )
@@ -428,7 +428,7 @@ def test_wifi_retransmit_requires_known_safe_profile(
         ("Marstek Energy Storage", 1476, True),
         ("Marstek Energy Storage", 1509, False),
         ("VenusE 3.0", "147.6", True),
-        ("Venus E2.0", 150, False),
+        ("Venus E2.0", 150, True),
         ("Venus E2.0", 144, True),
         ("VenusE", 153, True),
         ("VenusE", 155, True),
@@ -462,10 +462,10 @@ def test_openapi_reset_prone_follows_control_generation(
         ("VNSD-0", 2200, True),
         ("VenusE 3.0", 2500, True),
         ("VNSE3-0", 2500, True),
-        ("VNSE2-0", 5000, False),
-        ("VenusE", 5000, False),
-        ("Venus E2.0", 5000, False),
-        ("HMG-50", 5000, False),
+        ("VNSE2-0", 2500, True),
+        ("VenusE", 2500, True),
+        ("Venus E2.0", 2500, True),
+        ("HMG-50", 2500, True),
     ],
 )
 def test_sku_and_venus_names_share_power_limits(
@@ -493,21 +493,24 @@ def test_sku_and_venus_names_share_power_limits(
         "hmg50",
     ],
 )
-def test_venus_e2_is_unsupported_and_not_venus_e(device_type: str) -> None:
-    """HMG-50 / bare VenusE GetDevice names must not unlock Venus E 3.x."""
-    assert is_unsupported_venus_e2(device_type) is True
+def test_venus_e2_is_hmg50_and_not_venus_e(device_type: str) -> None:
+    """Bare VenusE and HMG names are Venus E 2.0, not Venus E 3.x."""
+    assert is_venus_e2(device_type) is True
     profile = resolve_firmware_profile(device_type, 150)
 
-    assert profile.family is DeviceFamily.UNKNOWN
+    assert profile.family is DeviceFamily.VENUS_E2
+    assert profile.venus_e2 is True
+    assert profile.hmg50_control is True
     assert profile.supports_sys_dod is False
     assert profile.supports_ups is False
-    assert profile.openapi_reset_prone is False
+    assert profile.openapi_reset_prone is True
+    assert profile.shared_meter_udp_channel is True
 
 
 @pytest.mark.parametrize("device_type", ["Venus E 3.0", "VenusE 3.0", "VNSE3-0"])
 def test_venus_e3_is_not_classified_as_e2(device_type: str) -> None:
     """Venus E 3.x discovery names stay on the supported Venus E family."""
-    assert is_unsupported_venus_e2(device_type) is False
+    assert is_venus_e2(device_type) is False
     assert resolve_firmware_profile(device_type, 150).family is DeviceFamily.VENUS_E
 
 
@@ -543,11 +546,58 @@ def test_venus_c_155_plus_serves_em_without_sys(version: int) -> None:
     assert profile.openapi_wifi_retransmit_safe is False
 
 
+@pytest.mark.parametrize(
+    ("device_type", "version", "expect_sys"),
+    [
+        ("VenusC", 156, False),
+        ("VenusC", 157, False),
+        ("VenusC", 158, True),
+        ("VenusC", 1581, True),
+        ("VenusE", 156, False),
+        ("VenusE", 157, False),
+        ("VenusE", 158, True),
+        ("VenusE", 1581, True),
+        ("Venus E2.0", 158, True),
+        ("HMG-50", 1581, True),
+        ("VenusE 3.0", 158, True),
+    ],
+)
+def test_hmg50_sys_and_ups_start_at_generation_158(
+    device_type: str, version: int, expect_sys: bool
+) -> None:
+    """158 and folded 1581 unlock DOD, LED and Bluetooth. UPS stays off on HMG-50."""
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.supports_sys_dod is expect_sys
+    assert profile.supports_sys_ble_advertising is expect_sys
+    assert profile.supports_sys_led is expect_sys
+    if device_type == "VenusE 3.0":
+        assert profile.supports_ups is True
+        assert profile.family is DeviceFamily.VENUS_E
+        assert profile.hmg50_control is False
+        assert profile.venus_e2 is False
+        return
+    # 158 accepts ups_cfg, then ES.GetMode reports "Manual", not "UPS".
+    assert profile.supports_ups is False
+    assert profile.hmg50_control is True
+    assert profile.shared_meter_udp_channel is True
+    assert profile.parallel_requests_safe is False
+    assert profile.openapi_wifi_retransmit_safe is False
+    assert profile.control_generation == (158 if version in {158, 1581} else version)
+    if is_venus_e2(device_type):
+        assert profile.family is DeviceFamily.VENUS_E2
+        assert profile.venus_e2 is True
+    else:
+        assert profile.family is DeviceFamily.VENUS_C
+        assert profile.venus_e2 is False
+
+
 def test_hmg50_venuse_153_is_reset_prone_without_em_server() -> None:
-    """Bare VenusE Control 153 is unsupported HMG-50 with the 153 recv list."""
+    """Bare VenusE Control 153 is experimental Venus E 2.0 with the 153 recv list."""
     profile = resolve_firmware_profile("VenusE", 153)
 
-    assert profile.family is DeviceFamily.UNKNOWN
+    assert profile.family is DeviceFamily.VENUS_E2
+    assert profile.venus_e2 is True
     assert profile.hmg50_control is True
     assert profile.supports_em_status is False
     assert profile.openapi_reset_prone is True

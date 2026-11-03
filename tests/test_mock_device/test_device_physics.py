@@ -326,6 +326,7 @@ class TestDeviceSpecs:
             "VENUS_C": "VenusC",
             "VENUS_D": "VenusD",
             "VENUS_E": "VenusE 3.0",
+            "VENUS_E2": "VenusE",
             "VENUS_E_MINI": "Venus E mini",
         }
         for family, (_capacity, rated_power) in _FAMILY_SPECS.items():

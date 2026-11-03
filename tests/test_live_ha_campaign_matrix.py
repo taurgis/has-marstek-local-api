@@ -36,9 +36,9 @@ def test_compose_mocks_cover_supported_and_rejected_devices() -> None:
     assert len(mocks) >= 28
 
     by_host = {mock.host: mock for mock in mocks}
-    assert by_host["172.28.0.29"].expectation == "reject_unsupported"
-    assert by_host["172.28.0.44"].expectation == "reject_unsupported"
-    assert by_host["172.28.0.45"].expectation == "reject_unsupported"
+    assert by_host["172.28.0.29"].expectation == "add_experimental"
+    assert by_host["172.28.0.44"].expectation == "add_experimental"
+    assert by_host["172.28.0.45"].expectation == "add_experimental"
     assert by_host["172.28.0.36"].expectation == "add_unknown"
     assert by_host["172.28.0.36"].family == "Unknown"
     assert by_host["172.28.0.20"].expectation == "add_supported"
@@ -76,10 +76,12 @@ def test_compose_up_starts_only_home_assistant_and_the_campaign_mocks() -> None:
 
 
 def test_setup_expectation_matches_firmware_profile() -> None:
-    """Unsupported HMG-50 VenusE is rejected; Venus E Pro stays unknown."""
+    """Venus E 2.0 is added with a warning; Venus E Pro stays unknown."""
     campaign = _load_campaign()
-    assert campaign.setup_expectation("VenusE", 153) == "reject_unsupported"
-    assert campaign.setup_expectation("VenusE", 156) == "reject_unsupported"
+    assert campaign.setup_expectation("VenusE", 153) == "add_experimental"
+    assert campaign.setup_expectation("VenusE", 156) == "add_experimental"
+    assert campaign.setup_expectation("VenusE", 158) == "add_experimental"
+    assert campaign.setup_expectation("VenusC", 158) == "add_supported"
     assert campaign.setup_expectation("VenusE Pro", 1508) == "add_unknown"
     assert campaign.setup_expectation("VenusE 3.0", 150) == "add_supported"
     assert campaign.setup_expectation("VenusC", 153) == "add_supported"

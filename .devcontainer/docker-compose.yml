@@ -540,6 +540,65 @@ services:
         ipv4_address: 172.28.0.72
     command: ["python", "-m", "mock_device", "--ip", "172.28.0.72", "--device", "VenusA", "--ver", "151", "--ble-mac", "02deadbeef1e", "--wifi-mac", "02cafebabe1e", "--soc", "72", "--pv-channels", "400:45:8.8,310:42:7.4,250:40:6.2,190:38:5.0"]
 
+  # HMG-50 Control 158 and 158.1. VenusC gets DoD, LED and Bluetooth.
+  # UPS stays off. VenusE is the same image reporting Venus E 2.0.
+  # Emulated on .76 and .77.
+  mock-marstek-31:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-31
+    profiles: ["mocks-all"]
+    environment:
+      - MOCK_IP=172.28.0.78
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.78
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.78", "--device", "VenusC", "--ver", "158", "--ble-mac", "02deadbeef1f", "--wifi-mac", "02cafebabe1f", "--soc", "57"]
+
+  mock-marstek-32:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-32
+    profiles: ["mocks-all"]
+    environment:
+      - MOCK_IP=172.28.0.79
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.79
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.79", "--device", "VenusE", "--ver", "158", "--ble-mac", "02deadbeef20", "--wifi-mac", "02cafebabe20", "--soc", "58"]
+
+  mock-marstek-33:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-33
+    profiles: ["mocks-all"]
+    environment:
+      - MOCK_IP=172.28.0.80
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.80
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.80", "--device", "VenusC", "--ver", "1581", "--ble-mac", "02deadbeef21", "--wifi-mac", "02cafebabe21", "--soc", "59"]
+
+  mock-marstek-34:
+    <<: *default-logging
+    build:
+      context: ..
+      dockerfile: tools/mock_device/Dockerfile
+    container_name: marstek-mock-device-34
+    profiles: ["mocks-all"]
+    environment:
+      - MOCK_IP=172.28.0.81
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.81
+    command: ["python", "-m", "mock_device", "--ip", "172.28.0.81", "--device", "VenusE", "--ver", "1581", "--ble-mac", "02deadbeef22", "--wifi-mac", "02cafebabe22", "--soc", "61"]
+
   # ---- Firmware emulators: the vendor's own Control firmware in Renode ----
   # tools/firmware_emulator/README.md ("Docker"). Each emulator reports its own
   # IP and answers the Local API on UDP 30000; healthy = Marstek.GetDevice
@@ -1078,6 +1137,50 @@ services:
       fw-venus-e2-156:
         condition: service_healthy
 
+  # Venus C (HMG-50), Control 158. DOD.SET, Led.Ctrl, Ble.Adv and UPS.
+  # Still the single meter channel. 158.1 is the same generation (ver 1581).
+  fw-venus-c-158:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-158
+    hostname: fw-venus-c-158
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.76
+    volumes:
+      - fw_venus_c_158:/state
+    command: ["--firmware", "HMG-50:158", "--ble-mac", "02:e0:00:00:00:76", "--wifi-mac", "02:e1:00:00:00:76", "--soc", "55", "--capacity", "2560"]
+
+  fw-venus-c-158-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-158-ct
+    network_mode: service:fw-venus-c-158
+    depends_on:
+      fw-venus-c-158:
+        condition: service_healthy
+
+  fw-venus-c-1581:
+    <<: *firmware-emulator
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-1581
+    hostname: fw-venus-c-1581
+    networks:
+      marstek_net:
+        ipv4_address: 172.28.0.77
+    volumes:
+      - fw_venus_c_1581:/state
+    command: ["--firmware", "HMG-50:1581", "--ble-mac", "02:e0:00:00:00:77", "--wifi-mac", "02:e1:00:00:00:77", "--soc", "56", "--capacity", "2560"]
+
+  fw-venus-c-1581-ct:
+    <<: *firmware-ct
+    profiles: ["firmware-all", "firmware-hmg50"]
+    container_name: marstek-fw-venus-c-1581-ct
+    network_mode: service:fw-venus-c-1581
+    depends_on:
+      fw-venus-c-1581:
+        condition: service_healthy
+
   # Venus E mini PMU 301 (VNSEMINI-0). Same GD32F30x board as the other
   # Control images; the loader strips the 32-byte header and loads at
   # 0x08008000. --capacity 2009 is the rated_capacity from issue #86, not a
@@ -1162,6 +1265,10 @@ volumes:
     name: marstek-fw-venus-c-155
   fw_venus_e2_156:
     name: marstek-fw-venus-e2-156
+  fw_venus_c_158:
+    name: marstek-fw-venus-c-158
+  fw_venus_c_1581:
+    name: marstek-fw-venus-c-1581
   fw_venus_e_mini_301:
     name: marstek-fw-venus-e-mini-301
 
