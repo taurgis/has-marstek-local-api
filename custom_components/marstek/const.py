@@ -192,6 +192,8 @@ CONF_CLAMP_NEGATIVE_OFFGRID_POWER: Final = "clamp_negative_offgrid_power"
 CONF_SHOW_CAPACITY_DASHBOARD: Final = "show_capacity_dashboard"
 CONF_PLUG_ENERGY_IN: Final = "plug_energy_in"
 CONF_PLUG_ENERGY_OUT: Final = "plug_energy_out"
+CONF_BATTERY_LOW_FOLLOW_CUTOFF: Final = "battery_low_follow_cutoff"
+CONF_BATTERY_LOW_SOC: Final = "battery_low_soc"
 
 # Default polling intervals
 # Real-time power data (ES.GetMode, ES.GetStatus, EM.GetStatus)
@@ -208,6 +210,10 @@ DEFAULT_SOCKET_LIMIT: Final = False
 DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER: Final = False
 # Off until a user asks for the sidebar. Existing dashboards stay untouched.
 DEFAULT_SHOW_CAPACITY_DASHBOARD: Final = False
+# Battery-low binary sensor. Follow the discharge cutoff when the device has one.
+DEFAULT_BATTERY_LOW_FOLLOW_CUTOFF: Final = True
+# Used when the device has no depth-of-discharge setting, and as the manual level.
+DEFAULT_BATTERY_LOW_SOC: Final = 15
 
 INITIAL_SETUP_REQUEST_DELAY: Final = 2.0  # Faster delay during first data fetch
 

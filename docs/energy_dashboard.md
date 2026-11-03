@@ -6,7 +6,7 @@ The integration gives you lifetime energy counters for the battery, and for sola
 
 Open **Settings** > **Dashboards** > **Energy**, then:
 
-1. **Home battery storage:** add **Total grid input energy** as *energy going in to the battery* and **Total grid output energy** as *energy coming out of the battery*. Despite their names, these count energy through the battery's own AC connection, not your house's grid connection.
+1. **Home battery storage:** add **Total grid input energy** as *energy going in to the battery* and **Total grid output energy** as *energy coming out of the battery*. Despite their names, these count energy through the battery's own AC connection, not your house's grid connection. From Home Assistant 2026.10 the usage graph draws each battery's discharge on its own, and these two sensors are what that series reads.
 2. **Electricity grid:** use your house meter, for example a P1 or utility-meter integration. If your Marstek [CT meter](guide/glossary.md#ct-meter-ct002-ct003) reports them, **Meter input energy** and **Meter output energy** work too. Compare them with your utility meter once to confirm which is import and which is export.
 3. **Solar panels (Venus A and Venus D):** see [Venus A and Venus D: solar and the battery row](#venus-a-and-venus-d-solar-and-the-battery-row) first.
 4. Leave **Total load energy** off this dashboard. What it measures differs between models and firmware.

@@ -16,6 +16,7 @@ from .helpers.device_lookup import (
     coordinator_profile,
     require_loaded_marstek_entry,
 )
+from .helpers.flow_schemas import as_flow_schema
 from .helpers.polling import polling_paused
 from .helpers.service_helpers import (
     ATTR_DAYS,
@@ -406,33 +407,33 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_SET_PASSIVE_MODE,
         handle_set_passive_mode,
-        schema=SERVICE_SET_PASSIVE_MODE_SCHEMA,
+        schema=as_flow_schema(SERVICE_SET_PASSIVE_MODE_SCHEMA),
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_MANUAL_SCHEDULE,
         handle_set_manual_schedule,
-        schema=SERVICE_SET_MANUAL_SCHEDULE_SCHEMA,
+        schema=as_flow_schema(SERVICE_SET_MANUAL_SCHEDULE_SCHEMA),
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_CLEAR_MANUAL_SCHEDULES,
         handle_clear_manual_schedules,
-        schema=SERVICE_CLEAR_MANUAL_SCHEDULES_SCHEMA,
+        schema=as_flow_schema(SERVICE_CLEAR_MANUAL_SCHEDULES_SCHEMA),
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_MANUAL_SCHEDULES,
         handle_set_manual_schedules,
-        schema=SERVICE_SET_MANUAL_SCHEDULES_SCHEMA,
+        schema=as_flow_schema(SERVICE_SET_MANUAL_SCHEDULES_SCHEMA),
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_REQUEST_DATA_SYNC,
         handle_request_data_sync,
-        schema=SERVICE_REQUEST_DATA_SYNC_SCHEMA,
+        schema=as_flow_schema(SERVICE_REQUEST_DATA_SYNC_SCHEMA),
     )

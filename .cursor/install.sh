@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Idempotent Cloud Agent install: Python 3.14.2+ (HA 2026.9 / pytest harness)
+# Idempotent Cloud Agent install: Python 3.14.2+ (HA 2026.10.4 / pytest harness)
 # and Docker Engine with fuse-overlayfs + iptables-legacy for nested Docker.
 # Official refs:
 #   https://docs.docker.com/engine/install/ubuntu/
 #   https://cursor.com/docs/cloud-agent/setup (Running Docker)
-#   https://github.com/home-assistant/core/blob/2026.9.2/pyproject.toml
+#   https://github.com/home-assistant/core/blob/2026.10.4/pyproject.toml
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -16,7 +16,7 @@ elif [[ -z "${REPO_ROOT}" ]]; then
   REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 VENV_DIR="${HOME}/.venvs/ha-marstek"
-HA_IMAGE="ghcr.io/home-assistant/home-assistant:2026.9.3"
+HA_IMAGE="ghcr.io/home-assistant/home-assistant:2026.10.4"
 
 log() {
   printf '%s\n' "$*"
@@ -59,7 +59,7 @@ import sys
 if sys.version_info < (3, 14, 2):
     raise SystemExit(
         f"Python {sys.version.split()[0]} is older than 3.14.2 required by "
-        "Home Assistant Core 2026.9 / pytest-homeassistant-custom-component"
+        "Home Assistant Core 2026.10.4 / pytest-homeassistant-custom-component"
     )
 print(f"Using Python {sys.version.split()[0]}")
 PY

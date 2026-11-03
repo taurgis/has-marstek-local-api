@@ -6,11 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntityDescription,
-)
+from homeassistant.components.binary_sensor import BinarySensorEntityDescription
+from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
+
+from .battery_automation import battery_is_charging
 
 
 @dataclass(kw_only=True)
@@ -55,5 +55,20 @@ BINARY_SENSORS: tuple[MarstekBinarySensorEntityDescription, ...] = (
             bool(data.get("bat_dischrg_flag")) if data.get("bat_dischrg_flag") is not None else None
         ),
         exists_fn=lambda data: _exists_key("bat_dischrg_flag", data),
+    ),
+    # Home Assistant battery automations: on means the pack is low.
+    # https://www.home-assistant.io/integrations/battery/
+    MarstekBinarySensorEntityDescription(
+        key="battery_low",
+        translation_key="battery_low",
+        device_class=BinarySensorDeviceClass.BATTERY,
+        value_fn=lambda _data: None,
+    ),
+    # On means the battery is charging. The entity computes the deadband.
+    MarstekBinarySensorEntityDescription(
+        key="battery_charging",
+        translation_key="battery_charging",
+        device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
+        value_fn=lambda data: battery_is_charging(data.get("battery_power")),
     ),
 )

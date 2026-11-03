@@ -67,7 +67,7 @@ More detail: [Installation](docs/installation.md).
 ## What you can do
 
 - **Live battery state.** State of charge, charge and discharge power, status, and operating mode (Auto, AI, Manual, Passive, and UPS on firmware that supports it).
-- **Control from automations.** Charge, discharge, and stop device actions, plus `marstek.set_passive_mode` and manual schedules (`0–9` on Venus A, C, D, and E, `0–5` on Venus E mini).
+- **Control from automations.** Charge, discharge, and stop device actions, plus `marstek.set_passive_mode` and manual schedules (`0–9` on Venus A, C, D, and E, `0–5` on Venus E mini). **Battery low** and **Charging** are the sensors Home Assistant's battery conditions use (**Battery is low**, **Battery is charging**, **Battery level**).
 - **Energy dashboard.** Grid and off-grid power, per-phase meter power, solar PV on Venus A and Venus D, and lifetime energy totals.
 - **Device controls on supported firmware.** Depth of discharge, Bluetooth advertising, and the panel LED.
 - **Finding and diagnosing the battery.** Wi-Fi RSSI, CT connection status, automatic IP discovery, diagnostics, and Repairs.

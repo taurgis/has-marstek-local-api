@@ -134,6 +134,21 @@ These help when you troubleshoot: Wi-Fi signal and network details, battery temp
 | MAC address | `mac` | — | Diagnostic | Disabled |
 | API success rate (overall, and one per request type: ES.GetMode, ES.GetStatus, EM.GetStatus, PV.GetStatus, Wifi.GetStatus, Bat.GetStatus, ES.SetMode) | `api_success_rate_*` | % | Diagnostic | Disabled |
 
+## Battery low and charging
+
+These two sensors are what Home Assistant's [battery automations](https://www.home-assistant.io/integrations/battery/) look for. **Battery level** (`battery_soc`, device class `battery`, unit %) is the target for **Battery level**, **Battery level changed**, and **Battery level crossed threshold**. There is one device per config entry, so there is no separate aggregate sensor.
+
+| Entity name | Key | Device class | On means | Default |
+|---|---|---|---|---|
+| Battery low | `battery_low` | `battery` | State of charge is at or under the low level | Enabled |
+| Charging | `battery_charging` | `battery_charging` | Battery power is charging past the idle band | Enabled |
+
+**Battery low** is unavailable while the state of charge is unknown. The trip level follows the discharge cutoff when the device has one: depth of discharge is how far below 100% the pack may go, so a depth of discharge of 88 (the device default) stops discharge at 12%, and Battery low turns on at 17%. Devices without that setting use 15%. Either way it stays on until the level rises another 5 percentage points, so a reading that jitters around the line does not flap. Turn **Follow the discharge cutoff** off under [Options](options.md#battery-low) to set a fixed level from 5% to 80%.
+
+**Charging** uses battery power. Positive power is discharging and negative power is charging. It turns on at −50 W or below, so idle noise around 0 W stays off, and it is unavailable while power is unknown.
+
+YAML for these sensors is in [Automations and services](services.md#battery-automations).
+
 ## Binary sensors (diagnostic, disabled by default)
 
 A binary sensor is on or off. **CT connection** shows whether the battery is connected to its CT meter. **Charge permission** and **Discharge permission** show whether the battery currently reports that it is allowed to charge or discharge; they belong to the battery detail group in the warning at the top of this page.

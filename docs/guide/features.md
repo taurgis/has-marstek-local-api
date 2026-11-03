@@ -63,6 +63,6 @@ The estimate adds no traffic to the battery. The sidebar dashboard and smart-plu
 - **Follow the house load.** Passive mode takes a target power in watts, so an automation can follow consumption or a solar forecast.
 - **Peak shaving.** Some tariffs charge for your highest power peak. Per-phase grid power lets an automation discharge the battery before the house sets a new peak.
 - **Make room for an EV or heat pump.** Stop discharging while the car charges.
-- **Alerts without a cloud.** Low charge, high temperature, or a dropped Wi-Fi link, even when Marstek's servers are down.
+- **Alerts without a cloud.** **Battery is low**, **Battery is charging**, and **Battery level** in the automation editor, plus temperature and Wi-Fi, even when Marstek's servers are down. [Automations and services](../services.md#battery-automations)
 
 Ready? [Check your battery](supported-devices.md), then follow [Getting started](getting-started.md).

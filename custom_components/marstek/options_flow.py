@@ -16,6 +16,8 @@ from homeassistant.data_entry_flow import section
 from .const import (
     CONF_ACTION_CHARGE_POWER,
     CONF_ACTION_DISCHARGE_POWER,
+    CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+    CONF_BATTERY_LOW_SOC,
     CONF_CLAMP_NEGATIVE_OFFGRID_POWER,
     CONF_FAILURE_THRESHOLD,
     CONF_PARALLEL_API_REQUESTS,
@@ -30,6 +32,8 @@ from .const import (
     CONF_SOCKET_LIMIT,
     DEFAULT_ACTION_CHARGE_POWER,
     DEFAULT_ACTION_DISCHARGE_POWER,
+    DEFAULT_BATTERY_LOW_FOLLOW_CUTOFF,
+    DEFAULT_BATTERY_LOW_SOC,
     DEFAULT_CLAMP_NEGATIVE_OFFGRID_POWER,
     DEFAULT_FAILURE_THRESHOLD,
     DEFAULT_PARALLEL_API_REQUESTS,
@@ -42,6 +46,8 @@ from .const import (
     device_default_socket_limit,
 )
 from .helpers.flow_schemas import (
+    as_flow_schema,
+    build_battery_schema,
     build_dashboard_schema,
     build_network_schema,
     build_plug_meter_schema,
@@ -71,7 +77,9 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
             errors["base"] = error
             # An emptied meter field must stay empty when the form comes back.
             values = {**values, CONF_PLUG_ENERGY_IN: None, CONF_PLUG_ENERGY_OUT: None, **flat_data}
-        return self.async_show_form(step_id="init", data_schema=self._schema(values), errors=errors)
+        return self.async_show_form(
+            step_id="init", data_schema=as_flow_schema(self._schema(values)), errors=errors
+        )
 
     def _schema(self, values: dict[str, Any]) -> vol.Schema:
         """Build the sectioned form from stored or just-submitted values."""
@@ -91,6 +99,15 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
                 current_failure_threshold=values.get(
                     CONF_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD
                 ),
+            ),
+            "battery_settings": build_battery_schema(
+                follow_cutoff=bool(
+                    values.get(
+                        CONF_BATTERY_LOW_FOLLOW_CUTOFF,
+                        DEFAULT_BATTERY_LOW_FOLLOW_CUTOFF,
+                    )
+                ),
+                low_soc=int(values.get(CONF_BATTERY_LOW_SOC, DEFAULT_BATTERY_LOW_SOC)),
             ),
             "power_settings": build_power_schema(
                 current_charge_power=values.get(
@@ -117,7 +134,9 @@ class MarstekOptionsFlow(config_entries.OptionsFlow):
         # Only polling is open by default; the rest are occasional settings.
         return vol.Schema(
             {
-                vol.Required(key): section(schema, {"collapsed": key != "polling_settings"})
+                vol.Required(key): section(
+                    as_flow_schema(schema), {"collapsed": key != "polling_settings"}
+                )
                 for key, schema in sections.items()
             }
         )

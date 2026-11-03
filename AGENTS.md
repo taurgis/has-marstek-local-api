@@ -326,7 +326,7 @@ This repository enforces **strict typing** via `mypy --strict`. When adding or m
 
 ## Cursor Cloud specific instructions
 
-Cloud Agents must use **Python 3.14.2+**. Home Assistant Core 2026.9 and `pytest-homeassistant-custom-component==0.13.365` declare `requires-python = ">=3.14.2"` ([HA 2026.9.2 pyproject](https://github.com/home-assistant/core/blob/2026.9.2/pyproject.toml)). The default Ubuntu 24.04 `python3` is 3.12 and cannot install the test harness.
+Cloud Agents must use **Python 3.14.2+**. Home Assistant Core 2026.10.4 and `pytest-homeassistant-custom-component==0.13.375` declare `requires-python = ">=3.14.2"` ([HA 2026.10.4 pyproject](https://github.com/home-assistant/core/blob/2026.10.4/pyproject.toml)). The default Ubuntu 24.04 `python3` is 3.12 and cannot install the test harness.
 
 `.cursor/install.sh` provisions Python 3.14, a venv at `~/.venvs/ha-marstek` (symlinked onto `PATH` via `/usr/local/bin`), and Docker Engine. `.cursor/start.sh` starts `dockerd` (this VM has no systemd; PID 1 is `tini`) and brings up `.devcontainer/docker-compose.yml`.
 
