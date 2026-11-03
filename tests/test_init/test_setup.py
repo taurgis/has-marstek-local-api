@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
+    issue_registry as ir,
 )
 from homeassistant.helpers.device_registry import format_mac
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -175,11 +180,12 @@ def test_every_platform_declares_parallel_updates() -> None:
 
 
 @pytest.mark.parametrize("device_type", ["Venus E2.0", "VenusE", "HMG-50"])
-async def test_existing_venus_e2_entry_fails_setup(
+async def test_existing_venus_e2_entry_sets_up_with_a_warning(
     hass: HomeAssistant,
     device_type: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Migrated HMG-50 / Venus E2 entries must not start polling."""
+    """Venus E 2.0 entries load, and the experimental warning is logged once."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="aa:bb:cc:dd:ee:ff",
@@ -197,12 +203,22 @@ async def test_existing_venus_e2_entry_fails_setup(
     client = create_mock_client(
         status={"device_mode": "auto", "battery_soc": 50, "battery_power": 100}
     )
-    with patch_marstek_integration(client=client):
-        assert not await hass.config_entries.async_setup(entry.entry_id)
+    with (
+        patch_marstek_integration(client=client),
+        caplog.at_level(logging.WARNING, logger="custom_components.marstek"),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    assert entry.state == ConfigEntryState.SETUP_ERROR
-    client.send_request.assert_not_called()
+    assert entry.state == ConfigEntryState.LOADED
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"venus_e2_experimental_{entry.entry_id}")
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.is_persistent is False
+    assert issue.translation_key == "venus_e2_experimental"
+    assert issue.translation_placeholders == {"firmware": "153"}
+    warnings = [record for record in caplog.records if "experimentally" in record.message]
+    assert len(warnings) == 1
 
 
 async def test_remove_entry_cleans_stale_device(

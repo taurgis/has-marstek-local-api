@@ -128,6 +128,9 @@ _FAMILY_SPECS: dict[DeviceFamily, tuple[int, int]] = {
     DeviceFamily.VENUS_C: (2560, 2500),
     DeviceFamily.VENUS_D: (2560, 2200),
     DeviceFamily.VENUS_E: (5120, 2500),
+    # Venus E 2.0 is the HMG-50 pack above 3000 Wh. Same 2500 W ceiling as
+    # Venus C; the integration's family table uses that ceiling too.
+    DeviceFamily.VENUS_E2: (5120, 2500),
     # The mini is rated 1.5 kVA even though the integration allows the family
     # the generic 2500 W ceiling; the mock reports what the hardware can do.
     # 2009 Wh is the rated_capacity a VNSEM-0 301 reports in Bat.GetStatus.

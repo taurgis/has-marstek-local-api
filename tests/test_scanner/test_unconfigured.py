@@ -282,10 +282,10 @@ async def test_scanner_trigger_unconfigured_skips_configured(
 
 
 @pytest.mark.parametrize("device_type", ["VenusE", "HMG-50", "Venus E2.0"])
-async def test_scanner_trigger_unconfigured_skips_venus_e2(
+async def test_scanner_trigger_unconfigured_discovers_venus_e2(
     hass: HomeAssistant, device_type: str
 ) -> None:
-    """HMG-50 / Venus E2 must not create a discovery card as Venus E 3.x."""
+    """Venus E 2.0 gets a discovery flow instead of being skipped."""
     scanner = MarstekScanner(hass)
 
     devices = [
@@ -302,7 +302,8 @@ async def test_scanner_trigger_unconfigured_skips_venus_e2(
     ) as mock_create_flow:
         scanner._trigger_unconfigured_discovery(devices, set())
 
-    mock_create_flow.assert_not_called()
+    mock_create_flow.assert_called_once()
+    assert mock_create_flow.call_args.kwargs["data"]["device_type"] == device_type
 
 
 async def test_scanner_trigger_unconfigured_invalid_mac_type(

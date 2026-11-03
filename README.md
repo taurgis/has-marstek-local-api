@@ -176,8 +176,8 @@ These are constraints of the Open API or of this integration's design.
 - **Depth of discharge, Bluetooth advertising, and the panel LED cannot be read back.** Home Assistant shows the last value the battery accepted.
 - **Passive and Manual can't be chosen from the mode dropdown.** They show there so the current mode is visible, but both need a power, a duration, or time slots, so set them with services or device actions.
 - **One device per config entry.** Several batteries are several entries. The fleet card is the on-screen comparison.
-- **Venus E 2.0 is not supported.**
-- **Features the firmware lacks are omitted.** SYS and UPS need firmware 150 or newer on Venus A, D, and E. PV sensors exist on Venus A and Venus D.
+- **Venus E 2.0 support is experimental.** The battery can be added. Home Assistant shows a repair warning. It uses the same feature gates as Venus C.
+- **Features the firmware lacks are omitted.** SYS and UPS need firmware 150 or newer on Venus A, D, and E 3.0, and firmware 158 or newer on Venus C and Venus E 2.0. PV sensors exist on Venus A and Venus D.
 - **Battery-detail entities start off.** See [Entities](docs/entities.md).
 - **Energy totals stay monotonic.** When firmware reports a lower lifetime total than a moment ago, the integration keeps the last plausible value. A genuine counter reset on the device needs a statistics correction in Home Assistant.
 

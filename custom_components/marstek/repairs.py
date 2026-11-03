@@ -12,7 +12,6 @@ from homeassistant.helpers import issue_registry as ir
 
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import get_device_info
-from .firmware_profile import is_unsupported_venus_e2
 from .helpers.flow_helpers import (
     async_apply_entry_update,
     get_unique_id_from_device_info,
@@ -66,8 +65,6 @@ class CannotConnectRepairFlow(RepairsFlow):
                         unique_id_mac = get_unique_id_from_device_info(device_info)
                         if not unique_id_mac:
                             errors["base"] = "invalid_discovery_info"
-                        elif is_unsupported_venus_e2(device_info.get("device_type")):
-                            errors["base"] = "unsupported_device"
                         elif not identities_overlap(
                             identity_macs_from_entry(entry, include_fallback=True),
                             identity_macs_from_mapping(device_info, include_fallback=True),

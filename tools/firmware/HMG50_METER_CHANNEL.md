@@ -43,6 +43,8 @@ image contains separates HMG-50 from every other line:
 | HMG-50 | 153 | no | yes | no | 4 | 2 |
 | HMG-50 | 155 | no | yes | no | 4 | 2 |
 | HMG-50 | 156 | no | yes | no | 4 | 2 |
+| HMG-50 | 158 | no | yes | no | 4 | 2 |
+| HMG-50 | 1581 | no | yes | no | 4 | 2 |
 | VNSA-0 | 148 | yes | yes | no | 0 | 0 |
 | VNSA-0 | 1487 | yes | yes | yes | 0 | 0 |
 | VNSA-0 | 149 | yes | yes | yes | 0 | 0 |
@@ -201,7 +203,7 @@ API send anomaly on Ethernet", confirmed on issue #15, and VNSA-0/VNSD-0 150
 are "Fixed faulty Local API transmission in Ethernet mode"
 (`catalog.json`, `ANALYSIS.md`).
 
-**No HMG-50 build has it.** Not 153, not 155, not 156. HMG-50 156's OTA note is
+**No HMG-50 build has it.** Not 153, not 155, not 156, not 158, and not 158.1. HMG-50 156's OTA note is
 "Optimized OpenApi interface stability", which this repo already uses for
 `_HMG50_OPENAPI_STABLE_GENERATION`; it covers the API surface, not the shared
 receive channel. There is no HMG-50 image in either community archive that adds

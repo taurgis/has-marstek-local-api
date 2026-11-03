@@ -170,7 +170,7 @@ A binary sensor is on or off. **CT connection** shows whether the battery is con
 | Availability | UPS on the select |
 |---|---|
 | Venus A, D, E 3.0 and Venus E mini with firmware 150 or newer | Yes |
-| Venus C (HMG-50), any firmware | No |
+| Venus C and Venus E 2.0 (HMG-50), any firmware | No. Firmware 158 accepts a UPS command and `ES.GetMode` then reports Manual, so the option is left out. |
 | Venus E mini with a known firmware number below 150 | No (the depth of discharge, Bluetooth and LED controls still appear; UPS does not) |
 | Unknown firmware number | No |
 
@@ -180,7 +180,7 @@ A binary sensor is on or off. **CT connection** shows whether the battery is con
 
 **Depth of discharge** sets how far the battery may discharge before it stops ([DoD](guide/glossary.md#depth-of-discharge-dod)). A lower value keeps more charge in reserve.
 
-This control, and the two switches below, only appear on supported firmware. Venus A, D and E 3.0 need firmware 150 or newer. Venus C (HMG-50) never gets them. Venus E mini needs a known firmware number (no 150 minimum). If the firmware number is unknown, these controls are left out.
+This control, and the two switches below, only appear on supported firmware. Venus A, D and E 3.0 need firmware 150 or newer. Venus C and Venus E 2.0 (HMG-50) need firmware 158 or newer. Venus E mini needs a known firmware number (no 150 minimum). If the firmware number is unknown, these controls are left out.
 
 | Entity name | Key | Unit | Range | Category | Default |
 |---|---|---|---|---|---|

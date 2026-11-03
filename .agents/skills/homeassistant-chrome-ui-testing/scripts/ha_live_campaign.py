@@ -87,7 +87,7 @@ def _load_firmware_profile_module() -> Any:
 
 _firmware_profile = _load_firmware_profile_module()
 DeviceFamily = _firmware_profile.DeviceFamily
-is_unsupported_venus_e2 = _firmware_profile.is_unsupported_venus_e2
+is_venus_e2 = _firmware_profile.is_venus_e2
 resolve_firmware_profile = _firmware_profile.resolve_firmware_profile
 
 
@@ -128,8 +128,8 @@ class Check:
 
 def setup_expectation(device: str, ver: int) -> str:
     """Return how config flow should treat this mock."""
-    if is_unsupported_venus_e2(device):
-        return "reject_unsupported"
+    if is_venus_e2(device):
+        return "add_experimental"
     profile = resolve_firmware_profile(device, ver)
     if profile.family is DeviceFamily.UNKNOWN:
         return "add_unknown"

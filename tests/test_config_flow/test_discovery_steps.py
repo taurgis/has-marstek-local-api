@@ -465,8 +465,10 @@ async def test_integration_discovery_missing_ble_mac(hass: HomeAssistant) -> Non
 
 
 @pytest.mark.parametrize("device_type", ["VenusE", "HMG-50", "Venus E2.0"])
-async def test_integration_discovery_aborts_venus_e2(hass: HomeAssistant, device_type: str) -> None:
-    """Scanner discovery of HMG-50 / Venus E2 must abort, not confirm as Venus E."""
+async def test_integration_discovery_confirms_venus_e2(
+    hass: HomeAssistant, device_type: str
+) -> None:
+    """Scanner discovery of Venus E 2.0 asks to confirm, with the experimental note."""
     discovery_info = {
         "ip": "172.28.0.29",
         "ble_mac": "02:de:ad:be:ef:09",
@@ -480,8 +482,9 @@ async def test_integration_discovery_aborts_venus_e2(hass: HomeAssistant, device
         DOMAIN, context={"source": "integration_discovery"}, data=discovery_info
     )
 
-    assert result["type"] == FlowResultType.ABORT
-    assert result["reason"] == "unsupported_device"
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm_venus_e2"
+    assert result["description_placeholders"]["host"] == "172.28.0.29"
 
 
 async def test_integration_discovery_wifi_only_does_not_move_ble_entry(

@@ -146,6 +146,12 @@ def _command_after_setup(client: MagicMock, setup_calls: int) -> dict[str, Any]:
     [
         ("VenusA", 150, True),
         ("VenusC", 150, True),
+        ("VenusC", 156, False),
+        ("VenusC", 158, True),
+        ("VenusC", 1581, True),
+        ("VenusE", 156, False),
+        ("VenusE", 158, True),
+        ("VenusE", 1581, True),
         ("VenusD", 200, True),
         ("VenusE 3.0", 150, True),
         ("VenusA", 149, False),

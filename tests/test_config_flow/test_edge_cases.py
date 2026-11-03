@@ -277,8 +277,10 @@ async def test_confirm_step_without_a_discovered_address_falls_back_to_manual(
     assert result["errors"] == {"base": "invalid_discovery_info"}
 
 
-async def test_confirm_step_rejects_an_unsupported_device(hass: HomeAssistant) -> None:
-    """A confirmed host that answers as a Venus E2.0 is refused."""
+async def test_confirm_step_shows_the_venus_e2_note_before_adding(
+    hass: HomeAssistant,
+) -> None:
+    """A confirm submit that finds Venus E 2.0 shows the warning, then adds it."""
     _pooled_udp_client(hass)
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "integration_discovery"}, data=_device()
@@ -291,8 +293,16 @@ async def test_confirm_step_rejects_an_unsupported_device(hass: HomeAssistant) -
         )
 
     assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "confirm"
-    assert result["errors"] == {"base": "unsupported_device"}
+    assert result["step_id"] == "confirm_venus_e2"
+    assert result.get("errors") in (None, {})
+
+    with patch_manual_connection(_device(device_type="Venus E2.0")):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={CONF_HOST: "1.2.3.4", CONF_PORT: 30000}
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["device_type"] == "Venus E2.0"
 
 
 async def test_confirm_step_reports_a_socket_failure(hass: HomeAssistant) -> None:

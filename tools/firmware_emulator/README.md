@@ -82,6 +82,8 @@ The HMG-50 images (Venus C / E 2.0) run on their own STM32G474 board
 | 153 | 0x20016a98 / 0x08002aad | `VenusC` (`--capacity 2560`) | `Bat.GetStatus` in raw units (temp 250, voltage 5270); `EM.GetStatus` is `{"parse_state":…}`; `Wifi.GetStatus` RSSI positive |
 | 155 | 0x20016cb0 / 0x08002aad | `VenusE` (5120 Wh) | EM server with `ct_state` and phase powers |
 | 156 | 0x20017180 / 0x08002ab1 | `VenusE` (5120 Wh) | as 155; `Bat.GetStatus` scaled (temp 25.0) |
+| 158 | 0x200171e8 / 0x08002ab1 | `VenusC` (2560 Wh) or `VenusE` (5120 Wh) | `DOD.SET`, `Led.Ctrl`, `Ble.Adv` answer `set_result`. `Ble.Adv` 1 is `AT+QBLEADVSTART`, 0 is `AT+QBLEADVSTOP`. `ES.SetMode` with `ups_cfg` returns true and `ES.GetMode` then reports the string `Manual`, not `UPS`. Still `+QIURC: "recv",3` only |
+| 1581 | 0x200171e8 / 0x08002ab1 | same as 158 | Beta 158.1. Open API `ver` 1581. Same command table and meter channel as 158 |
 
 On every version, `Marstek.GetDevice`, `ES.GetStatus`, `ES.GetMode`,
 `Bat.GetStatus`, `EM.GetStatus` and `Wifi.GetStatus` all answer. Only about one
@@ -295,7 +297,7 @@ docker compose rm -sf fw-venus-e-148-ct fw-venus-e-148 fw-venus-d-149-ct fw-venu
 
 The four defaults are `fw-venus-e-150`, `-a-150`, `-d-150` and the HMG-50
 `fw-venus-c-156`. `docker compose --profile firmware-all up -d` starts all
-twenty-five emulators. That needs a large host: each takes 0.3-0.6 core and
+twenty-seven emulators. That needs a large host: each takes 0.3-0.6 core and
 about 550 MB, and on a 4-CPU sandbox the load reaches about 60 and the firmware
 answers `Parse error` or times out. On a small machine, run at most `nproc`
 emulators at a time in named batches; see AGENTS.md, *Sandbox resource budget*.
@@ -329,7 +331,7 @@ instructions per second. Sixteen emulators still oversubscribe a 4-core host
 The HMG-50 (STM32G4) images run from the same image: `--firmware HMG-50:VERSION`
 picks the `hmg50` board (`renode/hmg50.repl.in`), and the `fw-venus-c-*`
 services below run them. `fw-venus-c-156` (172.28.0.66, 2560 Wh) starts by
-default; 153, 155 and the 5120 Wh `fw-venus-e2-156` are under the
+default; 153, 155, 158, 1581 and the 5120 Wh `fw-venus-e2-156` are under the
 `firmware-hmg50` and `firmware-all` profiles.
 
 HMG-50 replies to the Local API port (30000), not to the sender's port, so
@@ -599,8 +601,14 @@ sysbus WriteByte 0x20000132 1   # logging on
 sysbus WriteByte 0x2000012a 5   # all modules
 ```
 
-On HMG-50 156 the flags are `sysbus WriteByte 0x20003155 1` and
-`sysbus WriteByte 0x200003ec 1`.
+On HMG-50 the two bytes the log gate reads (must be 1, then non-zero) moved
+between images. 156 loads `0x20000028` and `0x200003ec`. 158 and 158.1 load
+`0x1000703c` and `0x1000713c` in CCM SRAM:
+
+```
+sysbus WriteByte 0x1000703c 1
+sysbus WriteByte 0x1000713c 1
+```
 
 That log shows the Venus E 3.0's own form of the HMG-50 shared-channel problem.
 An Open API request that arrives while a CT reply is being handled logs

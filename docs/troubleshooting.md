@@ -12,8 +12,8 @@ These controls only appear when the battery's [firmware](guide/glossary.md#firmw
 
 | Control | When it appears |
 |---|---|
-| Depth of discharge, Bluetooth advertising, Panel LED | Venus A, D and E 3.0 with firmware **150 or newer** (never on Venus C, which uses the [HMG-50](guide/glossary.md#hmg-50) board). Venus E mini when its firmware number is known, with no 150 minimum. |
-| UPS on the operating-mode select | Venus A, D and E 3.0, or Venus E mini, with firmware **150 or newer** (never on Venus C / HMG-50) |
+| Depth of discharge, Bluetooth advertising, Panel LED | Venus A, D and E 3.0 with firmware **150 or newer**. Venus C and Venus E 2.0 ([HMG-50](guide/glossary.md#hmg-50)) from firmware **158**. Venus E mini when its firmware number is known, with no 150 minimum. |
+| UPS on the operating-mode select | Venus A, D and E 3.0, or Venus E mini, with firmware **150 or newer**. Not on Venus C or Venus E 2.0: firmware 158 accepts the command and then reports Manual. |
 
 If they are missing:
 
@@ -121,11 +121,11 @@ This is a bug in the battery's firmware, not in Home Assistant. While the Open A
 The integration treats these firmware versions as reset-prone:
 
 - Venus A, D, E 3.0 or Venus E mini below 150
-- Venus C ([HMG-50](guide/glossary.md#hmg-50)) below 156
+- Venus C and Venus E 2.0 ([HMG-50](guide/glossary.md#hmg-50)) below 156
 
 On those versions it shows a **warning** in **Settings** > **System** > [**Repairs**](guide/glossary.md#repairs) as soon as the battery is set up, even if the first connection attempt still fails. The warning has no fix button; it is there to tell you to update. The integration also sends less traffic to the battery, as listed in the technical details.
 
-Venus E 2.0 is not supported. Existing config entries for that model fail setup with an error instead of polling.
+Venus E 2.0 is supported with a separate dismissible repair warning: support is experimental and community-tested. The battery is still HMG-50, so the meter-channel warning applies as well.
 
 <details class="details custom-block">
 <summary>Technical details</summary>

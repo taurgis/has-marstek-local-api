@@ -46,6 +46,10 @@ _ARCHIVED_CONTROL_MOCKS: frozenset[tuple[str, int]] = frozenset(
         ("VenusE", 153),
         ("VenusE", 155),
         ("VenusE", 156),
+        ("VenusC", 158),
+        ("VenusC", 1581),
+        ("VenusE", 158),
+        ("VenusE", 1581),
     }
 )
 
@@ -136,7 +140,7 @@ def test_firmware_catalog_lists_control_images_for_mocks() -> None:
     assert versions_by_sku["VNSE3-0"] == {144, 147, 1476, 148, 149, 150, 151}
     assert versions_by_sku["VNSA-0"] == {148, 1487, 149, 1491, 150, 1508, 1509, 151}
     assert versions_by_sku["VNSD-0"] == {147, 149, 1492, 150, 151}
-    assert versions_by_sku["HMG-50"] == {153, 155, 156}
+    assert versions_by_sku["HMG-50"] == {153, 155, 156, 158, 1581}
     assert versions_by_sku["VNSEMINI-0"] == {301}
     assert non_runnable == {
         ("VNSEMINI-0", "Micro", 270),

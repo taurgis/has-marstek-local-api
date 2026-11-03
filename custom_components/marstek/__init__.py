@@ -9,7 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -27,7 +27,6 @@ from .coordinator import MarstekDataUpdateCoordinator
 from .device_info import get_device_identifier, stale_access_point_connections
 from .firmware_profile import (
     FirmwareProfile,
-    is_unsupported_venus_e2,
     resolve_firmware_profile,
 )
 from .helpers.capacity_frontend import (
@@ -93,6 +92,14 @@ def _meter_channel_issue_id(entry: ConfigEntry) -> str:
     return f"shared_meter_udp_channel_{entry.entry_id}"
 
 
+def _venus_e2_issue_id(entry: ConfigEntry) -> str:
+    """Build the Venus E 2.0 experimental-support warning id."""
+    return f"venus_e2_experimental_{entry.entry_id}"
+
+
+_VENUS_E2_LOGGED = "venus_e2_logged"
+
+
 def _sync_meter_channel_issue(
     hass: HomeAssistant, entry: ConfigEntry, profile: FirmwareProfile
 ) -> None:
@@ -118,6 +125,39 @@ def _sync_meter_channel_issue(
             "firmware": firmware,
         },
         learn_more_url="https://github.com/taurgis/has-marstek-local-api/issues/82",
+    )
+
+
+def _sync_venus_e2_issue(hass: HomeAssistant, entry: ConfigEntry, profile: FirmwareProfile) -> None:
+    """Warn that Venus E 2.0 support is experimental and community-tested."""
+    issue_id = _venus_e2_issue_id(entry)
+    issue_registry = ir.async_get(hass)
+    if not profile.venus_e2:
+        if issue_registry.async_get_issue(DOMAIN, issue_id):
+            issue_registry.async_delete(DOMAIN, issue_id)
+        return
+
+    firmware = str(profile.firmware_version) if profile.firmware_version is not None else "unknown"
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        is_persistent=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="venus_e2_experimental",
+        translation_placeholders={"firmware": firmware},
+        learn_more_url="https://github.com/taurgis/has-marstek-local-api/issues/121",
+    )
+    logged: set[str] = hass.data.setdefault(_VENUS_E2_LOGGED, set())
+    if entry.entry_id in logged:
+        return
+    logged.add(entry.entry_id)
+    _LOGGER.warning(
+        "Venus E 2.0 at %s firmware %s is supported experimentally. "
+        "Open API polling can interrupt this battery's own meter",
+        entry.data.get(CONF_HOST, "unknown"),
+        firmware,
     )
 
 
@@ -187,6 +227,17 @@ def _clear_meter_channel_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
     issue_id = _meter_channel_issue_id(entry)
     if issue_registry.async_get_issue(DOMAIN, issue_id):
         issue_registry.async_delete(DOMAIN, issue_id)
+
+
+def _clear_venus_e2_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear the Venus E 2.0 experimental-support warning if present."""
+    issue_registry = ir.async_get(hass)
+    issue_id = _venus_e2_issue_id(entry)
+    if issue_registry.async_get_issue(DOMAIN, issue_id):
+        issue_registry.async_delete(DOMAIN, issue_id)
+    logged = hass.data.get(_VENUS_E2_LOGGED)
+    if isinstance(logged, set):
+        logged.discard(entry.entry_id)
 
 
 def _async_remove_unsupported_capability_entities(
@@ -462,12 +513,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> b
     """Set up Marstek from a config entry."""
     _LOGGER.debug("Setting up Marstek config entry: %s", entry.title)
 
-    if is_unsupported_venus_e2(entry.data.get("device_type")):
-        raise ConfigEntryError(
-            translation_domain=DOMAIN,
-            translation_key="unsupported_device",
-        )
-
     stored_ip = entry.data[CONF_HOST]
     stored_port = int(entry.data.get(CONF_PORT, DEFAULT_UDP_PORT))
     # One UDP client per Open API port; devices on the same port share it.
@@ -519,6 +564,7 @@ async def _async_setup_entry_with_client(
     udp_client.set_openapi_retransmit_safe(stored_ip, stored_profile.openapi_wifi_retransmit_safe)
     _sync_openapi_reset_issue(hass, entry, stored_profile)
     _sync_meter_channel_issue(hass, entry, stored_profile)
+    _sync_venus_e2_issue(hass, entry, stored_profile)
 
     # Scanner starts after the pooled client exists so an immediate scan can
     # pause this listener instead of racing a probe on a missing socket.
@@ -547,6 +593,7 @@ async def _async_setup_entry_with_client(
     )
     _sync_openapi_reset_issue(hass, entry, profile)
     _sync_meter_channel_issue(hass, entry, profile)
+    _sync_venus_e2_issue(hass, entry, profile)
     udp_client.set_openapi_reset_prone(stored_ip, profile.openapi_reset_prone, owner=entry.entry_id)
     udp_client.set_openapi_retransmit_safe(stored_ip, profile.openapi_wifi_retransmit_safe)
 
@@ -567,6 +614,7 @@ async def _async_setup_entry_with_client(
     _clear_connection_issue(hass, entry)
     _sync_openapi_reset_issue(hass, entry, coordinator.profile)
     _sync_meter_channel_issue(hass, entry, coordinator.profile)
+    _sync_venus_e2_issue(hass, entry, coordinator.profile)
 
     # Store coordinator and device_info in runtime_data.
     # UDP clients are pooled per Open API bind port in hass.data.
@@ -646,6 +694,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
     _clear_meter_channel_issue(hass, entry)
+    _clear_venus_e2_issue(hass, entry)
 
     await _async_release_entry_resources(hass, entry)
     # A reload, such as an options save, sets the entry up again at once, so
@@ -666,6 +715,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: MarstekConfigEntry) -> 
     _clear_connection_issue(hass, entry)
     _clear_openapi_reset_issue(hass, entry)
     _clear_meter_channel_issue(hass, entry)
+    _clear_venus_e2_issue(hass, entry)
 
     await _async_release_entry_resources(hass, entry)
 

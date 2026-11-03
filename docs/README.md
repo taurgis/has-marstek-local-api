@@ -33,4 +33,4 @@ These pages follow a simple order: do a task, look up a fact, then read why it w
 - [Development](development.md) — tests, the firmware test matrix, and releases.
 - [Open API Rev 3.1](marstek_device_openapi.MD) — the local UDP protocol.
 
-Venus E 2.0 is not supported. Details are on the [installation](installation.md) page.
+Venus E 2.0 can be added, with an experimental-support warning. Details are on the [supported devices](guide/supported-devices.md) page.

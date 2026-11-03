@@ -16,7 +16,7 @@ There are several ways to get a Marstek battery into Home Assistant. They differ
 
 | Connection | How it works | Extra hardware | Good for |
 |---|---|---|---|
-| **Local Open API (UDP)** | Home Assistant asks the battery over Wi-Fi or Ethernet, using the [Open API](glossary.md#open-api-local-api) you enable in the Marstek app. | None | Venus A, C, D, E 3.0, E mini. No wiring. |
+| **Local Open API (UDP)** | Home Assistant asks the battery over Wi-Fi or Ethernet, using the [Open API](glossary.md#open-api-local-api) you enable in the Marstek app. | None | Venus A, C, D, E 3.0, E mini, and Venus E 2.0 (experimental). No wiring. |
 | **Modbus TCP** | Home Assistant reads and writes the battery's settings over a wired connection. | An RS485-to-Ethernet adapter on most models, which connects the battery's RS485 wiring port to your network. Some newer models offer Modbus over Ethernet directly. | Venus E 2.0, and anyone who wants a wired connection that doesn't use the Open API. |
 | **MQTT** | The battery's cloud connection is redirected to an MQTT broker (a small message server) on your own network. | An MQTT broker and a bridge add-on | B2500 and Jupiter, which have no Open API. |
 | **Cloud** | Home Assistant logs in to Marstek's servers. | None | Read-only monitoring when nothing local works. Stops when the cloud is down. |
@@ -24,12 +24,12 @@ There are several ways to get a Marstek battery into Home Assistant. They differ
 
 ## Open API (UDP) integrations
 
-All three use the same local interface as this one, so they share its limits: Home Assistant has to [poll](glossary.md#polling) for changes, older [firmware](glossary.md#firmware) is fragile, and Venus E 2.0 is not supported.
+All three use the same local interface as this one, so they share its limits: Home Assistant has to [poll](glossary.md#polling) for changes, and older [firmware](glossary.md#firmware) is fragile. This integration adds Venus E 2.0 with an experimental-support warning. The others do not.
 
 | Feature | This integration | Marstek (vendor) | Marstek Venus E (yuyuki) | Marstek Local API (jaapp) |
 |---|---|---|---|---|
 | Repository | [taurgis/has-marstek-local-api](https://github.com/taurgis/has-marstek-local-api) | [marstekEnergy/ha_marstek](https://github.com/marstekEnergy/ha_marstek) | [yuyuki/hacs_marstek_venus_e](https://github.com/yuyuki/hacs_marstek_venus_e) | [jaapp/ha-marstek-local-api](https://github.com/jaapp/ha-marstek-local-api) |
-| Models | Venus A, C, D, E 3.0, E mini | Venus E 3.0, A, D | Venus E | Venus C, D, E |
+| Models | Venus A, C, D, E 3.0, E mini, E 2.0 (experimental) | Venus E 3.0, A, D | Venus E | Venus C, D, E |
 | Mode select | Auto, AI, and UPS where the firmware allows it. Manual and Passive are shown, but set through [device actions](glossary.md#device-action) and [services](glossary.md#service-action) | Auto, AI, Manual, UPS | Auto, AI, Manual, Passive | Buttons for Auto, AI, Manual |
 | Passive mode | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> (service) | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
 | Manual schedules | <span class="mk-yes">Yes</span> | <span class="mk-partial">Experimental</span> | <span class="mk-yes">Yes</span> | <span class="mk-yes">Yes</span> |
@@ -58,7 +58,7 @@ All three use the same local interface as this one, so they share its limits: Ho
 
 ## Modbus integrations
 
-These need a wired connection, usually an RS485-to-Ethernet adapter, but they don't depend on the Open API at all. That makes them the main option for **Venus E 2.0**.
+These need a wired connection, usually an RS485-to-Ethernet adapter, but they don't depend on the Open API at all. That makes them a good option for **Venus E 2.0** when the shared meter channel makes Open API polling a poor fit.
 
 ### Omnibattery
 
@@ -110,7 +110,7 @@ Omnibattery replaces the earlier Marstek Venus Energy Manager by the same author
 ## Which one should I use?
 
 - **Venus A, D, E 3.0, or E mini, and you want no extra hardware:** an Open API integration. Pick this one for the widest model support, firmware-aware controls, and battery health. Pick the vendor one if you prefer Marstek's own code.
-- **Venus E 2.0:** a Modbus integration, or hm2mqtt over MQTT. No Open API integration supports it safely. On firmware 158, one owner got control working from their own script with commands spaced about 30 seconds apart, but not yet reliably unattended ([#121](https://github.com/taurgis/has-marstek-local-api/issues/121)).
+- **Venus E 2.0:** this integration, with the experimental warning. It uses the same feature gates as Venus C. Depth of discharge, the panel LED, and Bluetooth start at firmware 158 (158.1 counts as 158). UPS is not offered: that firmware accepts the command and then reports Manual. The shared meter channel is still there ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82), [#121](https://github.com/taurgis/has-marstek-local-api/issues/121)). A Modbus integration, or hm2mqtt over MQTT, avoids that channel.
 - **Venus C:** an Open API integration works, but read the [Venus C caveat](supported-devices.md#venus-c-caveat) first.
 - **Venus E mini:** this is the only Open API integration above that lists it. hm2mqtt has beta support over MQTT.
 - **B2500 or Jupiter:** hm2mqtt. There is no local Open API for those.

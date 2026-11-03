@@ -20,7 +20,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_UDP_PORT, DOMAIN
 from .discovery import discover_devices
-from .firmware_profile import is_unsupported_venus_e2
 from .helpers.broadcast import async_broadcast_addresses
 from .helpers.entry_metadata import (
     apply_entry_metadata_update,
@@ -531,9 +530,6 @@ class MarstekScanner:
                 continue
 
             if identities_overlap(device_macs, configured_macs):
-                continue
-
-            if is_unsupported_venus_e2(device.get("device_type")):
                 continue
 
             if not self._should_trigger_unconfigured(device_macs):
