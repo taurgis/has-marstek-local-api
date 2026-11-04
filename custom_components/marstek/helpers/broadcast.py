@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components import network
-from homeassistant.components.network.const import IPV4_BROADCAST_ADDR
 from homeassistant.core import HomeAssistant
 
 from ..pymarstek.network import get_broadcast_addresses
@@ -29,7 +28,9 @@ async def async_broadcast_addresses(hass: HomeAssistant) -> list[str]:
     made on the event loop as a blocking call.
     https://developers.home-assistant.io/docs/asyncio_blocking_operations/
     """
-    addresses: set[str] = {IPV4_BROADCAST_ADDR}
+    # Re-exported by the network package. It has no ``__all__``, so strict
+    # mypy does not treat the name as a public attribute.
+    addresses: set[str] = {network.IPV4_BROADCAST_ADDR}  # type: ignore[attr-defined]
     try:
         addresses.update(
             str(address) for address in await network.async_get_ipv4_broadcast_addresses(hass)

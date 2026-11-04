@@ -26,8 +26,11 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
-from homeassistant.components.http.server import StaticPathConfig
-from homeassistant.components.lovelace.const import LOVELACE_DATA, ConfigNotFound
+
+# Package imports. ``http.server`` does not exist before Home Assistant 2026.8,
+# and neither package lists these names in ``__all__``.
+from homeassistant.components.http import StaticPathConfig  # type: ignore[attr-defined]
+from homeassistant.components.lovelace import LOVELACE_DATA  # type: ignore[attr-defined]
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -168,12 +171,25 @@ def _dashboard_store(hass: HomeAssistant) -> Any | None:
     return store
 
 
+def _is_missing_dashboard_config(err: BaseException) -> bool:
+    """Return whether Lovelace has no saved config for this dashboard.
+
+    ``ConfigNotFound`` lives in ``lovelace.const`` and is not re-exported by
+    ``homeassistant.components.lovelace``. That submodule is private, so the
+    integration matches the class name instead of importing it. The class has
+    extended ``HomeAssistantError`` since before the 2025.10 minimum.
+    """
+    return isinstance(err, HomeAssistantError) and type(err).__name__ == "ConfigNotFound"
+
+
 async def _saved_config(store: Any) -> Any:
     """Return the dashboard's saved config, or None before anything is saved."""
     try:
         return await store.async_load(False)
-    except ConfigNotFound:
-        return None
+    except HomeAssistantError as err:
+        if _is_missing_dashboard_config(err):
+            return None
+        raise
 
 
 def _is_ours(config: Any) -> bool:

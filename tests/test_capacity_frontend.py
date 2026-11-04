@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
-from homeassistant.components.lovelace.const import LOVELACE_DATA, ConfigNotFound
+from homeassistant.components.lovelace import LOVELACE_DATA
+from homeassistant.components.lovelace.const import ConfigNotFound
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -26,13 +27,21 @@ from custom_components.marstek.helpers.capacity_frontend import (
 class _Store:
     """Stand-in for a Lovelace storage dashboard."""
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        load_error: Exception | None = None,
+    ) -> None:
         self.config = config
         self.saved: dict[str, Any] | None = None
+        self.load_error = load_error
 
     async def async_load(self, force: bool) -> dict[str, Any]:
         """Return the saved config, or the same error Lovelace uses when empty."""
         del force
+        if self.load_error is not None:
+            raise self.load_error
         if self.config is None:
             raise ConfigNotFound
         return self.config
@@ -249,6 +258,21 @@ async def test_dashboard_leaves_a_users_own_dashboard_at_the_same_path(
 
     assert collection.items["mine"]["show_in_sidebar"] is True
     assert store.saved is None
+
+
+async def test_dashboard_reports_a_load_error_that_is_not_a_missing_config(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A Lovelace read failure is not treated as an empty dashboard."""
+    _entry(hass, show=True)
+    store = _Store(load_error=HomeAssistantError("lovelace store failed"))
+    collection = _Collection(hass, store)
+    _install_lovelace(hass, collection)
+
+    await async_sync_capacity_dashboard(hass)
+
+    assert store.saved is None
+    assert "could not update" in caplog.text.lower()
 
 
 async def test_register_token_follows_every_module(hass: HomeAssistant, tmp_path: Path) -> None:

@@ -6,8 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntityDescription
-from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
+# Package import: ``binary_sensor.const`` does not exist before Home Assistant
+# 2026.10. The package re-exports the enum without ``__all__``.
+from homeassistant.components.binary_sensor import (  # type: ignore[attr-defined]
+    BinarySensorDeviceClass,
+    BinarySensorEntityDescription,
+)
 from homeassistant.const import EntityCategory
 
 from .battery_automation import battery_is_charging

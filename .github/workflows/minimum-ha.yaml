@@ -1,0 +1,21 @@
+name: Minimum Home Assistant
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  minimum-ha:
+    name: Boot minimum Home Assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the homeassistant field from hacs.json, pulls that official
+      # Core image, and fails unless Marstek sets up against a Venus A mock.
+      - name: Load the integration on the minimum Home Assistant version
+        run: python3 scripts/check_minimum_home_assistant.py
