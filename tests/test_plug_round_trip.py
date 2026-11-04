@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.marstek.capacity_estimator import (
     CAPACITY_ATTR_KEY,
@@ -13,10 +16,12 @@ from custom_components.marstek.capacity_estimator import (
     SOC_UNCONFIRMED_KEY,
 )
 from custom_components.marstek.const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
+from custom_components.marstek.helpers.boot_pulse import entity_power_w
 from custom_components.marstek.helpers.plug_round_trip import (
     HORIZON_SECONDS,
     PLUG_STORE_KEY,
     REFRESH_SECONDS,
+    STANDBY_VERSION,
     PlugRoundTrip,
     apply_plug_round_trip,
     energy_wh,
@@ -36,10 +41,11 @@ def _feed(
     energy_in: float,
     energy_out: float,
     *,
-    power: float = 1_000.0,
+    power: float | None = 1_000.0,
     bypass: float = 0.0,
     capacity: float | None = _CAPACITY_WH,
     corrected: bool = False,
+    plug_w: float | None = None,
 ) -> None:
     plug.observe(
         timestamp=_T0 + hours * _HOUR,
@@ -50,6 +56,7 @@ def _feed(
         power_w=power,
         bypass_w=bypass,
         soc_corrected=corrected,
+        plug_w=plug_w,
     )
 
 
@@ -315,3 +322,196 @@ async def test_apply_restarts_on_solar_and_skips_stale_polls(hass: HomeAssistant
     apply_plug_round_trip(plug, hass, held, _T0 + 360)
     assert list(plug.to_dict()["anchors"]) == ["40"]
     assert status[CAPACITY_ATTR_KEY] == {"plug_energy_entities": list(_METER)}
+
+
+_STEP_H = 5 / 60
+_BASELINE_W = 9.0
+# One 5-minute step every 30 minutes. Over an hour that is 9 Wh, so the
+# counter average is 18 W while the plug still shows 9 W almost all the time.
+_PULSE_WH = 4.5
+# One short top-up each hour, small enough that the battery can report it as
+# idle, large enough to add another 9 W to the counter average.
+_CHARGE_WH = 9.0
+
+
+def _idle_night(
+    plug: PlugRoundTrip,
+    *,
+    pulses: bool = False,
+    charges: bool = False,
+    quantize: bool = False,
+    plug_power: bool = True,
+    skip_every: int = 0,
+    unknown_power_every: int = 0,
+    hours: float = 6.0,
+) -> float:
+    """Feed an idle night. Return the counter average in watts, which is the old standby."""
+    steps = int(hours / _STEP_H)
+    true = 0.0
+    reported = 0.0
+    for index in range(steps + 1):
+        shown = _BASELINE_W
+        if index:
+            extra = 0.0
+            if pulses and index % 6 == 0:
+                extra += _PULSE_WH
+                shown = 2_500.0
+            if charges and index % 12 == 3:
+                extra += _CHARGE_WH
+                shown = 400.0
+            true += _BASELINE_W * _STEP_H + extra
+            reported = round(true) if quantize else true
+        stamp_hours = index * _STEP_H
+        if skip_every and index and index % skip_every == 0:
+            plug.observe(
+                timestamp=_T0 + stamp_hours * _HOUR,
+                soc=50,
+                energy_in_wh=None,
+                energy_out_wh=None,
+                capacity_wh=_CAPACITY_WH,
+                power_w=0,
+                bypass_w=0,
+            )
+            continue
+        power: float | None = 0.0
+        if unknown_power_every and index and index % unknown_power_every == 0:
+            power = None
+        plug.observe(
+            timestamp=_T0 + stamp_hours * _HOUR,
+            soc=50,
+            energy_in_wh=reported,
+            energy_out_wh=0,
+            capacity_wh=_CAPACITY_WH,
+            power_w=power,
+            bypass_w=0,
+            plug_w=shown if plug_power else None,
+        )
+    return reported / (steps * _STEP_H)
+
+
+def test_wake_pulses_do_not_raise_the_usual_standby() -> None:
+    """A 9 W night with a pulse every half hour used to publish the 18 W average."""
+    plug = PlugRoundTrip(_METER)
+    mean = _idle_night(plug, pulses=True, quantize=True)
+    assert mean == pytest.approx(18)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_a_short_charge_inside_an_idle_stretch_stays_out_of_standby() -> None:
+    """Top-ups the battery reports as idle used to be averaged in, about 18 W."""
+    plug = PlugRoundTrip(_METER)
+    mean = _idle_night(plug, charges=True, quantize=True)
+    assert mean == pytest.approx(18)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_the_counter_alone_still_finds_the_baseline_under_the_pulses() -> None:
+    """No power sensor: ten-minute blocks drop the pulses. The old average is 18 W."""
+    plug = PlugRoundTrip(_METER)
+    mean = _idle_night(plug, pulses=True, quantize=True, plug_power=False)
+    assert mean == pytest.approx(18)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_one_watt_hour_steps_do_not_double_a_steady_nine_watts() -> None:
+    """Rounding a steady 9 W counter to 1 Wh stays near 9 W, so it is not the bug."""
+    plug = PlugRoundTrip(_METER)
+    mean = _idle_night(plug, quantize=True, plug_power=False)
+    assert mean == pytest.approx(9, abs=0.2)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_missing_plug_readings_do_not_change_the_usual_draw() -> None:
+    plug = PlugRoundTrip(_METER)
+    mean = _idle_night(plug, pulses=True, quantize=True, skip_every=5)
+    assert mean == pytest.approx(18)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_a_poll_with_no_battery_power_does_not_end_the_idle_stretch() -> None:
+    plug = PlugRoundTrip(_METER)
+    mean = _idle_night(plug, pulses=True, quantize=True, unknown_power_every=10)
+    assert mean == pytest.approx(18)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_a_stored_average_is_replaced_by_the_usual_draw() -> None:
+    """An 18 W average saved before this rule is dropped, then the night publishes 9 W."""
+    raw = {"meter": list(_METER), "anchors": {}, "standby": [18.0, _T0]}
+    plug = PlugRoundTrip.from_dict(raw, _METER)
+    assert "plug_standby_w" not in plug.attributes()
+    assert plug.consume_dirty() is True
+    assert plug.to_dict()["standby"] is None
+    assert plug.to_dict()["standby_version"] == STANDBY_VERSION
+    mean = _idle_night(plug, pulses=True, quantize=True)
+    assert mean == pytest.approx(18)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+    assert plug.to_dict()["standby_version"] == STANDBY_VERSION
+
+
+def test_a_long_hole_does_not_fold_a_missed_charge_into_standby() -> None:
+    """Bridging the hole would publish about 16.6 W. The stretch starts again instead."""
+    plug = PlugRoundTrip(_METER)
+    energy = 0.0
+    for index in range(4 * 12 + 1):
+        if index:
+            energy += _BASELINE_W * _STEP_H
+        _feed(plug, index * _STEP_H, 50, energy, 0, power=0, plug_w=9)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+    _feed(plug, 7, 50, energy + 80, 0, power=0, plug_w=9)
+    _feed(plug, 7.1, 52, energy + 80, 10, power=1_500)
+    assert (energy + 80) / 7 == pytest.approx(16.57, abs=0.01)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+def test_a_reported_charge_ends_the_stretch_without_raising_standby() -> None:
+    plug = PlugRoundTrip(_METER)
+    _idle_night(plug, hours=4)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+    _feed(plug, 5, 70, 2_000, 0, power=-1_500, plug_w=1_500)
+    assert plug.attributes()["plug_standby_w"] == 9.0
+
+
+async def test_apply_reads_the_plug_power_sensor(hass: HomeAssistant) -> None:
+    """HomeWizard-style kWh counters plus a power sensor: the card's number is 9 W."""
+    entry = MockConfigEntry(domain="homewizard")
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={("homewizard", "plug")}
+    )
+    registry = er.async_get(hass)
+
+    def sensor(key: str, device_class: str) -> str:
+        return registry.async_get_or_create(
+            "sensor",
+            "homewizard",
+            key,
+            device_id=device.id,
+            suggested_object_id=key,
+            original_device_class=device_class,
+        ).entity_id
+
+    incoming = sensor("plug_energy_import", "energy")
+    outgoing = sensor("plug_energy_export", "energy")
+    power = sensor("plug_power", "power")
+    plug = PlugRoundTrip((incoming, outgoing))
+    status: dict[str, object] = {"battery_soc": 50, "battery_power": 0, CAPACITY_DATA_KEY: 5_120}
+    true = 0.0
+    steps = 6 * 12
+    for index in range(steps + 1):
+        shown = 9.0
+        if index:
+            extra = 4.5 if index % 6 == 0 else 0.0
+            if extra:
+                shown = 2_500.0
+            true += 9.0 * _STEP_H + extra
+        hass.states.async_set(incoming, f"{round(true) / 1000:.3f}", {"unit_of_measurement": "kWh"})
+        hass.states.async_set(outgoing, "0.000", {"unit_of_measurement": "kWh"})
+        hass.states.async_set(power, str(shown), {"unit_of_measurement": "W"})
+        apply_plug_round_trip(plug, hass, status, _T0 + index * _STEP_H * _HOUR)
+    assert true / (steps * _STEP_H) == pytest.approx(18)
+    assert entity_power_w(hass, power) == shown
+    attrs = status[CAPACITY_ATTR_KEY]
+    assert isinstance(attrs, dict)
+    assert attrs["plug_standby_w"] == 9.0
+    assert attrs["plug_energy_entities"] == [incoming, outgoing]

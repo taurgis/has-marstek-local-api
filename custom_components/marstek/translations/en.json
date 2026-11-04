@@ -175,7 +175,7 @@
           },
           "plug_meter_settings": {
             "name": "Energy meter (optional)",
-            "description": "Link a smart plug or meter that sits between this battery and the mains, such as a HomeWizard Energy Socket or a Shelly plug. Its counters measure the battery's real round-trip efficiency and its standby draw, and the cards show the plug's live power. Leave both fields empty to use only the battery's own readings.",
+            "description": "Link a smart plug or meter that sits between this battery and the mains, such as a HomeWizard Energy Socket or a Shelly plug. Its counters measure the battery's real round-trip efficiency and its standby draw, and the cards show the plug's live power. Standby draw is the usual power that plug shows while the battery is idle. Wake pulses and short charges are left out. Leave both fields empty to use only the battery's own readings.",
             "data": {
               "plug_energy_in": "Energy into the battery",
               "plug_energy_out": "Energy out of the battery"

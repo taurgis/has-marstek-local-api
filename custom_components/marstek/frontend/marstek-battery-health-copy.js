@@ -26,7 +26,7 @@ export const COPY = {
     steady: (span) => `Steady over the last ${span}: no change beyond the spread of the runs.`,
     rte: (pct, back) => `Round trip ${pct}: of every 10 kWh charged, about ${back} comes back.`,
     rteMetered: (pct, back, since) => `Round trip ${pct}, measured at the plug since ${since}, standby included: of every 10 kWh charged, about ${back} comes back.`,
-    standby: (power, perDay) => `Standby draw ${power}, about ${perDay} a day.`,
+    standby: (power, perDay) => `Standby draw ${power}, the usual reading at the plug while idle, about ${perDay} a day at that rate.`,
     correction: (count, when, where, size) =>
       `The battery corrected its charge level ${count} ${count === 1 ? "time" : "times"} in 30 days, last on ${when} ${where} (${size}).`,
     atFull: "on reaching 100%",
@@ -176,7 +176,7 @@ export const COPY = {
     steady: (span) => `Stabiel over de laatste ${span}: geen verschil buiten de spreiding van de ritten.`,
     rte: (pct, back) => `Rendement ${pct}: van elke 10 kWh laden komt ongeveer ${back} terug.`,
     rteMetered: (pct, back, since) => `Rendement ${pct}, gemeten aan de stekker sinds ${since}, stand-by inbegrepen: van elke 10 kWh laden komt ongeveer ${back} terug.`,
-    standby: (power, perDay) => `Stand-byverbruik ${power}, ongeveer ${perDay} per dag.`,
+    standby: (power, perDay) => `Stand-byverbruik ${power}, de gebruikelijke stand aan de stekker in rust, ongeveer ${perDay} per dag bij dat vermogen.`,
     correction: (count, when, where, size) =>
       `De batterij corrigeerde haar laadtoestand ${count} keer in 30 dagen, het laatst op ${when} ${where} (${size}).`,
     atFull: "bij het bereiken van 100%",

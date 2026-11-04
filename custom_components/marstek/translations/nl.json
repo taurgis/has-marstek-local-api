@@ -175,7 +175,7 @@
           },
           "plug_meter_settings": {
             "name": "Energiemeter (optioneel)",
-            "description": "Koppel een slimme stekker of meter tussen deze batterij en het net, zoals een HomeWizard Energy Socket of een Shelly-stekker. De tellers meten het echte rendement heen en terug en het stand-byverbruik van de batterij, en de kaarten tonen het actuele vermogen aan de stekker. Laat beide velden leeg om alleen de metingen van de batterij zelf te gebruiken.",
+            "description": "Koppel een slimme stekker of meter tussen deze batterij en het net, zoals een HomeWizard Energy Socket of een Shelly-stekker. De tellers meten het echte rendement heen en terug en het stand-byverbruik van de batterij, en de kaarten tonen het actuele vermogen aan de stekker. Stand-byverbruik is het gebruikelijke vermogen dat die stekker aangeeft terwijl de batterij in rust is. Opstartpieken en kort laden tellen niet mee. Laat beide velden leeg om alleen de metingen van de batterij zelf te gebruiken.",
             "data": {
               "plug_energy_in": "Energie naar de batterij",
               "plug_energy_out": "Energie uit de batterij"
