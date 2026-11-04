@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant.components.repairs import RepairsFlow
-from homeassistant.components.repairs.models import RepairsFlowResult
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 
@@ -27,6 +27,15 @@ from .helpers.udp_clients import (
     get_udp_client,
     transfer_reset_prone_mark_for_entry,
 )
+
+# ``RepairsFlowResult`` was added in Home Assistant 2026.6. On 2025.10 through
+# 2026.5 the repair step returns the same ``FlowResult`` the flow handler
+# already produced. ``repairs.models`` exists on those versions, but the name
+# does not, so the package import is the one that fails cleanly.
+try:
+    from homeassistant.components.repairs import RepairsFlowResult
+except ImportError:  # Home Assistant < 2026.6
+    RepairsFlowResult = FlowResult  # type: ignore[misc,assignment]
 
 
 class CannotConnectRepairFlow(RepairsFlow):
