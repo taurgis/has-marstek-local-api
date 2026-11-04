@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.1
+
+### Patch Changes
+
+- 925f408: Fix the integration failing to load on Home Assistant 2025.10 through 2026.7 by importing Home Assistant symbols from their public packages.
+
 ## 1.13.0
 
 ### Minor Changes
