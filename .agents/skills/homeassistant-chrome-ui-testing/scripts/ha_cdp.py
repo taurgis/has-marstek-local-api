@@ -20,7 +20,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -1745,7 +1745,7 @@ async def cmd_history(
     cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float
 ) -> Any:
     start = (
-        datetime.now(timezone.utc) - timedelta(hours=hours)
+        datetime.now(UTC) - timedelta(hours=hours)
     ).isoformat(timespec="seconds")
     path = f"history/period/{start}?filter_entity_id={entity_id}&minimal_response"
     return await cmd_api(cdp, _page, "GET", path, None)
@@ -1755,7 +1755,7 @@ async def cmd_logbook(
     cdp: Cdp, _page: dict[str, Any], entity_id: str, hours: float
 ) -> Any:
     start = (
-        datetime.now(timezone.utc) - timedelta(hours=hours)
+        datetime.now(UTC) - timedelta(hours=hours)
     ).isoformat(timespec="seconds")
     path = f"logbook/{start}?entity={entity_id}"
     return await cmd_api(cdp, _page, "GET", path, None)

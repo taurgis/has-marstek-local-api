@@ -11,10 +11,14 @@
     "release:tag": "node scripts/create-release-tag.mjs",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "lint:js": "eslint custom_components/marstek/frontend"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "vitepress": "^1.6.4"
   }
 }
