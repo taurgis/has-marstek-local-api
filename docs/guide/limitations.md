@@ -13,7 +13,7 @@ Read this page before you rely on the integration for anything that matters, lik
 The battery never reports a change by itself. Home Assistant asks every 30 seconds by default. A change made in the Marstek app, or by the battery itself, can take up to that long to appear. Don't build automations that need a reaction within seconds.
 
 **Some firmware is fragile.**
-Some [firmware](glossary.md#firmware) versions switch the Open API off, or even reset their settings, when Home Assistant [polls](glossary.md#polling) them for data. Owners have seen this on Venus A, D, and E 3.0 below firmware 150. To be safe, Venus C below 156 and Venus E mini 145 are treated the same way. Home Assistant shows a warning for these versions. Update the firmware in the Marstek app if you can. See [why the Open API switches itself off](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults).
+Some [firmware](glossary.md#firmware) versions switch the Open API off, or even reset their settings, when Home Assistant [polls](glossary.md#polling) them for data. Owners have seen this on Venus A, D, and E 3.0 below firmware 150. To be safe, Venus C below 156 and Venus E mini 145 are treated the same way. Home Assistant shows a warning for these versions. Update the firmware in the Marstek app if you can. See [why the Open API switches itself off](../troubleshooting.md#local-api-resets).
 
 **Requests sometimes get no answer.**
 Over Wi-Fi, even good firmware drops some replies. On a Venus E 3.0 with firmware 150, about one Wi-Fi request in four gets no answer the first time. On firmware known to cope with it, the integration resends read requests. It always keeps the last values for a few failed polls before marking the battery's [entities](glossary.md#entity) unavailable. A wired Ethernet connection is more reliable where the battery has one.
@@ -31,7 +31,7 @@ On Venus C, polling competes with the battery's own grid-meter link for one Wi-F
 It runs the same controller as Venus C, and polling it can disconnect it from its CT meter. The integration adds it and shows a repair warning you can ignore.
 
 **Venus E mini firmware 301 is limited.**
-The firmware refuses [Passive mode](glossary.md#passive-mode). Discovery can't find it, so add it by IP address. Its replies only reach Home Assistant on a normal home network with mask `255.255.255.0` (a [/24](glossary.md#subnet-24), the usual router default). Manual schedules with a power value work since integration 1.3.2. See [Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).
+The firmware refuses [Passive mode](glossary.md#passive-mode). Discovery can't find it, so add it by IP address. Its replies only reach Home Assistant on a normal home network with mask `255.255.255.0` (a [/24](glossary.md#subnet-24), the usual router default). Manual schedules with a power value work since integration 1.3.2. See [Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-passive).
 
 ## Choices this integration makes
 

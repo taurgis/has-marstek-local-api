@@ -31,7 +31,7 @@ Marstek ships features through firmware updates, and older firmware misbehaves m
 To see your battery's firmware number, open its device page in Home Assistant (**Settings** > **Devices & services** > **Marstek** > your battery). It is listed under **Device info**. Home Assistant shows it the way the battery reports it, so app version 147.6 appears as `1476`.
 
 - **Firmware 150 or newer** on Venus A, D, and E 3.0 unlocks depth of discharge, the panel LED, Bluetooth advertising, and UPS mode. On Venus C and Venus E 2.0, depth of discharge, the panel LED, and Bluetooth start at firmware **158** (Open API `ver` 1581 is the 158.1 beta and counts as 158). UPS stays off on that board: firmware 158 accepts the command and then reports Manual.
-- **Firmware below 150** on those models is known to switch its Open API off, and sometimes reset its settings, when Home Assistant asks it for data at regular intervals. Venus C below 156 and Venus E mini 145 are treated the same way to be safe. Home Assistant shows a warning in **Settings** > **System** > **Repairs** for these versions. Update the battery in the Marstek app if you can. See [troubleshooting](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults).
+- **Firmware below 150** on those models is known to switch its Open API off, and sometimes reset its settings, when Home Assistant asks it for data at regular intervals. Venus C below 156 and Venus E mini 145 are treated the same way to be safe. Home Assistant shows a warning in **Settings** > **System** > **Repairs** for these versions. Update the battery in the Marstek app if you can. See [troubleshooting](../troubleshooting.md#local-api-resets).
 - After a firmware update, the integration notices the new version on its own within about 10 minutes and adds or removes controls. You don't need to remove and re-add the battery.
 
 ### Tested firmware versions
@@ -74,7 +74,7 @@ Venus E mini works, but it differs from the other models in a few ways ([#86](ht
 - **No Passive mode on firmware 301.** The firmware doesn't have it, so the integration leaves it out. Auto, AI, Manual, and UPS work.
 - **Depth of discharge, the panel LED, and Bluetooth advertising** are available.
 
-[Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out) has the details.
+[Venus E mini troubleshooting](../troubleshooting.md#venus-e-mini-manual-passive) has the details.
 
 ## What else you need
 

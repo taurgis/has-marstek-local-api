@@ -11,7 +11,7 @@ This repository contains a Home Assistant custom integration for **Marstek energ
 - Quality Scale: Silver (aiming for Gold with >95% coverage; tracked in `quality_scale.yaml`)
 
 Important compatibility notes:
-- The integration is currently **not compatible with Venus E2.0** devices (see `README.md`).
+- **Venus E 2.0** support is experimental. Setup asks for confirmation, then shows a repair warning you can ignore. Polling can drop the CT003 link on the same shared Wi-Fi channel as Venus C (see `README.md`).
 - **Venus C** runs the same HMG-50 Control firmware as Venus E2.0. HMG-50 shares one Wi-Fi
   receive channel between the Local API and the device's own UDP meter client, so polling can
   stall Self-consumption (Auto) charging ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)).

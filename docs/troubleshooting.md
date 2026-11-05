@@ -37,6 +37,8 @@ If they are missing:
 
 </details>
 
+<a id="venus-e-mini-manual-passive"></a>
+
 ## Venus E mini: Manual power shows as ---, or Passive times out
 
 These are separate problems on Venus E mini (`VNSEM-0`) firmware **301** ([#104](https://github.com/taurgis/has-marstek-local-api/issues/104)).
@@ -105,6 +107,8 @@ The battery often stops answering for a while, or values update unevenly.
 
 </details>
 
+<a id="local-api-resets"></a>
+
 ## Local API disables itself / settings reset to defaults
 
 The battery stops answering Home Assistant. In the Marstek app the Local API is switched off, and other settings may be back at their defaults. Wi-Fi settings often survive.
@@ -165,7 +169,7 @@ A firmware update restarts the battery, and some updates change how its lifetime
 
 - **A total stops rising** while the battery is clearly charging or discharging: [Grid energy totals look frozen](#grid-energy-totals-look-frozen).
 - **One huge spike** on the day of the update: [Energy totals jump to an impossible value](#energy-totals-jump-to-an-impossible-value).
-- **Solar about 10× too low or too high** from then on (Venus A and Venus D): [Venus A solar totals look 10× too low, then jump](#venus-a-solar-totals-look-10×-too-low-then-jump).
+- **Solar about 10× too low or too high** from then on (Venus A and Venus D): [Venus A solar totals look 10× too low, then jump](#venus-a-solar-10x).
 
 The integration ignores readings of zero while the battery boots, so a restart alone should not dent the Energy dashboard. It never rewrites data points Home Assistant already stored. Fix those under **Developer tools** > **Statistics**, and include diagnostics in a [bug report](#what-to-include-in-a-bug-report) if the pattern is new.
 
@@ -192,6 +196,8 @@ The integration ignores readings that cannot be Wh on a home battery: negative, 
 
 </details>
 
+<a id="venus-a-solar-10x"></a>
+
 ## Venus A solar totals look 10× too low, then jump
 
 On Venus A, solar production in the Energy dashboard was about 10 times too low, then showed one large spike after you updated the integration.
@@ -210,6 +216,8 @@ Firmware **148** (including app labels such as `148.3`) keeps solar energy in Wh
 That energy fix is separate from PV1 power, below.
 
 </details>
+
+<a id="pv1-power-10x"></a>
 
 ## PV1 power looks 10× too high
 
@@ -267,6 +275,8 @@ Which meter you pair decides whether it shares that socket. A Marstek CT and a S
 Firmware research notes: [tools/firmware/HMG50_METER_CHANNEL.md](../tools/firmware/HMG50_METER_CHANNEL.md).
 
 </details>
+
+<a id="venus-e-20"></a>
 
 ## Venus E 2.0
 

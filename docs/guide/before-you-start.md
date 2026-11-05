@@ -63,7 +63,7 @@ Most home networks need nothing here. Check these if your network is more advanc
 - **Separate VLAN for IoT devices?** A VLAN is a separate network for your smart-home devices. Automatic discovery won't reach across to it. Add the battery by IP address. In your router or firewall, allow UDP traffic on the battery's port (default 30000) between Home Assistant and the battery.
 - **Wi-Fi "client isolation" or "AP isolation" on?** It blocks devices from talking to each other. Turn it off for the battery's network.
 - **Home Assistant in Docker?** Use host networking (`network_mode: host`), as the [official container install](https://www.home-assistant.io/installation/linux#install-home-assistant-container) does. Without it, Home Assistant's network search and the battery's answers don't reach Home Assistant. If you use Home Assistant OS or a Home Assistant Green or Yellow, this doesn't apply to you.
-- **Venus E mini on firmware 301?** It sends its answers to the network's `.255` address. That only works when the network uses the usual home-router subnet mask, `255.255.255.0` (also written /24). See [troubleshooting](../troubleshooting.md#venus-e-mini-manual-power-shows-as-or-passive-times-out).
+- **Venus E mini on firmware 301?** It sends its answers to the network's `.255` address. That only works when the network uses the usual home-router subnet mask, `255.255.255.0` (also written /24). See [troubleshooting](../troubleshooting.md#venus-e-mini-manual-passive).
 
 ## Is anything else talking to the battery?
 

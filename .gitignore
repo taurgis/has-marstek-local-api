@@ -1,6 +1,9 @@
 # Temporary files
 tmp/
 
+# macOS Finder metadata
+.DS_Store
+
 # Python
 __pycache__/
 *.py[cod]

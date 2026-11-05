@@ -31,7 +31,7 @@ charge moved in that interval. `Q` is the capacity. See Plett, "Recursive
 approximate weighted total least squares estimation of battery cell total
 capacity", Journal of Power Sources 196 (2011) 2319–2331
 ([author PDF](http://mocha-java.uccs.edu/dossier/RESEARCH/2011jps-.pdf),
-[ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S037877531001654X)).
+[doi:10.1016/j.jpowsour.2010.09.048](https://doi.org/10.1016/j.jpowsour.2010.09.048)).
 
 That is the same relation this integration uses, in watt-hours instead of
 ampere-hours, because the Open API gives power and watt-hour nameplate rather
@@ -161,7 +161,7 @@ sigma-point Kalman filter on a cell model that includes voltage
 A later coulomb-counting paper updates capacity with recursive least squares
 between two state-of-charge points, and it resets those points from
 open-circuit voltage after the current has been zero for 25 minutes
-([Energies 2020, 13(7), 1811](https://www.mdpi.com/1996-1073/13/7/1811)).
+([Energies 2020, 13(7), 1811](https://doi.org/10.3390/en13071811)).
 Without a voltage measurement there is nothing for either filter to correct
 against, so the state of charge we have stays the BMS percentage.
 Recursive least squares on our windows would also be less robust than a
@@ -211,7 +211,7 @@ stated. They do not estimate fade from power and state of charge.
 | Tesla Powerwall | `battery_nominal_full_pack_energy`: available energy when full at 25 °C, "affected by temperature, degradation, etc." Tesla's own BMS figure. The warranty tracks that against 13.5 kWh (70 percent at 10 years for the common US terms). | [Tesla Energy Library, battery signals](https://energylibrary.tesla.com/docs/Public/More/Powerhub/Residential/UserManual/en-us/GUID-9B10A167-8CCA-44FC-9993-572D89191989.html), [Powerwall warranty (US)](https://digitalassets.tesla.com/tesla-contents/image/upload/Powerwall_Warranty_US-EN.pdf) |
 | Sonnen | User state of charge (`USOC`) from the local JSON API. Full charge capacity (`fullchargecapacity`, Ah) and `cyclecount` come from the BMS on `/api/v2/battery`. EVCC's template reads `USOC` and takes capacity as a configuration value in kWh. | [sonnen JSON API fields as mapped by the Home Assistant integration](https://github.com/mrpointblue/sonnenBatterie-Integration/blob/main/README.md), [EVCC template](https://github.com/evcc-io/evcc/blob/master/templates/definition/meter/sonnenbatterie.yaml), [EVCC capacity parameter](https://github.com/evcc-io/evcc/blob/master/util/templates/defaults.yaml) |
 | Home Assistant Powerwall | The core integration's battery capacity sensor reads the gateway's own full-pack energy. That is the same BMS figure as `battery_nominal_full_pack_energy`, not a coulomb count done in Home Assistant. | [Powerwall integration](https://www.home-assistant.io/integrations/powerwall/), [Tesla Energy Library](https://energylibrary.tesla.com/docs/Public/More/Powerhub/Residential/UserManual/en-us/GUID-9B10A167-8CCA-44FC-9993-572D89191989.html) |
-| TeslaFi | Battery degradation report is rated range at 100 percent, or range divided by the ending state of charge when the charge stopped short of 100 percent. TeslaFi's own note is that state of charge is a whole number, so an incomplete charge does not know whether it ended at 79.1 or 79.9 percent, and those charges are left out of the report. | [TeslaFi support: how degradation is calculated](https://support.teslafi.com/communities/1/topics/6810-battery-degradation-how-actually-is-it-calculated), [completed charges](https://support.teslafi.com/knowledge-bases/2/articles/10110-what-are-completed-charges) |
+| TeslaFi | Battery degradation report is rated range at 100 percent, or range divided by the ending state of charge when the charge stopped short of 100 percent. TeslaFi's own note is that state of charge is a whole number, so an incomplete charge does not know whether it ended at 79.1 or 79.9 percent, and those charges are left out of the report. | [TeslaFi support: how degradation is calculated](https://web.archive.org/web/20250619221551/https://support.teslafi.com/communities/1/topics/6810-battery-degradation-how-actually-is-it-calculated), [completed charges](https://web.archive.org/web/20250424102924/https://support.teslafi.com/knowledge-bases/2/articles/10110-what-are-completed-charges) |
 | Recurrent | Range Score is expected range today divided by observed range when new for that configuration. Recurrent says a lab capacity in kWh is not what the car reports, and that an exact state of health from outside the vehicle is not available. | [Range Score](https://www.recurrentauto.com/news/recurrent-expands-coverage-used-ev), [why an exact health figure is not available](https://www.recurrentauto.com/questions/why-cant-recurrent-tell-me-exactly-how-healthy-my-battery-is) |
 | This integration | No BMS state of health exists on the Open API, so the sensor is the coulomb-counting estimate below. | [Open API note](marstek_device_openapi.MD) |
 
