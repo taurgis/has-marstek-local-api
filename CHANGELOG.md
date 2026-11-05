@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.2
+
+### Patch Changes
+
+- b40eb98: Correct the Venus E 2.0 note: the battery can be added as experimental after confirmation, and fix documentation links that did not resolve.
+- e80c736: Fix standby draw so it shows the usual idle reading at the plug instead of an average that includes wake pulses and short charges.
+- 049d707: Clarify connection errors, polling options, and schedule slots, reject invalid times and out-of-range action power as validation errors, and keep API success-rate counters out of history.
+
 ## 1.13.1
 
 ### Patch Changes
