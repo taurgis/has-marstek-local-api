@@ -39,7 +39,7 @@ Each battery card shows:
 - A band on the right: **Healthy** (90% or more), **Fading** (80% up to 90%), **Worn** (below 80%), **Measuring** until charge and discharge runs both back the estimate, or **Uncertain** while the [charge-level drift](#corrections) is 5% or more or the runs scatter by 10% or more. A battery that reports no rating, such as the Venus E mini, gets no band.
 - One sentence that says what the battery holds against its rating. On the screenshot, Venus E holds **4.86 kWh**, **95%** of its **5.12 kWh** rating. While only one direction has runs, the sentence starts with *First estimate, from discharge runs only* (or charge runs), because that figure still leans on an assumed conversion loss.
 - A bar split into energy stored now, room left, and the part that has faded. The faded part appears only with a measured band and when the gap to the rating is wider than the runs disagree.
-- Short insights: how many runs the number is based on and how closely they agree (half of them lie within the stated percentage of the median), how much the weekly estimate has moved, what the round trip means per 10 kWh charged, standby draw when a plug is linked, and how long the battery can keep going at the current power.
+- Short insights: how many runs the number is based on and how closely they agree (half of them lie within the stated percentage of the median), how much the weekly estimate has moved, what the round trip means per 10 kWh charged, the usual standby draw at the plug when one is linked, and how long the battery can keep going at the current power.
 - A footer with the confidence and, when something holds it down, the reason: runs in one direction only, runs that disagree, charge and discharge power that differ widely, mostly solar-charged runs, or charge-level drift.
 
 While the battery is discharging at 50 W or more, that last time runs down to the floor set by **Depth of discharge**. An 88% depth of discharge stops the battery at 12%, and the sentence names that floor. The Open API cannot read the setting back, so the card uses the last value written from Home Assistant, which starts at 88%. The time allows for the same 0.93 conversion loss the estimate uses, plus 20 W the unit spends on itself while it charges or discharges: a discharge draws more from the cells than reaches the AC side, and a charge stores less than it takes in. Part-load tests put that own draw at about 5 W on a [Venus E mini](https://www.smartzone.de/marstek-venus-e-mini-balkonspeicher-test/) and about 30 W on a [Venus A](https://www.smartzone.de/marstek-venus-a-im-test-das-budget-modell-mit-grossartiger-leistung/), so at 100 W the time can be about 12% short or 8% long. From 500 W the error is 3% or less.
@@ -167,7 +167,7 @@ With a meter linked, the cards add:
 
 - The plug's live watts, on the health card under the battery name and as **at the plug** on **Your batteries**. The plug updates on its own schedule, so its watts can differ from the battery's 30-second reading.
 - Round-trip efficiency measured at the plug, standby included. Round-trip efficiency is how much of the energy you charge comes back out. The sentence says "measured at the plug" and spells out what comes back from every 10 kWh charged.
-- Standby draw in watts and in kWh a day.
+- Standby draw: the usual reading at the plug while the battery is idle, in watts and in kWh a day at that rate. Wake pulses and short charges are not part of it.
 
 To keep using only the battery's own readings, leave both fields empty. The round trip then says it was estimated from those readings, and standby is left out.
 
@@ -400,10 +400,13 @@ How it is measured:
 - At the same state of charge the pack holds the same energy, so the quotient of energy out and energy in needs no efficiency assumption. Standby draw and self-discharge in between are included, which is why it is lower than `implied_round_trip_efficiency`.
 - The integration remembers the first meter reading at each whole state of charge for 30 days. When the pack is back at a remembered level after at least one full capacity went in, it publishes the quotient, at most once a day, and only when the result is between 50% and 100% efficiency.
 - Solar or off-grid power above 20 W reaches the pack without crossing the plug, so such a poll starts the measurement again. So does a counter that went down, or a different pair of sensors.
-- Idle means 5 W or less of reported battery power and no energy out. The standby figure is published when the stretch ends, and once a day while it lasts. Anything above 100 W is dropped.
-- Load: the two sensor states are read from memory on the poll the integration already makes. There is no extra polling and no state listener, and the Store is written only when a published number changes.
+- Standby draw is the usual power the plug shows while the battery is idle, which is what the plug reads most of the time. It is not the average of every watt-hour over that stretch. A wake pulse (the boot self-test, a fan) or a short charge between polls adds energy the battery does not report as power, and that average then sits about twice the watts on the plug. The 1 Wh steps of a kWh counter are not the cause: a steady 9 W still totals about 9 W.
+- Idle means three hours or more, 5 W or less of reported battery power, and no energy out. A reported charge or discharge ends the stretch. A poll with no battery power, or a missing meter reading, leaves it open. A hole longer than two hours starts again, so a charge missed while the battery was offline is not counted.
+- When the plug has a power sensor on the same device, the figure is the median of those readings over the idle stretch. Without one, each ten minutes of the import counter is a rate. Blocks that hold a pulse or a charge are set aside, and the mean of the rest is published. It is published when the stretch ends, and once a day while it lasts. Anything above 100 W is dropped.
+- A stored standby from before this rule is an average. It is dropped on the next start and measured again, so an old 18 W does not stay on the card. The daily figure on the card is this usual reading times 24 hours, not the plug's total overnight consumption.
+- Load: the two energy sensors and, when the plug has one, its power sensor are read from memory on the poll the integration already makes. There is no extra polling, and the Store is written only when a published number changes.
 
-The cards prefer the measured round trip to the implied one and say so ("at the plug"). The health card adds the standby draw in watts and kWh a day. When the plug has a power sensor on the same device, the cards also show its live watts: on the health card, in the line under the battery name, and as a fourth figure on the fleet card. The plug's figure is sampled on its own schedule (every 5 s for HomeWizard), so it can differ from the battery's 30-second reading by more than the conversion loss.
+The cards prefer the measured round trip to the implied one and say so ("at the plug"). The health card adds the usual standby draw in watts and in kWh a day at that rate. When the plug has a power sensor on the same device, the cards also show its live watts: on the health card, in the line under the battery name, and as a fourth figure on the fleet card. The plug's figure is sampled on its own schedule (every 5 s for HomeWizard), so it can differ from the battery's 30-second reading by more than the conversion loss.
 
 <details class="details custom-block">
 <summary>Attributes the meter adds to the usable capacity sensor</summary>
@@ -412,7 +415,7 @@ The cards prefer the measured round trip to the implied one and say so ("at the 
 - **`plug_round_trip_efficiency`**: energy out divided by energy in, between two moments at the same state of charge.
 - **`plug_round_trip_since`**, **`plug_round_trip_at`**: start and end of that measurement.
 - **`plug_round_trip_energy_in_wh`**, **`plug_round_trip_energy_out_wh`**: the two counters' differences.
-- **`plug_standby_w`**: energy in divided by hours over an idle stretch of at least three hours.
+- **`plug_standby_w`**: the usual plug watts while the battery is idle, over a stretch of at least three hours. Wake pulses and short charges are left out. With a power sensor on the plug, this is the median of those readings. Without one, it is the mean of the ten-minute import rates that are not pulses.
 - **`plug_standby_at`**: when that standby figure was taken.
 
 </details>

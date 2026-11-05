@@ -20,15 +20,28 @@ different pair of meter entities. A BMS that corrects its own percentage
 (the jump to 100 after a drifted charge) breaks "same percentage, same
 energy", so the level readings start again from that poll too.
 
-The same counters give the standby draw: over an idle stretch of at least
-three hours, with no battery power reported and no energy out, the energy in
-divided by the hours is what the battery uses to stay awake. At 8 W that is
-24 Wh, so the 1 Wh steps of a kWh counter with three decimals stay near 4%.
+The same counters give the standby draw, which is the usual power the plug
+shows while the battery is idle, not the average of every watt-hour in that
+stretch. A wake pulse (the boot self-test, a fan) or a short charge between
+polls adds energy the battery never reports as power. On a Venus E 3.0 that
+average then reads about twice the 9 W the plug shows the rest of the time.
+The 1 Wh steps of a kWh counter are not that gap: a steady 9 W still totals
+about 9 W.
 
-Load stays low: the two sensor states are read from memory once per poll the
-coordinator already makes, with no state listener, and the Store is asked to
-write only when a published number changes (at most daily). Anchors ride along
-with those writes; losing some to a restart only delays the next measurement.
+Idle is three hours or more, with 5 W or less of reported battery power and
+no energy out. When the plug has a power sensor on the same device, the
+figure is the median of those readings, which is what the plug shows most of
+the time. Without one, each ten-minute block of the energy counter is a rate,
+blocks that hold a pulse or a charge are set aside, and the mean of the rest
+is published. A stored average from before this rule is dropped. The figure
+is published when the stretch ends, and once a day while it lasts. Anything
+above 100 W is dropped.
+
+Load stays low: the meter states, and the plug's power when it has one, are
+read from memory once per poll the coordinator already makes. The boot
+self-test is the only state listener, and the Store is asked to write only
+when a published number changes (at most daily). Anchors ride along with
+those writes; losing some to a restart only delays the next measurement.
 """
 
 from __future__ import annotations
@@ -52,6 +65,7 @@ from ..capacity_estimator import (
     SOC_UNCONFIRMED_KEY,
 )
 from ..const import CONF_PLUG_ENERGY_IN, CONF_PLUG_ENERGY_OUT
+from .boot_pulse import entity_power_w, plug_power_entity
 
 PLUG_STORE_KEY = "plug_round_trip"
 
@@ -65,6 +79,19 @@ MAX_EFFICIENCY = 1.0
 IDLE_W = 5.0
 MIN_IDLE_SECONDS = 3 * 3_600
 MAX_STANDBY_W = 100.0
+# A stored standby from before this version is an average that counted wake
+# pulses. It is dropped so the usual reading can take its place.
+STANDBY_VERSION = 2
+# Ten minutes keeps a 1 Wh counter step under 6 W, and a wake pulse out of
+# most blocks. A 30 second poll is too short: one step would look like 120 W.
+STANDBY_BUCKET_SECONDS = 600
+# How far a block may sit above the quieter half and still be the continuous
+# draw. A kilowatt pulse in one block is well past this.
+PULSE_MARGIN_W = 12.0
+# Median of the plug's own watts once this many idle readings exist.
+MIN_POWER_SAMPLES = 5
+# A hole longer than this starts a new stretch, so a missed charge is not standby.
+MAX_IDLE_GAP_SECONDS = 2 * 3_600
 
 
 def energy_wh(hass: HomeAssistant, entity_id: str | None) -> float | None:
@@ -127,6 +154,85 @@ def _iso(moment: float) -> str:
     return datetime.fromtimestamp(moment, UTC).isoformat()
 
 
+def _median(values: list[float]) -> float:
+    """Return the middle value, or the mean of the two middle values."""
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _standby_pair(raw: object) -> tuple[float, float] | None:
+    """Return a stored standby pair that sits inside the published range."""
+    if not isinstance(raw, list) or len(raw) != 2:
+        return None
+    watts, at = (_finite_or_none(item) for item in raw)
+    if watts is None or at is None or not 0.0 <= watts <= MAX_STANDBY_W:
+        return None
+    return (watts, at)
+
+
+def _usable_plug_w(plug_w: float | None) -> float | None:
+    """Keep an import reading. Export and missing readings are not standby samples."""
+    if plug_w is None or not math.isfinite(plug_w) or plug_w < 0.0:
+        return None
+    return plug_w
+
+
+@dataclass(frozen=True)
+class _IdleSample:
+    at: float
+    energy_in_wh: float
+    energy_out_wh: float
+    plug_w: float | None
+
+
+def _bucket_rates(samples: list[_IdleSample]) -> list[float]:
+    """Return the watt rate of each block of at least ten minutes."""
+    rates: list[float] = []
+    start = 0
+    for index in range(1, len(samples)):
+        span = samples[index].at - samples[start].at
+        if span < STANDBY_BUCKET_SECONDS:
+            continue
+        hours = span / 3_600
+        delta = samples[index].energy_in_wh - samples[start].energy_in_wh
+        if hours > 0 and delta >= 0:
+            rates.append(delta / hours)
+        start = index
+    return rates
+
+
+def _continuous_rate(rates: list[float]) -> float | None:
+    """Return the mean of the blocks that sit with the quieter half.
+
+    That half is the continuous draw. A block that also holds a wake pulse or
+    a short charge sits well above it and is left out. With no pulses every
+    block is the same rate, so the mean is that rate.
+    """
+    if not rates:
+        return None
+    ordered = sorted(rates)
+    lower_count = max(1, (len(ordered) + 1) // 2)
+    anchor = _median(ordered[:lower_count])
+    ceiling = max(anchor * 2.0, anchor + PULSE_MARGIN_W)
+    # The quieter half is at or under the ceiling, so at least one block remains.
+    kept = [rate for rate in ordered if rate <= ceiling]
+    return sum(kept) / len(kept)
+
+
+def _typical_watts(samples: list[_IdleSample]) -> float | None:
+    """Return the usual idle watts, or None while the stretch is under three hours."""
+    if len(samples) < 2 or samples[-1].at - samples[0].at < MIN_IDLE_SECONDS:
+        return None
+    powers = [sample.plug_w for sample in samples if sample.plug_w is not None]
+    # The plug's own watts match its display. The counter is the fallback.
+    if len(powers) >= MIN_POWER_SAMPLES and len(powers) * 2 >= len(samples):
+        return _median(powers)
+    return _continuous_rate(_bucket_rates(samples))
+
+
 class PlugRoundTrip:
     """Round trip from a linked meter's cumulative energy-in and energy-out sensors."""
 
@@ -135,8 +241,7 @@ class PlugRoundTrip:
         self._meter = meter
         self._anchors: dict[int, _Reading] = {}
         self._measured: _Measurement | None = None
-        self._idle_start: _Reading | None = None
-        self._idle_last: _Reading | None = None
+        self._idle: list[_IdleSample] = []
         self._standby: tuple[float, float] | None = None
         self._dirty = False
 
@@ -153,11 +258,13 @@ class PlugRoundTrip:
                 if reading is not None and str(level).isdigit() and int(level) <= 100:
                     plug._anchors[int(level)] = reading
         plug._measured = _measurement_from(raw.get("measured"))
-        standby = raw.get("standby")
-        if isinstance(standby, list) and len(standby) == 2:
-            watts, at = (_finite_or_none(item) for item in standby)
-            if watts is not None and at is not None and 0.0 <= watts <= MAX_STANDBY_W:
-                plug._standby = (watts, at)
+        standby = _standby_pair(raw.get("standby"))
+        if standby is not None and raw.get("standby_version") == STANDBY_VERSION:
+            plug._standby = standby
+        elif standby is not None:
+            # The old number is an average. Drop it so the next idle stretch
+            # can publish the usual reading, and rewrite the file without it.
+            plug._dirty = True
         return plug
 
     def to_dict(self) -> dict[str, Any]:
@@ -166,6 +273,7 @@ class PlugRoundTrip:
             "meter": list(self._meter),
             "anchors": {str(level): asdict(reading) for level, reading in self._anchors.items()},
             "measured": None if self._measured is None else asdict(self._measured),
+            "standby_version": STANDBY_VERSION,
             "standby": None if self._standby is None else list(self._standby),
         }
 
@@ -205,32 +313,46 @@ class PlugRoundTrip:
         power_w: float | None,
         bypass_w: float,
         soc_corrected: bool = False,
+        plug_w: float | None = None,
     ) -> None:
-        """Fold one poll in. Missing values are skipped; the counters catch up later.
+        """Fold one poll in. Missing meter values are skipped; the counters catch up later.
 
         ``soc_corrected`` drops the level readings taken before this poll. The
-        standby stretch does not depend on state of charge and continues.
+        standby stretch does not depend on state of charge. Unknown battery
+        power leaves that stretch open instead of ending it. ``plug_w`` is the
+        plug's own power reading when the caller has one.
         """
         if bypass_w > BYPASS_W:
             self._restart()
             return
         if soc_corrected:
             self._anchors.clear()
-        if soc is None or energy_in_wh is None or energy_out_wh is None:
+        if energy_in_wh is None or energy_out_wh is None:
             return
         reading = _Reading(timestamp, energy_in_wh, energy_out_wh)
-        if any(
-            old.energy_in_wh > energy_in_wh or old.energy_out_wh > energy_out_wh
-            for old in [*self._anchors.values(), *filter(None, [self._idle_start])]
-        ):
+        if self._counters_reversed(reading):
             self._restart()
-        self._track_idle(reading, power_w is not None and abs(power_w) <= IDLE_W)
+        if power_w is not None:
+            self._track_idle(reading, abs(power_w) <= IDLE_W, plug_w)
+        if soc is None:
+            return
         level = round(soc)
         anchor = self._anchors.get(level)
         if anchor is None or timestamp - anchor.at > HORIZON_SECONDS:
             self._anchors[level] = reading
             return
         self._measure(anchor, reading, capacity_wh)
+
+    def _counters_reversed(self, reading: _Reading) -> bool:
+        """Return whether a stored reading is ahead of this one."""
+        held = list(self._anchors.values())
+        if self._idle:
+            first = self._idle[0]
+            held.append(_Reading(first.at, first.energy_in_wh, first.energy_out_wh))
+        return any(
+            old.energy_in_wh > reading.energy_in_wh or old.energy_out_wh > reading.energy_out_wh
+            for old in held
+        )
 
     def _measure(self, anchor: _Reading, reading: _Reading, capacity_wh: float | None) -> None:
         """Publish out/in since ``anchor`` once a full capacity went in."""
@@ -246,33 +368,57 @@ class PlugRoundTrip:
         self._measured = _Measurement(efficiency, anchor.at, reading.at, energy_in, energy_out)
         self._dirty = True
 
-    def _track_idle(self, reading: _Reading, idle: bool) -> None:
-        """Publish an idle stretch's standby watts when it ends, and daily while it lasts."""
-        start = self._idle_start
-        if idle and reading.energy_out_wh == (start or reading).energy_out_wh:
-            self._idle_start = start or reading
-            self._idle_last = reading
-            if self._standby is None or reading.at - self._standby[1] >= REFRESH_SECONDS:
-                self._publish_standby(self._idle_start, reading)
+    def _track_idle(self, reading: _Reading, idle: bool, plug_w: float | None) -> None:
+        """Publish an idle stretch's usual watts when it ends, and daily while it lasts."""
+        exporting = bool(self._idle) and reading.energy_out_wh != self._idle[0].energy_out_wh
+        gap = bool(self._idle) and reading.at - self._idle[-1].at > MAX_IDLE_GAP_SECONDS
+        if exporting or not idle or gap:
+            # A reported charge ends the stretch before this poll. Energy leaving
+            # the pack does too. A long hole ends it before this poll as well, so
+            # the missed energy stays out. This poll starts the next stretch only
+            # while the battery is idle again.
+            self._end_idle(reading if idle else None, plug_w)
             return
-        last = self._idle_last
-        self._idle_start = self._idle_last = reading if idle else None
-        if start is not None and last is not None:
-            self._publish_standby(start, last)
+        self._idle.append(
+            _IdleSample(
+                reading.at,
+                reading.energy_in_wh,
+                reading.energy_out_wh,
+                _usable_plug_w(plug_w),
+            )
+        )
+        if self._standby is None or reading.at - self._standby[1] >= REFRESH_SECONDS:
+            self._publish_standby(self._idle)
 
-    def _publish_standby(self, start: _Reading, last: _Reading) -> None:
-        """Keep energy in per hour over a long enough idle stretch."""
-        hours = (last.at - start.at) / 3_600
-        if hours * 3_600 < MIN_IDLE_SECONDS:
+    def _end_idle(self, restart_at: _Reading | None, plug_w: float | None) -> None:
+        """Publish the open stretch, then start a new one when this poll is still idle."""
+        samples = self._idle
+        self._idle = []
+        self._publish_standby(samples)
+        if restart_at is not None:
+            self._idle.append(
+                _IdleSample(
+                    restart_at.at,
+                    restart_at.energy_in_wh,
+                    restart_at.energy_out_wh,
+                    _usable_plug_w(plug_w),
+                )
+            )
+
+    def _publish_standby(self, samples: list[_IdleSample]) -> None:
+        """Keep the usual idle watts over a long enough stretch."""
+        watts = _typical_watts(samples)
+        if watts is None:
             return
-        watts = (last.energy_in_wh - start.energy_in_wh) / hours
-        if 0.0 <= watts <= MAX_STANDBY_W and self._standby != (watts, last.at):
-            self._standby = (watts, last.at)
+        rounded = round(watts, 1)
+        taken_at = samples[-1].at
+        if 0.0 <= rounded <= MAX_STANDBY_W and self._standby != (rounded, taken_at):
+            self._standby = (rounded, taken_at)
             self._dirty = True
 
     def _restart(self) -> None:
         """Forget the readings. The last published measurements stay."""
-        self._idle_start = self._idle_last = None
+        self._idle = []
         self._anchors.clear()
 
 
@@ -311,6 +457,7 @@ def apply_plug_round_trip(
         power_w=_finite_or_none(status.get("battery_power")) if fresh else None,
         bypass_w=max((abs(watts) for watts in bypass if watts is not None), default=0.0),
         soc_corrected=status.get(SOC_CORRECTED_KEY) is True,
+        plug_w=entity_power_w(hass, plug_power_entity(hass, energy_in_id)),
     )
     attributes = status.get(CAPACITY_ATTR_KEY)
     # The entity ids let the cards find the plug's live watts on the same device.

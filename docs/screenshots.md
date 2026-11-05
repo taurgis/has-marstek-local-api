@@ -116,7 +116,7 @@ After the next matching state of charge, the cards can show:
 
 - Live plug watts, in the card header and as **at the plug** on **Your batteries**.
 - Round-trip efficiency measured at the plug, standby included, written as what comes back from every 10 kWh charged.
-- Standby draw in watts and in kWh a day.
+- Standby draw: the usual plug reading while idle, in watts and in kWh a day at that rate. Wake pulses are not included.
 
 Details and the rules (both sensors, or neither) are in [Options](options.md#energy-meter-optional) and [Link a smart plug](usable-capacity.md#link-a-smart-plug).
 

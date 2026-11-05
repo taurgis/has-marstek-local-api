@@ -160,6 +160,14 @@ def _watts(state: State) -> float | None:
     return value if math.isfinite(value) else None
 
 
+def entity_power_w(hass: HomeAssistant, entity_id: str | None) -> float | None:
+    """Return a power sensor's state in watts, or None when it cannot be read."""
+    state = hass.states.get(entity_id) if entity_id else None
+    if state is None:
+        return None
+    return _watts(state)
+
+
 def async_track_boot_pulses(
     hass: HomeAssistant, power_entity_id: str, on_pulse: Callable[[float], None]
 ) -> CALLBACK_TYPE:
