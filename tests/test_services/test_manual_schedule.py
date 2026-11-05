@@ -627,7 +627,7 @@ async def test_set_manual_schedules_invalid_time_format(
         device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
-        with pytest.raises(HomeAssistantError) as err:
+        with pytest.raises(ServiceValidationError) as err:
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_MANUAL_SCHEDULES,
@@ -666,7 +666,7 @@ async def test_set_manual_schedules_invalid_time_range(
         device = async_lookup_device_by_identifier(device_registry, (DOMAIN, DEVICE_IDENTIFIER))
         assert device is not None
 
-        with pytest.raises(HomeAssistantError) as err:
+        with pytest.raises(ServiceValidationError) as err:
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_MANUAL_SCHEDULES,

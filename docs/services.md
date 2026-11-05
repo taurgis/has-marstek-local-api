@@ -102,7 +102,7 @@ data:
   duration: 300
 ```
 
-If you are pasting YAML, prefer the device picker in Developer Tools, or pass the battery entity ID / MAC instead of copying a truncated ID from a template.
+If you are pasting YAML, prefer the device picker in Developer tools, or pass the battery entity ID / MAC instead of copying a truncated ID from a template.
 
 Services are registered when Home Assistant starts and remain available even if
 no Marstek devices are currently loaded. If no matching device or config entry
@@ -249,6 +249,8 @@ In the Home Assistant service UI, the `schedules` field expects **only the YAML 
   power: 1200
   enable: true
 ```
+
+<a id="weekday-charge-evening-discharge"></a>
 
 #### 1) Weekday daytime charging (solar/top-up) + evening discharge (peak shaving)
 

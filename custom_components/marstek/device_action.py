@@ -12,7 +12,7 @@ from homeassistant.components.device_automation import (  # type: ignore[attr-de
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_HOST, CONF_PORT, CONF_TYPE
 from homeassistant.core import Context, HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.typing import ConfigType, TemplateVarsType
@@ -368,9 +368,9 @@ def _runtime_power_error(
     requested: int,
     min_power: int,
     max_power: int,
-) -> HomeAssistantError:
+) -> ServiceValidationError:
     """Build a power validation error for runtime action execution."""
-    return HomeAssistantError(
+    return ServiceValidationError(
         translation_domain=DOMAIN,
         translation_key="power_out_of_range",
         translation_placeholders={
@@ -387,7 +387,7 @@ def _validate_action_power_config(entry: ConfigEntry, power: int) -> None:
 
 
 def _validate_action_power_runtime(entry: ConfigEntry, power: int) -> None:
-    """Validate power during runtime execution (raises HomeAssistantError)."""
+    """Validate power during runtime execution (raises ServiceValidationError)."""
     validate_power_for_entry(entry, power, _runtime_power_error)
 
 

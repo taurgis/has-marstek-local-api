@@ -278,8 +278,8 @@ async def test_select_invalid_mode(hass: HomeAssistant, mock_config_entry):
 @pytest.mark.parametrize(
     "mode,expected_message_part",
     [
-        (MODE_PASSIVE, "Passive mode requires power and duration"),
-        (MODE_MANUAL, "Manual mode requires schedule configuration"),
+        (MODE_PASSIVE, "Passive mode needs a power and a duration"),
+        (MODE_MANUAL, "Manual mode needs a schedule"),
     ],
 )
 async def test_select_passive_manual_blocked(
@@ -573,8 +573,8 @@ async def test_auto_and_ai_remain_selectable_without_ups_profile(
 @pytest.mark.parametrize(
     ("mode", "expected_message_part"),
     [
-        (MODE_PASSIVE, "Passive mode requires power and duration"),
-        (MODE_MANUAL, "Manual mode requires schedule configuration"),
+        (MODE_PASSIVE, "Passive mode needs a power and a duration"),
+        (MODE_MANUAL, "Manual mode needs a schedule"),
     ],
 )
 async def test_manual_and_passive_remain_blocked_on_ups_capable_profile(

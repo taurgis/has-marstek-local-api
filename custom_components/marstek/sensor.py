@@ -24,6 +24,7 @@ from .helpers.sensor_descriptions import (
     SENSORS,
     MarstekSensorEntityDescription,
 )
+from .helpers.sensor_stats import COMMAND_STATS_ATTRIBUTES
 from .pymarstek.energy_guard import (
     ENERGY_TOTAL_KEYS,
     MAX_PLAUSIBLE_ENERGY_JUMP_WH,
@@ -63,9 +64,9 @@ class MarstekSensor(MarstekEntity, RestoreSensor, SensorEntity):
     """Representation of a Marstek sensor."""
 
     entity_description: MarstekSensorEntityDescription
-    # The usable-capacity and restart sensors expose lists for the Lovelace
-    # cards. The cards read the live state, so the recorder does not need them.
-    _unrecorded_attributes = CARD_ATTRIBUTES | RESTART_CARD_ATTRIBUTES
+    # Card lists and API success-rate counters change on every poll. The
+    # cards read the live state, so the recorder does not store them.
+    _unrecorded_attributes = CARD_ATTRIBUTES | RESTART_CARD_ATTRIBUTES | COMMAND_STATS_ATTRIBUTES
 
     def __init__(
         self,

@@ -6,6 +6,22 @@ from typing import Any
 
 from ..coordinator import MarstekDataUpdateCoordinator
 
+# These move on every poll. The percentage state is the history; the counters
+# are not. ``MarstekSensor`` lists this set in ``_unrecorded_attributes``.
+COMMAND_STATS_ATTRIBUTES = frozenset(
+    {
+        "total_attempts",
+        "total_success",
+        "total_timeouts",
+        "total_failures",
+        "last_success",
+        "last_timeout",
+        "last_error",
+        "last_latency",
+        "last_updated",
+    }
+)
+
 
 def command_success_rate(coordinator: MarstekDataUpdateCoordinator, method: str) -> float | None:
     """Return success rate for a command as a percentage."""

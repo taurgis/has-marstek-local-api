@@ -21,6 +21,22 @@ The table uses a few battery terms. Depth of discharge is how low the battery ma
 | Venus E 2.0 | <span class="mk-partial">Experimental</span> | Same HMG-50 board and the same features as Venus C on the same firmware. Support is community-tested. Home Assistant shows a repair warning and still adds the battery. |
 | Other Marstek devices with Open API | <span class="mk-partial">Maybe</span> | Treated as an unknown model and given only the safest features. Untested. |
 
+## What each model can do
+
+The integration reads the model and the firmware number and only creates the controls that firmware accepts. A cell is what a new install gets.
+
+| | Venus E 3.0 | Venus A | Venus D | Venus E mini | Venus C and Venus E 2.0 |
+|---|---|---|---|---|---|
+| Solar sensors | No | Yes | Yes, four inputs | No | No |
+| Grid meter power | Yes | Yes | Yes | Yes | From firmware 155 |
+| Depth of discharge, panel LED, Bluetooth | From firmware 150 | From firmware 150 | From firmware 150 | Any known firmware | From firmware 158 |
+| UPS mode | From firmware 150 | From firmware 150 | From firmware 150 | From firmware 150 (tested on 301) | No |
+| Passive mode | Yes | Yes | Yes | Yes, except firmware 301 | Yes |
+| Manual schedule slots | 0–9 | 0–9 | 0–9 | 0–5 | 0–9 |
+| Open API reset warning | Below firmware 150 | Below firmware 150 | Below firmware 150 | Below firmware 150, or an unknown number | Below firmware 156 |
+
+Venus C and Venus E 2.0 also share one Wi-Fi channel between Open API and the battery's own meter. [Read the caveat](#venus-c-caveat) before leaving Auto mode on.
+
 > [!TIP] How do I tell Venus E 2.0 from Venus E 3.0?
 > Check the model name in the Marstek app or on the label. Venus E 3.0 reports itself as `VenusE 3.0` or `VNSE3-0`. Venus E 2.0 reports `VenusE`. Adding a Venus E 2.0 shows a warning and continues. It does not become a Venus E 3.0.
 
