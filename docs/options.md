@@ -10,7 +10,7 @@ The battery never reports changes by itself, so the integration asks it for new 
 
 - **Fast polling interval** (default 30 s, range 10–300 s): operating mode, battery status and meter power. These change quickly.
 - **Medium polling interval** (default 60 s, range 30 s–24 h): solar panel data, on Venus A and Venus D.
-- **Slow polling interval** (default 300 s, range 60 s–24 h): Wi-Fi signal and battery details such as temperature.
+- **Slow polling interval** (default 300 s, range 60 s–24 h): Wi-Fi signal and battery details such as temperature. These requests are sent only while you have enabled a sensor that needs them.
 
 A shorter interval gives fresher values but sends more requests to the battery.
 

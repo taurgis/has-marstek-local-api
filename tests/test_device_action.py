@@ -208,9 +208,9 @@ async def test_device_action_power_out_of_range_socket_limit_default(hass, mock_
             CONF_TYPE: ACTION_DISCHARGE,
         }
 
-        from homeassistant.exceptions import HomeAssistantError
+        from homeassistant.exceptions import ServiceValidationError
 
-        with pytest.raises(HomeAssistantError, match="Requested power"):
+        with pytest.raises(ServiceValidationError, match="Requested power"):
             await async_call_action_from_config(hass, config, {}, None)
 
 
@@ -243,9 +243,9 @@ async def test_device_action_power_out_of_range_model_limit(hass, mock_config_en
             CONF_TYPE: ACTION_CHARGE,
         }
 
-        from homeassistant.exceptions import HomeAssistantError
+        from homeassistant.exceptions import ServiceValidationError
 
-        with pytest.raises(HomeAssistantError, match="Requested power"):
+        with pytest.raises(ServiceValidationError, match="Requested power"):
             await async_call_action_from_config(hass, config, {}, None)
 
 

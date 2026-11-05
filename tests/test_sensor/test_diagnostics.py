@@ -16,11 +16,13 @@ from custom_components.marstek.const import (
 from custom_components.marstek.device_info import get_device_identifier
 from custom_components.marstek.helpers.sensor_descriptions import _api_success_rate_sensor
 from custom_components.marstek.helpers.sensor_stats import (
+    COMMAND_STATS_ATTRIBUTES,
     command_stats_attributes,
     command_success_rate,
     overall_command_stats_attributes,
     overall_command_success_rate,
 )
+from custom_components.marstek.sensor import MarstekSensor
 from tests.conftest import create_mock_client, patch_marstek_integration
 
 
@@ -419,3 +421,34 @@ async def test_all_new_sensors_with_full_status(
         assert hass.states.get("sensor.venus_a_phase_a_power") is not None
         assert hass.states.get("sensor.venus_a_phase_b_power") is not None
         assert hass.states.get("sensor.venus_a_phase_c_power") is not None
+
+
+def test_api_success_counters_stay_out_of_the_recorder() -> None:
+    """Counters move on every poll, so history keeps the percentage only."""
+    coordinator = SimpleNamespace(
+        device_ip="10.0.0.8",
+        udp_client=SimpleNamespace(
+            get_command_stats_for_ip=lambda _ip: {
+                "ES.GetStatus": {
+                    "total_attempts": 4,
+                    "total_success": 3,
+                    "total_timeouts": 1,
+                    "total_failures": 0,
+                    "last_success": 1.0,
+                    "last_timeout": 2.0,
+                    "last_error": "timed out talking to 10.0.0.8",
+                    "last_latency": 0.2,
+                    "last_updated": 3.0,
+                }
+            }
+        ),
+    )
+    per_method = command_stats_attributes(coordinator, "ES.GetStatus")  # type: ignore[arg-type]
+    overall = overall_command_stats_attributes(coordinator)  # type: ignore[arg-type]
+    assert per_method is not None
+    assert overall is not None
+    unrecorded = MarstekSensor._Entity__combined_unrecorded_attributes  # type: ignore[attr-defined]
+    assert set(per_method) <= unrecorded
+    assert set(overall) <= unrecorded
+    assert set(per_method) <= COMMAND_STATS_ATTRIBUTES
+    assert "last_error" in per_method

@@ -84,7 +84,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the device",
+      "cannot_connect": "Unable to connect. Check the address and port, and that Open API is switched on in the Marstek app.",
       "discovery_failed": "Failed to discover devices. Please check your network connection and try again.",
       "invalid_discovery_info": "Invalid discovery information received from the device",
       "unique_id_mismatch": "The device at this address does not match the discovered device",
@@ -114,9 +114,9 @@
               "poll_interval_slow": "Slow polling interval"
             },
             "data_description": {
-              "poll_interval_fast": "Battery & power data (ES.GetMode, ES.GetStatus, EM.GetStatus)",
-              "poll_interval_medium": "Solar/PV data",
-              "poll_interval_slow": "WiFi signal and battery temperature"
+              "poll_interval_fast": "Battery level, power, operating mode, and grid power. Enter seconds (default 30).",
+              "poll_interval_medium": "Solar power, on Venus A and Venus D only. Enter seconds (default 60).",
+              "poll_interval_slow": "Wi-Fi signal and battery details, and only while a sensor that needs them is enabled. Enter seconds (default 300)."
             }
           },
           "network_settings": {
@@ -471,7 +471,7 @@
         },
         "schedule_slot": {
           "name": "Schedule slot",
-          "description": "Schedule slot number (0-9). Each slot can have independent settings."
+          "description": "Schedule slot. Venus A, C, D, and E use 0–9. Venus E mini uses 0–5. A higher slot is refused."
         },
         "start_time": {
           "name": "Start time",
@@ -577,10 +577,10 @@
       "message": "Schedule slot {requested} is outside the allowed range ({min} to {max}) for this device."
     },
     "passive_mode_requires_service": {
-      "message": "Passive mode requires power and duration parameters. Use the 'Set passive mode' service (marstek.set_passive_mode) in Developer Tools > Services or in an automation."
+      "message": "Passive mode needs a power and a duration. Use the Set passive mode action (marstek.set_passive_mode) under Developer tools > Actions, or in an automation."
     },
     "manual_mode_requires_service": {
-      "message": "Manual mode requires schedule configuration. Use the 'Set manual schedule' service (marstek.set_manual_schedule) in Developer Tools > Services or in an automation."
+      "message": "Manual mode needs a schedule. Use the Set manual schedule action (marstek.set_manual_schedule) under Developer tools > Actions, or in an automation."
     },
     "sys_write_timeout": {
       "message": "Timed out while changing the device setting"
@@ -629,7 +629,7 @@
           }
         },
         "error": {
-          "cannot_connect": "Unable to connect to the device",
+          "cannot_connect": "Unable to connect. Check the address and port, and that Open API is switched on in the Marstek app.",
           "invalid_discovery_info": "Invalid discovery information received from the device",
           "unique_id_mismatch": "The device at this address is a different device",
           "unsupported_device": "Venus E 2.0 support is experimental. Confirm the device to add it."

@@ -35,7 +35,11 @@
         }
       },
       "battery_power": {
-        "default": "mdi:battery-charging"
+        "default": "mdi:battery-charging",
+        "range": {
+          "0": "mdi:battery",
+          "1": "mdi:battery-minus"
+        }
       },
       "ongrid_power": {
         "default": "mdi:flash"
@@ -91,11 +95,20 @@
       "device_mode": {
         "default": "mdi:cog",
         "state": {
+          "auto": "mdi:home",
+          "ai": "mdi:robot",
+          "manual": "mdi:calendar-clock",
+          "passive": "mdi:timer-outline",
           "ups": "mdi:uninterruptible-power-supply"
         }
       },
       "battery_status": {
-        "default": "mdi:battery"
+        "default": "mdi:battery",
+        "state": {
+          "charging": "mdi:battery-charging",
+          "discharging": "mdi:battery-minus",
+          "idle": "mdi:battery"
+        }
       },
       "pv1_power": {
         "default": "mdi:solar-power"
@@ -107,7 +120,10 @@
         "default": "mdi:current-dc"
       },
       "pv1_state": {
-        "default": "mdi:state-machine"
+        "default": "mdi:solar-panel",
+        "range": {
+          "1": "mdi:solar-power"
+        }
       },
       "pv2_power": {
         "default": "mdi:solar-power"
@@ -119,7 +135,10 @@
         "default": "mdi:current-dc"
       },
       "pv2_state": {
-        "default": "mdi:state-machine"
+        "default": "mdi:solar-panel",
+        "range": {
+          "1": "mdi:solar-power"
+        }
       },
       "pv3_power": {
         "default": "mdi:solar-power"
@@ -131,7 +150,10 @@
         "default": "mdi:current-dc"
       },
       "pv3_state": {
-        "default": "mdi:state-machine"
+        "default": "mdi:solar-panel",
+        "range": {
+          "1": "mdi:solar-power"
+        }
       },
       "pv4_power": {
         "default": "mdi:solar-power"
@@ -143,7 +165,10 @@
         "default": "mdi:current-dc"
       },
       "pv4_state": {
-        "default": "mdi:state-machine"
+        "default": "mdi:solar-panel",
+        "range": {
+          "1": "mdi:solar-power"
+        }
       },
       "wifi_rssi": {
         "default": "mdi:wifi"

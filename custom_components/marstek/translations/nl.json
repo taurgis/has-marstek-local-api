@@ -84,7 +84,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Kan geen verbinding maken met het apparaat",
+      "cannot_connect": "Kan geen verbinding maken. Controleer het adres en de poort, en of Open API in de Marstek-app aan staat.",
       "discovery_failed": "Apparaten zoeken mislukt. Controleer je netwerkverbinding en probeer het opnieuw.",
       "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
       "unique_id_mismatch": "Het apparaat op dit adres komt niet overeen met het gevonden apparaat",
@@ -114,9 +114,9 @@
               "poll_interval_slow": "Langzaam opvraaginterval"
             },
             "data_description": {
-              "poll_interval_fast": "Batterij- en vermogensgegevens (ES.GetMode, ES.GetStatus, EM.GetStatus)",
-              "poll_interval_medium": "Zonne-/PV-gegevens",
-              "poll_interval_slow": "Wifi-signaal en batterijtemperatuur"
+              "poll_interval_fast": "Batterijniveau, vermogen, bedrijfsmodus en netvermogen. Vul seconden in (standaard 30).",
+              "poll_interval_medium": "Zonnevermogen, alleen bij Venus A en Venus D. Vul seconden in (standaard 60).",
+              "poll_interval_slow": "Wifisignaal en batterijdetails, en alleen zolang een sensor die ze nodig heeft is ingeschakeld. Vul seconden in (standaard 300)."
             }
           },
           "network_settings": {
@@ -471,7 +471,7 @@
         },
         "schedule_slot": {
           "name": "Schemaslot",
-          "description": "Nummer van het schemaslot (0-9). Elk slot kan eigen instellingen hebben."
+          "description": "Schemaslot. Venus A, C, D en E gebruiken 0–9. Venus E mini gebruikt 0–5. Een hoger slot wordt geweigerd."
         },
         "start_time": {
           "name": "Starttijd",
@@ -629,7 +629,7 @@
           }
         },
         "error": {
-          "cannot_connect": "Kan geen verbinding maken met het apparaat",
+          "cannot_connect": "Kan geen verbinding maken. Controleer het adres en de poort, en of Open API in de Marstek-app aan staat.",
           "invalid_discovery_info": "Ongeldige detectie-informatie ontvangen van het apparaat",
           "unique_id_mismatch": "Het apparaat op dit adres is een ander apparaat",
           "unsupported_device": "Ondersteuning voor Venus E 2.0 is experimenteel. Bevestig het apparaat om het toe te voegen."

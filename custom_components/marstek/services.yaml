@@ -44,7 +44,7 @@ set_manual_schedule:
           integration: marstek
     schedule_slot:
       name: Schedule Slot
-      description: Schedule slot number (0-9). Each slot can have independent settings.
+      description: Schedule slot. Venus A, C, D, and E use 0–9. Venus E mini uses 0–5. A higher slot is refused.
       required: false
       default: 0
       selector:

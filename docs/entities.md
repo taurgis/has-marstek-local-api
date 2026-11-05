@@ -81,7 +81,7 @@ kept out of the recorder).
 ### PV channel sensors (PV1 to PV4)
 
 These show each solar panel input separately. They are created on every Venus A and Venus D, for all four channels, even if a channel has no panel. Other models don't get them.
-Power values are in watts.
+Power values are in watts. **PV state** is `1` while that input is producing power and `0` when it is not. It follows that channel's power; the battery does not send a separate status.
 
 <details class="details custom-block">
 <summary>Technical details</summary>
@@ -133,6 +133,8 @@ These help when you troubleshoot: Wi-Fi signal and network details, battery temp
 | Wi‑Fi MAC | `wifi_mac` | — | Diagnostic | Disabled |
 | MAC address | `mac` | — | Diagnostic | Disabled |
 | API success rate (overall, and one per request type: ES.GetMode, ES.GetStatus, EM.GetStatus, PV.GetStatus, Wifi.GetStatus, Bat.GetStatus, ES.SetMode) | `api_success_rate_*` | % | Diagnostic | Disabled |
+
+The percentage is what history keeps. The attempt, timeout, and latency counters shown on the sensor change on every poll, so they are left out of the recorder.
 
 ## Battery low and charging
 

@@ -6,7 +6,7 @@ from datetime import time
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from ..const import DOMAIN, WEEKDAY_MAP
@@ -130,7 +130,7 @@ def normalize_time_value(value: time | str, field_name: str) -> str:
     try:
         return normalize_time_value_raw(value)
     except ValidationError as err:
-        raise HomeAssistantError(
+        raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="invalid_time_format",
             translation_placeholders={"field": field_name, "value": str(value)},
@@ -142,7 +142,7 @@ def validate_time_range(start: str, end: str) -> None:
     try:
         validate_time_range_raw(start, end)
     except ValidationError as err:
-        raise HomeAssistantError(
+        raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="invalid_time_range",
             translation_placeholders={"start": start, "end": end},

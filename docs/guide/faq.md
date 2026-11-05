@@ -49,7 +49,13 @@ No Marstek CT meter, but a P1 reading or another grid meter in Home Assistant? [
 
 ## Does it support peak shaving?
 
-Not yet. The Marstek app's **Peak shaving** (maximum grid import) setting is not part of the Open API on firmware 150 or 151, so no Open API integration can read or change it. Marstek only offers it through its cloud link ([MQTT](glossary.md#mqtt)) and Bluetooth. If a later firmware adds it, the integration will follow ([#122](https://github.com/taurgis/has-marstek-local-api/issues/122)).
+Not as a setting the battery enforces. The Marstek app's **Peak shaving** (maximum grid import) is not part of the Open API on firmware 150 or 151, so no Open API integration can read or change it. Marstek only offers it through its cloud link ([MQTT](glossary.md#mqtt)) and Bluetooth. If a later firmware adds it, the integration will follow ([#122](https://github.com/taurgis/has-marstek-local-api/issues/122)).
+
+You can still charge in the day and discharge in the evening with a manual schedule. That is a timetable, not a live cap on grid import, and it will not react as fast as Auto mode. The copy-paste example is [weekday charging and evening discharge](../services.md#weekday-charge-evening-discharge).
+
+## How do I get a notification when the battery is low?
+
+Use the **Battery low** sensor. Home Assistant's battery triggers list it under **Battery became low**. A ready-to-paste automation, including one that stays quiet while the battery is already charging, is in [Battery automations](../services.md#battery-automations). The trip level follows the discharge cutoff unless you set a fixed percentage under **Configure**.
 
 ## Does it work with more than one battery?
 
