@@ -164,5 +164,5 @@ The battery is in Home Assistant, on the Energy dashboard, and under automation 
 
 - **Entities show as unavailable.** Usually Wi-Fi or a battery restart. The integration keeps showing the last values until three update attempts in a row fail. [Why a battery goes offline](../firmware-resets.md) helps you tell the cases apart.
 - **A warning appears under Settings > System > Repairs.** Open it. Most warnings explain one thing to do, such as updating the battery firmware. See [Repairs](../repairs.md).
-- **The battery stopped answering after you changed something in the app.** Check that Open API is still on. Some firmware switches it off. See [troubleshooting](../troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults).
+- **The battery stopped answering after you changed something in the app.** Check that Open API is still on. Some firmware switches it off. See [troubleshooting](../troubleshooting.md#local-api-resets).
 - **Updating.** HACS shows an update when a new release is out. Install it and restart Home Assistant. After a battery firmware update you don't need to do anything: the integration picks up the new version within about 10 minutes.

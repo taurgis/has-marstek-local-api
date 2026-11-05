@@ -38,9 +38,10 @@ pytest tests/ -q --cov=custom_components/marstek --cov-fail-under=95
 
 ## Code quality gates
 
-The `Code Quality` workflow runs five static checks on every pull request and
-blocks the merge when any of them fails. All five are configured in
+The `Code Quality` workflow runs static checks on every pull request and
+blocks the merge when any of them fails. The Python checks are configured in
 `pyproject.toml` (plus `.jscpd.json`) so a local run and CI see the same rules.
+Frontend JavaScript is linted with ESLint (`npm run lint:js`).
 `requirements_quality.txt` pins every tool, ruff included, because `ruff format`
 output changes between releases. A floating version would make the formatting
 gate disagree with a local run.
@@ -59,11 +60,17 @@ python3 -m ruff format --check custom_components tests tools scripts
 # 3. File and function length ceilings
 python3 scripts/check_code_limits.py
 
-# 4. Unused code the linter cannot see
+# 4. Heading fragments that GitHub and VitePress would slug differently
+python3 scripts/check_markdown_anchors.py
+
+# 5. Unused code the linter cannot see
 python3 -m vulture
 
-# 5. Copy-paste detection
+# 6. Copy-paste detection
 jscpd
+
+# 7. Frontend card JavaScript (after npm ci)
+npm run lint:js
 ```
 
 What each one enforces:
@@ -75,8 +82,10 @@ What each one enforces:
 | ruff `ERA` | Commented-out code | any |
 | ruff `format --check` | Formatting drift | the formatter's own style at `line-length = 100` |
 | `scripts/check_code_limits.py` | Oversized modules and functions | 1000 lines per file, 200 per function |
+| `scripts/check_markdown_anchors.py` | Fragments that differ between GitHub and VitePress | explicit `<a id>` or a slug both renderers share |
 | vulture | Unreachable functions, unused attributes and variables | 80% confidence |
 | jscpd | Duplicated blocks | 0.5% of the codebase, 15 lines / 70 tokens per clone |
+| ESLint | Frontend JavaScript | `js/recommended`, 1400 lines per file |
 
 `scripts/check_code_limits.py` exists because ruff has no module-length rule
 and its closest function rule (`PLR0915`) counts statements rather than lines.

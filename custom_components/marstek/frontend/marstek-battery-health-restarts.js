@@ -52,7 +52,7 @@ function count(raw) {
 function offline(seconds) {
   const value = Number(seconds);
   if (!Number.isFinite(value) || value <= 0) return null;
-  return value < 120 ? `${Math.round(value)} s` : `${Math.round(value / 60)} min`;
+  return value < 120 ? `${Math.round(value)}\u00a0s` : `${Math.round(value / 60)}\u00a0min`;
 }
 
 function localDay(date) {

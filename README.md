@@ -95,7 +95,7 @@ Copy-paste YAML is in [Automations and services](docs/services.md).
 | Marstek app | **Open API** enabled |
 | UDP port | 30000 by default. The port is configurable per device in the Marstek app. Discovery also probes 30001–30004 and 30030 |
 
-> **Warning**: Venus **E 2.0** is not compatible. Polling it can disconnect the device from CT003.
+> **Warning**: Venus **E 2.0** support is experimental. Setup asks you to confirm before the battery is added, then Home Assistant shows a repair warning you can ignore. It uses the same feature gates as Venus C. Polling can disconnect the device from CT003, because the Local API and the meter share one Wi-Fi receive channel. See [troubleshooting](docs/troubleshooting.md#venus-e-20).
 
 > **Warning**: **Venus C** shares one Wi-Fi receive channel between the Local API and the device's own meter, so polling can stop Self-consumption (Auto) from charging on excess solar ([#82](https://github.com/taurgis/has-marstek-local-api/issues/82)). Use slow polling intervals, and read grid power from the meter directly if Auto mode stalls. See [troubleshooting](docs/troubleshooting.md#venus-c-stops-charging-from-excess-solar-in-auto-mode).
 

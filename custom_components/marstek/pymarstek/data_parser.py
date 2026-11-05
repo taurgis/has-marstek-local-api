@@ -161,6 +161,104 @@ def parse_es_mode_response(
     return parsed
 
 
+def _battery_capacity_fields(
+    result: dict[str, Any],
+    active_profile: FirmwareProfile,
+) -> tuple[Any, Any, dict[str, Any]]:
+    """Return SoC, pack capacity, and any remaining-energy fields.
+
+    ``bat_cap`` is watt-hours of pack size, except on firmware where it is
+    the energy still in the pack. A zero pack size is the BMS going silent.
+    """
+    bat_soc = result.get("bat_soc")
+    bat_cap = result.get("bat_cap")
+    remaining: dict[str, Any] = {}
+    if active_profile.es_bat_cap_is_remaining:
+        # Remaining energy, not the pack size: 0 is a drained pack, unless
+        # the SoC contradicts it.
+        if not (_is_zero(bat_cap) and _is_nonzero_number(bat_soc)):
+            remaining["bat_capacity"] = bat_cap
+        return bat_soc, None, remaining
+    if _is_zero(bat_cap):
+        # No battery pack has zero capacity: the BMS went silent (see
+        # _is_zero). Its SoC is the same placeholder when it reads 0 too.
+        if _is_zero(bat_soc):
+            bat_soc = None
+        return bat_soc, None, remaining
+    return bat_soc, bat_cap, remaining
+
+
+def _resolve_raw_battery_power(
+    result: dict[str, Any],
+    pv_power: Any,
+    ongrid_power: Any,
+    offgrid_power: Any,
+) -> tuple[Any, bool | None]:
+    """Return API-signed battery power and whether the AC balance supplied it.
+
+    None for the flag until a numeric battery power exists. False means the
+    device sent ``bat_power``. True means the AC balance. A malformed payload
+    stays None.
+    """
+    battery_power_derived: bool | None = None
+    if "bat_power" in result:
+        raw_bat_power = result.get("bat_power")
+        if not isinstance(raw_bat_power, (int, float)):
+            raw_bat_power = None
+    else:
+        raw_bat_power = None
+    if raw_bat_power is not None or "bat_power" in result:
+        return raw_bat_power, battery_power_derived
+    if (
+        isinstance(pv_power, (int, float))
+        and isinstance(ongrid_power, (int, float))
+        and (pv_power != 0 or ongrid_power != 0 or _is_nonzero_number(offgrid_power))
+    ):
+        # Fallback when API omits bat_power (Venus A/E devices).
+        # PV is DC charging power; ongrid and offgrid are the AC port.
+        return (
+            _fallback_raw_battery_power(pv_power, ongrid_power, offgrid_power),
+            True,
+        )
+    if (
+        isinstance(pv_power, (int, float))
+        and isinstance(ongrid_power, (int, float))
+        and isinstance(offgrid_power, (int, float))
+        and pv_power == 0
+        and ongrid_power == 0
+        and offgrid_power == 0
+    ):
+        # All reported flows are zero; treat as idle instead of keeping stale power.
+        _get_logger().debug(
+            "ES.GetStatus missing bat_power with zero flows; treating battery power as idle"
+        )
+        return 0, True
+    return raw_bat_power, battery_power_derived
+
+
+def _ha_battery_reading(
+    raw_bat_power: Any,
+    battery_power_derived: bool | None,
+) -> tuple[float | None, str | None, bool | None]:
+    """Return Home Assistant power, status, and the derived flag.
+
+    The Energy Dashboard uses positive for discharging and negative for
+    charging. The Open API uses the opposite sign, so a numeric reading is
+    negated. A device ``bat_power`` leaves the flag unset; the balance sets
+    it True.
+    """
+    if raw_bat_power is None:
+        return None, None, None
+    battery_power = -raw_bat_power
+    if battery_power > 0:
+        battery_status = "discharging"
+    elif battery_power < 0:
+        battery_status = "charging"
+    else:
+        battery_status = "idle"
+    return battery_power, battery_status, battery_power_derived is True
+
+
 def parse_es_status_response(
     response: dict[str, Any],
     profile: FirmwareProfile | None = None,
@@ -180,89 +278,22 @@ def parse_es_status_response(
     active_profile = profile or _LEGACY_PROFILE
 
     # ES.GetStatus fields per official API spec (docs/marstek_device_openapi.MD)
-    bat_soc = result.get("bat_soc")
-    bat_cap = result.get("bat_cap")  # Battery capacity in Wh
-    remaining: dict[str, Any] = {}
-    if active_profile.es_bat_cap_is_remaining:
-        # Remaining energy, not the pack size: 0 is a drained pack, unless
-        # the SoC contradicts it.
-        if not (_is_zero(bat_cap) and _is_nonzero_number(bat_soc)):
-            remaining["bat_capacity"] = bat_cap
-        bat_cap = None
-    elif _is_zero(bat_cap):
-        # No battery pack has zero capacity: the BMS went silent (see
-        # _is_zero). Its SoC is the same placeholder when it reads 0 too.
-        bat_cap = None
-        if _is_zero(bat_soc):
-            bat_soc = None
+    bat_soc, bat_cap, remaining = _battery_capacity_fields(result, active_profile)
     pv_power = result.get("pv_power")  # Solar power
     ongrid_power = result.get("ongrid_power")  # Grid power
     offgrid_power = _unwrap_uint16_power(result.get("offgrid_power"))
-    # None until a numeric battery power exists. False means the device sent
-    # bat_power; True means the AC balance. A malformed payload stays None.
-    battery_power_derived: bool | None = None
-    raw_bat_power: Any | None
-    if "bat_power" in result:
-        raw_bat_power = result.get("bat_power")
-        if not isinstance(raw_bat_power, (int, float)):
-            raw_bat_power = None
-    else:
-        raw_bat_power = None
-    if raw_bat_power is None and "bat_power" not in result:
-        if (
-            isinstance(pv_power, (int, float))
-            and isinstance(ongrid_power, (int, float))
-            and (pv_power != 0 or ongrid_power != 0 or _is_nonzero_number(offgrid_power))
-        ):
-            # Fallback when API omits bat_power (Venus A/E devices).
-            # PV is DC charging power; ongrid and offgrid are the AC port.
-            raw_bat_power = _fallback_raw_battery_power(pv_power, ongrid_power, offgrid_power)
-            battery_power_derived = True
-        elif (
-            isinstance(pv_power, (int, float))
-            and isinstance(ongrid_power, (int, float))
-            and isinstance(offgrid_power, (int, float))
-            and pv_power == 0
-            and ongrid_power == 0
-            and offgrid_power == 0
-        ):
-            # All reported flows are zero; treat as idle instead of keeping stale power.
-            raw_bat_power = 0
-            battery_power_derived = True
-            _get_logger().debug(
-                "ES.GetStatus missing bat_power with zero flows; treating battery power as idle"
-            )
-    battery_power: float | None
-    battery_status: str | None
-    if raw_bat_power is None:
-        battery_power = None
-        battery_status = None
-        battery_power_derived = None
-    else:
-        # A device bat_power leaves the flag unset; the balance sets it True.
-        battery_power_derived = battery_power_derived is True
-        # Convert to Home Assistant convention:
-        # HA Energy Dashboard expects: positive = DISCHARGING, negative = CHARGING
-        # API returns: positive = charging, negative = discharging
-        # So we negate the value to match HA convention
-        battery_power = -raw_bat_power
-
-        # Calculate battery_status from battery_power (HA convention)
-        # Positive = discharging (battery providing power)
-        # Negative = charging (battery receiving power)
-        if battery_power > 0:
-            battery_status = "discharging"
-        elif battery_power < 0:
-            battery_status = "charging"
-        else:
-            battery_status = "idle"
+    raw_bat_power, battery_power_derived = _resolve_raw_battery_power(
+        result,
+        pv_power,
+        ongrid_power,
+        offgrid_power,
+    )
+    battery_power, battery_status, battery_power_derived = _ha_battery_reading(
+        raw_bat_power,
+        battery_power_derived,
+    )
 
     # Energy totals. Solar energy uses the profile scale; grid/load stay Wh.
-    total_pv_energy = _scale_numeric(result.get("total_pv_energy"), active_profile.pv_energy_scale)
-    total_grid_output_energy = result.get("total_grid_output_energy")
-    total_grid_input_energy = result.get("total_grid_input_energy")
-    total_load_energy = result.get("total_load_energy")
-
     return {
         "battery_soc": bat_soc,
         "battery_power": battery_power,  # HA convention: positive = discharging
@@ -273,10 +304,12 @@ def parse_es_status_response(
         "offgrid_power": offgrid_power,
         "bat_cap": bat_cap,
         "pv_power": pv_power,
-        "total_pv_energy": total_pv_energy,
-        "total_grid_output_energy": total_grid_output_energy,
-        "total_grid_input_energy": total_grid_input_energy,
-        "total_load_energy": total_load_energy,
+        "total_pv_energy": _scale_numeric(
+            result.get("total_pv_energy"), active_profile.pv_energy_scale
+        ),
+        "total_grid_output_energy": result.get("total_grid_output_energy"),
+        "total_grid_input_energy": result.get("total_grid_input_energy"),
+        "total_load_energy": result.get("total_load_energy"),
         **remaining,
     }
 
@@ -691,6 +724,97 @@ def _stabilize_grid_energy_totals(
     _stabilize_total("total_grid_output_energy", export_delta_wh)
 
 
+def _blank_device_status() -> dict[str, Any]:
+    """Return a fresh status dict.
+
+    None leaves room for the previous poll when a request times out.
+    PV keys stay out until a device that has solar reports them. Venus A
+    and Venus D have PV; Venus C and Venus E do not.
+    """
+    return {
+        "battery_soc": None,
+        "battery_power": None,
+        "device_mode": None,
+        "battery_status": None,
+        "ongrid_power": None,
+        "offgrid_power": None,
+        "pv_power": None,
+        "bat_cap": None,
+        "total_pv_energy": None,
+        "total_grid_output_energy": None,
+        "total_grid_input_energy": None,
+        "total_load_energy": None,
+        # WiFi status defaults
+        "wifi_rssi": None,
+        "wifi_ssid": None,
+        # Energy meter / CT defaults
+        "ct_state": None,
+        "ct_connected": None,
+        "em_a_power": None,
+        "em_b_power": None,
+        "em_c_power": None,
+        "em_total_power": None,
+        # Battery details defaults
+        "bat_temp": None,
+        "bat_charg_flag": None,
+        "bat_dischrg_flag": None,
+        "bat_capacity": None,
+        "bat_rated_capacity": None,
+        "bat_soc_detailed": None,
+    }
+
+
+def _apply_present_values(status: dict[str, Any], updates: dict[str, Any]) -> None:
+    """Copy usable values from one parsed reply onto ``status``."""
+    for key, value in updates.items():
+        if value is None or _is_unusable_value(value):
+            continue
+        status[key] = value
+
+
+def _preserve_previous_status(
+    status: dict[str, Any],
+    previous_status: dict[str, Any],
+) -> None:
+    """Keep the last good poll where this cycle has no value yet."""
+    for key, value in previous_status.items():
+        extra_key = key not in status and (
+            key.startswith("pv") or key in {"em_input_energy", "em_output_energy"}
+        )
+        if (
+            value is not None
+            and not _is_unusable_value(value)
+            and key in status
+            and status[key] is None
+        ) or (extra_key and value is not None and not _is_unusable_value(value)):
+            status[key] = value
+
+
+def _apply_es_mode(status: dict[str, Any], es_mode_data: dict[str, Any]) -> None:
+    """Apply ES.GetMode, letting its meter fields fill gaps only.
+
+    Placeholder 0/0 meter energy is already removed in
+    ``parse_es_mode_response`` (issue #128). Non-zero GetMode energy may fill
+    a key EM.GetStatus did not answer; it must not clobber a last-known or
+    current EM value. ES.GetMode also cannot tell a drained pack from a
+    silent BMS, and its ``bat_soc`` is the first field to drop to 0 when the
+    BMS goes quiet. That zero is ignored; ES.GetStatus still reports a real 0.
+    """
+    mode_core = {
+        key: value for key, value in es_mode_data.items() if key not in _GETMODE_EM_FALLBACK_KEYS
+    }
+    if _is_zero(mode_core.get("battery_soc")):
+        mode_core.pop("battery_soc")
+    _apply_present_values(status, mode_core)
+    for key, value in es_mode_data.items():
+        if key not in _GETMODE_EM_FALLBACK_KEYS:
+            continue
+        if value is None or _is_unusable_value(value):
+            continue
+        if status.get(key) is None:
+            status[key] = value
+
+
 def merge_device_status(
     es_mode_data: dict[str, Any] | None = None,
     es_status_data: dict[str, Any] | None = None,
@@ -732,112 +856,30 @@ def merge_device_status(
     Returns:
         Complete device status dictionary
     """
-    # Start with defaults (None ensures previous values are preserved on timeouts)
-    # Note: PV keys are NOT included by default - only added when device supports PV
-    # Venus A and Venus D support PV; Venus C/E do NOT
-    status: dict[str, Any] = {
-        "battery_soc": None,
-        "battery_power": None,
-        "device_mode": None,
-        "battery_status": None,
-        "ongrid_power": None,
-        "offgrid_power": None,
-        "pv_power": None,
-        "bat_cap": None,
-        "total_pv_energy": None,
-        "total_grid_output_energy": None,
-        "total_grid_input_energy": None,
-        "total_load_energy": None,
-        # WiFi status defaults
-        "wifi_rssi": None,
-        "wifi_ssid": None,
-        # Energy meter / CT defaults
-        "ct_state": None,
-        "ct_connected": None,
-        "em_a_power": None,
-        "em_b_power": None,
-        "em_c_power": None,
-        "em_total_power": None,
-        # Battery details defaults
-        "bat_temp": None,
-        "bat_charg_flag": None,
-        "bat_dischrg_flag": None,
-        "bat_capacity": None,
-        "bat_rated_capacity": None,
-        "bat_soc_detailed": None,
-    }
-
-    def _apply_updates(updates: dict[str, Any]) -> None:
-        for key, value in updates.items():
-            if value is None or _is_unusable_value(value):
-                continue
-            status[key] = value
-
-    # Apply previous status first (lowest priority) to preserve values
-    # from last successful poll when individual requests fail
+    status = _blank_device_status()
     if previous_status:
-        # Only preserve non-None values from previous status
-        for key, value in previous_status.items():
-            extra_key = key not in status and (
-                key.startswith("pv") or key in {"em_input_energy", "em_output_energy"}
-            )
-            if (
-                value is not None
-                and not _is_unusable_value(value)
-                and key in status
-                and status[key] is None
-            ) or (extra_key and value is not None and not _is_unusable_value(value)):
-                status[key] = value
+        _preserve_previous_status(status, previous_status)
 
-    # Apply in order of priority (lowest to highest)
-    # PV data is ONLY included if pv_status_data is provided (Venus A/D devices only)
+    # Lowest priority first, so a later reply replaces an earlier one on the
+    # same key. PV data is included only when this poll has it.
     if pv_status_data:
-        _apply_updates(pv_status_data)
-
-    # Mode CT/power/energy fills gaps only. Placeholder 0/0 meter energy is
-    # already removed in parse_es_mode_response (issue #128). Non-zero GetMode
-    # energy may fill a key EM.GetStatus did not answer; it must not clobber
-    # a last-known or current EM value.
+        _apply_present_values(status, pv_status_data)
     if es_mode_data:
-        mode_core = {
-            key: value
-            for key, value in es_mode_data.items()
-            if key not in _GETMODE_EM_FALLBACK_KEYS
-        }
-        # ES.GetMode has no capacity to tell a drained pack from a silent BMS,
-        # and its bat_soc is the first field to drop to 0 when the BMS goes
-        # quiet. Its zero is ignored; ES.GetStatus still reports a real 0.
-        if _is_zero(mode_core.get("battery_soc")):
-            mode_core.pop("battery_soc")
-        _apply_updates(mode_core)
-        for key, value in es_mode_data.items():
-            if key not in _GETMODE_EM_FALLBACK_KEYS:
-                continue
-            if value is None or _is_unusable_value(value):
-                continue
-            if status.get(key) is None:
-                status[key] = value
-
+        _apply_es_mode(status, es_mode_data)
     if em_status_data:
-        _apply_updates(em_status_data)
-
+        _apply_present_values(status, em_status_data)
     if wifi_status_data:
-        _apply_updates(wifi_status_data)
-
+        _apply_present_values(status, wifi_status_data)
     if bat_status_data:
-        _apply_updates(bat_status_data)
-
-    # ES.GetStatus has highest priority for battery data
+        _apply_present_values(status, bat_status_data)
+    # ES.GetStatus has highest priority for battery data.
     if es_status_data:
-        _apply_updates(es_status_data)
-
-    # Recalculate pv_power and battery_power using PV channel data when
-    # ES.GetStatus returns incorrect pv_power (Venus A devices report pv_power=0
-    # in ES.GetStatus but individual channels from PV.GetStatus are correct).
-    # PV.GetStatus is a medium-tier read, so most polls carry no fresh
-    # channels; the ones kept from the previous poll still hold. Without them
-    # Venus A 148 firmware flips between charging and idle on every fast poll.
-    if es_status_data:
+        _apply_present_values(status, es_status_data)
+        # Venus A reports pv_power=0 in ES.GetStatus while PV.GetStatus
+        # channels are right. PV.GetStatus is a medium-tier read, so most
+        # polls carry no fresh channels; the ones kept from the previous
+        # poll still hold. Without them Venus A 148 flips between charging
+        # and idle on every fast poll.
         _recalculate_battery_from_pv(status, pv_status_data or status, es_status_data)
 
     energy_safe_previous = without_implausible_energy_totals(previous_status)
@@ -847,7 +889,6 @@ def merge_device_status(
 
     if device_ip:
         status["device_ip"] = device_ip
-
     if last_update is not None:
         status["last_update"] = last_update
 
@@ -859,5 +900,4 @@ def merge_device_status(
     # capacity estimator must not treat that pair as one measurement.
     # Set after the previous-status copy so an old True cannot leak through.
     status["es_status_fresh"] = es_status_data is not None
-
     return status

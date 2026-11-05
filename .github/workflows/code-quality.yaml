@@ -41,8 +41,23 @@ jobs:
       - name: File and function size limits
         run: python scripts/check_code_limits.py
 
+      - name: Markdown anchors
+        run: python scripts/check_markdown_anchors.py
+
       - name: Dead code
         run: python -m vulture
 
       - name: Duplicate code
         run: jscpd
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend lint tools
+        run: npm ci
+
+      - name: Lint frontend JavaScript
+        run: npm run lint:js

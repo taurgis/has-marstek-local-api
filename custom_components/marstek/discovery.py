@@ -278,6 +278,71 @@ def _discovery_sockets(
     return sockets, owned_sockets
 
 
+def _accept_discovery_datagram(
+    data: bytes,
+    sender_ip: str,
+    sender_port: int,
+    seen_ips: set[str],
+) -> tuple[dict[str, Any] | None, bool]:
+    """Return ``(device, was_echo)`` for one discovery datagram.
+
+    ``device`` is None when the datagram is skipped. A repeated address is
+    recorded in ``seen_ips`` only when the datagram becomes a device.
+    """
+    try:
+        response = json_loads_strict(data.decode("utf-8"))
+    except UnicodeDecodeError:
+        _LOGGER.debug("Invalid UTF-8 from %s:%d", sender_ip, sender_port)
+        return None, False
+    except json.JSONDecodeError:
+        _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
+        return None, False
+
+    if _is_echo_response(response):
+        _LOGGER.debug("Filtered echo from %s:%d", sender_ip, sender_port)
+        return None, True
+
+    if not _is_valid_device_response(response):
+        _LOGGER.debug(
+            "Invalid device response from %s:%d: %s",
+            sender_ip,
+            sender_port,
+            response,
+        )
+        return None, False
+
+    result = response["result"]
+    device_ip = _resolve_device_ip(result, sender_ip)
+    if device_ip in seen_ips:
+        _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
+        return None, False
+
+    src = non_empty_str(response.get("src"))
+    device = _build_device_info(result, device_ip, sender_port, src=src)
+    if get_unique_id_from_device_info(device) is None:
+        # No 6-octet MAC in the payload and none in ``src``, so this
+        # cannot become a config entry by any path. Offering it
+        # anyway put a phantom "Unknown vNone ()" row in the device
+        # picker that answered the user with invalid_discovery_info.
+        # Firmware that omits the MACs from ``result`` still carries
+        # the BLE MAC in ``src`` (issue #60), so this keeps those.
+        _LOGGER.debug(
+            "Ignoring reply without a device identity from %s:%d",
+            sender_ip,
+            sender_port,
+        )
+        return None, False
+
+    seen_ips.add(device_ip)
+    _LOGGER.debug(
+        "Discovered device: %s at %s (BLE MAC: %s)",
+        device["device_type"],
+        device["ip"],
+        device["ble_mac"],
+    )
+    return device, False
+
+
 async def discover_devices(
     timeout: float = DISCOVERY_TIMEOUT,
     port: int = DEFAULT_UDP_PORT,
@@ -383,62 +448,19 @@ async def discover_devices(
                     asyncio.ensure_future(loop.sock_recvfrom(sock, MAX_UDP_DATAGRAM_BYTES))
                 ] = (scan_port, sock)
 
-                sender_ip: str = addr[0]
+                sender_ip = str(addr[0])
                 sender_port = int(addr[1])
-
-                try:
-                    response = json_loads_strict(data.decode("utf-8"))
-                except UnicodeDecodeError:
-                    _LOGGER.debug("Invalid UTF-8 from %s:%d", sender_ip, sender_port)
-                    continue
-                except json.JSONDecodeError:
-                    _LOGGER.debug("Invalid JSON from %s:%d", sender_ip, sender_port)
-                    continue
-
-                if _is_echo_response(response):
-                    echoes_filtered += 1
-                    _LOGGER.debug("Filtered echo from %s:%d", sender_ip, sender_port)
-                    continue
-
-                if not _is_valid_device_response(response):
-                    _LOGGER.debug(
-                        "Invalid device response from %s:%d: %s",
-                        sender_ip,
-                        sender_port,
-                        response,
-                    )
-                    continue
-
-                result = response["result"]
-                device_ip = _resolve_device_ip(result, sender_ip)
-                if device_ip in seen_ips:
-                    _LOGGER.debug("Duplicate device at %s, skipping", device_ip)
-                    continue
-
-                src = non_empty_str(response.get("src"))
-                device = _build_device_info(result, device_ip, sender_port, src=src)
-                if get_unique_id_from_device_info(device) is None:
-                    # No 6-octet MAC in the payload and none in ``src``, so this
-                    # cannot become a config entry by any path. Offering it
-                    # anyway put a phantom "Unknown vNone ()" row in the device
-                    # picker that answered the user with invalid_discovery_info.
-                    # Firmware that omits the MACs from ``result`` still carries
-                    # the BLE MAC in ``src`` (issue #60), so this keeps those.
-                    _LOGGER.debug(
-                        "Ignoring reply without a device identity from %s:%d",
-                        sender_ip,
-                        sender_port,
-                    )
-                    continue
-
-                seen_ips.add(device_ip)
-                devices.append(device)
-                _LOGGER.debug(
-                    "Discovered device: %s at %s (BLE MAC: %s)",
-                    device["device_type"],
-                    device["ip"],
-                    device["ble_mac"],
+                device, was_echo = _accept_discovery_datagram(
+                    data,
+                    sender_ip,
+                    sender_port,
+                    seen_ips,
                 )
+                if was_echo:
+                    echoes_filtered += 1
+                    continue
+                if device is not None:
+                    devices.append(device)
     finally:
         for task in receivers:
             task.cancel()
@@ -454,6 +476,24 @@ async def discover_devices(
     )
 
     return devices
+
+
+def _device_from_query_payload(
+    data: bytes,
+    sender_ip: str,
+    host: str,
+    port: int,
+) -> dict[str, Any] | None:
+    """Return device info from one GetDevice datagram, or None when it is noise."""
+    try:
+        response = json_loads_strict(data.decode("utf-8"))
+    except UnicodeDecodeError:
+        _LOGGER.debug("Invalid UTF-8 from %s", sender_ip)
+        return None
+    except json.JSONDecodeError:
+        _LOGGER.debug("Invalid JSON from %s", sender_ip)
+        return None
+    return _device_info_from_response(response, host, port)
 
 
 def _query_failure_log(quiet: bool) -> Callable[..., None]:
@@ -603,16 +643,7 @@ async def get_device_info(
                     )
                     continue
 
-                try:
-                    response = json_loads_strict(data.decode("utf-8"))
-                except UnicodeDecodeError:
-                    _LOGGER.debug("Invalid UTF-8 from %s", sender_ip)
-                    continue
-                except json.JSONDecodeError:
-                    _LOGGER.debug("Invalid JSON from %s", sender_ip)
-                    continue
-
-                device = _device_info_from_response(response, host, port)
+                device = _device_from_query_payload(data, str(sender_ip), host, port)
                 if device is None:
                     continue
 

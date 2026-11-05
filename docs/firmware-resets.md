@@ -90,7 +90,7 @@ A poll is one round of questions Home Assistant asks the battery, every 30 secon
 1. Turn **Local API** back on in the Marstek app.
 2. Update the battery's firmware. Firmware 150 fixed the Ethernet problem behind this.
 
-[Troubleshooting](troubleshooting.md#local-api-disables-itself-settings-reset-to-defaults) lists which firmware versions are affected.
+[Troubleshooting](troubleshooting.md#local-api-resets) lists which firmware versions are affected.
 
 **What happens.** On some older firmware the battery reset part of its own settings after trouble with its network connection, and the Local API came back switched off. The battery keeps running but no longer answers Home Assistant.
 
