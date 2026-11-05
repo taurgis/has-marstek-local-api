@@ -186,7 +186,7 @@ def get_broadcast_addresses(
             import importlib
 
             psutil_module = importlib.import_module("psutil")
-        except Exception:
+        except ImportError:
             logger.debug("psutil not available, using only global broadcast")
             return list(addresses)
 
