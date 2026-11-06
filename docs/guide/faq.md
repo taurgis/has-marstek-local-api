@@ -57,6 +57,10 @@ You can still charge in the day and discharge in the evening with a manual sched
 
 Use the **Battery low** sensor. Home Assistant's battery triggers list it under **Battery became low**. A ready-to-paste automation, including one that stays quiet while the battery is already charging, is in [Battery automations](../services.md#battery-automations). The trip level follows the discharge cutoff unless you set a fixed percentage under **Configure**.
 
+## Can I show charging on the iPhone Lock Screen?
+
+Yes, with the Home Assistant Companion app. This integration does not send the notification. A paste-ready automation updates about every 5% while **Charging** is on, and removes the activity when charging stops. The same page has a discharge example. See [Lock Screen and Dynamic Island](../live-activities.md).
+
 ## Does it work with more than one battery?
 
 Yes. Add each battery separately. The Battery health dashboard shows them side by side.

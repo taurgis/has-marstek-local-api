@@ -7,6 +7,7 @@ export const pageDescriptions: Record<string, string> = {
   'screenshots.md': 'A screenshot walk-through of setup, the Battery health dashboard, the cards, automations, the Energy dashboard, and Repairs.',
   'energy_dashboard.md': 'Which Marstek sensors to add to the Home Assistant Energy dashboard, and why they report watt-hours.',
   'services.md': 'Charge, discharge, passive mode, and manual schedules from Home Assistant automations, with copy-paste YAML.',
+  'live-activities.md': 'Show Marstek charge and discharge progress on the iPhone Lock Screen, Dynamic Island, and Android Live Updates.',
   'usable-capacity.md': 'Estimate usable capacity and state of health for a Marstek battery, with an optional dashboard, cards, and a linked smart plug.',
   'options.md': 'Polling intervals, network timeouts, power limits, the Battery health dashboard, and the optional energy meter.',
   'entities.md': 'Every sensor, switch, number, and select the Marstek integration creates, including the ones that start disabled.',

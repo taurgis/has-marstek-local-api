@@ -149,7 +149,7 @@ These two sensors are what Home Assistant's [battery automations](https://www.ho
 
 **Charging** uses battery power. Positive power is discharging and negative power is charging. It turns on at −50 W or below, so idle noise around 0 W stays off, and it is unavailable while power is unknown.
 
-YAML for these sensors is in [Automations and services](services.md#battery-automations).
+YAML for these sensors is in [Automations and services](services.md#battery-automations). The same entities drive a Lock Screen progress bar in [Lock Screen and Dynamic Island](live-activities.md).
 
 ## Binary sensors (diagnostic, disabled by default)
 

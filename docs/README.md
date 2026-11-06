@@ -17,6 +17,7 @@ These pages follow a simple order: do a task, look up a fact, then read why it w
 - [Battery health dashboard and cards](usable-capacity.md) — turn on the sidebar page, add the cards, link a smart plug, and read **Still measuring**.
 - [Energy dashboard](energy_dashboard.md) — which sensors belong on Home Assistant's Energy dashboard.
 - [Automations and services](services.md) — operating mode, Charge / Discharge / Stop, passive mode, and manual schedules.
+- [Lock Screen and Dynamic Island](live-activities.md) — Companion Live Activity and Android Live Update examples for charge and discharge.
 - [Options](options.md) — polling, network, power, the Battery health dashboard, and the energy meter.
 
 ## Reference and troubleshooting

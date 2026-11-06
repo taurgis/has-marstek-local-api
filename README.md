@@ -117,7 +117,7 @@ Ranges, firmware gates, and screenshots are in [Options](docs/options.md).
 - [Documentation index](docs/README.md). Every page, grouped by what you are trying to do.
 - [Visual tour](docs/screenshots.md)
 - [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Options](docs/options.md)
-- [Battery health](docs/usable-capacity.md) · [Energy dashboard](docs/energy_dashboard.md) · [Automations and services](docs/services.md)
+- [Battery health](docs/usable-capacity.md) · [Energy dashboard](docs/energy_dashboard.md) · [Automations and services](docs/services.md) · [Lock Screen and Dynamic Island](docs/live-activities.md)
 - [Entities](docs/entities.md) · [Repairs](docs/repairs.md) · [Troubleshooting](docs/troubleshooting.md)
 - [Why a battery goes offline](docs/firmware-resets.md): restarts, network resets, and dropouts in plain language
 
@@ -156,6 +156,96 @@ Every service targets a device with `device_id`, except `marstek.request_data_sy
 | `marstek.request_data_sync` | Refresh now. |
 
 **Charge**, **Discharge**, and **Stop** are also device actions in the automation editor. Parameters, YAML examples, and the screenshots are in [Automations and services](docs/services.md).
+
+### Lock Screen and Dynamic Island
+
+A Live Activity is a [Companion app notification](https://companion.home-assistant.io/docs/notifications/live-activities/), not a feature of this integration. The automation below starts when **Charging** turns on, updates when **Battery level** enters a new 5% band, and clears when charging stops. It does not run on every poll.
+
+Replace `<battery>` with the entity-id prefix from the device name, including inside `tag`. A Venus E 3.0 named **Venus E (3.0)** uses `venus_e_3_0`. Replace `notify.mobile_app_<your_device_id_here>` with your phone's notify action. The entities are **Charging** (`binary_sensor.<battery>_charging`), **Battery level** (`sensor.<battery>_battery_level`), and **Battery power** (`sensor.<battery>_battery_power`).
+
+```yaml
+alias: Marstek charging on the Lock Screen
+description: Live Activity while the battery charges. Updates about every 5%.
+mode: queued
+max: 10
+triggers:
+  - trigger: state
+    id: started
+    entity_id: binary_sensor.<battery>_charging
+    to: "on"
+    not_from: "on"
+  - trigger: state
+    id: level
+    entity_id: sensor.<battery>_battery_level
+  - trigger: state
+    id: stopped
+    entity_id: binary_sensor.<battery>_charging
+    from: "on"
+    to: "off"
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: stopped
+        sequence:
+          - action: notify.mobile_app_<your_device_id_here>
+            data:
+              message: clear_notification
+              data:
+                tag: marstek_<battery>_charging
+      - conditions:
+          - condition: trigger
+            id: level
+          - condition: state
+            entity_id: binary_sensor.<battery>_charging
+            state: "on"
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state is not none
+                 and trigger.to_state.state | is_number
+                 and trigger.from_state.state | is_number
+                 and (trigger.to_state.state | int // 5)
+                    != (trigger.from_state.state | int // 5) }}
+        sequence:
+          - action: notify.mobile_app_<your_device_id_here>
+            data:
+              title: Marstek
+              message: >-
+                Charging at {{ states('sensor.<battery>_battery_power') | float(0) | abs | round(0) }} W
+                · {{ states('sensor.<battery>_battery_level') | int(0) }}%
+              data:
+                tag: marstek_<battery>_charging
+                live_update: true
+                silent: true
+                alert_once: true
+                critical_text: "{{ states('sensor.<battery>_battery_level') | int(0) }}%"
+                progress: "{{ states('sensor.<battery>_battery_level') | int(0) }}"
+                progress_max: 100
+                notification_icon: "mdi:battery-charging"
+                notification_icon_color: "#4CAF50"
+                color: "#4CAF50"
+      - conditions:
+          - condition: trigger
+            id: started
+        sequence:
+          - action: notify.mobile_app_<your_device_id_here>
+            data:
+              title: Marstek
+              message: >-
+                Charging at {{ states('sensor.<battery>_battery_power') | float(0) | abs | round(0) }} W
+                · {{ states('sensor.<battery>_battery_level') | int(0) }}%
+              data:
+                tag: marstek_<battery>_charging
+                live_update: true
+                critical_text: "{{ states('sensor.<battery>_battery_level') | int(0) }}%"
+                progress: "{{ states('sensor.<battery>_battery_level') | int(0) }}"
+                progress_max: 100
+                notification_icon: "mdi:battery-charging"
+                notification_icon_color: "#4CAF50"
+                color: "#4CAF50"
+```
+
+Requirements, a discharge example, and the iOS update limits are on [Lock Screen and Dynamic Island](https://marstek.rhino-inquisitor.com/live-activities).
 
 ## Battery health (optional)
 
