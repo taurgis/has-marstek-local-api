@@ -2,7 +2,7 @@
 
 A [Live Activity](https://companion.home-assistant.io/docs/notifications/live-activities/) (iPhone Lock Screen and Dynamic Island) and an Android Live Update are notifications from the Home Assistant Companion app. This integration does not send them. An automation calls your phone's `notify.mobile_app_<your_device_id_here>` action with `live_update: true` and a stable `tag`. The same tag updates the activity in place. `clear_notification` with that tag ends it.
 
-The examples below use this integration's sensors. Replace every `<battery>` with the entity-id prefix from the device name, including the one inside `tag`. A Venus E 3.0 is named **Venus E (3.0)** and uses the prefix `venus_e_3_0`, so Battery level is `sensor.venus_e_3_0_battery_level`. A device you renamed uses that name instead. Read **Entity ID** on the entity before pasting.
+The examples below use this integration's sensors. Copy each entity's **Entity ID** from **Settings → Devices & services → Entities** (open the entity, then the settings control). Home Assistant [keeps the ID it assigned when that entity was created](https://www.home-assistant.io/docs/configuration/customizing-entities/). After a rename or an area change, the entities on one battery can use different prefixes. On one install, Charging was `binary_sensor.attic_utility_room_venus_e_3_0_charging` while Battery level and Battery power stayed `sensor.marstek_venuse_3_0_v145_battery_level` and `sensor.marstek_venuse_3_0_v145_battery_power`. The examples use one `<battery>` placeholder, including inside `tag`, only when every entity still shares that prefix. A Venus E 3.0 that still shares one prefix is often `venus_e_3_0`, so Battery level is `sensor.venus_e_3_0_battery_level`. When the IDs differ, paste each one on its own. `tag` is a label you keep the same for the start, the update, and the clear.
 
 | Entity | Entity ID | Use it for |
 |---|---|---|
@@ -12,7 +12,7 @@ The examples below use this integration's sensors. Replace every `<battery>` wit
 | **Battery status** | `sensor.<battery>_battery_status` | `charging`, `discharging`, or `idle` |
 | **Battery low** | `binary_sensor.<battery>_battery_low` | On at the low-battery trip level |
 
-Find the phone's notify action under **Settings → Companion app → Server & devices** in the Companion app. There is one per server. You can paste a payload into **Developer tools → Actions** before you build the automation.
+The `action:` line is the [Companion notify action](https://companion.home-assistant.io/docs/notifications/notifications-basic/) from **Developer tools → Actions**. Search for `notify.mobile_app` and pick the matching phone, for example `notify.mobile_app_thomass_iphone_13_pro`. A name such as `notify.thomass_iphone_13_pro_2` is a [notify entity](https://www.home-assistant.io/integrations/notify/). Using that entity as the action, or a suffix such as `_2` or `_kiosk` that the action list does not show, fails with Unknown action. The Companion app lists the same device under **Settings → Companion app → Server & devices**. There is one per server. You can paste a payload into **Developer tools → Actions** before you build the automation.
 
 ## What you need
 
@@ -45,6 +45,7 @@ This starts when **Charging** turns on, refreshes when **Battery level** enters 
 The message shows charging power as a positive number of watts. The sensor itself is negative while charging.
 
 ```yaml
+# Confirm each entity_id in the UI. One <battery> prefix fits only when they still match.
 alias: Marstek charging on the Lock Screen
 description: Live Activity while the battery charges. Updates about every 5%.
 mode: queued
@@ -135,6 +136,7 @@ There is no discharging binary sensor. **Battery status** becomes `discharging` 
 If power hovers around 50 W, add `for: "00:01:00"` to the start and stop triggers so a short spike does not count.
 
 ```yaml
+# Confirm each entity_id in the UI. One <battery> prefix fits only when they still match.
 alias: Marstek discharge on the Lock Screen
 description: Live Activity while the battery discharges. Updates about every 5%.
 mode: queued
