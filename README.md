@@ -161,9 +161,10 @@ Every service targets a device with `device_id`, except `marstek.request_data_sy
 
 A Live Activity is a [Companion app notification](https://companion.home-assistant.io/docs/notifications/live-activities/), not a feature of this integration. The automation below starts when **Charging** turns on, updates when **Battery level** enters a new 5% band, and clears when charging stops. It does not run on every poll.
 
-Replace `<battery>` with the entity-id prefix from the device name, including inside `tag`. A Venus E 3.0 named **Venus E (3.0)** uses `venus_e_3_0`. Replace `notify.mobile_app_<your_device_id_here>` with your phone's notify action. The entities are **Charging** (`binary_sensor.<battery>_charging`), **Battery level** (`sensor.<battery>_battery_level`), and **Battery power** (`sensor.<battery>_battery_power`).
+Copy each **Entity ID** from the entity page. After a rename or an area change, the entities on one battery can use different prefixes, so the single `<battery>` placeholder fits only when **Charging**, **Battery level**, and **Battery power** still share it. On one install, Charging was `binary_sensor.attic_utility_room_venus_e_3_0_charging` while Battery level and Battery power stayed `sensor.marstek_venuse_3_0_v145_battery_level` and `sensor.marstek_venuse_3_0_v145_battery_power`. When they still share a prefix, a Venus E 3.0 named **Venus E (3.0)** is often `venus_e_3_0`. The `action:` line is the Companion action from **Developer tools → Actions**: search for `notify.mobile_app` and pick the phone, for example `notify.mobile_app_thomass_iphone_13_pro`. A name such as `notify.thomass_iphone_13_pro_2` is a notify entity. Using that entity, or a suffix such as `_2` or `_kiosk` that the list does not show, fails with Unknown action.
 
 ```yaml
+# Confirm each entity_id in the UI. One <battery> prefix fits only when they still match.
 alias: Marstek charging on the Lock Screen
 description: Live Activity while the battery charges. Updates about every 5%.
 mode: queued
