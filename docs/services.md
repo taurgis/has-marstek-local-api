@@ -124,6 +124,8 @@ Home Assistant 2026.4 and newer has [battery triggers and conditions](https://ww
 
 Replace `<battery>` with the entity-id prefix from the device name, for example `venus_e_3_0`.
 
+A Lock Screen or Dynamic Island progress bar is a Companion app notification, not a Marstek action. Paste-ready automations for charging and discharging are in [Lock Screen and Dynamic Island](live-activities.md).
+
 Notify when the pack becomes low, but only if it is not already charging:
 
 ```yaml

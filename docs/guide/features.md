@@ -64,5 +64,6 @@ The estimate adds no traffic to the battery. The sidebar dashboard and smart-plu
 - **Peak shaving.** Some tariffs charge for your highest power peak. Per-phase grid power lets an automation discharge the battery before the house sets a new peak.
 - **Make room for an EV or heat pump.** Stop discharging while the car charges.
 - **Alerts without a cloud.** **Battery is low**, **Battery is charging**, and **Battery level** in the automation editor, plus temperature and Wi-Fi, even when Marstek's servers are down. [Automations and services](../services.md#battery-automations)
+- **Lock Screen and Dynamic Island.** An automation can show charge or discharge progress on your phone. The Companion app sends it. [Lock Screen and Dynamic Island](../live-activities.md)
 
 Ready? [Check your battery](supported-devices.md), then follow [Getting started](getting-started.md).

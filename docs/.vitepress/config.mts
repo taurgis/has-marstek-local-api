@@ -126,7 +126,7 @@ export default defineConfig({
         link: '/guide/getting-started',
         activeMatch: '^/guide/(introduction|supported-devices|before-you-start|getting-started|features|limitations)',
       },
-      { text: 'Use it', link: '/services', activeMatch: '^/(services|energy_dashboard|usable-capacity|screenshots)' },
+      { text: 'Use it', link: '/services', activeMatch: '^/(services|energy_dashboard|usable-capacity|screenshots|live-activities)' },
       {
         text: 'Reference',
         link: '/entities',
@@ -160,6 +160,7 @@ export default defineConfig({
           { text: 'Visual tour', link: '/screenshots' },
           { text: 'Energy dashboard', link: '/energy_dashboard' },
           { text: 'Automations and services', link: '/services' },
+          { text: 'Lock Screen', link: '/live-activities' },
           { text: 'Battery health', link: '/usable-capacity' },
         ],
       },
