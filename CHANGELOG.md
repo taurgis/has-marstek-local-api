@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.3
+
+### Patch Changes
+
+- cb2d3c8: Allow every polling interval to be set as low as 5 seconds.
+- febbb9c: Document Companion Live Activity automations for charge progress and a discharge session, and note that each entity ID and the phone's notify.mobile_app action are copied from the UI.
+
 ## 1.13.2
 
 ### Patch Changes
