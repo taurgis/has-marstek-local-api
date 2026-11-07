@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -9,7 +10,11 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.marstek.const import (
     CONF_PARALLEL_API_REQUESTS,
+    CONF_POLL_INTERVAL_FAST,
+    CONF_POLL_INTERVAL_MEDIUM,
+    CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
+    DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_REQUEST_DELAY,
     INITIAL_SETUP_REQUEST_DELAY,
 )
@@ -32,6 +37,7 @@ async def test_coordinator_init(hass: HomeAssistant, mock_config_entry, mock_udp
     assert coordinator.udp_client is mock_udp_client
     assert coordinator.config_entry is mock_config_entry
     assert coordinator.name == "Marstek 1.2.3.4"
+    assert coordinator.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL_FAST)
 
 
 @pytest.mark.asyncio
@@ -296,3 +302,35 @@ async def test_coordinator_polling_paused_returns_empty_dict_when_no_cache(
 
     assert data == {}
     mock_udp_client.get_device_status.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_five_second_fast_interval_does_not_close_the_request_gap(
+    hass: HomeAssistant, mock_config_entry, mock_udp_client
+) -> None:
+    """Five seconds is the wait after a poll. Requests inside the poll stay spaced."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            CONF_POLL_INTERVAL_FAST: 5,
+            CONF_POLL_INTERVAL_MEDIUM: 5,
+            CONF_POLL_INTERVAL_SLOW: 5,
+        },
+    )
+
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        mock_config_entry,
+        mock_udp_client,
+        "1.2.3.4",
+    )
+
+    assert coordinator.update_interval == timedelta(seconds=5)
+    assert coordinator._get_medium_interval() == 5
+    assert coordinator._get_slow_interval() == 5
+    await coordinator._async_update_data()
+
+    kwargs = mock_udp_client.get_device_status.call_args.kwargs
+    assert kwargs["delay_between_requests"] == DEFAULT_REQUEST_DELAY
+    assert kwargs["parallel_requests"] is False

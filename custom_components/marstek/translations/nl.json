@@ -114,9 +114,9 @@
               "poll_interval_slow": "Langzaam opvraaginterval"
             },
             "data_description": {
-              "poll_interval_fast": "Batterijniveau, vermogen, bedrijfsmodus en netvermogen. Vul seconden in (standaard 30).",
-              "poll_interval_medium": "Zonnevermogen, alleen bij Venus A en Venus D. Vul seconden in (standaard 60).",
-              "poll_interval_slow": "Wifisignaal en batterijdetails, en alleen zolang een sensor die ze nodig heeft is ingeschakeld. Vul seconden in (standaard 300)."
+              "poll_interval_fast": "Batterijniveau, vermogen, bedrijfsmodus en netvermogen. Vul seconden in (5–300, standaard 30).",
+              "poll_interval_medium": "Zonnevermogen, alleen bij Venus A en Venus D. Vul seconden in (5–86400, standaard 60).",
+              "poll_interval_slow": "Wifisignaal en batterijdetails, en alleen zolang een sensor die ze nodig heeft is ingeschakeld. Vul seconden in (5–86400, standaard 300)."
             }
           },
           "network_settings": {

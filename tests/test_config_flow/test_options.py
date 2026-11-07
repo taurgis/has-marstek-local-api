@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
+import pytest
+import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -37,6 +40,10 @@ from custom_components.marstek.const import (
     DEFAULT_POLL_INTERVAL_SLOW,
     DEFAULT_REQUEST_DELAY,
     DEFAULT_REQUEST_TIMEOUT,
+)
+from custom_components.marstek.helpers.flow_schemas import (
+    build_network_schema,
+    build_polling_schema,
 )
 from tests.conftest import (
     create_mock_client,
@@ -350,3 +357,110 @@ async def test_options_flow_stores_battery_low_level(
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_BATTERY_LOW_FOLLOW_CUTOFF] is False
     assert result["data"][CONF_BATTERY_LOW_SOC] == 12
+
+
+def _selector_config(schema: vol.Schema, field: str) -> dict[str, Any]:
+    """Return the number-selector config for one options field."""
+    key = next(marker for marker in schema.schema if getattr(marker, "schema", None) == field)
+    config = schema.schema[key].config
+    assert isinstance(config, dict)
+    return config
+
+
+def test_every_polling_interval_accepts_five_seconds() -> None:
+    """Fast, medium and slow can be 5 seconds. Request delay keeps its own floor."""
+    polling = build_polling_schema(
+        current_fast=DEFAULT_POLL_INTERVAL_FAST,
+        current_medium=DEFAULT_POLL_INTERVAL_MEDIUM,
+        current_slow=DEFAULT_POLL_INTERVAL_SLOW,
+    )
+    expected = {
+        CONF_POLL_INTERVAL_FAST: (5, 300, DEFAULT_POLL_INTERVAL_FAST),
+        CONF_POLL_INTERVAL_MEDIUM: (5, 86400, DEFAULT_POLL_INTERVAL_MEDIUM),
+        CONF_POLL_INTERVAL_SLOW: (5, 86400, DEFAULT_POLL_INTERVAL_SLOW),
+    }
+    for field, (lower, upper, default) in expected.items():
+        config = _selector_config(polling, field)
+        assert config["min"] == lower
+        assert config["max"] == upper
+        assert config["step"] == 5
+        marker = next(item for item in polling.schema if getattr(item, "schema", None) == field)
+        assert marker.default() == default
+
+    accepted = polling(
+        {
+            CONF_POLL_INTERVAL_FAST: 5,
+            CONF_POLL_INTERVAL_MEDIUM: 5,
+            CONF_POLL_INTERVAL_SLOW: 5,
+        }
+    )
+    assert accepted[CONF_POLL_INTERVAL_FAST] == 5
+    assert accepted[CONF_POLL_INTERVAL_MEDIUM] == 5
+    assert accepted[CONF_POLL_INTERVAL_SLOW] == 5
+
+    for field in expected:
+        too_low = {
+            CONF_POLL_INTERVAL_FAST: 5,
+            CONF_POLL_INTERVAL_MEDIUM: 5,
+            CONF_POLL_INTERVAL_SLOW: 5,
+            field: 4,
+        }
+        with pytest.raises(vol.Invalid):
+            polling(too_low)
+
+    network = build_network_schema(
+        current_parallel_requests=DEFAULT_PARALLEL_API_REQUESTS,
+        current_delay=DEFAULT_REQUEST_DELAY,
+        current_timeout=DEFAULT_REQUEST_TIMEOUT,
+        current_failure_threshold=DEFAULT_FAILURE_THRESHOLD,
+    )
+    delay = _selector_config(network, CONF_REQUEST_DELAY)
+    assert delay["min"] == 1.0
+    assert delay["max"] == 30.0
+
+
+async def test_options_flow_saves_five_second_polls_and_uses_them(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Saved 5 second intervals reload onto the coordinator and leave request spacing."""
+    mock_config_entry.add_to_hass(hass)
+    client = create_mock_client()
+    with patch_marstek_integration(client=client):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        coordinator = mock_config_entry.runtime_data.coordinator
+        assert coordinator.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL_FAST)
+        assert coordinator._get_medium_interval() == DEFAULT_POLL_INTERVAL_MEDIUM
+        assert coordinator._get_slow_interval() == DEFAULT_POLL_INTERVAL_SLOW
+
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+        for field in (
+            CONF_POLL_INTERVAL_FAST,
+            CONF_POLL_INTERVAL_MEDIUM,
+            CONF_POLL_INTERVAL_SLOW,
+        ):
+            rejected = _options_user_input()
+            rejected["polling_settings"][field] = 4
+            with pytest.raises(vol.Invalid):
+                await hass.config_entries.options.async_configure(result["flow_id"], rejected)
+            assert field not in mock_config_entry.options
+
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+        accepted = _options_user_input()
+        accepted["polling_settings"][CONF_POLL_INTERVAL_FAST] = 5
+        accepted["polling_settings"][CONF_POLL_INTERVAL_MEDIUM] = 5
+        accepted["polling_settings"][CONF_POLL_INTERVAL_SLOW] = 5
+        result = await hass.config_entries.options.async_configure(result["flow_id"], accepted)
+        await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_POLL_INTERVAL_FAST] == 5
+    assert result["data"][CONF_POLL_INTERVAL_MEDIUM] == 5
+    assert result["data"][CONF_POLL_INTERVAL_SLOW] == 5
+    assert result["data"][CONF_REQUEST_DELAY] == DEFAULT_REQUEST_DELAY
+    assert result["data"][CONF_PARALLEL_API_REQUESTS] is DEFAULT_PARALLEL_API_REQUESTS
+    coordinator = mock_config_entry.runtime_data.coordinator
+    assert coordinator.update_interval == timedelta(seconds=5)
+    assert coordinator._get_medium_interval() == 5
+    assert coordinator._get_slow_interval() == 5
+    assert coordinator._get_request_delay() == DEFAULT_REQUEST_DELAY
