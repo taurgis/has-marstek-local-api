@@ -2,4 +2,4 @@
 "ha-marstek-release-tools": patch
 ---
 
-Allow a fast polling interval of 5 seconds.
+Allow every polling interval to be set as low as 5 seconds.

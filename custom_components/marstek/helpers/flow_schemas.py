@@ -34,7 +34,7 @@ from ..const import (
     CONF_REQUEST_TIMEOUT,
     CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
-    MIN_POLL_INTERVAL_FAST,
+    MIN_POLL_INTERVAL,
 )
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ def build_polling_schema(
                 default=current_fast,
             ): NumberSelector(
                 NumberSelectorConfig(
-                    min=MIN_POLL_INTERVAL_FAST,
+                    min=MIN_POLL_INTERVAL,
                     max=300,
                     step=5,
                     unit_of_measurement="seconds",
@@ -102,9 +102,9 @@ def build_polling_schema(
                 default=current_medium,
             ): NumberSelector(
                 NumberSelectorConfig(
-                    min=30,
+                    min=MIN_POLL_INTERVAL,
                     max=86400,
-                    step=10,
+                    step=5,
                     unit_of_measurement="seconds",
                     mode=NumberSelectorMode.BOX,
                 )
@@ -114,9 +114,9 @@ def build_polling_schema(
                 default=current_slow,
             ): NumberSelector(
                 NumberSelectorConfig(
-                    min=60,
+                    min=MIN_POLL_INTERVAL,
                     max=86400,
-                    step=30,
+                    step=5,
                     unit_of_measurement="seconds",
                     mode=NumberSelectorMode.BOX,
                 )

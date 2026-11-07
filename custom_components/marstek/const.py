@@ -196,11 +196,11 @@ CONF_BATTERY_LOW_FOLLOW_CUTOFF: Final = "battery_low_follow_cutoff"
 CONF_BATTERY_LOW_SOC: Final = "battery_low_soc"
 
 # Default polling intervals
-# Real-time power data (ES.GetMode, ES.GetStatus, EM.GetStatus)
-# The fast tier may be set as low as 5 seconds. The default stays 30.
-# That floor is the options-field minimum only. It does not change the
-# delay between requests inside one poll.
-MIN_POLL_INTERVAL_FAST: Final = 5
+# Real-time power data (ES.GetMode, ES.GetStatus, EM.GetStatus).
+# Every polling interval the options form exposes can be set as low as
+# 5 seconds. The defaults below stay 30, 60 and 300. The floor is the
+# field minimum only. It does not change the delay between requests.
+MIN_POLL_INTERVAL: Final = 5
 DEFAULT_POLL_INTERVAL_FAST: Final = 30
 DEFAULT_POLL_INTERVAL_MEDIUM: Final = 60  # PV data - changes with sun
 DEFAULT_POLL_INTERVAL_SLOW: Final = 300  # WiFi and battery details - rarely change

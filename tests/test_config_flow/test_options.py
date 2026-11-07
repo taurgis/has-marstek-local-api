@@ -367,46 +367,46 @@ def _selector_config(schema: vol.Schema, field: str) -> dict[str, Any]:
     return config
 
 
-def test_fast_polling_minimum_is_five_seconds_and_other_bounds_stay() -> None:
-    """Five seconds is valid for the fast tier. The other floors stay where they are."""
-    polling = build_polling_schema(current_fast=30, current_medium=60, current_slow=300)
-    fast = _selector_config(polling, CONF_POLL_INTERVAL_FAST)
-    assert fast["min"] == 5
-    assert fast["max"] == 300
-    assert fast["step"] == 5
-    assert _selector_config(polling, CONF_POLL_INTERVAL_MEDIUM)["min"] == 30
-    assert _selector_config(polling, CONF_POLL_INTERVAL_SLOW)["min"] == 60
-    fast_marker = next(
-        marker
-        for marker in polling.schema
-        if getattr(marker, "schema", None) == CONF_POLL_INTERVAL_FAST
+def test_every_polling_interval_accepts_five_seconds() -> None:
+    """Fast, medium and slow can be 5 seconds. Request delay keeps its own floor."""
+    polling = build_polling_schema(
+        current_fast=DEFAULT_POLL_INTERVAL_FAST,
+        current_medium=DEFAULT_POLL_INTERVAL_MEDIUM,
+        current_slow=DEFAULT_POLL_INTERVAL_SLOW,
     )
-    assert fast_marker.default() == DEFAULT_POLL_INTERVAL_FAST
+    expected = {
+        CONF_POLL_INTERVAL_FAST: (5, 300, DEFAULT_POLL_INTERVAL_FAST),
+        CONF_POLL_INTERVAL_MEDIUM: (5, 86400, DEFAULT_POLL_INTERVAL_MEDIUM),
+        CONF_POLL_INTERVAL_SLOW: (5, 86400, DEFAULT_POLL_INTERVAL_SLOW),
+    }
+    for field, (lower, upper, default) in expected.items():
+        config = _selector_config(polling, field)
+        assert config["min"] == lower
+        assert config["max"] == upper
+        assert config["step"] == 5
+        marker = next(item for item in polling.schema if getattr(item, "schema", None) == field)
+        assert marker.default() == default
 
     accepted = polling(
         {
             CONF_POLL_INTERVAL_FAST: 5,
-            CONF_POLL_INTERVAL_MEDIUM: DEFAULT_POLL_INTERVAL_MEDIUM,
-            CONF_POLL_INTERVAL_SLOW: DEFAULT_POLL_INTERVAL_SLOW,
+            CONF_POLL_INTERVAL_MEDIUM: 5,
+            CONF_POLL_INTERVAL_SLOW: 5,
         }
     )
     assert accepted[CONF_POLL_INTERVAL_FAST] == 5
+    assert accepted[CONF_POLL_INTERVAL_MEDIUM] == 5
+    assert accepted[CONF_POLL_INTERVAL_SLOW] == 5
 
-    below_fast = {
-        CONF_POLL_INTERVAL_FAST: 4,
-        CONF_POLL_INTERVAL_MEDIUM: DEFAULT_POLL_INTERVAL_MEDIUM,
-        CONF_POLL_INTERVAL_SLOW: DEFAULT_POLL_INTERVAL_SLOW,
-    }
-    with pytest.raises(vol.Invalid):
-        polling(below_fast)
-
-    below_medium = {
-        CONF_POLL_INTERVAL_FAST: DEFAULT_POLL_INTERVAL_FAST,
-        CONF_POLL_INTERVAL_MEDIUM: 29,
-        CONF_POLL_INTERVAL_SLOW: DEFAULT_POLL_INTERVAL_SLOW,
-    }
-    with pytest.raises(vol.Invalid):
-        polling(below_medium)
+    for field in expected:
+        too_low = {
+            CONF_POLL_INTERVAL_FAST: 5,
+            CONF_POLL_INTERVAL_MEDIUM: 5,
+            CONF_POLL_INTERVAL_SLOW: 5,
+            field: 4,
+        }
+        with pytest.raises(vol.Invalid):
+            polling(too_low)
 
     network = build_network_schema(
         current_parallel_requests=DEFAULT_PARALLEL_API_REQUESTS,
@@ -419,36 +419,48 @@ def test_fast_polling_minimum_is_five_seconds_and_other_bounds_stay() -> None:
     assert delay["max"] == 30.0
 
 
-async def test_options_flow_saves_five_second_fast_poll_and_uses_it(
+async def test_options_flow_saves_five_second_polls_and_uses_them(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
-    """A saved 5 second fast interval reloads onto the coordinator and leaves request spacing."""
+    """Saved 5 second intervals reload onto the coordinator and leave request spacing."""
     mock_config_entry.add_to_hass(hass)
     client = create_mock_client()
     with patch_marstek_integration(client=client):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-        assert mock_config_entry.runtime_data.coordinator.update_interval == timedelta(
-            seconds=DEFAULT_POLL_INTERVAL_FAST
-        )
+        coordinator = mock_config_entry.runtime_data.coordinator
+        assert coordinator.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL_FAST)
+        assert coordinator._get_medium_interval() == DEFAULT_POLL_INTERVAL_MEDIUM
+        assert coordinator._get_slow_interval() == DEFAULT_POLL_INTERVAL_SLOW
 
         result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
-        rejected = _options_user_input()
-        rejected["polling_settings"][CONF_POLL_INTERVAL_FAST] = 4
-        with pytest.raises(vol.Invalid):
-            await hass.config_entries.options.async_configure(result["flow_id"], rejected)
-        assert mock_config_entry.options.get(CONF_POLL_INTERVAL_FAST) is None
+        for field in (
+            CONF_POLL_INTERVAL_FAST,
+            CONF_POLL_INTERVAL_MEDIUM,
+            CONF_POLL_INTERVAL_SLOW,
+        ):
+            rejected = _options_user_input()
+            rejected["polling_settings"][field] = 4
+            with pytest.raises(vol.Invalid):
+                await hass.config_entries.options.async_configure(result["flow_id"], rejected)
+            assert field not in mock_config_entry.options
 
         result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
         accepted = _options_user_input()
         accepted["polling_settings"][CONF_POLL_INTERVAL_FAST] = 5
+        accepted["polling_settings"][CONF_POLL_INTERVAL_MEDIUM] = 5
+        accepted["polling_settings"][CONF_POLL_INTERVAL_SLOW] = 5
         result = await hass.config_entries.options.async_configure(result["flow_id"], accepted)
         await hass.async_block_till_done()
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_POLL_INTERVAL_FAST] == 5
+    assert result["data"][CONF_POLL_INTERVAL_MEDIUM] == 5
+    assert result["data"][CONF_POLL_INTERVAL_SLOW] == 5
     assert result["data"][CONF_REQUEST_DELAY] == DEFAULT_REQUEST_DELAY
     assert result["data"][CONF_PARALLEL_API_REQUESTS] is DEFAULT_PARALLEL_API_REQUESTS
     coordinator = mock_config_entry.runtime_data.coordinator
     assert coordinator.update_interval == timedelta(seconds=5)
+    assert coordinator._get_medium_interval() == 5
+    assert coordinator._get_slow_interval() == 5
     assert coordinator._get_request_delay() == DEFAULT_REQUEST_DELAY

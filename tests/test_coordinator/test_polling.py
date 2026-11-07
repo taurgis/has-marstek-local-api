@@ -11,6 +11,8 @@ from homeassistant.core import HomeAssistant
 from custom_components.marstek.const import (
     CONF_PARALLEL_API_REQUESTS,
     CONF_POLL_INTERVAL_FAST,
+    CONF_POLL_INTERVAL_MEDIUM,
+    CONF_POLL_INTERVAL_SLOW,
     CONF_REQUEST_DELAY,
     DEFAULT_POLL_INTERVAL_FAST,
     DEFAULT_REQUEST_DELAY,
@@ -310,7 +312,11 @@ async def test_five_second_fast_interval_does_not_close_the_request_gap(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        options={CONF_POLL_INTERVAL_FAST: 5},
+        options={
+            CONF_POLL_INTERVAL_FAST: 5,
+            CONF_POLL_INTERVAL_MEDIUM: 5,
+            CONF_POLL_INTERVAL_SLOW: 5,
+        },
     )
 
     coordinator = MarstekDataUpdateCoordinator(
@@ -321,6 +327,8 @@ async def test_five_second_fast_interval_does_not_close_the_request_gap(
     )
 
     assert coordinator.update_interval == timedelta(seconds=5)
+    assert coordinator._get_medium_interval() == 5
+    assert coordinator._get_slow_interval() == 5
     await coordinator._async_update_data()
 
     kwargs = mock_udp_client.get_device_status.call_args.kwargs

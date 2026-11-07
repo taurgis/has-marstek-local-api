@@ -115,8 +115,8 @@
             },
             "data_description": {
               "poll_interval_fast": "Battery level, power, operating mode, and grid power. Enter seconds (5–300, default 30).",
-              "poll_interval_medium": "Solar power, on Venus A and Venus D only. Enter seconds (default 60).",
-              "poll_interval_slow": "Wi-Fi signal and battery details, and only while a sensor that needs them is enabled. Enter seconds (default 300)."
+              "poll_interval_medium": "Solar power, on Venus A and Venus D only. Enter seconds (5–86400, default 60).",
+              "poll_interval_slow": "Wi-Fi signal and battery details, and only while a sensor that needs them is enabled. Enter seconds (5–86400, default 300)."
             }
           },
           "network_settings": {

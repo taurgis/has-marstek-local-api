@@ -9,10 +9,12 @@ Open **Settings** > **Devices & services** > **Marstek** > your battery > **Conf
 The battery never reports changes by itself, so the integration asks it for new values at a regular interval (this is called [polling](guide/glossary.md#polling)). Asking too often can overload the battery, so the questions are split into three groups:
 
 - **Fast polling interval** (default 30 s, range 5–300 s): operating mode, battery status and meter power. These change quickly.
-- **Medium polling interval** (default 60 s, range 30 s–24 h): solar panel data, on Venus A and Venus D.
-- **Slow polling interval** (default 300 s, range 60 s–24 h): Wi-Fi signal and battery details such as temperature. These requests are sent only while you have enabled a sensor that needs them.
+- **Medium polling interval** (default 60 s, range 5 s–24 h): solar panel data, on Venus A and Venus D.
+- **Slow polling interval** (default 300 s, range 5 s–24 h): Wi-Fi signal and battery details such as temperature. These requests are sent only while you have enabled a sensor that needs them.
 
-A shorter interval gives fresher values but sends more requests to the battery. The fast interval is how long Home Assistant waits after one poll finishes before it starts the next ([fetching data](https://developers.home-assistant.io/docs/integration_fetching_data/)). It does not change the spacing between the requests inside that poll. Those stay on **Delay between requests** (default 5 s) unless parallel API requests is on. A fast poll asks for operating mode, battery status and meter power as separate requests, so with the default delay one poll takes longer than 5 seconds. The next poll starts only after the fast interval has passed again. Setting 5 seconds does not start a poll every 5 seconds, and it does not move those requests closer together. Allowing 5 seconds is not a claim that this has been shown to be safe on a real battery, or that it changes Ethernet behaviour.
+A shorter interval gives fresher values but sends more requests to the battery. Fast, medium and slow can each be set as low as 5 seconds. That is room in the form to choose a shorter interval. It does not promise a new value every 5 seconds, and it is not a claim that 5 seconds has been shown to be safe on a real battery or that it changes Ethernet behaviour.
+
+Home Assistant runs one poll at a time. The fast interval is how long it waits after that poll finishes before it starts the next ([fetching data](https://developers.home-assistant.io/docs/integration_fetching_data/)). Medium and slow do not start polls of their own. They decide whether solar, Wi-Fi and battery-detail requests are included in the poll that is already running. The gap between those requests stays on **Delay between requests** (default 5 s) unless parallel API requests is on. A poll can take longer than 5 seconds. The next one starts only after that poll has finished and the fast interval has passed again, so the polls do not overlap.
 
 <img src="screenshots/device-settings-polling.png" alt="Polling Intervals" width="560" />
 
