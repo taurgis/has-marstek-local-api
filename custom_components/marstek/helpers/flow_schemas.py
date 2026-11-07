@@ -34,6 +34,7 @@ from ..const import (
     CONF_REQUEST_TIMEOUT,
     CONF_SHOW_CAPACITY_DASHBOARD,
     CONF_SOCKET_LIMIT,
+    MIN_POLL_INTERVAL_FAST,
 )
 
 if TYPE_CHECKING:
@@ -89,7 +90,7 @@ def build_polling_schema(
                 default=current_fast,
             ): NumberSelector(
                 NumberSelectorConfig(
-                    min=10,
+                    min=MIN_POLL_INTERVAL_FAST,
                     max=300,
                     step=5,
                     unit_of_measurement="seconds",
