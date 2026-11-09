@@ -15,9 +15,12 @@ Link protocol (two bytes per message, both directions):
 - Host to Renode: ``D`` + MISO byte (one per ``X``), ``I`` + INT# level
   (0 = interrupt pending), sent whenever the level changes.
 
-TCP sockets open, listen and connect, but nothing is bridged: a connect fails
-with ``SINT_STAT_TIM_OUT`` after ``--tcp-timeout`` seconds, like a network with
-no route to the cloud.
+A TCP listen socket is a host listener on the same port (socket 0 is the
+firmware's Modbus TCP server on 502). One client at a time is bridged to it:
+the chip reports CONNECT, RECV and DISCONNECT, and what the firmware writes to
+the send buffer goes to that client. Outbound TCP is not bridged: a connect
+fails with ``SINT_STAT_TIM_OUT`` after ``--tcp-timeout`` seconds, like a network
+with no route to the cloud.
 """
 
 from __future__ import annotations
@@ -126,6 +129,7 @@ SOCKET_OPEN = 0x05
 TCP_CLOSED = 0x00
 TCP_LISTEN = 0x01
 TCP_SYN_SENT = 0x02
+TCP_ESTABLISHED = 0x04
 
 PHY_DISCONN = 0x01
 PHY_100M_FLL = 0x08
@@ -170,6 +174,15 @@ class Network(Protocol):
     def tcp_connect(self, sock: int, dest: tuple[str, int]) -> None:
         """A TCP connect was started; the host reports the outcome later."""
 
+    def tcp_listen(self, sock: int, port: int) -> None:
+        """Accept TCP clients on host ``port`` for chip socket ``sock``."""
+
+    def tcp_send(self, sock: int, data: bytes) -> None:
+        """Send stream bytes to the client connected to chip socket ``sock``."""
+
+    def tcp_disconnect(self, sock: int) -> None:
+        """Drop the client of chip socket ``sock``; keep its listener."""
+
 
 @dataclass
 class ChipConfig:
@@ -208,7 +221,9 @@ class Socket:
         return self.flags | (SINT_STAT_RECV if self.rx else 0)
 
     def recv_len(self) -> int:
-        """Bytes ``GET_RECV_LEN_SN`` reports: one datagram at a time."""
+        """Bytes ``GET_RECV_LEN_SN`` reports: one datagram at a time, or the stream."""
+        if self.proto == PROTO_TYPE_TCP:
+            return sum(len(chunk) for chunk in self.rx)
         return len(self.rx[0]) if self.rx else 0
 
     def read(self, length: int) -> bytes:
@@ -308,6 +323,33 @@ class CH395:
             return False
         sock.rx.append(record)
         return True
+
+    def tcp_accepted(self, index: int, addr: tuple[str, int]) -> bool:
+        """A client connected to listening socket ``index``; False to refuse it."""
+        sock = self.sockets[index]
+        if not (sock.is_open and sock.proto == PROTO_TYPE_TCP and sock.tcp_state == TCP_LISTEN):
+            return False
+        sock.tcp_state = TCP_ESTABLISHED
+        sock.dest_ip = socket.inet_aton(addr[0])
+        sock.dest_port = addr[1]
+        sock.rx.clear()
+        sock.flags |= SINT_STAT_CONNECT
+        return True
+
+    def tcp_received(self, index: int, data: bytes) -> bool:
+        """Stream bytes from the client of socket ``index``; False if not connected."""
+        sock = self.sockets[index]
+        if sock.tcp_state != TCP_ESTABLISHED or not data:
+            return False
+        sock.rx.append(data)
+        return True
+
+    def tcp_peer_closed(self, index: int) -> None:
+        """The client of socket ``index`` went away."""
+        sock = self.sockets[index]
+        if sock.tcp_state == TCP_ESTABLISHED:
+            sock.tcp_state = TCP_CLOSED
+            sock.flags |= SINT_STAT_DISCONNECT
 
     def tcp_timed_out(self, index: int) -> None:
         """A connect started with ``TCP_CONNECT_SN`` failed."""
@@ -452,6 +494,8 @@ class CH395:
         sock = self._sock(params)
         if sock and sock.is_open:
             sock.tcp_state = TCP_LISTEN
+            self.network.tcp_listen(sock.index, sock.src_port)
+            _LOGGER.info("socket %d: TCP listen on %d", sock.index, sock.src_port)
         self.cmd_status = CH395_ERR_SUCCESS
 
     def _write_connect(self, params: bytes) -> None:
@@ -465,6 +509,8 @@ class CH395:
         sock = self._sock(params)
         self.cmd_status = CH395_ERR_SUCCESS
         if sock and sock.tcp_state != TCP_CLOSED:
+            if sock.tcp_state == TCP_ESTABLISHED:
+                self.network.tcp_disconnect(sock.index)
             sock.tcp_state = TCP_CLOSED
             sock.flags |= SINT_STAT_DISCONNECT
 
@@ -491,6 +537,9 @@ class CH395:
         data = params[3 : 3 + _u16(params, 1)]
         if sock.is_open and sock.proto == PROTO_TYPE_UDP:
             self.network.send_udp(sock.index, data, sock.dest)
+            sock.flags |= SINT_STAT_SENBUF_FREE | SINT_STAT_SEND_OK
+        elif sock.tcp_state == TCP_ESTABLISHED:
+            self.network.tcp_send(sock.index, data)
             sock.flags |= SINT_STAT_SENBUF_FREE | SINT_STAT_SEND_OK
         else:
             sock.flags |= SINT_STAT_SENBUF_FREE
@@ -556,6 +605,8 @@ class Bridge:
     chip: CH395 | None = None
     writer: asyncio.StreamWriter | None = None
     udp: dict[int, list[socket.socket]] = field(default_factory=dict)
+    tcp_servers: dict[int, asyncio.Server] = field(default_factory=dict)
+    tcp_clients: dict[int, asyncio.StreamWriter] = field(default_factory=dict)
     int_level: int = 1
 
     # ---- Network --------------------------------------------------------
@@ -613,6 +664,66 @@ class Bridge:
         for raw in self.udp.pop(sock, []):
             loop.remove_reader(raw.fileno())
             raw.close()
+        self.tcp_disconnect(sock)
+        if (server := self.tcp_servers.pop(sock, None)) is not None:
+            server.close()
+
+    def tcp_listen(self, sock: int, port: int) -> None:
+        # The firmware listens again on the same socket after each client.
+        if sock not in self.tcp_servers:
+            asyncio.get_running_loop().create_task(self._listen(sock, port))
+
+    async def _listen(self, sock: int, port: int) -> None:
+        try:
+            server = await asyncio.start_server(
+                lambda r, w: self._tcp_client(sock, r, w), self.bind_ip, port, reuse_address=True
+            )
+        except OSError as err:
+            _LOGGER.error("socket %d: TCP listen %s:%d failed: %s", sock, self.bind_ip, port, err)
+            return
+        if (old := self.tcp_servers.pop(sock, None)) is not None:
+            old.close()
+        self.tcp_servers[sock] = server
+        _LOGGER.info("socket %d: TCP on %s:%d", sock, self.bind_ip, port)
+
+    async def _tcp_client(
+        self, sock: int, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        chip = self.chip
+        peer = writer.get_extra_info("peername")[:2]
+        if chip is None or sock in self.tcp_clients or not chip.tcp_accepted(sock, peer):
+            _LOGGER.info("socket %d: TCP client %s:%d refused", sock, *peer)
+            writer.close()
+            return
+        _LOGGER.info("socket %d: TCP client %s:%d connected", sock, *peer)
+        self.tcp_clients[sock] = writer
+        self.push_int()
+        try:
+            while data := await reader.read(1024):
+                if chip is not self.chip:
+                    break
+                chip.tcp_received(sock, data)
+                _LOGGER.debug("TCP %s:%d -> eth[%d] %s", *peer, sock, data.hex())
+                self.push_int()
+        except ConnectionError:
+            pass
+        finally:
+            if self.tcp_clients.get(sock) is writer:
+                del self.tcp_clients[sock]
+                if chip is self.chip:
+                    chip.tcp_peer_closed(sock)
+                    self.push_int()
+            writer.close()
+            _LOGGER.info("socket %d: TCP client %s:%d gone", sock, *peer)
+
+    def tcp_send(self, sock: int, data: bytes) -> None:
+        if (writer := self.tcp_clients.get(sock)) is not None:
+            _LOGGER.debug("TCP eth[%d] -> client %s", sock, data.hex())
+            writer.write(data)
+
+    def tcp_disconnect(self, sock: int) -> None:
+        if (writer := self.tcp_clients.pop(sock, None)) is not None:
+            writer.close()
 
     def send_udp(self, sock: int, data: bytes, dest: tuple[str, int]) -> None:
         held = self.udp.get(sock)
@@ -675,7 +786,7 @@ class Bridge:
     async def serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """One Renode connection is one power-on of the chip."""
         _LOGGER.info("SPI link connected")
-        for sock in list(self.udp):
+        for sock in {*self.udp, *self.tcp_servers, *self.tcp_clients}:
             self.close(sock)
         self.writer = writer
         self.chip = CH395(self.config, self)

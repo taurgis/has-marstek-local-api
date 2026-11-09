@@ -24,6 +24,9 @@ class _Net:
         self.closed: list[int] = []
         self.sent: list[tuple[int, bytes, tuple[str, int]]] = []
         self.connects: list[tuple[int, tuple[str, int]]] = []
+        self.listens: list[tuple[int, int]] = []
+        self.tcp_sent: list[tuple[int, bytes]] = []
+        self.dropped: list[int] = []
 
     def open_udp(self, sock: int, port: int) -> bool:
         self.opened.append((sock, port))
@@ -37,6 +40,15 @@ class _Net:
 
     def tcp_connect(self, sock: int, dest: tuple[str, int]) -> None:
         self.connects.append((sock, dest))
+
+    def tcp_listen(self, sock: int, port: int) -> None:
+        self.listens.append((sock, port))
+
+    def tcp_send(self, sock: int, data: bytes) -> None:
+        self.tcp_sent.append((sock, data))
+
+    def tcp_disconnect(self, sock: int) -> None:
+        self.dropped.append(sock)
 
 
 def _chip(net: _Net | None = None) -> tuple[ch395.CH395, _Net]:
@@ -233,16 +245,67 @@ def test_tcp_connect_times_out() -> None:
     assert _frame(chip, ch395.CMD_GET_SOCKET_STATUS_SN, 1, reads=2)[0] == ch395.SOCKET_CLOSED
 
 
-def test_tcp_listen() -> None:
+def _listen_modbus(chip: ch395.CH395) -> None:
     """Socket 0 is the Modbus TCP server on port 502 (``0x080466f0``)."""
-    chip, _ = _chip()
     _frame(chip, ch395.CMD_SET_PROTO_TYPE_SN, 0, ch395.PROTO_TYPE_TCP)
     _frame(chip, ch395.CMD_SET_SOUR_PORT_SN, 0, 0xF6, 0x01)
     _frame(chip, ch395.CMD_OPEN_SOCKET_SN, 0)
     _frame(chip, ch395.CMD_TCP_LISTEN_SN, 0)
+
+
+def test_tcp_listen() -> None:
+    chip, net = _chip()
+    _listen_modbus(chip)
     assert _frame(chip, ch395.CMD_GET_SOCKET_STATUS_SN, 0, reads=2) == bytes(
         [ch395.SOCKET_OPEN, ch395.TCP_LISTEN]
     )
+    assert net.listens == [(0, 502)]
+
+
+def test_tcp_client_stream_round_trip() -> None:
+    chip, net = _chip()
+    _listen_modbus(chip)
+    assert chip.tcp_accepted(0, ("172.28.0.2", 50000))
+    assert not chip.tcp_accepted(0, ("172.28.0.3", 50001))  # one client at a time
+    assert chip.int_pending
+    flags = _frame(chip, ch395.CMD_GET_INT_STATUS_SN, 0, reads=1)[0]
+    assert flags == ch395.SINT_STAT_CONNECT
+    assert _frame(chip, ch395.CMD_GET_SOCKET_STATUS_SN, 0, reads=2) == bytes(
+        [ch395.SOCKET_OPEN, ch395.TCP_ESTABLISHED]
+    )
+
+    request = bytes.fromhex("000100000006010375300002")
+    assert chip.tcp_received(0, request[:5])
+    assert chip.tcp_received(0, request[5:])
+    length = int.from_bytes(_frame(chip, ch395.CMD_GET_RECV_LEN_SN, 0, reads=2), "little")
+    assert length == len(request)  # a stream, no UDP header
+    assert _frame(chip, ch395.CMD_READ_RECV_BUF_SN, 0, length, 0, reads=length) == request
+
+    _frame(chip, ch395.CMD_WRITE_SEND_BUF_SN, 0, 3, 0, *b"abc")
+    assert net.tcp_sent == [(0, b"abc")]
+    assert net.sent == []
+    flags = _frame(chip, ch395.CMD_GET_INT_STATUS_SN, 0, reads=1)[0]
+    assert flags == ch395.SINT_STAT_SENBUF_FREE | ch395.SINT_STAT_SEND_OK
+
+    chip.tcp_peer_closed(0)
+    assert _frame(chip, ch395.CMD_GET_INT_STATUS_SN, 0, reads=1)[0] == ch395.SINT_STAT_DISCONNECT
+    assert not chip.tcp_received(0, b"late")
+
+
+def test_firmware_disconnect_drops_the_client() -> None:
+    chip, net = _chip()
+    _listen_modbus(chip)
+    chip.tcp_accepted(0, ("172.28.0.2", 50000))
+    _frame(chip, ch395.CMD_TCP_DISNCONNECT_SN, 0)
+    assert net.dropped == [0]
+    assert _frame(chip, ch395.CMD_GET_SOCKET_STATUS_SN, 0, reads=2)[1] == ch395.TCP_CLOSED
+
+
+def test_accept_needs_a_listening_socket() -> None:
+    chip, _ = _chip()
+    assert not chip.tcp_accepted(0, ("172.28.0.2", 50000))
+    _open_udp_server(chip)
+    assert not chip.tcp_accepted(5, ("172.28.0.2", 50000))
 
 
 def test_init_closes_open_sockets() -> None:

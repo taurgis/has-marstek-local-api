@@ -18,7 +18,7 @@ while this emulator is the vendor's own implementation, including its quirks
 | Clock tree, flash controller | always-ready register stubs | `renode/rcu.py`, `fmc.py` |
 | RTC (BCD calendar) and backup registers | calendar on the host's wall clock; backup DATA0 preset | `renode/rtc.py`, `bkp.py` |
 | Config EEPROM (I2C 0x50, 2-byte address) | file-backed 24Cxx | `renode/I2CEeprom.cs` |
-| CH395 Ethernet (SPI2) | idle chip, answers 0x00; with `--ethernet` a CH395 with an instant DHCP lease, UDP sockets bridged to host UDP, TCP that fails to connect | `renode/spi2.py`; `--ethernet`: `renode/ch395_spi.py` + `ch395.py` |
+| CH395 Ethernet (SPI2) | idle chip, answers 0x00; with `--ethernet` a CH395 with an instant DHCP lease, UDP sockets bridged to host UDP, TCP listen sockets (Modbus TCP on 502) bridged to host listeners, outbound TCP that fails to connect | `renode/spi2.py`; `--ethernet`: `renode/ch395_spi.py` + `ch395.py` |
 | Block engine at 0xA0001000 | loopback FIFO | `renode/cau.py` |
 | Quectel FC41D Wi-Fi/BLE modem (UART, IRQ 74) | AT-command emulator bridging `UDP SERVICE` sockets to host UDP | `fc41d.py` |
 | Marstek cloud (MQTT broker, HTTP servers behind the FC41D) | accepts every connect, publish and upload; `getDateInfo` returns host time; `--no-cloud` fails them | `cloud.py` |
@@ -195,8 +195,9 @@ over TCP (`--eth-port`, default 3458), with two bus hooks for chip select
 `--eth-netmask` and `--eth-mac` as its DHCP lease the moment the firmware
 enables DHCP. Each UDP socket the firmware opens is a host socket bound to
 `--eth-ip`, plus listeners on the subnet and limited broadcast addresses.
-`--eth-ip auto` (the default) picks the host's address on the route to
-`--eth-gateway`. The log is `WORK/ch395.log`.
+Each TCP listen socket (socket 0 is Modbus TCP on 502, socket 1 port 8091) is
+a host listener on `--eth-ip` too. `--eth-ip auto` (the default) picks the
+host's address on the route to `--eth-gateway`. The log is `WORK/ch395.log`.
 
 Ethernet needs an address of its own. In Docker, attach the container to a
 second network and give the Wi-Fi side the other one:
@@ -389,10 +390,13 @@ second try, and the first full poll can take several minutes.
   DR write). TIMER6's DMA line is left off because it shares DMA2 request 3
   with USART4 RX.
 - **CH395 (`--ethernet`).** The DHCP lease arrives at once, with the PHY
-  already linked at 100 Mbit/s full duplex. Only UDP is bridged: a TCP connect
-  times out after `--tcp-timeout` (3 s), and TCP listen sockets (Modbus TCP on
-  502) never see a client, so the firmware's cloud and debug-log TCP paths
-  just fail. `GET_RECV_LEN` reports one datagram at a time. The PD9 hardware
+  already linked at 100 Mbit/s full duplex. A TCP listen socket becomes a host listener
+  on `--eth-ip` and the same port, with one client at a time (the chip reports
+  CONNECT, RECV and DISCONNECT; a second client is refused). That is how
+  Modbus TCP on 502 reaches the firmware: Control 151 answers each request in
+  about 300 ms. Outbound TCP is not bridged: a connect times out after
+  `--tcp-timeout` (3 s), so the firmware's cloud and debug-log TCP paths just
+  fail. `GET_RECV_LEN` reports one datagram at a time. The PD9 hardware
   reset is not modelled; `INIT_CH395` resets the socket state instead. The
   Ethernet address in `Marstek.GetDevice` comes out zero-padded
   (`172.28.00.02`): the firmware formats it with `%02d`, as a real unit would.
