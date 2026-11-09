@@ -271,6 +271,7 @@ Top-level folders:
 Inside `custom_components/marstek/`:
 
 - `__init__.py`: Integration setup and teardown
+- `brand/`: Integration icon (`icon.png`, `icon@2x.png`) for Home Assistant 2026.3+
 - `config_flow.py`: Config flow, discovery, reauth, reconfigure
 - `options_flow.py`: Polling, network, power, dashboard, energy meter
 - `const.py`: Constants and per-family limits
