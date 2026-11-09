@@ -5,9 +5,11 @@ rules:
   brands:
     status: exempt
     comment: >-
-      home-assistant/brands serves Core's integration catalogue. A HACS-only
-      custom integration has no entry there; the repository carries its own
-      logo instead.
+      Not a Core integration, so its images are not added under
+      core_integrations/ in home-assistant/brands. The icon ships in
+      custom_components/marstek/brand/ and Home Assistant 2026.3 and newer
+      load that folder locally. Older versions use the same artwork already
+      published at custom_integrations/marstek.
   common-modules:
     status: done
     comment: >-
