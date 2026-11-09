@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.4
+
+### Patch Changes
+
+- 0aecfea: Add the Marstek brand icon so Home Assistant shows the integration icon from the local brand folder.
+
 ## 1.13.3
 
 ### Patch Changes
