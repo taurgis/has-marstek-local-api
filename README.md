@@ -95,17 +95,22 @@ type: vertical-stack
 cards:
   - type: gauge
     entity: sensor.<battery>_battery_level
+    name: Battery level
     min: 0
     max: 100
   - type: tile
     entity: sensor.<battery>_battery_power
+    name: Power
   - type: tile
     entity: select.<battery>_operating_mode
+    name: Mode
 ```
+
+`name` is optional. It keeps the label short. Leave it out to use the full entity name.
 
 The Venus A layout, the history graph, and the visual-editor steps are in [Dashboard cards](docs/guide/dashboard-cards.md).
 
-<img src="docs/screenshots/dashboard-cards-venus-e.png" alt="Venus E live dashboard: state of charge gauge, battery power, operating mode Auto, and a power history graph." width="640" />
+<img src="docs/screenshots/dashboard-cards-venus-e.png" alt="Venus E live dashboard with short names: battery level, power, mode, and 12 hours of charge and discharge." width="640" />
 
 ## Requirements
 

@@ -67,12 +67,12 @@ No YAML is required. On a dashboard, choose **Edit dashboard**, then **Add card*
 3. Add a **Tile**. Choose **Operating mode**. Selecting the card opens the mode list.
 4. On Venus A or Venus D, add another **Tile** and choose **PV power**. Skip this on Venus E, Venus C, and Venus E mini. Those models have no solar entities, and the card would stay empty.
 5. Add an **Entities** card. Add **Battery status**, **On-grid power**, **Off-grid power**, and **Battery state of health**.
-6. Add a **History graph**. Add **Battery power**, and **PV power** when the battery has solar. Set **Hours to show** to `24`.
+6. Add a **History graph**. Add **Battery power**, and **PV power** when the battery has solar. Set **Hours to show** to `12`.
 7. Add a card, search for `Marstek`, and pick **Marstek battery health**. Choose the battery. The editor can also set a title and which tab opens first. Details are in [Battery health](../usable-capacity.md#add-the-cards-to-a-dashboard-you-already-have).
 
-<img src="../screenshots/dashboard-cards-editor.png" alt="Gauge card configuration in the visual editor. Battery level is selected, the minimum is 0, the maximum is 100, and a live preview shows the gauge." width="720" />
+<img src="../screenshots/dashboard-cards-editor.png" alt="Gauge card configuration in the visual editor. Battery level is selected, the name is Battery level, the minimum is 0, the maximum is 100, and a live preview shows the gauge." width="720" />
 
-Leave the card name blank when you want the label to follow your Home Assistant language. A name you type stays in that language.
+The `name` fields in the examples are optional. A short name keeps the label readable on a phone. Without one, every card repeats the device name, such as **Venus E (3.0) Battery level**, and that gets cut off. Leave `name` out when you want the full entity name in your Home Assistant language. A name you type stays in that language.
 
 Temperature and Wi-Fi are not in the steps above because those sensors start disabled. Turn them on first, then add them to the entities card. See [Temperature and Wi-Fi](#temperature-and-wi-fi).
 
@@ -80,7 +80,7 @@ A [sections view](https://www.home-assistant.io/dashboards/views/) stacks cards 
 
 ## Venus E layout
 
-Venus E has no PV sensors. This stack is one card: a gauge beside battery power, then mode beside status, then the detail list and a day of power history. Two columns stay readable on a phone. A third column gets cramped, so this layout stops at two.
+Venus E has no PV sensors. This stack is one card: a gauge beside battery power, then mode beside status, then the detail list and 12 hours of power history. Two columns stay readable on a phone. A third column gets cramped, so this layout stops at two.
 
 Paste it from the dashboard menu under **Raw configuration editor**, or add the same cards one by one with the visual editor.
 
@@ -93,38 +93,50 @@ cards:
     cards:
       - type: gauge
         entity: sensor.<battery>_battery_level
+        name: Battery level
         min: 0
         max: 100
       - type: tile
         entity: sensor.<battery>_battery_power
+        name: Power
         features:
           - type: trend-graph
+            hours_to_show: 12
   - type: grid
     columns: 2
     square: false
     cards:
       - type: tile
         entity: select.<battery>_operating_mode
+        name: Mode
       - type: tile
         entity: sensor.<battery>_battery_status
+        name: Status
   - type: entities
     title: Battery
     entities:
       - entity: sensor.<battery>_on_grid_power
+        name: On-grid
       - entity: sensor.<battery>_off_grid_power
+        name: Off-grid
       - entity: sensor.<battery>_battery_state_of_health
+        name: State of health
       # Enable these on the device page first, then uncomment.
       # - entity: sensor.<battery>_battery_temperature
       # - entity: sensor.<battery>_wifi_signal_strength
   - type: history-graph
     title: Power
-    hours_to_show: 24
+    hours_to_show: 12
     entities:
       - entity: sensor.<battery>_battery_power
+        name: Power
       - entity: sensor.<battery>_on_grid_power
+        name: On-grid
 ```
 
-<img src="../screenshots/dashboard-cards-venus-e.png" alt="Venus E layout. A gauge shows 45 percent, battery power is 95 W, operating mode is Auto, and battery status is Discharging. State of health is unknown." width="704" />
+<img src="../screenshots/dashboard-cards-venus-e.png" alt="Venus E layout with short names. The gauge, power, mode, and status cards no longer repeat the device name. The history graph shows 12 hours of charge and discharge." width="704" />
+
+**State of health** on the list is the estimate. A battery that has not finished a long charge run and a long discharge run stays **Unknown**. The picture shows a pack that already has an estimate.
 
 The gauge, tile, entities, and history cards are the built-in ones: [gauge](https://www.home-assistant.io/dashboards/gauge/), [tile](https://www.home-assistant.io/dashboards/tile/), [entities](https://www.home-assistant.io/dashboards/entities/), and [history graph](https://www.home-assistant.io/dashboards/history-graph/).
 
@@ -141,41 +153,54 @@ cards:
     cards:
       - type: gauge
         entity: sensor.<battery>_battery_level
+        name: Battery level
         min: 0
         max: 100
       - type: tile
         entity: sensor.<battery>_battery_power
+        name: Power
         features:
           - type: trend-graph
+            hours_to_show: 12
   - type: grid
     columns: 2
     square: false
     cards:
       - type: tile
         entity: sensor.<battery>_pv_power
+        name: PV
       - type: tile
         entity: select.<battery>_operating_mode
+        name: Mode
   - type: entities
     title: Battery
     entities:
       - entity: sensor.<battery>_battery_status
+        name: Status
       - entity: sensor.<battery>_pv1_power
+        name: PV1
       - entity: sensor.<battery>_on_grid_power
+        name: On-grid
       - entity: sensor.<battery>_off_grid_power
+        name: Off-grid
       - entity: sensor.<battery>_battery_state_of_health
+        name: State of health
       # Enable these on the device page first, then uncomment.
       # - entity: sensor.<battery>_battery_temperature
       # - entity: sensor.<battery>_wifi_signal_strength
   - type: history-graph
     title: Power
-    hours_to_show: 24
+    hours_to_show: 12
     entities:
       - entity: sensor.<battery>_battery_power
+        name: Power
       - entity: sensor.<battery>_pv_power
+        name: PV
       - entity: sensor.<battery>_on_grid_power
+        name: On-grid
 ```
 
-<img src="../screenshots/dashboard-cards-venus-d.png" alt="Venus A and Venus D layout on a Venus D. The second row is PV power and operating mode. The list includes PV1 power. State of health is unknown." width="704" />
+<img src="../screenshots/dashboard-cards-venus-d.png" alt="Venus A and Venus D layout on a Venus D, with short names. PV power sits beside mode, and the history graph includes solar over 12 hours." width="704" />
 
 ## Temperature and Wi-Fi
 
@@ -220,31 +245,41 @@ sections:
     cards:
       - type: gauge
         entity: sensor.<battery>_battery_level
+        name: Battery level
         min: 0
         max: 100
       - type: tile
         entity: sensor.<battery>_battery_power
+        name: Power
         features:
           - type: trend-graph
+            hours_to_show: 12
       - type: tile
         entity: select.<battery>_operating_mode
+        name: Mode
   - type: grid
     cards:
       - type: entities
         title: Battery
         entities:
           - entity: sensor.<battery>_battery_status
+            name: Status
           - entity: sensor.<battery>_on_grid_power
+            name: On-grid
           - entity: sensor.<battery>_off_grid_power
+            name: Off-grid
           - entity: sensor.<battery>_battery_state_of_health
+            name: State of health
       - type: history-graph
         title: Power
-        hours_to_show: 24
+        hours_to_show: 12
         entities:
           - entity: sensor.<battery>_battery_power
+            name: Power
           - entity: sensor.<battery>_on_grid_power
+            name: On-grid
 ```
 
 On Venus A or Venus D, add a tile for `sensor.<battery>_pv_power` in the first section and add that same entity to the history graph.
 
-<img src="../screenshots/dashboard-cards-mobile.png" alt="The Venus E sections view at phone width, about 390 pixels. The gauge is full width. Battery power and operating mode sit side by side, with names shortened to fit." width="390" />
+<img src="../screenshots/dashboard-cards-mobile.png" alt="The Venus E sections view at phone width, about 390 pixels. Short names keep Power, Mode, and State of health on one line." width="390" />
