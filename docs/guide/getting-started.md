@@ -157,6 +157,7 @@ More recipes, including weekly schedules for time-of-use tariffs, are in [Automa
 The battery is in Home Assistant, on the Energy dashboard, and under automation control. Good next steps:
 
 - Tune how often Home Assistant asks for data (polling) and the default power under **Configure** on the battery. See [Options](../options.md).
+- Put state of charge and power on a dashboard with the built-in cards. See [Dashboard cards](dashboard-cards.md).
 - Turn on the [Battery health](../usable-capacity.md) dashboard to track capacity over time.
 - Read [Limitations](limitations.md) so nothing surprises you later.
 

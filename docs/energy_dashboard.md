@@ -125,7 +125,7 @@ and the [`total_increasing` state class](https://contributors.home-assistant.io/
 </details>
 
 ## Optional power sensors
-These show what is happening right now, in watts. The Energy dashboard doesn't need them. Use them for live dashboard cards and to check that the numbers make sense. (They use `state_class: measurement`.)
+These show what is happening right now, in watts. The Energy dashboard doesn't need them. Use them for [live dashboard cards](guide/dashboard-cards.md) and to check that the numbers make sense. (They use `state_class: measurement`.)
 
 | Sensor use | Entity name | Entity key | Unit |
 | --- | --- | --- | --- |
