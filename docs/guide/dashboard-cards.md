@@ -70,6 +70,8 @@ No YAML is required. On a dashboard, choose **Edit dashboard**, then **Add card*
 6. Add a **History graph**. Add **Battery power**, and **PV power** when the battery has solar. Set **Hours to show** to `24`.
 7. Add a card, search for `Marstek`, and pick **Marstek battery health**. Choose the battery. The editor can also set a title and which tab opens first. Details are in [Battery health](../usable-capacity.md#add-the-cards-to-a-dashboard-you-already-have).
 
+<img src="../screenshots/dashboard-cards-editor.png" alt="Gauge card configuration in the visual editor. Battery level is selected, the minimum is 0, the maximum is 100, and a live preview shows the gauge." width="720" />
+
 Leave the card name blank when you want the label to follow your Home Assistant language. A name you type stays in that language.
 
 Temperature and Wi-Fi are not in the steps above because those sensors start disabled. Turn them on first, then add them to the entities card. See [Temperature and Wi-Fi](#temperature-and-wi-fi).
@@ -122,6 +124,8 @@ cards:
       - entity: sensor.<battery>_on_grid_power
 ```
 
+<img src="../screenshots/dashboard-cards-venus-e.png" alt="Venus E layout. A gauge shows 45 percent, battery power is 95 W, operating mode is Auto, and battery status is Discharging. State of health is unknown." width="704" />
+
 The gauge, tile, entities, and history cards are the built-in ones: [gauge](https://www.home-assistant.io/dashboards/gauge/), [tile](https://www.home-assistant.io/dashboards/tile/), [entities](https://www.home-assistant.io/dashboards/entities/), and [history graph](https://www.home-assistant.io/dashboards/history-graph/).
 
 ## Venus A and Venus D layout
@@ -170,6 +174,8 @@ cards:
       - entity: sensor.<battery>_pv_power
       - entity: sensor.<battery>_on_grid_power
 ```
+
+<img src="../screenshots/dashboard-cards-venus-d.png" alt="Venus A and Venus D layout on a Venus D. The second row is PV power and operating mode. The list includes PV1 power. State of health is unknown." width="704" />
 
 ## Temperature and Wi-Fi
 
@@ -240,3 +246,5 @@ sections:
 ```
 
 On Venus A or Venus D, add a tile for `sensor.<battery>_pv_power` in the first section and add that same entity to the history graph.
+
+<img src="../screenshots/dashboard-cards-mobile.png" alt="The Venus E sections view at phone width, about 390 pixels. The gauge is full width. Battery power and operating mode sit side by side, with names shortened to fit." width="390" />

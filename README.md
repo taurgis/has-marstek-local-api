@@ -105,6 +105,8 @@ cards:
 
 The Venus A layout, the history graph, and the visual-editor steps are in [Dashboard cards](docs/guide/dashboard-cards.md).
 
+<img src="docs/screenshots/dashboard-cards-venus-e.png" alt="Venus E live dashboard: state of charge gauge, battery power, operating mode Auto, and a power history graph." width="640" />
+
 ## Requirements
 
 | Requirement | Details |
