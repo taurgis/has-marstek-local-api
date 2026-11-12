@@ -114,7 +114,7 @@ Home Assistant adds a **Battery health** entry to the sidebar (in Dutch, **Batte
 
 ## Add the cards to a dashboard you already have
 
-The integration registers the cards itself, so they show up in the card picker after a browser reload. You pick them like any other card.
+The integration registers the cards itself, so they show up in the card picker after a browser reload. You pick them like any other card. For state of charge, power, and solar, use Home Assistant's own cards. See [Dashboard cards](guide/dashboard-cards.md).
 
 1. Install or upgrade the integration, then reload the browser.
 2. Open your dashboard, choose **Edit dashboard**, then **Add card**.

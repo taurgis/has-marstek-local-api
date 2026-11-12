@@ -44,7 +44,7 @@ export default defineConfig({
   lastUpdated: true,
 
   // Agent notes and the docs index for GitHub readers are not site pages.
-  srcExclude: ['agents/**', 'README.md'],
+  srcExclude: ['agents/**', 'README.md', 'research/**'],
 
   sitemap: { hostname: siteUrl },
 
@@ -126,7 +126,7 @@ export default defineConfig({
         link: '/guide/getting-started',
         activeMatch: '^/guide/(introduction|supported-devices|before-you-start|getting-started|features|limitations)',
       },
-      { text: 'Use it', link: '/services', activeMatch: '^/(services|energy_dashboard|usable-capacity|screenshots|live-activities)' },
+      { text: 'Use it', link: '/services', activeMatch: '^/(services|energy_dashboard|usable-capacity|screenshots|live-activities|guide/dashboard-cards)' },
       {
         text: 'Reference',
         link: '/entities',
@@ -159,6 +159,7 @@ export default defineConfig({
         items: [
           { text: 'Visual tour', link: '/screenshots' },
           { text: 'Energy dashboard', link: '/energy_dashboard' },
+          { text: 'Dashboard cards', link: '/guide/dashboard-cards' },
           { text: 'Automations and services', link: '/services' },
           { text: 'Lock Screen', link: '/live-activities' },
           { text: 'Battery health', link: '/usable-capacity' },

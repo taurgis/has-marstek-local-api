@@ -86,6 +86,27 @@ More detail: [Installation](docs/installation.md).
 
 Copy-paste YAML is in [Automations and services](docs/services.md).
 
+## Dashboard cards
+
+State of charge, power, and operating mode are ordinary sensors, so the built-in gauge and tile cards are enough. Replace `<battery>` with the prefix from your battery's entity id. Open **Battery level** on the device page: in `sensor.venus_e_3_0_battery_level` the prefix is `venus_e_3_0`. Venus A and Venus D also have **PV power**. Temperature and Wi-Fi start disabled.
+
+```yaml
+type: vertical-stack
+cards:
+  - type: gauge
+    entity: sensor.<battery>_battery_level
+    min: 0
+    max: 100
+  - type: tile
+    entity: sensor.<battery>_battery_power
+  - type: tile
+    entity: select.<battery>_operating_mode
+```
+
+The Venus A layout, the history graph, and the visual-editor steps are in [Dashboard cards](docs/guide/dashboard-cards.md).
+
+<img src="docs/screenshots/dashboard-cards-venus-e.png" alt="Venus E live dashboard: state of charge gauge, battery power, operating mode Auto, and a power history graph." width="640" />
+
 ## Requirements
 
 | Requirement | Details |
@@ -117,7 +138,7 @@ Ranges, firmware gates, and screenshots are in [Options](docs/options.md).
 - [Documentation index](docs/README.md). Every page, grouped by what you are trying to do.
 - [Visual tour](docs/screenshots.md)
 - [Installation](docs/installation.md) · [Configuration](docs/configuration.md) · [Options](docs/options.md)
-- [Battery health](docs/usable-capacity.md) · [Energy dashboard](docs/energy_dashboard.md) · [Automations and services](docs/services.md) · [Lock Screen and Dynamic Island](docs/live-activities.md)
+- [Battery health](docs/usable-capacity.md) · [Energy dashboard](docs/energy_dashboard.md) · [Dashboard cards](docs/guide/dashboard-cards.md) · [Automations and services](docs/services.md) · [Lock Screen and Dynamic Island](docs/live-activities.md)
 - [Entities](docs/entities.md) · [Repairs](docs/repairs.md) · [Troubleshooting](docs/troubleshooting.md)
 - [Why a battery goes offline](docs/firmware-resets.md): restarts, network resets, and dropouts in plain language
 
