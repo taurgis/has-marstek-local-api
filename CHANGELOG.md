@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.5
+
+### Patch Changes
+
+- 2d95533: Add a guide, with screenshots, for building a live battery dashboard from Home Assistant's built-in cards.
+
 ## 1.13.4
 
 ### Patch Changes
