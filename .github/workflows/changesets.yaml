@@ -35,6 +35,7 @@ jobs:
           pr-title: Release
           commit-message: Release
           create-github-releases: false
+          push-git-tags: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
