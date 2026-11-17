@@ -30,24 +30,24 @@ jobs:
         id: changesets
         uses: changesets/action@v2.1.2
         with:
-          version: npm run changeset:version
-          publish: npm run release:tag
-          title: Release
-          commit: Release
-          createGithubReleases: false
-          setupGitUser: true
+          version-script: npm run changeset:version
+          publish-script: npm run release:tag
+          pr-title: Release
+          commit-message: Release
+          create-github-releases: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract version for published release
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         id: version
         run: |
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Check whether GitHub release already exists
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         id: release_state
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
