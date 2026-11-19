@@ -388,8 +388,8 @@ UPS is an ES mode, not a SYS command. This integration offers UPS on the operati
 | `ct_state` | number or null | — | `0` disconnected, `1` connected (Auto/AI note in PDF) |
 | `a_power` / `b_power` / `c_power` | number or null | W | Phase power (Auto/AI note in PDF) |
 | `total_power` | number or null | W | CT total power |
-| `input_energy` | number or null | **0.1 Wh** (`× 0.1` → Wh) | Cumulative input energy |
-| `output_energy` | number or null | **0.1 Wh** (`× 0.1` → Wh) | Cumulative output energy |
+| `input_energy` | number or null | **0.1 Wh** from Control generation 148 (`× 0.1` → Wh); unscaled on older builds | Cumulative input energy |
+| `output_energy` | number or null | **0.1 Wh** from Control generation 148 | Cumulative output energy |
 
 `ES.GetMode` does **not** return `passive_cfg`. The integration stores the last Passive settings locally.
 
@@ -421,10 +421,10 @@ Venus E 3.0 firmware **150** answers both `id=0` and `id=1` with the string mode
 | `ct_state` | number or null | `0` / `1` | CT binary sensor |
 | `a_power` / `b_power` / `c_power` | number or null | W | W |
 | `total_power` | number or null | W | W |
-| `input_energy` | number or null | **0.1 Wh** on Rev 3.1 (`ver >= 150` known families) | Wh (`raw × 0.1`) |
-| `output_energy` | number or null | **0.1 Wh** on Rev 3.1 | Wh (`raw × 0.1`) |
+| `input_energy` | number or null | **0.1 Wh** from Control generation 148, when `EM.GetStatus` is served | Wh (`raw × 0.1`) |
+| `output_energy` | number or null | **0.1 Wh** from Control generation 148 | Wh (`raw × 0.1`) |
 
-Legacy profiles do not create EM lifetime energy sensors unless the payload actually reports those fields; the Rev 3.1 scale is applied only when the firmware profile says so.
+The integration creates EM lifetime energy sensors when the payload reports those fields. It applies the 0.1 Wh scale from Control generation 148 on firmware that serves `EM.GetStatus` (issue #174). Older generations leave a present value unscaled. The Rev 3.1 wire table only labeled this unit at `ver >= 150`; that gate remains for SYS and UPS, not for the meter scale.
 
 ---
 
@@ -509,19 +509,24 @@ Inputs: device family + integer discovery `ver`. App labels such as `148.3` and 
 | Family | `ver` | PV | SYS DOD/BLE/LED | UPS | Manual slots | PV energy | PV ch1 power | EM energy scale |
 |--------|-------|----|-----------------|-----|--------------|-----------|--------------|-----------------|
 | Venus A | unknown | yes | no | no | 0–9 | unscaled (legacy-safe) | deciwatt → W | none |
-| Venus A | <= 148 | yes | no | no | 0–9 | unscaled Wh | deciwatt → W | none |
-| Venus A | 149 | yes | no | no | 0–9 | 0.01 kWh → Wh (`×10`) | deciwatt → W | none |
+| Venus A | <= 147 | yes | no | no | 0–9 | unscaled Wh | deciwatt → W | none |
+| Venus A | 148 | yes | no | no | 0–9 | unscaled Wh | deciwatt → W | 0.1 Wh → Wh |
+| Venus A | 149 | yes | no | no | 0–9 | 0.01 kWh → Wh (`×10`) | deciwatt → W | 0.1 Wh → Wh |
 | Venus A | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | deciwatt → W | 0.1 Wh → Wh |
-| Venus D | < 150 or unknown | yes | no | no | 0–9 | unscaled unless profile says otherwise | deciwatt → W | none |
+| Venus D | < 148 or unknown | yes | no | no | 0–9 | unscaled unless profile says otherwise | deciwatt → W | none |
+| Venus D | 148 | yes | no | no | 0–9 | unscaled Wh | deciwatt → W | 0.1 Wh → Wh |
+| Venus D | 149 | yes | no | no | 0–9 | 0.01 kWh → Wh | deciwatt → W | 0.1 Wh → Wh |
 | Venus D | >= 150 | yes | yes | yes | 0–9 | 0.01 kWh → Wh | deciwatt → W | 0.1 Wh → Wh |
 | Venus C | 153 (HMG-50) | no | no | no | 0–9 | n/a | n/a | no (`EM.GetStatus` is not a server method) |
 | Venus C | 155 | no | no | no | 0–9 | n/a | n/a | 0.1 Wh → Wh |
 | Venus C | 156 | no | no | no | 0–9 | n/a | n/a | 0.1 Wh → Wh (Open API stable) |
 | Venus C / Venus E 2.0 | >= 158 | no | yes | no | 0–9 | n/a | n/a | 0.1 Wh → Wh (`ver` 1581 is generation 158; UPS stays off) |
 | Venus E 2.0 | < 158 or unknown | no | no | no | 0–9 | n/a | n/a | same EM rule as Venus C on that generation |
-| Venus E | < 150 or unknown | no | no | no | 0–9 | n/a (no PV) | n/a | none |
+| Venus E | < 148 or unknown | no | no | no | 0–9 | n/a (no PV) | n/a | none |
+| Venus E | 148–149 | no | no | no | 0–9 | n/a | n/a | 0.1 Wh → Wh |
 | Venus E | >= 150 | no | yes | yes | 0–9 | n/a | n/a | 0.1 Wh → Wh |
-| Venus E mini | known integer, `< 150` | no | **yes** (no 150 gate) | no | **0–5** | n/a | n/a | none |
+| Venus E mini | known integer, `< 148` | no | **yes** (no 150 gate) | no | **0–5** | n/a | n/a | none |
+| Venus E mini | 148–149 | no | **yes** | no | **0–5** | n/a | n/a | 0.1 Wh → Wh |
 | Venus E mini | >= 150 | no | yes | yes | **0–5** | n/a | n/a | 0.1 Wh → Wh |
 | Unknown family | any | no | no | no | 0–9 | no invented scaling | deciwatt fallback unused without PV | no |
 

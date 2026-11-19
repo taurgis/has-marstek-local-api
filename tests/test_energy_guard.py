@@ -67,6 +67,66 @@ def test_guard_unsticks_corrupt_previous_when_device_is_sane() -> None:
     assert status == dict.fromkeys(ENERGY_TOTAL_KEYS, 267386.0)
 
 
+def test_guard_accepts_issue_174_em_scale_correction() -> None:
+    """A 10x smaller meter total replaces the unscaled baseline.
+
+    Generation 148 published raw 0.1 Wh as Wh. The corrected reading is
+    lower, so it is not an upward spike and must not be rejected. Home
+    Assistant still counts a drop above 10% as a new meter cycle.
+    """
+    status = {
+        "em_input_energy": 25_099_391.0,
+        "em_output_energy": 34_467_242.0,
+    }
+
+    apply_energy_total_guard(
+        status,
+        {
+            "em_input_energy": 250_993_910.0,
+            "em_output_energy": 344_672_420.0,
+        },
+    )
+
+    assert status["em_input_energy"] == 25_099_391.0
+    assert status["em_output_energy"] == 34_467_242.0
+
+
+def test_merge_publishes_em_scale_correction_without_raising_it() -> None:
+    """The corrected EM totals stay at the scaled value through a full merge.
+
+    Grid-total stabilization must not lift the meter counters back toward
+    the old unscaled baseline.
+    """
+    previous = {
+        "em_input_energy": 250_993_910.0,
+        "em_output_energy": 344_672_420.0,
+        "ongrid_power": 500,
+        "last_update": 1_000.0,
+        "total_grid_input_energy": 1000.0,
+        "total_grid_output_energy": 1000.0,
+    }
+
+    published = merge_device_status(
+        em_status_data={
+            "ct_state": 1,
+            "ct_connected": True,
+            "em_total_power": 100,
+            "em_input_energy": 25_099_391.0,
+            "em_output_energy": 34_467_242.0,
+        },
+        es_status_data={
+            "ongrid_power": 500,
+            "total_grid_input_energy": 1000.0,
+            "total_grid_output_energy": 1000.0,
+        },
+        last_update=1_060.0,
+        previous_status=previous,
+    )
+
+    assert published["em_input_energy"] == 25_099_391.0
+    assert published["em_output_energy"] == 34_467_242.0
+
+
 def test_guard_keeps_firmware_149_solar_encoding_correction() -> None:
     """The Venus A 149 x10 solar correction is a real encoding fix, not a spike."""
     status = {"total_pv_energy": 257420.0}

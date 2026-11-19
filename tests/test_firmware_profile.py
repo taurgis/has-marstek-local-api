@@ -18,6 +18,7 @@ from custom_components.marstek.firmware_profile import (
     resolve_firmware_profile,
     resolve_firmware_profile_from_metadata,
 )
+from custom_components.marstek.pymarstek.data_parser import parse_em_status_response
 
 
 @pytest.mark.parametrize(
@@ -150,7 +151,10 @@ def test_profile_exposes_legacy_encoding_contract() -> None:
 def test_venus_a_148_or_older_keeps_legacy_energy_and_deciwatt_pv(
     version: int | str,
 ) -> None:
-    """Firmware 148 or older must keep 1.0.0 solar Wh and PV1 ÷10 (#57)."""
+    """Firmware 148 or older must keep solar Wh and PV1 ÷10 (#57).
+
+    Meter energy is a separate scale: 145 stays unscaled, 148 is 0.1 Wh.
+    """
     profile = resolve_firmware_profile("VenusA", version)
 
     assert profile.firmware_version in {145, 148}
@@ -159,6 +163,12 @@ def test_venus_a_148_or_older_keeps_legacy_energy_and_deciwatt_pv(
     assert profile.pv_channel_1_power_scale == 0.1
     assert profile.supports_ups is False
     assert profile.supports_sys_dod is False
+    if profile.firmware_version == 145:
+        assert profile.em_energy_scale == 1.0
+        assert profile.supports_em_energy is False
+    else:
+        assert profile.em_energy_scale == 0.1
+        assert profile.supports_em_energy is True
 
 
 def test_venus_a_149_uses_rev31_solar_energy_units() -> None:
@@ -167,10 +177,80 @@ def test_venus_a_149_uses_rev31_solar_energy_units() -> None:
 
     assert profile.pv_energy_scale == 10.0
     assert profile.pv_channel_1_power_scale == 0.1
-    assert profile.em_energy_scale == 1.0
-    assert profile.supports_em_energy is False
+    assert profile.em_energy_scale == 0.1
+    assert profile.supports_em_energy is True
     assert profile.supports_ups is False
     assert profile.supports_sys_dod is False
+
+
+@pytest.mark.parametrize(
+    ("device_type", "version", "em_energy_scale", "supports_em_energy", "supports_sys"),
+    [
+        ("VenusE 3.0", 147, 1.0, False, False),
+        ("VenusE 3.0", 148, 0.1, True, False),
+        ("VenusE 3.0", 149, 0.1, True, False),
+        ("VenusE 3.0", 150, 0.1, True, True),
+        ("VenusA", 147, 1.0, False, False),
+        ("VenusA", 148, 0.1, True, False),
+        ("VenusA", "148.3", 0.1, True, False),
+        ("VenusA", 149, 0.1, True, False),
+        ("VenusA", 1487, 0.1, True, False),
+        ("VenusD", 145, 1.0, False, False),
+        ("VenusD", 148, 0.1, True, False),
+        ("VenusD", 149, 0.1, True, False),
+    ],
+)
+def test_em_energy_scale_starts_at_generation_148(
+    device_type: str,
+    version: int | str,
+    em_energy_scale: float,
+    supports_em_energy: bool,
+    supports_sys: bool,
+) -> None:
+    """0.1 Wh meter totals start at generation 148. SYS and UPS stay at 150."""
+    profile = resolve_firmware_profile(device_type, version)
+
+    assert profile.em_energy_scale == em_energy_scale
+    assert profile.supports_em_energy is supports_em_energy
+    assert profile.supports_sys_dod is supports_sys
+    assert profile.supports_ups is supports_sys
+
+
+def test_venus_e_148_scale_reloads_without_unlocking_sys() -> None:
+    """Moving 147 to 148 changes the meter scale and must reload the entry."""
+    legacy = resolve_firmware_profile("VenusE 3.0", 147)
+    corrected = resolve_firmware_profile("VenusE 3.0", 148)
+
+    assert legacy.supports_sys_dod is False
+    assert corrected.supports_sys_dod is False
+    assert legacy.supports_ups is False
+    assert corrected.supports_ups is False
+    assert legacy.em_energy_scale == 1.0
+    assert corrected.em_energy_scale == 0.1
+    assert legacy.setup_reload_signature != corrected.setup_reload_signature
+
+
+def test_venus_e_148_em_status_uses_deciwatt_hour_scale() -> None:
+    """Issue #174: Venus E 148 P1 input/output energy is 0.1 Wh on the wire."""
+    profile = resolve_firmware_profile("VenusE 3.0", 148)
+    parsed = parse_em_status_response(
+        {
+            "id": 1,
+            "result": {
+                "ct_state": 1,
+                "a_power": 0,
+                "total_power": 0,
+                "input_energy": 250_993_910,
+                "output_energy": 344_672_420,
+            },
+        },
+        profile,
+    )
+
+    assert profile.supports_em_status is True
+    assert profile.em_energy_scale == 0.1
+    assert parsed["em_input_energy"] == 25_099_391.0
+    assert parsed["em_output_energy"] == 34_467_242.0
 
 
 def test_firmware_150_known_family_uses_rev31_energy_not_watt_pv() -> None:
@@ -222,12 +302,12 @@ def test_dotted_app_firmware_labels_use_leading_open_api_integer(
     ),
     [
         ("VenusA", 147, DeviceFamily.VENUS_A, 1.0, False, False, False, True, 9),
-        ("VenusA", "148.3", DeviceFamily.VENUS_A, 1.0, False, False, False, True, 9),
-        ("VenusA", 149, DeviceFamily.VENUS_A, 10.0, False, False, False, True, 9),
+        ("VenusA", "148.3", DeviceFamily.VENUS_A, 1.0, False, False, True, True, 9),
+        ("VenusA", 149, DeviceFamily.VENUS_A, 10.0, False, False, True, True, 9),
         ("VenusA", "150.9", DeviceFamily.VENUS_A, 10.0, True, True, True, True, 9),
         ("VenusE 3.0", 144, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
         ("VenusE 3.0", 147, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
-        ("VenusE 3.0", 148, DeviceFamily.VENUS_E, 1.0, False, False, False, False, 9),
+        ("VenusE 3.0", 148, DeviceFamily.VENUS_E, 1.0, False, False, True, False, 9),
         ("VenusE 3.0", 150, DeviceFamily.VENUS_E, 10.0, True, True, True, False, 9),
         ("VenusC", 153, DeviceFamily.VENUS_C, 10.0, False, False, False, False, 9),
         ("VenusC", 155, DeviceFamily.VENUS_C, 10.0, False, False, True, False, 9),

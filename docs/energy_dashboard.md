@@ -49,7 +49,7 @@ Open API energy fields are **not** all Wh on the wire. Each field is normalized 
 | `total_pv_energy` | 0.01 kWh on Venus A firmware 1487 (app 148.7) and 149, Venus D 149, and known families at 150+; Wh on older firmware | Wh (`raw × 10` when 0.01 kWh) | Venus A at 1487+ ([#35](https://github.com/taurgis/has-marstek-local-api/issues/35)); Venus D at 149+; known families at 150+. Venus A 148 / `148.3` stays Wh. |
 | `total_grid_input_energy` / `total_grid_output_energy` | Wh | Wh (never scaled with PV) | Always |
 | `total_load_energy` | Wh | Wh | Always |
-| `EM.GetStatus` `input_energy` / `output_energy` | 0.1 Wh on Rev 3.1 | Wh (`raw × 0.1`) | Known family at firmware 150+; sensors omitted when the fields are absent |
+| `EM.GetStatus` `input_energy` / `output_energy` | 0.1 Wh from Control generation 148 | Wh (`raw × 0.1`) | Known family that serves `EM.GetStatus` at generation 148+; sensors omitted when the fields are absent |
 
 `0.01 kWh` is a wire encoding, not a custom Home Assistant unit. Energy dashboard eligibility still requires `device_class: energy`, `state_class: total` or `total_increasing`, and a supported unit such as Wh or kWh ([Energy FAQ](https://www.home-assistant.io/docs/energy/faq/)).
 
@@ -82,13 +82,15 @@ Meter input and output energy are measured at the CT meter, so they describe you
 house's grid connection. The Total grid input and output energy counters above describe the
 battery. The meter sensors only exist when your battery reports them.
 
+On firmware 148 and newer these counters are stored in 0.1 Wh steps. Older releases showed them 10 times too high. History already in the Energy dashboard stays at that old size, and the first corrected reading is a large drop. Home Assistant treats a drop of 10% or more as a new meter cycle, so that hour can show a spike. Adjust it under **Developer tools** > **Statistics**.
+
 <details class="details custom-block">
 <summary>Technical details</summary>
 
 Meter input/output energy (`em_input_energy` / `em_output_energy`) come from
 the existing fast-tier `EM.GetStatus` payload when the device reports those
-lifetime totals (Open API Rev 3.1). The wire unit is 0.1 Wh; Home Assistant
-exposes watt-hours. Unlike the ES counters above, they describe the grid connection. The sensors are omitted when the fields are absent.
+lifetime totals. From Control generation 148 the wire unit is 0.1 Wh; Home Assistant
+exposes watt-hours. Older generations leave a present value unscaled. Unlike the ES counters above, they describe the grid connection. The sensors are omitted when the fields are absent.
 
 </details>
 
