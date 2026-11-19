@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.5
+
+### Patch Changes
+
+- 2d95533: Add a guide, with screenshots, for building a live battery dashboard from Home Assistant's built-in cards.
+- 6f2b35b: Fix meter input and output energy reading 10 times too high on firmware 148, including Venus E 3.0. Energy Dashboard history from before this fix stays too high, and the first corrected reading can show up as a spike; adjust it under Developer tools > Statistics.
+
 ## 1.13.4
 
 ### Patch Changes
