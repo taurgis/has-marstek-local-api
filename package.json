@@ -15,7 +15,7 @@
     "lint:js": "eslint custom_components/marstek/frontend"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7",
+    "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",

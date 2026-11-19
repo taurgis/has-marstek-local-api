@@ -32,7 +32,8 @@ jobs:
 
           STATUS=$(npx changeset status --since=origin/main 2>&1) || true
 
-          if echo "$STATUS" | grep -q "No changesets present"; then
+          # Changesets CLI v2 printed the first wording, v3 prints the second.
+          if echo "$STATUS" | grep -qE "No changesets present|no changesets were found"; then
             echo "::warning::This PR has no changeset. If the change should appear in the next release, run \`npm run changeset\` and commit the generated file."
           else
             echo "Changeset found."
