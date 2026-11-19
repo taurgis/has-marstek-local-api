@@ -44,8 +44,9 @@ Physical values inside the simulator are always SI (W, Wh). Before a UDP respons
 
 | Generation | Typical `--ver` | Wire encoding | Accepted extras |
 |------------|-----------------|---------------|-----------------|
-| Legacy (148 or older) | `145` (default) or `148` | Solar energy as Wh; Venus A/D channel-1 PV power as deciwatts; no EM 0.1 Wh totals | SYS and UPS return **Method not found** |
-| Venus A 149 | `149` | Solar energy as 0.01 kWh (`Wh / 10` on the wire); channel-1 PV still deciwatts | SYS and UPS return **Method not found** |
+| Legacy (147 or older) | `145` (default) | Solar energy as Wh; Venus A/D channel-1 PV power as deciwatts; EM energy unscaled | SYS and UPS return **Method not found** |
+| Generation 148 | `148` | Solar energy as Wh; channel-1 PV still deciwatts; EM energy as 0.1 Wh | SYS and UPS return **Method not found** |
+| Venus A 149 | `149` | Solar energy as 0.01 kWh (`Wh / 10` on the wire); channel-1 PV still deciwatts; EM energy as 0.1 Wh | SYS and UPS return **Method not found** |
 | Rev 3.1 | `150` or newer | Solar energy as 0.01 kWh; Venus A/D channel-1 PV still deciwatts (150.9); EM energies as 0.1 Wh | SYS + UPS accepted on families that support them |
 
 Issue [#57](https://github.com/taurgis/has-marstek-local-api/issues/57) is **PV1 power** 10× too high (firmware **148.3** and **150.9** after integration 1.1.0). Keep channel-1 ÷10. Issue [#35](https://github.com/taurgis/has-marstek-local-api/issues/35) is **total solar energy** 10× too low on firmware **149** (`total_pv_energy` as 0.01 kWh). Do not collapse those onto one scale or one Venus A 150 mock.

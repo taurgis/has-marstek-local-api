@@ -291,10 +291,11 @@ published as capacity.
 
 Lifetime energy is the untrustworthy counter. Venus A up to 148 stores
 solar energy in Wh. From Venus A 148.7 and Venus D 149 on, and on every known
-family from 150, it is 0.01 kWh, and EM energy at those generations is 0.1 Wh
-(Open API note, section 4.2, issues
+family from 150, it is 0.01 kWh (Open API note, section 4.2, issues
 [#35](https://github.com/taurgis/has-marstek-local-api/issues/35) and
-[#57](https://github.com/taurgis/has-marstek-local-api/issues/57)). Grid
+[#57](https://github.com/taurgis/has-marstek-local-api/issues/57)).
+EM lifetime energy is 0.1 Wh from Control generation 148 when `EM.GetStatus`
+is served ([#174](https://github.com/taurgis/has-marstek-local-api/issues/174)). Grid
 totals on the Venus E 150 capture were Wh. Those counters are not used.
 
 Nameplate `bat_cap` on Control firmware is the rated pack (Venus E 150:

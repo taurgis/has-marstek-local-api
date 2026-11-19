@@ -37,6 +37,10 @@ MAX_PLAUSIBLE_ENERGY_WH: Final[float] = 1_000_000_000.0
 # The firmware-149 solar encoding correction is about 0.23 MWh, and a scale
 # change reloads the entry anyway (FirmwareProfile.setup_reload_signature), so
 # the rescaled total arrives with no previous reading to be measured against.
+# A downward correction is kept as well: only an upward jump past this cap
+# is a spike. Issue #174 publishes meter totals at one tenth of the old
+# unscaled reading. Home Assistant still treats that drop, on a
+# total_increasing sensor, as a new meter cycle.
 MAX_PLAUSIBLE_ENERGY_JUMP_WH: Final[float] = 5_000_000.0
 
 

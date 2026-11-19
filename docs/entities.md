@@ -23,7 +23,7 @@ All entities are **coordinator-backed** (no per-entity polling): one shared upda
 
 Capability-gated entities (PV channels, UPS, SYS DOD/BLE/LED) are **created only when the firmware profile supports them**. After a firmware update that unlocks or removes those capabilities, setup, the scanner, or **Reconfigure** refreshes `ver` (unicast `Marstek.GetDevice` if broadcast cannot reach the device) and reloads the config entry so the entity set matches the new profile.
 
-Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Firmware `ver >= 150` on a known family scales the wire unit 0.1 Wh → Wh; older profiles leave a present value unscaled.
+Meter input/output energy sensors are created when `EM.GetStatus` (or the Rev 3.1 `ES.GetMode` fallback) actually reports those fields. Control generation 148 and newer scales the wire unit 0.1 Wh → Wh when the device serves `EM.GetStatus`; older profiles leave a present value unscaled. SYS and UPS stay gated at generation 150.
 
 The battery detail entities depend on the `Bat.GetStatus` call: Battery temperature (`bat_temp`), Battery remaining capacity (`bat_capacity`), Battery rated capacity (`bat_rated_capacity`), Charge permission (`bat_charg_flag`) and Discharge permission (`bat_dischrg_flag`). Enabling any of them resumes the call automatically on Control firmware **150+**. On reset-prone firmware, `Bat.GetStatus` is never sent, and after a firmware update to 150+ setup or the scanner reloads the config entry so the entities can be created again.
 

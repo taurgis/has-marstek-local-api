@@ -49,6 +49,12 @@ _HMG50_CONTROL_MIN_GENERATION = 153
 _HMG50_EM_SERVER_GENERATION = 155
 _HMG50_OPENAPI_STABLE_GENERATION = 156
 _HMG50_SYS_GENERATION = 158
+# EM lifetime energy is 0.1 Wh from this Control generation (issue #174).
+# SYS and UPS stay at 150: the Rev 3.1 profile and issue #15 keep that gate.
+# The Open API note's EM table only labels 0.1 Wh at ``ver >= 150``. It does
+# not say every generation that serves EM.GetStatus uses that unit, and the
+# 144/147 samples are zeros, so those builds stay unscaled.
+_EM_ENERGY_SCALE_GENERATION = 148
 # VNSEMINI-0 PMU 301 compares the ES.SetMode mode with Auto, AI, Manual and
 # UPS only; the string "Passive" is not in the image. Anything else gets a
 # parse error with JSON-RPC id 0 (issue #104), which no pending request
@@ -421,13 +427,16 @@ def resolve_firmware_profile(
     # to the leading integer: 147.7 → 147, 148.3 → 148, 150.9 → 150):
     #   Venus A 147 (#11, #20): solar Wh (often 0), PV1 deciwatts, GetMode CT
     #   keys present as zeros, EM energy keys present as 0, no bat_power.
-    #   Venus A 148 / 148.3 (#28, #57): same as 147 for energy/PV1.
+    #   Venus A 148 / 148.3 (#28, #57): same as 147 for solar Wh and PV1.
+    #   EM energy is 0.1 Wh from generation 148 (issue #174).
     #   Venus A 149 (#35): solar 0.01 kWh → Wh; PV1 still deciwatts; no SYS.
+    #   EM energy is 0.1 Wh, same generation-148 scale.
     #   Venus A 150.9 (#57): solar 0.01 kWh; PV1 still deciwatts; SYS/UPS.
     #   Venus E 144 (#21): GetMode without CT keys; grid energy in Wh;
     #   EM energy keys present as 0; no bat_power.
-    #   Venus E 147/148 (#9, #14, #15, #25): legacy — no SYS/UPS (LED at 148
-    #   is app-only until Open API ver >= 150).
+    #   Venus E 147 (#9, #14, #15): legacy — no SYS/UPS, EM energy unscaled.
+    #   Venus E 148 (#25, #174): still no SYS/UPS (LED is app-only until
+    #   Open API ver >= 150). EM input/output energy is already 0.1 Wh.
     #   Venus E 150 (LAN capture / #34): SYS/UPS; GetMode CT keys zeros.
     #   Venus C 153 (#60): HMG-50 reporting VenusC; no SYS/UPS; GetDevice
     #   may omit result MACs; EM.GetStatus is meter-client only until 155.
@@ -452,7 +461,11 @@ def resolve_firmware_profile(
         supports_em_status = generation is not None and generation >= _HMG50_EM_SERVER_GENERATION
     else:
         supports_em_status = known_family
-    supports_em_energy = supports_em_status and firmware_150
+    # Decoupled from ``firmware_150``: generation 148 already reports real
+    # EM totals in 0.1 Wh, while SYS/UPS writes are still refused.
+    supports_em_energy = (
+        supports_em_status and generation is not None and generation >= _EM_ENERGY_SCALE_GENERATION
+    )
 
     return FirmwareProfile(
         family=family,

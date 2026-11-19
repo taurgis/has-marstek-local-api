@@ -333,8 +333,8 @@ def handle_em_get_status(
         "total_power": state["grid_power"],
     }
     # Observed on Venus A 147 (#11), Venus E 144 (#21), and Venus E 150:
-    # input_energy / output_energy are present. Scale to 0.1 Wh only when
-    # the firmware profile says so; legacy builds stay unscaled (often 0).
+    # input_energy / output_energy are present. Scale to 0.1 Wh from
+    # Control generation 148; older builds stay unscaled (often 0).
     result.update(_encoded_meter_energy(state, profile))
     return {
         "id": request_id,
